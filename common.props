@@ -1,0 +1,31 @@
+<Project>
+	<PropertyGroup>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<RootNamespace />
+		<Version>1.0.2</Version>
+		<NoWarn>$(NoWarn);CS1591;CS0436</NoWarn>
+		<Authors>lenfon</Authors>
+		<Description>A base implementation of strongly typed ids.</Description>
+		<PackageTags>id;strongly-typed</PackageTags>
+		<PackageProjectUrl>https://github.com/lenfon/StronglyTypedId</PackageProjectUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<RepositoryType>git</RepositoryType>
+		<RepositoryUrl>https://github.com/lenfon/StronglyTypedId</RepositoryUrl>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<!-- Include symbol files (*.pdb) in the built .nupkg -->
+		<AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+		<!--<Pack>True</Pack>
+			<PackagePath>\</PackagePath>-->
+		<!--</None>-->
+	</ItemGroup>
+</Project>
