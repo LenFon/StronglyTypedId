@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net7.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<PackageId>Len.$(AssemblyName)</PackageId>
+		<Authors>lenfon</Authors>
+		<Title>Len.$(AssemblyName)</Title>
+		<Product>Len.$(AssemblyName)</Product>
+		<Description>A base implementation of strongly typed ids.</Description>
+		<PackageTags>id;strongly-typed</PackageTags>
+		<RepositoryUrl>https://github.com/lenfon/StronglyTypedId</RepositoryUrl>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <None Include="..\..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
+</Project>
