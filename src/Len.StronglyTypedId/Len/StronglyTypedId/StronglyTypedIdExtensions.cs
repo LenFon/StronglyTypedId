@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 
-namespace StronglyTypedId;
+namespace Len.StronglyTypedId;
 
 public static class StronglyTypedIdExtensions
 {
