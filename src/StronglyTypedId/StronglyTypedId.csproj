@@ -11,6 +11,15 @@
 		<Product>Len.$(AssemblyName)</Product>
 		<Description>A base implementation of strongly typed ids.</Description>
 		<PackageTags>id;strongly-typed</PackageTags>
+		<RepositoryUrl>https://github.com/lenfon/StronglyTypedId</RepositoryUrl>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
+
+	<ItemGroup>
+	  <None Include="..\..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
 
 </Project>
