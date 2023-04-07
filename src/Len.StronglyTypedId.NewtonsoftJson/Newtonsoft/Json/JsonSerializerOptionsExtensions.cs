@@ -1,6 +1,4 @@
-﻿using Len.StronglyTypedId.NewtonsoftJson;
-
-namespace Newtonsoft.Json;
+﻿namespace Newtonsoft.Json;
 
 public static class JsonSerializerOptionsExtensions
 {

@@ -36,11 +36,12 @@ namespace Len.StronglyTypedId
         [MemoryDiagnoser]
         public class NewtonsoftJsonSerializeAndDeserialize
         {
-            private readonly JsonSerializerSettings newtonsoftJsonSettings = new();
-            private readonly JsonSerializerOptions systemTextJsonSettings = new();
             private readonly OrderId id;
             private readonly string json;
+            private readonly JsonSerializerSettings newtonsoftJsonSettings = new();
             private readonly string rawJson;
+            private readonly JsonSerializerOptions systemTextJsonSettings = new();
+
             public NewtonsoftJsonSerializeAndDeserialize()
             {
                 newtonsoftJsonSettings.UseStronglyTypedId();
@@ -51,23 +52,16 @@ namespace Len.StronglyTypedId
             }
 
             [Benchmark]
-            public string NewtonsoftJsonSerialize() => JsonConvert.SerializeObject(id, newtonsoftJsonSettings);
+            public OrderId NewtonsoftJsonDeserialize() => JsonConvert.DeserializeObject<OrderId>(json, newtonsoftJsonSettings);
+
+            [Benchmark]
+            public OrderId NewtonsoftJsonRawDeserialize() => JsonConvert.DeserializeObject<OrderId>(rawJson, new JsonSerializerSettings());
 
             [Benchmark]
             public string NewtonsoftJsonRawSerialize() => JsonConvert.SerializeObject(id, new JsonSerializerSettings());
 
             [Benchmark]
-            public string SystemTextJsonSerialize() => System.Text.Json.JsonSerializer.Serialize(id, systemTextJsonSettings);
-
-            [Benchmark]
-            public string SystemTextJsonRawSerialize() => System.Text.Json.JsonSerializer.Serialize(id, new JsonSerializerOptions());
-
-
-            [Benchmark]
-            public OrderId NewtonsoftJsonDeserialize() => JsonConvert.DeserializeObject<OrderId>(json, newtonsoftJsonSettings);
-
-            [Benchmark]
-            public OrderId NewtonsoftJsonRawDeserialize() => JsonConvert.DeserializeObject<OrderId>(rawJson, new JsonSerializerSettings());
+            public string NewtonsoftJsonSerialize() => JsonConvert.SerializeObject(id, newtonsoftJsonSettings);
 
             [Benchmark]
             public OrderId SystemTextJsonDeserialize() => System.Text.Json.JsonSerializer.Deserialize<OrderId>(json, systemTextJsonSettings);
@@ -75,6 +69,11 @@ namespace Len.StronglyTypedId
             [Benchmark]
             public OrderId SystemTextJsonRawDeserialize() => System.Text.Json.JsonSerializer.Deserialize<OrderId>(rawJson, new JsonSerializerOptions());
 
+            [Benchmark]
+            public string SystemTextJsonRawSerialize() => System.Text.Json.JsonSerializer.Serialize(id, new JsonSerializerOptions());
+
+            [Benchmark]
+            public string SystemTextJsonSerialize() => System.Text.Json.JsonSerializer.Serialize(id, systemTextJsonSettings);
         }
     }
 }
