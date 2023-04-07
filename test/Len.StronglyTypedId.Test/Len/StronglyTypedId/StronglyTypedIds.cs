@@ -1,4 +1,4 @@
-﻿namespace StronglyTypedId.Test;
+﻿namespace Len.StronglyTypedId;
 
 public record struct OrderId(Guid Value) : IStronglyTypedId<Guid>
 {

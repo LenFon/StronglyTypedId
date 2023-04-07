@@ -1,7 +1,8 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
+using Len.StronglyTypedId;
 
-namespace StronglyTypedId.SystemTextJson;
+namespace Len.StronglyTypedId.SystemTextJson;
 
 internal class StronglyTypedIdJsonConverterFactory : JsonConverterFactory
 {

@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json.Serialization;
 using System.Collections;
 
-namespace StronglyTypedId.NewtonsoftJson;
+namespace Len.StronglyTypedId.NewtonsoftJson;
 
 internal class CompositeContractResolver : IContractResolver, IEnumerable<IContractResolver>
 {

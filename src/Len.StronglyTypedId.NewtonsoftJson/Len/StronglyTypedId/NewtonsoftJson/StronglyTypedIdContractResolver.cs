@@ -1,7 +1,8 @@
-﻿using Newtonsoft.Json;
+﻿using Len.StronglyTypedId;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
-namespace StronglyTypedId.NewtonsoftJson
+namespace Len.StronglyTypedId.NewtonsoftJson
 {
     internal class StronglyTypedIdContractResolver : DefaultContractResolver
     {

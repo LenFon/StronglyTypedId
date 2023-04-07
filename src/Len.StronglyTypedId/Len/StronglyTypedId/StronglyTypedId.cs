@@ -1,4 +1,4 @@
-﻿namespace StronglyTypedId;
+﻿namespace Len.StronglyTypedId;
 
 /// <summary>
 /// 强类型Id接口

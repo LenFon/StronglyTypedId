@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
-using StronglyTypedId.SystemTextJson;
 
-namespace StronglyTypedId.Test
+namespace Len.StronglyTypedId.SystemTextJson
 {
     public class SystemTextJsonTests
     {

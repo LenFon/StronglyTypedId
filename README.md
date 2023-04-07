@@ -4,8 +4,8 @@ A base implementation of strongly typed ids.
 1. Install the standard Nuget package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.1
-    CLI : dotnet add package --version 1.0.1 Len.StronglyTypedId
+    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.2
+    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId
     ```
 2. Use record to define strongly-typed ids:
     ```C#
@@ -27,14 +27,14 @@ If you need to use strongly typed ids as output parameters for back-end interfac
 1. Install the **System.Text.Json (STJ)** package or **Newtonsoft** package into the ASP.NET Core program.
 
    ```
-    Package Manager : Install-Package Len.StronglyTypedId.SystemTextJson -Version 1.0.1
-    CLI : dotnet add package --version 1.0.1 Len.StronglyTypedId.SystemTextJson
+    Package Manager : Install-Package Len.StronglyTypedId.SystemTextJson -Version 1.0.2
+    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId.SystemTextJson
     ```
     or
        
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.NewtonsoftJson -Version 1.0.1
-    CLI : dotnet add package --version 1.0.1 Len.StronglyTypedId.NewtonsoftJson
+    Package Manager : Install-Package Len.StronglyTypedId.NewtonsoftJson -Version 1.0.2
+    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId.NewtonsoftJson
     ```
     **Note**: Only one of them can be selected.
 

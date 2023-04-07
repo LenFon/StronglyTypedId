@@ -1,7 +1,6 @@
 using Newtonsoft.Json;
-using StronglyTypedId.NewtonsoftJson;
 
-namespace StronglyTypedId.Test
+namespace Len.StronglyTypedId.NewtonsoftJson
 {
     public class NewtonsoftJsonTests
     {

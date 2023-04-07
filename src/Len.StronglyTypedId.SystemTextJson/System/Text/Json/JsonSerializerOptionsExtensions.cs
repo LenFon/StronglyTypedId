@@ -1,6 +1,6 @@
-﻿using System.Text.Json;
+﻿using Len.StronglyTypedId.SystemTextJson;
 
-namespace StronglyTypedId.SystemTextJson;
+namespace System.Text.Json;
 
 public static class JsonSerializerOptionsExtensions
 {
