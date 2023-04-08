@@ -7,7 +7,7 @@ namespace Len.StronglyTypedId.NewtonsoftJson
         [Fact]
         public void SerializeAndDeserialize()
         {
-            var settings = new JsonSerializerSettings().UseStronglyTypedId();
+            var settings = new JsonSerializerSettings().AddStronglyTypedId();
 
             var expected = new OrderId(Guid.NewGuid());
 

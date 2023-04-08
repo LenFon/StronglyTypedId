@@ -2,10 +2,10 @@
 
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class ServiceCollectionExtensions
+public static class MvcBuilderExtensions
 {
-    public static IServiceCollection AddStronglyTypedId(
-        this IServiceCollection services,
+    public static IMvcBuilder AddStronglyTypedId(
+        this IMvcBuilder builder,
         Action<StronglyTypedIdServiceConfiguration> configuration)
     {
         var serviceConfig = new StronglyTypedIdServiceConfiguration();
@@ -21,13 +21,12 @@ public static class ServiceCollectionExtensions
         {
             if (!type.TryGetPrimitiveIdType(out var primitiveIdType)) continue;
 
-            var attributes = serviceConfig.ConvertHandles
-                .Select(s => s.Invoke(type, primitiveIdType))
-                .ToArray();
+            var attribute = new TypeConverterAttribute(typeof(StronglyTypedIdTypeConverter<,>)
+                .MakeGenericType(type, primitiveIdType));
 
-            TypeDescriptor.AddAttributes(type, attributes);
+            TypeDescriptor.AddAttributes(type, attribute);
         }
 
-        return services;
+        return builder;
     }
 }

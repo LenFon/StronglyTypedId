@@ -44,8 +44,8 @@ namespace Len.StronglyTypedId
 
             public NewtonsoftJsonSerializeAndDeserialize()
             {
-                newtonsoftJsonSettings.UseStronglyTypedId();
-                systemTextJsonSettings.UseStronglyTypedId();
+                newtonsoftJsonSettings.AddStronglyTypedId();
+                systemTextJsonSettings.AddStronglyTypedId();
                 id = new OrderId(Guid.NewGuid());
                 json = $"\"{Guid.NewGuid()}\"";
                 rawJson = new StringBuilder().Append("{\"Value\":\"" + Guid.NewGuid().ToString() + "\"}").ToString();

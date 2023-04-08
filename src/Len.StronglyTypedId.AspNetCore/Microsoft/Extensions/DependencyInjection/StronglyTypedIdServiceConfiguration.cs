@@ -1,31 +1,10 @@
-﻿using System.ComponentModel;
-using System.Reflection;
-using System.Text.Json.Serialization;
+﻿using System.Reflection;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
 public class StronglyTypedIdServiceConfiguration
 {
     internal List<Assembly> AssembliesToRegister { get; } = new();
-
-    internal List<Func<Type, Type, Attribute>> ConvertHandles { get; } = new()
-    {
-        (stronglyTypedIdType, primitiveIdType) =>
-            new TypeConverterAttribute(typeof(StronglyTypedIdTypeConverter<,>)
-                .MakeGenericType(stronglyTypedIdType, primitiveIdType)),
-        (stronglyTypedIdType, primitiveIdType) =>
-            new JsonConverterAttribute(typeof(StronglyTypedIdJsonConverter<,>)
-                .MakeGenericType(stronglyTypedIdType, primitiveIdType))
-    };
-
-    /// <summary>
-    /// 添加转换处理器
-    /// </summary>
-    /// <param name="handle"></param>
-    public void AddConvertHandler(Func<Type, Type, Attribute> handle)
-    {
-        ConvertHandles.Add(handle);
-    }
 
     /// <summary>
     /// 从程序集集合中注册转换器
