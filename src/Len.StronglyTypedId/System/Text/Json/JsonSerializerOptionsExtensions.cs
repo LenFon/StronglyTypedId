@@ -2,7 +2,7 @@
 
 public static class JsonSerializerOptionsExtensions
 {
-    public static JsonSerializerOptions UseStronglyTypedId(this JsonSerializerOptions options)
+    public static JsonSerializerOptions AddStronglyTypedId(this JsonSerializerOptions options)
     {
         options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
 

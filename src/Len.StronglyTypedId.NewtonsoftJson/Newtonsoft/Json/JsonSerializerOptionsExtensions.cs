@@ -2,7 +2,7 @@
 
 public static class JsonSerializerOptionsExtensions
 {
-    public static JsonSerializerSettings UseStronglyTypedId(this JsonSerializerSettings settings)
+    public static JsonSerializerSettings AddStronglyTypedId(this JsonSerializerSettings settings)
     {
         settings.ContractResolver = new CompositeContractResolver
         {
