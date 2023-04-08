@@ -21,35 +21,35 @@ A base implementation of strongly typed ids.
         public static IStronglyTypedId<Guid> Create(Guid value) => new OrderId(value);
     }
     ```
-## System.Text.Json (STJ) or Newtonsoft
-If you need to use strongly typed ids as output parameters for back-end interfaces in ASP. Net Core applications, you need to perform the following steps:
+## Integration with ASP.NET Core
 
-1. Install the **System.Text.Json (STJ)** package or **Newtonsoft** package into the ASP.NET Core program.
+*  Add strongly typed ids in the service.
 
-   ```
-    Package Manager : Install-Package Len.StronglyTypedId.SystemTextJson -Version 1.0.2
-    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId.SystemTextJson
+    ``` C#
+    services.AddStronglyTypedId(options =>
+    {
+        options.RegisterServicesFromAssemblies(/* assembles */);
+    });
     ```
-    or
-       
+
+## Newtonsoft
+
+1. Install the **Newtonsoft** package into the ASP.NET Core program.
+
     ```
     Package Manager : Install-Package Len.StronglyTypedId.NewtonsoftJson -Version 1.0.2
     CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId.NewtonsoftJson
     ```
     **Note**: Only one of them can be selected.
 
-2. Enable strongly typed ids in the JsonOptions configuration.
+2.  Add strongly typed ids in the service.
+
     ```C#
-    services.AddControllers().AddJsonOptions(options =>
+    services.AddStronglyTypedId(options =>
     {
-        options.JsonSerializerOptions.UseStronglyTypedId();
-    });
-    ```
-    or
-    ```C#
-    services.AddControllers().AddNewtonsoftJson(options =>
-    {
-        options.SerializerSettings.UseStronglyTypedId();
+        // .... other
+
+        options.AddNewtonsoftJson();
     });
     ```
 [nuget-package]: https://www.nuget.org/packages/Len.StronglyTypedId/

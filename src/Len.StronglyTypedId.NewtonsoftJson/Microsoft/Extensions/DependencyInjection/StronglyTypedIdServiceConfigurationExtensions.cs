@@ -2,7 +2,7 @@
 {
     public static class StronglyTypedIdServiceConfigurationExtensions
     {
-        public static void UseNewtonsoftJson(StronglyTypedIdServiceConfiguration config)
+        public static void AddNewtonsoftJson(StronglyTypedIdServiceConfiguration config)
         {
             config.AddConvertHandler((stronglyTypedIdType, primitiveIdType) =>
                 new JsonConverterAttribute(typeof(StronglyTypedIdJsonConverter<,>)
