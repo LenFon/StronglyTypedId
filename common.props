@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<RootNamespace />
-		<Version>1.0.2</Version>
+		<Version>1.0.3</Version>
 		<NoWarn>$(NoWarn);CS1591;CS0436</NoWarn>
 		<Authors>lenfon</Authors>
 		<Description>A base implementation of strongly typed ids.</Description>

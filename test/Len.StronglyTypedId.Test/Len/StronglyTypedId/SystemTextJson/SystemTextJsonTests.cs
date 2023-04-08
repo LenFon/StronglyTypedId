@@ -7,7 +7,7 @@ namespace Len.StronglyTypedId.SystemTextJson
         [Fact]
         public void SerializeAndDeserialize()
         {
-            var settings = new JsonSerializerOptions().UseStronglyTypedId();
+            var settings = new JsonSerializerOptions().AddStronglyTypedId();
 
             var expected = new OrderId(Guid.NewGuid());
 
