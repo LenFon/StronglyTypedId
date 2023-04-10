@@ -24,7 +24,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.NewtonsoftJson\Len.StronglyTypedId.NewtonsoftJson.csproj" />
+	  <ProjectReference Include="..\..\src\Len.StronglyTypedId.NewtonsoftJson\Len.StronglyTypedId.NewtonsoftJson.csproj" />
 	</ItemGroup>
 
 </Project>

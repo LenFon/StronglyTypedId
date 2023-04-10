@@ -22,34 +22,44 @@ A base implementation of strongly typed ids.
     }
     ```
 ## Integration with ASP.NET Core
+1. Install the standard Nuget package into your application or library.
 
-*  Add strongly typed ids in the service.
+    ```
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore -Version 1.0.2
+    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId
+    ```
+2.  Add strongly typed ids in the service.
 
     ``` C#
-    services.AddStronglyTypedId(options =>
+    services.AddControllers().AddStronglyTypedId(options =>
     {
         options.RegisterServicesFromAssemblies(/* assembles */);
     });
     ```
+3. Enable strongly typed ids in the JsonOptions configuration.
+    ```C#
+    services.AddControllers().AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.AddStronglyTypedId();
+    });
 
 ## Newtonsoft
 
 1. Install the **Newtonsoft** package into the ASP.NET Core program.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.NewtonsoftJson -Version 1.0.2
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson -Version 1.0.2
     CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId.NewtonsoftJson
+
     ```
     **Note**: Only one of them can be selected.
 
-2.  Add strongly typed ids in the service.
+2.  Enable strongly typed ids in the JsonOptions configuration.
 
     ```C#
-    services.AddStronglyTypedId(options =>
+    services.AddControllers().AddNewtonsoftJson(options =>
     {
-        // .... other
-
-        options.AddNewtonsoftJson();
+        options.SerializerSettings.AddStronglyTypedId();
     });
     ```
 [nuget-package]: https://www.nuget.org/packages/Len.StronglyTypedId/
