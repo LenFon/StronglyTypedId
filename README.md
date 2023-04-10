@@ -4,8 +4,8 @@ A base implementation of strongly typed ids.
 1. Install the standard Nuget package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.2
-    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId
+    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.3
+    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId
     ```
 2. Use record to define strongly-typed ids:
     ```C#
@@ -25,8 +25,8 @@ A base implementation of strongly typed ids.
 1. Install the standard Nuget package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore -Version 1.0.2
-    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore -Version 1.0.3
+    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId
     ```
 2.  Add strongly typed ids in the service.
 
@@ -48,8 +48,8 @@ A base implementation of strongly typed ids.
 1. Install the **Newtonsoft** package into the ASP.NET Core program.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson -Version 1.0.2
-    CLI : dotnet add package --version 1.0.2 Len.StronglyTypedId.NewtonsoftJson
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson -Version 1.0.3
+    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId.NewtonsoftJson
 
     ```
     **Note**: Only one of them can be selected.
