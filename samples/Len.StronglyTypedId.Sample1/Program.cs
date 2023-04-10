@@ -1,3 +1,5 @@
+using Len.StronglyTypedId.Sample1;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using System.Text.Json;
 
@@ -18,7 +20,10 @@ builder.Services.AddControllers()
     //    options.SerializerSettings.AddStronglyTypedId();
     //})
     ;
-
+builder.Services.AddDbContext<SampleDbContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();

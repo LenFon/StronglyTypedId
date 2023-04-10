@@ -1,6 +1,6 @@
+using Len.StronglyTypedId.Sample1.Models;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json.Serialization;
-using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace Len.StronglyTypedId.Sample1.Controllers
 {
@@ -8,42 +8,50 @@ namespace Len.StronglyTypedId.Sample1.Controllers
     [Route("api/[controller]")]
     public class OrderController : ControllerBase
     {
-        [HttpGet]
-        public IEnumerable<OrderId> Get()
+        private readonly SampleDbContext _db;
+
+        public OrderController(SampleDbContext db)
         {
-            return Enumerable.Range(0, 10).Select(s => new OrderId(Guid.NewGuid()));
+            _db = db;
+        }
+
+        [HttpGet]
+        public async Task<IEnumerable<Order>> Get()
+        {
+            return await _db.Set<Order>().ToListAsync();
         }
 
         [HttpGet("{id}")]
-        public OrderId Get(OrderId id)
+        public async Task<Order?> Get(OrderId id)
         {
-            return id;
+            return await _db.Set<Order>().FirstOrDefaultAsync(w => w.Id == id);
         }
 
-        [HttpGet("{id}/products/{productId}")]
-        public GetProductViewModel GetProduct(OrderId id, ProductId productId)
+        [HttpPost]
+        public async Task Post([FromBody] string value)
         {
-            return new GetProductViewModel
+            await _db.AddAsync(new Order
             {
-                OrderId = id,
-                ProductId = productId
-            };
+                Id = new OrderId(Guid.NewGuid()),
+                Buyer = "buyer 1",
+                Items = new List<Product>
+                {
+                    new Product{ Key=new ProductId(1),Name="product 1" },
+                    new Product{ Key=new ProductId(2),Name="product 1" },
+                }
+            });
+
+            await _db.SaveChangesAsync();
         }
 
-        public class GetProductViewModel
+        [HttpDelete("{id}")]
+        public async Task Delete(OrderId id)
         {
-            public OrderId OrderId { get; set; }
-            public ProductId ProductId { get; set; }
+            var order = await _db.Set<Order>().FindAsync(id) ?? throw new Exception("∂©µ•Œ¥’“µΩ");
+
+            _db.Remove(order);
+
+            await _db.SaveChangesAsync();
         }
-    }
-
-    public record struct OrderId(Guid Value) : IStronglyTypedId<Guid>
-    {
-        public static IStronglyTypedId<Guid> Create(Guid value) => new OrderId(value);
-    }
-
-    public record struct ProductId(int Value) : IStronglyTypedId<int>
-    {
-        public static IStronglyTypedId<int> Create(int value) => new ProductId(value);
     }
 }
