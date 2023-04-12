@@ -21,8 +21,13 @@ public static class MvcBuilderExtensions
         {
             if (!type.TryGetPrimitiveIdType(out var primitiveIdType)) continue;
 
-            var attribute = new TypeConverterAttribute(typeof(StronglyTypedIdTypeConverter<,>)
-                .MakeGenericType(type, primitiveIdType));
+            var attribute = primitiveIdType switch
+            {
+                { } t when t == typeof(string) => new TypeConverterAttribute(typeof(StronglyTypedIdTypeConverter<>)
+                .MakeGenericType(type)),
+                _ => new TypeConverterAttribute(typeof(StronglyTypedIdTypeConverter<,>)
+                .MakeGenericType(type, primitiveIdType)),
+            };
 
             TypeDescriptor.AddAttributes(type, attribute);
         }

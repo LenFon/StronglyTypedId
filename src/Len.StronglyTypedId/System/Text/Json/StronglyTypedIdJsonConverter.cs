@@ -4,11 +4,12 @@ namespace System.Text.Json;
 
 internal class StronglyTypedIdJsonConverter<TStronglyTypedId, TPrimitiveId> : JsonConverter<TStronglyTypedId>
     where TStronglyTypedId : IStronglyTypedId<TPrimitiveId>
-    where TPrimitiveId : struct, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>, ISpanParsable<TPrimitiveId>
+    where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>
 {
     public override TStronglyTypedId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var value = (TPrimitiveId)GetValue(reader);
+
         return (TStronglyTypedId)TStronglyTypedId.Create(value);
     }
 
@@ -35,6 +36,7 @@ internal class StronglyTypedIdJsonConverter<TStronglyTypedId, TPrimitiveId> : Js
             { } t when t == typeof(decimal) => reader.GetDecimal(),
             { } t when t == typeof(byte) => reader.GetByte(),
             { } t when t == typeof(sbyte) => reader.GetSByte(),
+            { } t when t == typeof(string) => reader.GetString() ?? string.Empty,
             _ => throw new NotSupportedException()
         };
     }
@@ -56,6 +58,7 @@ internal class StronglyTypedIdJsonConverter<TStronglyTypedId, TPrimitiveId> : Js
             decimal val => () => writer.WriteNumberValue(val),
             byte val => () => writer.WriteNumberValue(val),
             sbyte val => () => writer.WriteNumberValue(val),
+            string val => () => writer.WriteStringValue(val),
             _ => throw new NotSupportedException()
         };
     }

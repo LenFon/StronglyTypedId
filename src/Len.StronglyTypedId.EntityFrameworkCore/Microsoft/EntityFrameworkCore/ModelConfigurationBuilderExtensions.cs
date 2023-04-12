@@ -51,7 +51,7 @@ namespace Microsoft.EntityFrameworkCore
 
         class StronglyTypedIdConverter<TStronglyTypedId, TPrimitiveId> : ValueConverter<TStronglyTypedId, TPrimitiveId>
              where TStronglyTypedId : IStronglyTypedId<TPrimitiveId>
-             where TPrimitiveId : struct, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>, ISpanParsable<TPrimitiveId>
+             where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>
         {
             public StronglyTypedIdConverter() : base(v => v.Value, val => ConvertToStronglyTypedId(val))
             {

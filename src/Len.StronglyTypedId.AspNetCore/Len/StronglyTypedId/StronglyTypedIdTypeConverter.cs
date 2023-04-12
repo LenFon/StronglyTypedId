@@ -6,7 +6,7 @@ namespace Len.StronglyTypedId;
 
 internal class StronglyTypedIdTypeConverter<TStronglyTypedId, TPrimitiveId> : TypeConverter
          where TStronglyTypedId : IStronglyTypedId<TPrimitiveId>
-         where TPrimitiveId : struct, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>, ISpanParsable<TPrimitiveId>
+         where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>, ISpanParsable<TPrimitiveId>
 {
     public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType) =>
         sourceType == typeof(string) ||
@@ -42,6 +42,38 @@ internal class StronglyTypedIdTypeConverter<TStronglyTypedId, TPrimitiveId> : Ty
             {
                 return id.Value.ToString();
             }
+        }
+
+        return base.ConvertTo(context, culture, value, destinationType);
+    }
+}
+
+internal class StronglyTypedIdTypeConverter<TStronglyTypedId> : TypeConverter
+         where TStronglyTypedId : IStronglyTypedId<string>
+{
+    public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType) =>
+        sourceType == typeof(string) ||
+        base.CanConvertFrom(context, sourceType);
+
+    public override bool CanConvertTo(ITypeDescriptorContext? context, [NotNullWhen(true)] Type? destinationType) =>
+        destinationType == typeof(string) ||
+        base.CanConvertTo(context, destinationType);
+
+    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
+    {
+        return value switch
+        {
+            string val when !string.IsNullOrEmpty(val) =>
+                TStronglyTypedId.Create(val),
+            _ => base.ConvertFrom(context, culture, value),
+        };
+    }
+
+    public override object? ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
+    {
+        if (value is IStronglyTypedId<string> id && destinationType == typeof(string))
+        {
+            return id.Value.ToString();
         }
 
         return base.ConvertTo(context, culture, value, destinationType);
