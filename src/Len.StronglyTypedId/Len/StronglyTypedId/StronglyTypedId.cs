@@ -5,7 +5,7 @@
 /// </summary>
 /// <typeparam name="TPrimitiveId"></typeparam>
 public interface IStronglyTypedId<TPrimitiveId>
-    where TPrimitiveId : struct, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>, ISpanParsable<TPrimitiveId>
+    where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>
 
 {
     TPrimitiveId Value { get; }
