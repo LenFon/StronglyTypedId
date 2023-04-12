@@ -28,12 +28,12 @@ namespace Len.StronglyTypedId.Sample1.Controllers
         }
 
         [HttpPost]
-        public async Task Post([FromBody] string value)
+        public async Task Post([FromBody] UserId userId)
         {
             await _db.AddAsync(new Order
             {
                 Id = new OrderId(Guid.NewGuid()),
-                Buyer = "buyer 1",
+                Buyer = new UserId("buyer 1"),
                 Items = new List<Product>
                 {
                     new Product{ Key=new ProductId(1),Name="product 1" },
@@ -52,6 +52,12 @@ namespace Len.StronglyTypedId.Sample1.Controllers
             _db.Remove(order);
 
             await _db.SaveChangesAsync();
+        }
+
+        [HttpGet("test/{id}")]
+        public UserId Test(UserId id)
+        {
+            return id;
         }
     }
 }
