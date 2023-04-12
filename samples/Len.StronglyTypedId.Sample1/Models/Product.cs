@@ -1,8 +1,20 @@
 ﻿namespace Len.StronglyTypedId.Sample1.Models;
 
-public record struct ProductId(int Value) : IStronglyTypedId<int>
+[StronglyTypedId]
+public partial record struct ProductId(int Value);
+
+//public record struct ProductId(int Value) : IStronglyTypedId<int>
+//{
+//    public static IStronglyTypedId<int> Create(int value) => new ProductId(value);
+//}
+
+[StronglyTypedId]
+public partial record struct UserId(string Value);
+
+
+public record struct SellerId(string Value) : IStronglyTypedId<string>
 {
-    public static IStronglyTypedId<int> Create(int value) => new ProductId(value);
+    public static IStronglyTypedId<string> Create(string value) => new SellerId(value);
 }
 
 public class Product
@@ -10,4 +22,8 @@ public class Product
     public ProductId Key { get; set; }
 
     public string Name { get; set; } = default!;
+
+    //嵌套类不会生成强类型Id的源代码
+    [StronglyTypedId]
+    public partial record SkuId(long Value);
 }

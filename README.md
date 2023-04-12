@@ -4,8 +4,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.3
-    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId
+    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.4
+    CLI : dotnet add package Len.StronglyTypedId --version 1.0.4 
     ```
 2. Use record to define a strongly typed id:
     ```C#
@@ -21,12 +21,31 @@ A base implementation of strongly typed ids.
         public static IStronglyTypedId<Guid> Create(Guid value) => new OrderId(value);
     }
     ```
+## Support source generator
+1. Install the package into your application or library.
+
+    ```
+    Package Manager : Install-Package Len.StronglyTypedId.Generator -Version 1.0.4
+    CLI : dotnet add package Len.StronglyTypedId.Generator --version 1.0.4 
+    ```
+2. Use record to define a strongly typed id:
+    ```C#
+    [StronglyTypedId]
+    public partial record struct OrderId(Guid Value);
+    ```
+    or
+    ```C#
+    [StronglyTypedId]
+    public partial record OrderId(Guid Value);
+    ```
+    **Note**: Only the record type is supported and cannot be nested, abstract, or generic
+
 ## Integration with ASP.NET Core
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore -Version 1.0.3
-    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore -Version 1.0.4
+    CLI : dotnet add package Len.StronglyTypedId --version 1.0.4 
     ```
 2. Add the converter of the strongly type ids to the configuration.
     ```C#
@@ -43,9 +62,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson -Version 1.0.3
-    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId.NewtonsoftJson
-
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson -Version 1.0.4
+    CLI : dotnet add package Len.StronglyTypedId.NewtonsoftJson --version 1.0.4
     ```
 
 2.  Add the converter of the strongly type Id to the configuration.
@@ -61,9 +79,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.EntityFrameworkCore -Version 1.0.3
-    CLI : dotnet add package --version 1.0.3 Len.StronglyTypedId.EntityFrameworkCore
-
+    Package Manager : Install-Package Len.StronglyTypedId.EntityFrameworkCore -Version 1.0.4
+    CLI : dotnet add package Len.StronglyTypedId.EntityFrameworkCore --version 1.0.4 
     ```
 
 2.  Add the converter for a strongly typed id to the configuration of DbContext.

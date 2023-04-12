@@ -2,7 +2,7 @@
 
 internal class StronglyTypedIdJsonConverter<TStronglyTypedId, TPrimitiveId> : JsonConverter<TStronglyTypedId>
     where TStronglyTypedId : IStronglyTypedId<TPrimitiveId>
-    where TPrimitiveId : struct, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>, ISpanParsable<TPrimitiveId>
+    where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>
 {
     public override TStronglyTypedId? ReadJson(JsonReader reader, Type objectType, TStronglyTypedId? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
@@ -12,6 +12,11 @@ internal class StronglyTypedIdJsonConverter<TStronglyTypedId, TPrimitiveId> : Js
         }
 
         var val = serializer.Deserialize<TPrimitiveId>(reader);
+
+        if (val is null)
+        {
+            return default;
+        }
 
         return (TStronglyTypedId)TStronglyTypedId.Create(val);
     }
