@@ -1,4 +1,7 @@
-# StronglyTypedId [![NuGet][badge-nuget]][nuget-package]
+# StronglyTypedId
+[![codecov][badge-codecov]](https://codecov.io/github/LenFon/StronglyTypedId)
+[![NuGet][badge-nuget]][nuget-package]
+
 A base implementation of strongly typed ids.
 # Getting started
 1. Install the package into your application or library.
@@ -98,3 +101,4 @@ A base implementation of strongly typed ids.
 
 [nuget-package]: https://www.nuget.org/packages/Len.StronglyTypedId/
 [badge-nuget]: https://img.shields.io/nuget/v/Len.StronglyTypedId.svg
+[badge-codecov]: https://codecov.io/github/LenFon/StronglyTypedId/branch/master/graph/badge.svg?token=S3PBV7W190
