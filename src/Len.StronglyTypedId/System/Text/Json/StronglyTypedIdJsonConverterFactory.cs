@@ -8,9 +8,7 @@ internal class StronglyTypedIdJsonConverterFactory : JsonConverterFactory
 
     public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options)
     {
-        if (!typeToConvert.TryGetPrimitiveIdType(out var primitiveIdType))
-            throw new InvalidOperationException($"Cannot create converter for '{typeToConvert}'");
-
+        var primitiveIdType = typeToConvert.GetPrimitiveIdType()!;
         var type = typeof(StronglyTypedIdJsonConverter<,>).MakeGenericType(typeToConvert, primitiveIdType);
         return (JsonConverter)Activator.CreateInstance(type)!;
     }
