@@ -1,5 +1,5 @@
 # StronglyTypedId
-[![codecov][badge-codecov]](https://codecov.io/github/LenFon/StronglyTypedId)
+[![codecov][badge-codecov]](https://codecov.io/gh/LenFon/StronglyTypedId)
 [![NuGet][badge-nuget]][nuget-package]
 
 A base implementation of strongly typed ids.
