@@ -25,8 +25,8 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build  -c Release --no-restore -o ./bin/Release
+      run: dotnet build  -c Release --no-restore --property:OutputPath=../../bin/Release
     - name: Test
-      run: dotnet test --no-build -c Release -o ./bin/Release --verbosity normal
+      run: dotnet test --no-build -c Release --property:OutputPath=../../bin/Release --verbosity normal
     - name: Codecov
       uses: codecov/codecov-action@v3
