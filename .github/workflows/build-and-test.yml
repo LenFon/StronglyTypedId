@@ -1,13 +1,15 @@
 # This workflow will build a .NET project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
 
-name: ci
+name: build and test
 
 on:
   push:
-    branches: [ "ci" ]
+    branches: 
+      - dev
   pull_request:
-    branches: [ "ci" ]
+    branches:
+      - dev
 
 jobs:
   build:
@@ -26,7 +28,5 @@ jobs:
       run: dotnet build  -c Release --no-restore -o ./bin/Release
     - name: Test
       run: dotnet test --no-build -c Release -o ./bin/Release --verbosity normal
-    - name: Publish the package to nuget.org
-      run: dotnet nuget push ./bin/Release/*.nupkg -k $NUGET_AUTH_TOKEN -s https://api.nuget.org/v3/index.json
-      env:
-        NUGET_AUTH_TOKEN: ${{ secrets.NUGET_API_KEY }}
+    - name: Codecov
+      uses: codecov/codecov-action@v3
