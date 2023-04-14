@@ -27,7 +27,7 @@ jobs:
     - name: Build
       run: dotnet build  -c Release --no-restore --property:OutputPath=../../bin/Release
     - name: Test
-      run: dotnet test --no-build -c Release --property:OutputPath=../../bin/Release --verbosity normal
+      run: dotnet test --no-build -c Release --property:OutputPath=../../bin/Release --verbosity normal --collect:"XPlat Code Coverage"
     - name: Codecov
       uses: codecov/codecov-action@v3
       with:
