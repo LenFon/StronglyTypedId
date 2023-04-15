@@ -1,7 +1,10 @@
 using Len.StronglyTypedId.Sample1;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+
+[assembly: ExcludeFromCodeCoverage]
 
 var builder = WebApplication.CreateBuilder(args);
 
