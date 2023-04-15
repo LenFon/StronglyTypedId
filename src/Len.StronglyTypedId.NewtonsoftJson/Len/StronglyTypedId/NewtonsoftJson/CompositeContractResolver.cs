@@ -5,26 +5,32 @@ namespace Len.StronglyTypedId.NewtonsoftJson;
 
 internal class CompositeContractResolver : IContractResolver, IEnumerable<IContractResolver>
 {
-    private readonly IList<IContractResolver> contractResolvers = new List<IContractResolver>();
-    private readonly DefaultContractResolver defaultContractResolver = new();
+    private readonly IList<IContractResolver> _innerResolvers = new List<IContractResolver>();
+    private readonly IContractResolver _resolver;
+
+    public CompositeContractResolver() : this(new DefaultContractResolver())
+    {
+    }
+
+    public CompositeContractResolver(IContractResolver? resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver, nameof(resolver));
+
+        _resolver = resolver;
+        _innerResolvers.Add(_resolver);
+    }
 
     public void Add(IContractResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(resolver, nameof(resolver));
 
-        if (contractResolvers.Contains(defaultContractResolver))
-        {
-            contractResolvers.Remove(defaultContractResolver);
-        }
-
-        contractResolvers.Add(resolver);
-        contractResolvers.Add(defaultContractResolver);
+        _innerResolvers.Insert(0, resolver);
     }
 
-    public IEnumerator<IContractResolver> GetEnumerator() => contractResolvers.GetEnumerator();
+    public IEnumerator<IContractResolver> GetEnumerator() => _innerResolvers.GetEnumerator();
 
     public JsonContract ResolveContract(Type type) =>
-        contractResolvers.Select(s => s.ResolveContract(type)).FirstOrDefault()!;
+        _innerResolvers.Select(s => s.ResolveContract(type)).FirstOrDefault()!;
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

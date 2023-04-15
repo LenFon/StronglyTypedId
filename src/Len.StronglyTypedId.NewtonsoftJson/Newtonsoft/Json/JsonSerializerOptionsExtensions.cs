@@ -6,10 +6,21 @@ public static class JsonSerializerOptionsExtensions
     {
         ArgumentNullException.ThrowIfNull(settings, nameof(settings));
 
-        settings.ContractResolver = new CompositeContractResolver
+        if (settings.ContractResolver is null)
         {
-            new StronglyTypedIdContractResolver()
-        };
+            settings.ContractResolver = new CompositeContractResolver
+            {
+                new StronglyTypedIdContractResolver()
+            };
+        }
+        else if (settings.ContractResolver.GetType() != typeof(CompositeContractResolver))
+        {
+            var resolver = new CompositeContractResolver(settings.ContractResolver)
+            {
+                new StronglyTypedIdContractResolver()
+            };
+            settings.ContractResolver = resolver;
+        }
 
         return settings;
     }
