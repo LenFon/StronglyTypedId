@@ -68,7 +68,7 @@ public class JsonSerializerOptionsExtensionTests
         var settings = new JsonSerializerSettings();
         settings.AddStronglyTypedId();
 
-        var id = new Id(Guid.NewGuid());
+        var id = new GuidId(Guid.NewGuid());
         var val = $"\"{id.Value}\"";
         var jsonVal = JsonConvert.SerializeObject(id, settings);
 
@@ -162,7 +162,7 @@ public class JsonSerializerOptionsExtensionTests
 
         var val = Guid.NewGuid();
         var jsonVal = $"\"{val}\"";
-        var id = JsonConvert.DeserializeObject<Id>(jsonVal, settings);
+        var id = JsonConvert.DeserializeObject<GuidId>(jsonVal, settings);
 
         Assert.Equal(val, id.Value);
     }

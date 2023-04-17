@@ -73,7 +73,7 @@ internal class StronglyTypedIdTypeConverter<TStronglyTypedId> : TypeConverter
     {
         if (value is IStronglyTypedId<string> id && destinationType == typeof(string))
         {
-            return id.Value.ToString();
+            return id.Value;
         }
 
         return base.ConvertTo(context, culture, value, destinationType);

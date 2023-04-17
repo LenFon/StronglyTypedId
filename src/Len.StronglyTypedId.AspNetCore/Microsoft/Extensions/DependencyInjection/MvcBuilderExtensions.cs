@@ -8,6 +8,8 @@ public static class MvcBuilderExtensions
         this IMvcBuilder builder,
         Action<StronglyTypedIdServiceConfiguration> configuration)
     {
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+
         var serviceConfig = new StronglyTypedIdServiceConfiguration();
 
         configuration.Invoke(serviceConfig);

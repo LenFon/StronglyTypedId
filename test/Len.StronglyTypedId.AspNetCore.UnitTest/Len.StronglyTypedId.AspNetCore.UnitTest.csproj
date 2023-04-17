@@ -7,7 +7,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.NewtonsoftJson\Len.StronglyTypedId.NewtonsoftJson.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.AspNetCore\Len.StronglyTypedId.AspNetCore.csproj" />
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
 	</ItemGroup>
 
