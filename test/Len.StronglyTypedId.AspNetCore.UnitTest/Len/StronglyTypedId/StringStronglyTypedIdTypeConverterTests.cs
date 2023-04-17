@@ -1,83 +1,64 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿namespace Len.StronglyTypedId;
 
-namespace Len.StronglyTypedId
+public class StringStronglyTypedIdTypeConverterTests
 {
-    public class StringStronglyTypedIdTypeConverterTests
+    [Fact]
+    public void ConvertTo()
     {
-        [Fact]
-        public void ConvertTo()
-        {
-            var id = new StringId("AA");
-            var converter = new StronglyTypedIdTypeConverter<StringId>();
+        var id = new StringId("AA");
+        var converter = new StronglyTypedIdTypeConverter<StringId>();
 
-            var val = converter.ConvertTo(id, typeof(string));
+        var val = converter.ConvertTo(id, typeof(string));
 
-            Assert.NotNull(val);
-            Assert.IsType<string>(val);
-            Assert.Equal(id.Value, val);
-        }
+        Assert.NotNull(val);
+        Assert.IsType<string>(val);
+        Assert.Equal(id.Value, val);
 
-        [Fact]
-        public void ConvertTo_Not_StronglyTypedId()
-        {
-            var id = "AA";
-            var converter = new StronglyTypedIdTypeConverter<StringId>();
+        var id2 = "AA";
+        Assert.Throws<NotSupportedException>(() => converter.ConvertTo(id2, typeof(Guid)));
+    }
 
-            Assert.Throws<NotSupportedException>(() => converter.ConvertTo(id, typeof(Guid)));
-        }
+    [Fact]
+    public void ConvertFrom()
+    {
+        var id = "AA";
+        var converter = new StronglyTypedIdTypeConverter<StringId>();
 
-        [Fact]
-        public void ConvertFrom()
-        {
-            var id = "AA";
-            var converter = new StronglyTypedIdTypeConverter<StringId>();
+        var val = converter.ConvertFrom(id);
 
-            var val = converter.ConvertFrom(id);
+        Assert.NotNull(val);
+        Assert.IsType<StringId>(val);
+        Assert.Equal(id, ((StringId)val).Value);
 
-            Assert.NotNull(val);
-            Assert.IsType<StringId>(val);
-            Assert.Equal(id, ((StringId)val).Value);
-        }
+        var id2 = 10;
+        Assert.Throws<NotSupportedException>(() => converter.ConvertFrom(id2));
+    }
 
-        [Fact]
-        public void ConvertFrom_Int()
-        {
-            var id = 10;
-            var converter = new StronglyTypedIdTypeConverter<StringId>();
+    [Fact]
+    public void CanConvertFrom()
+    {
+        var converter = new StronglyTypedIdTypeConverter<StringId>();
 
-            Assert.Throws<NotSupportedException>(() => converter.ConvertFrom(id));
-        }
+        var result1 = converter.CanConvertFrom(typeof(string));
 
-        [Fact]
-        public void CanConvertFrom()
-        {
-            var converter = new StronglyTypedIdTypeConverter<StringId>();
+        Assert.True(result1);
 
-            var result1 = converter.CanConvertFrom(typeof(string));
+        var result2 = converter.CanConvertFrom(typeof(Guid));
 
-            Assert.True(result1);
+        Assert.False(result2);
+    }
 
-            var result2 = converter.CanConvertFrom(typeof(Guid));
+    [Fact]
+    public void CanConvertTo()
+    {
+        var converter = new StronglyTypedIdTypeConverter<StringId>();
 
-            Assert.False(result2);
-        }
+        var result1 = converter.CanConvertTo(typeof(string));
 
-        [Fact]
-        public void CanConvertTo()
-        {
-            var converter = new StronglyTypedIdTypeConverter<StringId>();
+        Assert.True(result1);
 
-            var result1 = converter.CanConvertTo(typeof(string));
+        var result2 = converter.CanConvertTo(typeof(Guid));
 
-            Assert.True(result1);
-
-            var result2 = converter.CanConvertTo(typeof(Guid));
-
-            Assert.False(result2);
-        }
+        Assert.False(result2);
     }
 }

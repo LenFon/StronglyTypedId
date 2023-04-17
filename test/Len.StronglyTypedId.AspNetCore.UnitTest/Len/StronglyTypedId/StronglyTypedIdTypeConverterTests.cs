@@ -1,10 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc.ApplicationParts;
-using Microsoft.Extensions.DependencyInjection;
-using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-
-namespace Len.StronglyTypedId;
+﻿namespace Len.StronglyTypedId;
 
 public class StronglyTypedIdTypeConverterTests
 {
@@ -25,16 +19,13 @@ public class StronglyTypedIdTypeConverterTests
         Assert.NotNull(val2);
         Assert.IsType<string>(val2);
         Assert.Equal(id.Value.ToString(), val2);
+
+        Assert.Throws<NotSupportedException>(() => converter.ConvertTo(id, typeof(int)));
+
+        var id3= Guid.NewGuid();
+        Assert.Throws<NotSupportedException>(() => converter.ConvertTo(id3, typeof(Guid)));
     }
 
-    [Fact]
-    public void ConvertTo_Not_StronglyTypedId()
-    {
-        var id = Guid.NewGuid();
-        var converter = new StronglyTypedIdTypeConverter<GuidId, Guid>();
-
-        Assert.Throws<NotSupportedException>(() => converter.ConvertTo(id, typeof(Guid)));
-    }
 
     [Fact]
     public void ConvertFrom()
@@ -55,15 +46,10 @@ public class StronglyTypedIdTypeConverterTests
         Assert.NotNull(val2);
         Assert.IsType<GuidId>(val2);
         Assert.Equal(id2, ((GuidId)val2).Value.ToString());
-    }
 
-    [Fact]
-    public void ConvertFrom_Int()
-    {
-        var id = 10;
-        var converter = new StronglyTypedIdTypeConverter<GuidId, Guid>();
+        var id3 = 10;
 
-        Assert.Throws<NotSupportedException>(() => converter.ConvertFrom(id));
+        Assert.Throws<NotSupportedException>(() => converter.ConvertFrom(id3));
     }
 
     [Fact]
