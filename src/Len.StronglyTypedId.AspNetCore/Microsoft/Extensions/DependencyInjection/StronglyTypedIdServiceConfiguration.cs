@@ -13,6 +13,8 @@ public class StronglyTypedIdServiceConfiguration
     /// <returns></returns>
     public StronglyTypedIdServiceConfiguration RegisterServicesFromAssemblies(params Assembly[] assemblies)
     {
+        ArgumentNullException.ThrowIfNull(assemblies, nameof(assemblies));
+
         AssembliesToRegister.AddRange(assemblies);
 
         return this;
@@ -25,6 +27,8 @@ public class StronglyTypedIdServiceConfiguration
     /// <returns></returns>
     public StronglyTypedIdServiceConfiguration RegisterServicesFromAssembly(Assembly assembly)
     {
+        ArgumentNullException.ThrowIfNull(assembly, nameof(assembly));
+
         AssembliesToRegister.Add(assembly);
 
         return this;
@@ -44,5 +48,9 @@ public class StronglyTypedIdServiceConfiguration
     /// <param name="type">类型</param>
     /// <returns></returns>
     public StronglyTypedIdServiceConfiguration RegisterServicesFromAssemblyContaining(Type type)
-        => RegisterServicesFromAssembly(type.Assembly);
+    {
+        ArgumentNullException.ThrowIfNull(type, nameof(type));
+
+        return RegisterServicesFromAssembly(type.Assembly);
+    }
 }
