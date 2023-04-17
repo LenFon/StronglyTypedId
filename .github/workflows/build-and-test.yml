@@ -8,10 +8,17 @@ on:
     branches: 
       - dev
       - master
+    paths:
+      - "*.cs"
+      - "*.csproj"
   pull_request:
     branches:
       - dev
       - master
+    paths:
+      - "*.cs"
+      - "*.csproj"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -27,9 +34,9 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build  -c Release --no-restore --property:OutputPath=../../bin/Release
+      run: dotnet build --no-restore
     - name: Test
-      run: dotnet test --no-build -c Release --property:OutputPath=../../bin/Release --verbosity normal --collect:"XPlat Code Coverage"
+      run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage"
     - name: Codecov
       uses: codecov/codecov-action@v3
       with:
