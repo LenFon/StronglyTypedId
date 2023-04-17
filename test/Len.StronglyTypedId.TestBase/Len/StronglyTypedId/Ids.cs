@@ -1,16 +1,10 @@
 ﻿namespace Len.StronglyTypedId;
 
-public record struct Id(Guid Value) : IStronglyTypedId<Guid>
-{
-    public static IStronglyTypedId<Guid> Create(Guid value) => new Id(value);
-}
 
-public abstract record Id2(Guid Value) : IStronglyTypedId<Guid>
+public record struct GuidId(Guid Value) : IStronglyTypedId<Guid>
 {
-    public static IStronglyTypedId<Guid> Create(Guid value) => default!;
+    public static IStronglyTypedId<Guid> Create(Guid value) => new GuidId(value);
 }
-
-public record Id3();
 
 public record struct Int32Id(int Value) : IStronglyTypedId<int>
 {
@@ -41,3 +35,11 @@ public record struct ByteId(byte Value) : IStronglyTypedId<byte>
 {
     public static IStronglyTypedId<byte> Create(byte value) => new ByteId(value);
 }
+
+public abstract record AbstractStronglyTypedId(Guid Value) : IStronglyTypedId<Guid>
+{
+    public static IStronglyTypedId<Guid> Create(Guid value) => default!;
+}
+
+public record NotStronglyTypedId();
+
