@@ -41,14 +41,59 @@ internal class StronglyTypedIdGenerator : ISourceGenerator
             var sb = new StringBuilder();
 
             sb.Append($@"using Len.StronglyTypedId;
+using System.Diagnostics.CodeAnalysis;
 
 namespace {typeSymbol.ContainingNamespace};
 
-public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primitiveIdTypeName}>
+#nullable enable
+
+[System.Text.Json.Serialization.JsonConverter(typeof({typeSymbol.Name}JsonConverter))]
+public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primitiveIdTypeName}>, IParsable<{typeSymbol.Name}>
 {{
     public static IStronglyTypedId<{primitiveIdTypeName}> Create({primitiveIdTypeName} value) => new {typeSymbol.Name}(value);
-}}");
 
+    public static {typeSymbol.Name} Parse(string value, IFormatProvider? provider)
+    {{
+        if (!TryParse(value, provider, out var id))
+        {{
+            throw new ArgumentException(""Could not parse supplied value."", nameof(value));
+        }}
+
+        return id;
+    }}
+
+    public static bool TryParse([NotNullWhen(true)] string? value, IFormatProvider? provider, [MaybeNullWhen(false)] out {typeSymbol.Name} result)
+    {{
+        if ({(primitiveIdTypeName == "string" ? "!string.IsNullOrEmpty(value)" : $"{primitiveIdTypeName}.TryParse(value, provider, out var val)")})
+        {{
+            result = new {typeSymbol.Name}({(primitiveIdTypeName == "string" ? "value" : "val")});
+            return true;
+        }}
+
+        result = default;
+        return false;
+    }}");
+
+            sb.Append($@"
+    class {typeSymbol.Name}JsonConverter : System.Text.Json.Serialization.JsonConverter<{typeSymbol.Name}>
+    {{
+        public override {typeSymbol.Name} Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        {{
+            var value = {GetValue(primitiveIdTypeName)};
+
+            return new {typeSymbol.Name}(value);
+        }}
+
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, {typeSymbol.Name} value, System.Text.Json.JsonSerializerOptions options)
+        {{
+            {WriteValue(primitiveIdTypeName)};
+        }}
+    }}
+");
+            sb.Append($@"
+}}
+
+#nullable disable");
 #if DEBUG_Generator
             if (!Debugger.IsAttached)
             {
@@ -67,6 +112,26 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
     {
         context.RegisterForSyntaxNotifications(() => new StronglyTypedIdSyntaxReceiver());
     }
+
+    private static string GetValue(string primitiveIdTypeName) => primitiveIdTypeName switch
+    {
+        "System.Guid" => "reader.GetGuid()",
+        "int" => "reader.GetInt32()",
+        "long" => "reader.GetInt64()",
+        "uint" => "reader.GetUInt32()",
+        "ulong" => "reader.GetUInt64()",
+        _ => "reader.GetString() ?? string.Empty",
+    };
+
+    private static string WriteValue(string primitiveIdTypeName) => primitiveIdTypeName switch
+    {
+        "System.Guid" => "writer.WriteStringValue(value.Value.ToString())",
+        "int" => "writer.WriteNumberValue(value.Value)",
+        "long" => "writer.WriteNumberValue(value.Value)",
+        "uint" => "writer.WriteNumberValue(value.Value)",
+        "ulong" => "writer.WriteNumberValue(value.Value)",
+        _ => "writer.WriteStringValue(value.Value)",
+    };
 
     private class StronglyTypedIdSyntaxReceiver : ISyntaxContextReceiver
     {
