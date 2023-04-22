@@ -10,14 +10,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers()
-    .AddStronglyTypedId(options =>
-    {
-        options.RegisterServicesFromAssembly(typeof(Program).Assembly);
-    })
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.AddStronglyTypedId();
-    })
     //.AddNewtonsoftJson(options =>
     //{
     //    options.SerializerSettings.AddStronglyTypedId();

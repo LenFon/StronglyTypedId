@@ -5,10 +5,11 @@
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+		<!--<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+		-->
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<LangVersion>latest</LangVersion>
-		<!--<IncludeBuildOutput>false</IncludeBuildOutput>-->
+		<IncludeBuildOutput>false</IncludeBuildOutput>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -19,9 +20,6 @@
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" />
 	</ItemGroup>
 
-	<ItemGroup>
-		<None Remove="bin\Release\netstandard2.0\\Len.StronglyTypedId.Generator.dll" />
-	</ItemGroup>
 	<ItemGroup>
 		<!-- Package the generator in the analyzer directory of the nuget package -->
 		<None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
