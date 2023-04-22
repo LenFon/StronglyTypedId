@@ -33,7 +33,7 @@ namespace Len.StronglyTypedId.Sample1.Controllers
             await _db.AddAsync(new Order
             {
                 Id = new OrderId(Guid.NewGuid()),
-                Buyer = new UserId("buyer 1"),
+                Buyer = userId,
                 Items = new List<Product>
                 {
                     new Product{ Key=new ProductId(1),Name="product 1" },

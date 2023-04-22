@@ -18,7 +18,6 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.AspNetCore.NewtonsoftJson\Len.StronglyTypedId.AspNetCore.NewtonsoftJson.csproj" />
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.AspNetCore\Len.StronglyTypedId.AspNetCore.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.EntityFrameworkCore\Len.StronglyTypedId.EntityFrameworkCore.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Swashbuckle.AspNetCore\Len.StronglyTypedId.Swashbuckle.AspNetCore.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generator\Len.StronglyTypedId.Generator.csproj">
