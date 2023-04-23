@@ -120,6 +120,10 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
         "long" => "reader.GetInt64()",
         "uint" => "reader.GetUInt32()",
         "ulong" => "reader.GetUInt64()",
+        "byte" => "reader.GetByte()",
+        "sbyte" => "reader.GetSByte()",
+        "short" => "reader.GetInt16()",
+        "ushort" => "reader.GetUInt16()",
         _ => "reader.GetString() ?? string.Empty",
     };
 
@@ -130,6 +134,10 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
         "long" => "writer.WriteNumberValue(value.Value)",
         "uint" => "writer.WriteNumberValue(value.Value)",
         "ulong" => "writer.WriteNumberValue(value.Value)",
+        "byte" => "writer.WriteNumberValue(value.Value)",
+        "sbyte" => "writer.WriteNumberValue(value.Value)",
+        "short" => "writer.WriteNumberValue(value.Value)",
+        "ushort" => "writer.WriteNumberValue(value.Value)",
         _ => "writer.WriteStringValue(value.Value)",
     };
 
