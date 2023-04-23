@@ -77,17 +77,6 @@ public class JsonSerializerAndDeserializeTests
     }
 
     [Fact]
-    public void Serialize_StronglyTypedId_Byte()
-    {
-        var options = new JsonSerializerOptions();
-
-        var id = new ByteId(1);
-        var val = $"{id.Value}";
-
-        Assert.Throws<NotSupportedException>(() => JsonSerializer.Serialize(id, options));
-    }
-
-    [Fact]
     public void Deserialize_StronglyTypedId_Guid()
     {
         var options = new JsonSerializerOptions();
@@ -157,16 +146,5 @@ public class JsonSerializerAndDeserializeTests
         var id = JsonSerializer.Deserialize<StringId>(jsonVal, options);
 
         Assert.Equal(val, id.Value);
-    }
-
-    [Fact]
-    public void Deserialize_StronglyTypedId_Byte()
-    {
-        var options = new JsonSerializerOptions();
-
-        byte val = 1;
-        var jsonVal = $"{val}";
-
-        Assert.Throws<NotSupportedException>(() => JsonSerializer.Deserialize<ByteId>(jsonVal, options));
     }
 }

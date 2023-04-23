@@ -1,45 +1,28 @@
 ﻿namespace Len.StronglyTypedId;
 
+[StronglyTypedId]
+public partial record struct GuidId(Guid Value);
 
-public record struct GuidId(Guid Value) : IStronglyTypedId<Guid>
-{
-    public static IStronglyTypedId<Guid> Create(Guid value) => new GuidId(value);
-}
+[StronglyTypedId]
+public partial record struct Int32Id(int Value);
 
-public record struct Int32Id(int Value) : IStronglyTypedId<int>
-{
-    public static IStronglyTypedId<int> Create(int value) => new Int32Id(value);
-}
+[StronglyTypedId]
+public partial record struct UInt32Id(uint Value);
 
-public record struct UInt32Id(uint Value) : IStronglyTypedId<uint>
-{
-    public static IStronglyTypedId<uint> Create(uint value) => new UInt32Id(value);
-}
+[StronglyTypedId]
+public partial record struct Int64Id(long Value);
 
-public record struct Int64Id(long Value) : IStronglyTypedId<long>
-{
-    public static IStronglyTypedId<long> Create(long value) => new Int64Id(value);
-}
+[StronglyTypedId]
+public partial record struct UInt64Id(ulong Value);
 
-public record struct UInt64Id(ulong Value) : IStronglyTypedId<ulong>
-{
-    public static IStronglyTypedId<ulong> Create(ulong value) => new UInt64Id(value);
-}
+[StronglyTypedId]
+public partial record struct StringId(string Value);
 
-public record struct StringId(string Value) : IStronglyTypedId<string>
-{
-    public static IStronglyTypedId<string> Create(string value) => new StringId(value);
-}
+[StronglyTypedId]
+public partial record struct ByteId(byte Value);
 
-public record struct ByteId(byte Value) : IStronglyTypedId<byte>
-{
-    public static IStronglyTypedId<byte> Create(byte value) => new ByteId(value);
-}
+[StronglyTypedId]
+public abstract record AbstractStronglyTypedId(Guid Value);
 
-public abstract record AbstractStronglyTypedId(Guid Value) : IStronglyTypedId<Guid>
-{
-    public static IStronglyTypedId<Guid> Create(Guid value) => default!;
-}
-
-public record NotStronglyTypedId();
+public partial record NotStronglyTypedId();
 
