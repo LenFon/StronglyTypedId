@@ -19,11 +19,6 @@ public class StronglyTypedIdTests
 
         Assert.False(isStronglyTypedId3);
         Assert.Null(primitiveIdType3);
-
-        var isStronglyTypedId4 = typeof(AbstractStronglyTypedId).TryGetPrimitiveIdType(out var primitiveIdType4);
-
-        Assert.False(isStronglyTypedId4);
-        Assert.Null(primitiveIdType4);
     }
 
     [Fact]

@@ -19,6 +19,12 @@ internal class StronglyTypedIdGenerator : ISourceGenerator
             return;
         }
 
+        if (syntaxReceiver.Diagnostics.Any())
+        {
+            syntaxReceiver.Diagnostics.ForEach(context.ReportDiagnostic);
+            return;
+        }
+
         if (!syntaxReceiver.TypeSymbols.Any()) return;
 
         var typeNames = new List<string>();
@@ -145,27 +151,72 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
     {
         public List<INamedTypeSymbol> TypeSymbols { get; } = new();
 
+        public List<Diagnostic> Diagnostics { get; } = new();
+
         public void OnVisitSyntaxNode(GeneratorSyntaxContext context)
         {
-            if (context.Node is not RecordDeclarationSyntax ids || ids.AttributeLists.Count <= 0)
-                return;
+            (ISymbol?, MemberDeclarationSyntax?) temp = context.Node switch
+            {
+                ClassDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
+                StructDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
+                RecordDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
+                _ => (null, null),
+            };
 
-            //非parital 不处理
-            if (!ids.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
-                return;
+            (var symbol, var ids) = temp;
 
-            if (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, ids) is not INamedTypeSymbol typeSymbol)
+            if (symbol is not INamedTypeSymbol typeSymbol || ids is null)
+            {
                 return;
-
-            //不处理抽象类、泛型类、嵌套类
-            if (typeSymbol.IsAbstract || typeSymbol.IsGenericType || typeSymbol.ContainingType is not null)
-                return;
+            }
 
             if (!typeSymbol.GetAttributes()
                     .Any(x => x.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute"))
                 return;
 
+            if (!typeSymbol.IsRecord)
+            {
+                Diagnostics.Add(Diagnostic.Create(new DiagnosticDescriptor(
+                 "STIAE003",
+                 "无效的类型名称",
+                 "{0}必须是 record",
+                 "StronglyTypedId",
+                 DiagnosticSeverity.Error,
+                 true), ids.GetLocation(), typeSymbol.Name));
+
+                return;
+            }
+
+            //不处理抽象类、泛型类、嵌套类
+            if (typeSymbol.IsAbstract || typeSymbol.IsGenericType || typeSymbol.ContainingType is not null)
+            {
+                Diagnostics.Add(Diagnostic.Create(new DiagnosticDescriptor(
+                 "STIAE001",
+                 "无效的类型名称",
+                 "{0}不能是抽象类类型、泛型类型或嵌套类型",
+                 "StronglyTypedId",
+                 DiagnosticSeverity.Error,
+                 true), ids.GetLocation(), typeSymbol.Name));
+
+                return;
+            }
+
+            //非parital 不处理
+            if (!ids.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
+            {
+                Diagnostics.Add(Diagnostic.Create(new DiagnosticDescriptor(
+                  "STIAE002",
+                  "无效的类型名称",
+                  "{0}不是部分类",
+                  "StronglyTypedId",
+                  DiagnosticSeverity.Error,
+                  true), ids.GetLocation(), typeSymbol.Name));
+
+                return;
+            }
+
             TypeSymbols.Add(typeSymbol);
         }
+
     }
 }
