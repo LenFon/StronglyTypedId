@@ -60,6 +60,22 @@ A base implementation of strongly typed ids.
         configurationBuilder.AddStronglyTypedId(/* assembles */);
     }
     ```
+## Swashbuckle.AspNetCore
+1. Install the package into your application or library.
+
+    ```
+    Package Manager : Install-Package Len.StronglyTypedId.Swashbuckle.AspNetCore -Version 1.0.5
+    CLI : dotnet add package Len.StronglyTypedId.Swashbuckle.AspNetCore --version 1.0.5 
+    ```
+
+2.  Add the converter for a strongly typed id to the configuration of DbContext.
+
+    ```C#
+    services.AddSwaggerGen(options =>
+    {
+        options.AddStronglyTypedId(/* assembles */);
+    });
+    ```
 
 [nuget-package]: https://www.nuget.org/packages/Len.StronglyTypedId/
 [badge-nuget]: https://img.shields.io/nuget/v/Len.StronglyTypedId.svg
