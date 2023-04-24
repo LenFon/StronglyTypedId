@@ -21,8 +21,5 @@ public partial record struct StringId(string Value);
 [StronglyTypedId]
 public partial record struct ByteId(byte Value);
 
-[StronglyTypedId]
-public abstract record AbstractStronglyTypedId(Guid Value);
-
 public partial record NotStronglyTypedId();
 

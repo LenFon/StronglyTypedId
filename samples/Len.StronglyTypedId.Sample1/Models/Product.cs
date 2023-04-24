@@ -22,8 +22,4 @@ public class Product
     public ProductId Key { get; set; }
 
     public string Name { get; set; } = default!;
-
-    //嵌套类不会生成强类型Id的源代码
-    [StronglyTypedId]
-    public partial record SkuId(long Value);
 }
