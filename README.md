@@ -7,8 +7,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId -Version 1.0.5
-    CLI : dotnet add package Len.StronglyTypedId --version 1.0.5 
+    Package Manager : Install-Package Len.StronglyTypedId
+    CLI : dotnet add package Len.StronglyTypedId 
     ```
 2. Use record to define a strongly typed id:
     ```C#
@@ -27,8 +27,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson -Version 1.0.5
-    CLI : dotnet add package Len.StronglyTypedId.NewtonsoftJson --version 1.0.5
+    Package Manager : Install-Package Len.StronglyTypedId.AspNetCore.NewtonsoftJson
+    CLI : dotnet add package Len.StronglyTypedId.NewtonsoftJson
     ```
 
 2.  Add the converter of the strongly type Id to the configuration.
@@ -44,8 +44,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.EntityFrameworkCore -Version 1.0.5
-    CLI : dotnet add package Len.StronglyTypedId.EntityFrameworkCore --version 1.0.5 
+    Package Manager : Install-Package Len.StronglyTypedId.EntityFrameworkCore
+    CLI : dotnet add package Len.StronglyTypedId.EntityFrameworkCore 
     ```
 
 2.  Add the converter for a strongly typed id to the configuration of DbContext.
@@ -64,8 +64,8 @@ A base implementation of strongly typed ids.
 1. Install the package into your application or library.
 
     ```
-    Package Manager : Install-Package Len.StronglyTypedId.Swashbuckle.AspNetCore -Version 1.0.5
-    CLI : dotnet add package Len.StronglyTypedId.Swashbuckle.AspNetCore --version 1.0.5 
+    Package Manager : Install-Package Len.StronglyTypedId.Swashbuckle.AspNetCore
+    CLI : dotnet add package Len.StronglyTypedId.Swashbuckle.AspNetCore 
     ```
 
 2.  Add the converter for a strongly typed id to the configuration of DbContext.
