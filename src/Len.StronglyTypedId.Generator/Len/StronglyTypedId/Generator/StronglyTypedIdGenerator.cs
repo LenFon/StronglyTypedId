@@ -149,23 +149,20 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
 
     private class StronglyTypedIdSyntaxReceiver : ISyntaxContextReceiver
     {
+        static StronglyTypedIdSyntaxReceiver()
+        {
+            Resources.Culture = System.Globalization.CultureInfo.InstalledUICulture;
+        }
+
         public List<INamedTypeSymbol> TypeSymbols { get; } = new();
 
         public List<Diagnostic> Diagnostics { get; } = new();
 
         public void OnVisitSyntaxNode(GeneratorSyntaxContext context)
         {
-            (ISymbol?, MemberDeclarationSyntax?) temp = context.Node switch
-            {
-                ClassDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
-                StructDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
-                RecordDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
-                _ => (null, null),
-            };
+            (var symbol, var syntax) = GetSymbolAndSyntax(context);
 
-            (var symbol, var ids) = temp;
-
-            if (symbol is not INamedTypeSymbol typeSymbol || ids is null)
+            if (symbol is not INamedTypeSymbol typeSymbol || syntax is null)
             {
                 return;
             }
@@ -178,11 +175,11 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
             {
                 Diagnostics.Add(Diagnostic.Create(new DiagnosticDescriptor(
                  "STIAE003",
-                 "无效的类型名称",
-                 "{0}必须是 record",
+                 Resources.Title,
+                 Resources.NotUseRecordMessage,
                  "StronglyTypedId",
                  DiagnosticSeverity.Error,
-                 true), ids.GetLocation(), typeSymbol.Name));
+                 true), syntax.GetLocation(), typeSymbol.Name));
 
                 return;
             }
@@ -192,25 +189,25 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
             {
                 Diagnostics.Add(Diagnostic.Create(new DiagnosticDescriptor(
                  "STIAE001",
-                 "无效的类型名称",
-                 "{0}不能是抽象类类型、泛型类型或嵌套类型",
+                 Resources.Title,
+                 Resources.InvalidTypeMessage,
                  "StronglyTypedId",
                  DiagnosticSeverity.Error,
-                 true), ids.GetLocation(), typeSymbol.Name));
+                 true), syntax.GetLocation(), typeSymbol.Name));
 
                 return;
             }
 
             //非parital 不处理
-            if (!ids.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
+            if (!syntax.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
             {
                 Diagnostics.Add(Diagnostic.Create(new DiagnosticDescriptor(
                   "STIAE002",
-                  "无效的类型名称",
-                  "{0}不是部分类",
+                  Resources.Title,
+                  Resources.NotUsePartialMessage,
                   "StronglyTypedId",
                   DiagnosticSeverity.Error,
-                  true), ids.GetLocation(), typeSymbol.Name));
+                  true), syntax.GetLocation(), typeSymbol.Name));
 
                 return;
             }
@@ -218,5 +215,15 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
             TypeSymbols.Add(typeSymbol);
         }
 
+        private static (ISymbol?, MemberDeclarationSyntax?) GetSymbolAndSyntax(GeneratorSyntaxContext context)
+        {
+            return context.Node switch
+            {
+                ClassDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
+                StructDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
+                RecordDeclarationSyntax t and { AttributeLists.Count: > 0 } => (ModelExtensions.GetDeclaredSymbol(context.SemanticModel, t), t),
+                _ => (null, null),
+            };
+        }
     }
 }
