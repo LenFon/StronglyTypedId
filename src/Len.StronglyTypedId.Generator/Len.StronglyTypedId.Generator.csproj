@@ -23,6 +23,7 @@
 	<ItemGroup>
 		<!-- Package the generator in the analyzer directory of the nuget package -->
 		<None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+		<None Include="$(OutputPath)\zh-CN\$(AssemblyName).resources.dll" Pack="true" PackagePath="analyzers/dotnet/cs/zh-CN" Visible="false" />
 	</ItemGroup>
 
 	<ItemGroup>
