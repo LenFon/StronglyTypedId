@@ -122,6 +122,7 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
     private static string GetValue(string primitiveIdTypeName) => primitiveIdTypeName switch
     {
         "System.Guid" => "reader.GetGuid()",
+        "Guid" => "reader.GetGuid()",
         "int" => "reader.GetInt32()",
         "long" => "reader.GetInt64()",
         "uint" => "reader.GetUInt32()",
@@ -136,6 +137,7 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
     private static string WriteValue(string primitiveIdTypeName) => primitiveIdTypeName switch
     {
         "System.Guid" => "writer.WriteStringValue(value.Value.ToString())",
+        "Guid" => "writer.WriteStringValue(value.Value.ToString())",
         "int" => "writer.WriteNumberValue(value.Value)",
         "long" => "writer.WriteNumberValue(value.Value)",
         "uint" => "writer.WriteNumberValue(value.Value)",
