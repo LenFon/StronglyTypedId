@@ -16,12 +16,16 @@ on:
     branches: 
       - master
       - dev
+    paths:
+      - "*.cs"
   pull_request:
     # The branches below must be a subset of the branches above
     branches:
       - master
       - dev
-
+    paths:
+      - "*.cs"
+      
 jobs:
   analyze:
     name: Analyze
