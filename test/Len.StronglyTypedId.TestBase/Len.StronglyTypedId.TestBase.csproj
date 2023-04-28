@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net7.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<RootNamespace />
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generator\Len.StronglyTypedId.Generator.csproj">
+			<OutputItemType>Analyzer</OutputItemType>
+		</ProjectReference>
+	</ItemGroup>
+</Project>
