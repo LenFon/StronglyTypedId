@@ -1,5 +1,4 @@
-﻿using Len.StronglyTypedId.Sample1.Models;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Len.StronglyTypedId.Sample1;
@@ -15,7 +14,7 @@ public class SampleDbContext : DbContext
         base.ConfigureConventions(configurationBuilder);
 
         configurationBuilder.Properties<string>().HaveMaxLength(100);
-        configurationBuilder.AddStronglyTypedId(typeof(SampleDbContext).Assembly);
+        configurationBuilder.AddStronglyTypedId();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
