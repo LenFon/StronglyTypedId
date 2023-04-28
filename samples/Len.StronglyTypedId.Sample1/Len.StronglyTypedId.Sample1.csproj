@@ -18,11 +18,12 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.AspNetCore.NewtonsoftJson\Len.StronglyTypedId.AspNetCore.NewtonsoftJson.csproj" />
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.EntityFrameworkCore\Len.StronglyTypedId.EntityFrameworkCore.csproj" />
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Swashbuckle.AspNetCore\Len.StronglyTypedId.Swashbuckle.AspNetCore.csproj" />
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generator\Len.StronglyTypedId.Generator.csproj">
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.EntityFrameworkCore.Generator\Len.StronglyTypedId.EntityFrameworkCore.Generator.csproj" >
 			<OutputItemType>Analyzer</OutputItemType>
 		</ProjectReference>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.EntityFrameworkCore\Len.StronglyTypedId.EntityFrameworkCore.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Swashbuckle.AspNetCore\Len.StronglyTypedId.Swashbuckle.AspNetCore.csproj" />
+		<ProjectReference Include="..\Len.StronglyTypedId.Domain\Len.StronglyTypedId.Domain.csproj" />
 	</ItemGroup>
 
 </Project>

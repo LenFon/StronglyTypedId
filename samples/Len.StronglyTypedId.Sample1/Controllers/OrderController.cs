@@ -1,4 +1,3 @@
-using Len.StronglyTypedId.Sample1.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
