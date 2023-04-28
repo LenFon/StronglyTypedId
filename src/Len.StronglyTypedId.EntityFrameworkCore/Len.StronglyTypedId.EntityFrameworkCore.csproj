@@ -11,6 +11,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Len.StronglyTypedId.EntityFrameworkCore.Generator\Len.StronglyTypedId.EntityFrameworkCore.Generator.csproj" />
 		<ProjectReference Include="..\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 	</ItemGroup>
 

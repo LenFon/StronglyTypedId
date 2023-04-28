@@ -1,4 +1,4 @@
-﻿namespace Len.StronglyTypedId.Sample1.Models;
+﻿namespace Len.StronglyTypedId.Domain;
 
 [StronglyTypedId]
 public partial record struct OrderId(Guid Value);
