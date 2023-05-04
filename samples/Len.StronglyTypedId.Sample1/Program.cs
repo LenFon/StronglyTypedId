@@ -2,7 +2,6 @@ using Len.StronglyTypedId.Sample1;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
 
 [assembly: ExcludeFromCodeCoverage]
 
@@ -24,7 +23,7 @@ builder.Services.AddDbContext<SampleDbContext>(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.AddStronglyTypedId(typeof(Program).Assembly);
+    options.AddStronglyTypedId();
 });
 
 var app = builder.Build();

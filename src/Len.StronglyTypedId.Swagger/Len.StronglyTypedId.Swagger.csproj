@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 	<Import Project="..\..\common.props" />
 	<PropertyGroup>
 		<TargetFramework>net7.0</TargetFramework>
@@ -9,6 +9,7 @@
 	  <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.5.0" />
 	</ItemGroup>
 	<ItemGroup>
+	  <ProjectReference Include="..\Len.StronglyTypedId.Swagger.Generator\Len.StronglyTypedId.Swagger.Generator.csproj" />
 	  <ProjectReference Include="..\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 	</ItemGroup>
 

@@ -3,10 +3,10 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Text;
 
-namespace Len.StronglyTypedId.EntityFrameworkCore.Generator;
+namespace Len.StronglyTypedId.Swagger.Generator;
 
 [Generator]
-internal class StronglyTypedIdConverterGenerator : ISourceGenerator
+internal class StronglyTypedIdSwaggerGenerator : ISourceGenerator
 {
     public void Execute(GeneratorExecutionContext context)
     {
@@ -72,39 +72,24 @@ internal class StronglyTypedIdConverterGenerator : ISourceGenerator
             sb.AppendLine($"using {item};");
         }
 
-        sb.Append($@"using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+        sb.Append($@"using Swashbuckle.AspNetCore.SwaggerGen;
+using Microsoft.OpenApi.Models;
 
-namespace Microsoft.EntityFrameworkCore;
+namespace Microsoft.Extensions.DependencyInjection;
 
 #nullable enable
-
-internal static class ModelConfigurationBuilderExtensions
+internal static class SwaggerGenOptionsExtensions
 {{
-    public static void AddStronglyTypedId(this ModelConfigurationBuilder configurationBuilder)
+    public static void AddStronglyTypedId(this SwaggerGenOptions swaggerGenOptions)
     {{
 ");
         foreach (var item in stronglyTypedIds)
         {
-            sb.AppendLine($@"        configurationBuilder.Properties<{item.Name}>().HaveConversion(typeof({item.Name}Converter));");
+            sb.AppendLine($@"        swaggerGenOptions.MapType<{item.Name}>(() => {GetOpenApiSchema(item.Type)});");
         }
 
         sb.Append($@"    }}
-");
-
-        foreach (var item in stronglyTypedIds)
-        {
-            sb.Append($@"
-    class {item.Name}Converter : ValueConverter<{item.Name}, {item.Type}>
-    {{
-        public {item.Name}Converter() : base(v => v.Value, val => new {item.Name}(val))
-        {{
-        }}
-    }}");
-        }
-
-        sb.Append($@"
 }}
-
 #nullable disable
 ");
         //if (!Debugger.IsAttached)
@@ -113,13 +98,28 @@ internal static class ModelConfigurationBuilderExtensions
         //}
 
         //添加到源代码，这样IDE才能感知
-        context.AddSource($"ModelConfigurationBuilderExtensions.cs", sb.ToString());
+        context.AddSource($"SwaggerGenOptionsExtensions.cs", sb.ToString());
     }
 
     public void Initialize(GeneratorInitializationContext context)
     {
         context.RegisterForSyntaxNotifications(() => new StronglyTypedIdSyntaxReceiver());
     }
+
+    private static string GetOpenApiSchema(string primitiveIdTypeName) => primitiveIdTypeName switch
+    {
+        "System.Guid" => "new OpenApiSchema { Type = \"string\", Format = \"uuid\" }",
+        "Guid" => "new OpenApiSchema { Type = \"string\", Format = \"uuid\" }",
+        "int" => "new OpenApiSchema { Type = \"integer\", Format = \"int32\" }",
+        "long" => "new OpenApiSchema { Type = \"integer\", Format = \"int64\" }",
+        "uint" => "new OpenApiSchema { Type = \"integer\", Format = \"uint32\" }",
+        "ulong" => "new OpenApiSchema { Type = \"integer\", Format = \"uint64\" }",
+        "byte" => "new OpenApiSchema { Type = \"integer\", Format = \"byte\" }",
+        "sbyte" => "new OpenApiSchema { Type = \"integer\", Format = \"sbyte\" }",
+        "short" => "new OpenApiSchema { Type = \"integer\", Format = \"int16\" }",
+        "ushort" => "new OpenApiSchema { Type = \"integer\", Format = \"uint16\" }",
+        _ => "new OpenApiSchema { Type = \"string\" }",
+    };
 
     private void GetTypeSymbols(INamespaceOrTypeSymbol symbol, List<ITypeSymbol> typeSymbols)
     {
