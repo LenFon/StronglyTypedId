@@ -34,7 +34,6 @@ internal static class ModelConfigurationBuilderExtensions
     public static void AddStronglyTypedId(this ModelConfigurationBuilder configurationBuilder)
     {{
         configurationBuilder.Properties<OrderId>().HaveConversion(typeof(OrderIdConverter));
-
     }}
 
     class OrderIdConverter : ValueConverter<OrderId, int>
@@ -92,7 +91,6 @@ internal static class ModelConfigurationBuilderExtensions
         configurationBuilder.Properties<UInt64Id>().HaveConversion(typeof(UInt64IdConverter));
         configurationBuilder.Properties<StringId>().HaveConversion(typeof(StringIdConverter));
         configurationBuilder.Properties<ByteId>().HaveConversion(typeof(ByteIdConverter));
-
     }}
 
     class OrderIdConverter : ValueConverter<OrderId, int>
@@ -185,7 +183,6 @@ internal static class ModelConfigurationBuilderExtensions
         configurationBuilder.Properties<UInt64Id>().HaveConversion(typeof(UInt64IdConverter));
         configurationBuilder.Properties<StringId>().HaveConversion(typeof(StringIdConverter));
         configurationBuilder.Properties<ByteId>().HaveConversion(typeof(ByteIdConverter));
-
     }}
 
     class GuidIdConverter : ValueConverter<GuidId, System.Guid>
