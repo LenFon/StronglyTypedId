@@ -78,12 +78,11 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
 
         result = default;
         return false;
-    }}");
+    }}
 
-            sb.Append($@"
     class {typeSymbol.Name}JsonConverter : System.Text.Json.Serialization.JsonConverter<{typeSymbol.Name}>
     {{
-        public override {typeSymbol.Name} Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        public override {typeSymbol.Name}{(string.IsNullOrEmpty(typeKindName) ? "?" : "")} Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
         {{
             var value = {GetValue(primitiveIdTypeName)};
 
@@ -95,11 +94,7 @@ public partial record {typeKindName} {typeSymbol.Name} : IStronglyTypedId<{primi
             {WriteValue(primitiveIdTypeName)};
         }}
     }}
-");
-            sb.Append($@"
-}}
-
-#nullable disable");
+}}");
 #if DEBUG_Generator
             if (!Debugger.IsAttached)
             {

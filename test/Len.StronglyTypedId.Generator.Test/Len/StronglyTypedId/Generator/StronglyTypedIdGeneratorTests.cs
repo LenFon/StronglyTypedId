@@ -260,12 +260,11 @@ public partial record {typeKindName} {stronglyTypedIdName} : IStronglyTypedId<{p
 
         result = default;
         return false;
-    }}");
+    }}
 
-        sb.Append($@"
     class {stronglyTypedIdName}JsonConverter : System.Text.Json.Serialization.JsonConverter<{stronglyTypedIdName}>
     {{
-        public override {stronglyTypedIdName} Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        public override {stronglyTypedIdName}{(string.IsNullOrEmpty(typeKindName) ? "?" : "")} Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
         {{
             var value = {GetValue(primitiveIdTypeName)};
 
@@ -277,11 +276,7 @@ public partial record {typeKindName} {stronglyTypedIdName} : IStronglyTypedId<{p
             {WriteValue(primitiveIdTypeName)};
         }}
     }}
-");
-        sb.Append($@"
-}}
-
-#nullable disable");
+}}");
 
         return sb.ToString();
     }
