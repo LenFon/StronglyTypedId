@@ -27,7 +27,7 @@ public static class StronglyTypedIdExtensions
         }
 
         var interfaceType = type.GetInterfaces()
-            .FirstOrDefault(w => w.IsGenericType && w.GetGenericTypeDefinition() == typeof(IStronglyTypedId<>));
+            .FirstOrDefault(w => w.IsGenericType && w.GetGenericTypeDefinition() == typeof(IStronglyTypedId<,>));
 
         if (interfaceType == null)
         {
@@ -35,7 +35,7 @@ public static class StronglyTypedIdExtensions
             return false;
         }
 
-        primitiveIdType = interfaceType.GetGenericArguments()[0];
+        primitiveIdType = interfaceType.GetGenericArguments()[1];
 
         return true;
     }
