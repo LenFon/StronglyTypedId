@@ -1,6 +1,6 @@
+using Len.StronglyTypedId;
 using Len.StronglyTypedId.Sample1;
 using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
 using System.Diagnostics.CodeAnalysis;
 
 [assembly: ExcludeFromCodeCoverage]
@@ -21,10 +21,7 @@ builder.Services.AddDbContext<SampleDbContext>(options =>
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    options.AddStronglyTypedId();
-});
+builder.Services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
 
 var app = builder.Build();
 

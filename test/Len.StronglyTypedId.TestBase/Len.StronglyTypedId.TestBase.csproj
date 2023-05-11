@@ -6,10 +6,15 @@
 		<Nullable>enable</Nullable>
 		<RootNamespace />
 	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="FluentAssertions" Version="6.11.0" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.1" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing.XUnit" Version="1.1.1" />
+	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generator\Len.StronglyTypedId.Generator.csproj">
-			<OutputItemType>Analyzer</OutputItemType>
-		</ProjectReference>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 </Project>
