@@ -12,10 +12,8 @@ public partial record struct ProductId(int Value);
 public partial record struct UserId(string Value);
 
 
-public record struct SellerId(string Value) : IStronglyTypedId<string>
-{
-    public static IStronglyTypedId<string> Create(string value) => new SellerId(value);
-}
+[StronglyTypedId]
+public partial record SellerId(string Value);
 
 public class Product
 {

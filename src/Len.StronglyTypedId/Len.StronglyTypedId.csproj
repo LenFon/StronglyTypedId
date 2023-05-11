@@ -6,6 +6,6 @@
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 	<ItemGroup>
-	  <ProjectReference Include="..\Len.StronglyTypedId.Generator\Len.StronglyTypedId.Generator.csproj" />
+		<ProjectReference Include="..\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
 	</ItemGroup>
 </Project>
