@@ -10,6 +10,15 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<None Remove="Len\Locales\en.txt" />
+		<None Remove="Len\Locales\zh-CN.txt" />
+	</ItemGroup>
+	<ItemGroup>
+		<EmbeddedResource Include="Len\Locales\en.txt" />
+		<EmbeddedResource Include="Len\Locales\zh-CN.txt" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="IndexRange" Version="1.0.2" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.5.0" />
 	</ItemGroup>
@@ -17,21 +26,6 @@
 	<ItemGroup>
 		<!-- Package the generator in the analyzer directory of the nuget package -->
 		<None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-		<None Include="$(OutputPath)\zh-CN\$(AssemblyName).resources.dll" Pack="true" PackagePath="analyzers/dotnet/cs/zh-CN" Visible="false" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Compile Update="Resources.Designer.cs">
-	    <DependentUpon>Resources.resx</DependentUpon>
-	    <DesignTime>True</DesignTime>
-	    <AutoGen>True</AutoGen>
-	  </Compile>
-	</ItemGroup>
-
-	<ItemGroup>
-	  <EmbeddedResource Update="Resources.resx">
-	    <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-	    <Generator>ResXFileCodeGenerator</Generator>
-	  </EmbeddedResource>
+		<!--<None Include="$(OutputPath)\zh-CN\$(AssemblyName).resources.dll" Pack="true" PackagePath="analyzers/dotnet/cs/zh-CN" Visible="false" />-->
 	</ItemGroup>
 </Project>

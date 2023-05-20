@@ -2,7 +2,7 @@
 [![codecov][badge-codecov]](https://codecov.io/gh/LenFon/StronglyTypedId)
 [![NuGet][badge-nuget]][nuget-package]
 
-A base implementation of strongly typed ids.
+A base implementation of strongly typed ids that supports Newtonsoft.Json, System.Text.Json, EntityFramework Core, and Swashbuckle.AspNetCore.
 # Getting started
 1. Install the package into your application or library.
 ```
