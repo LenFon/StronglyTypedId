@@ -4,8 +4,8 @@
 		<RootNamespace />
 		<NoWarn>$(NoWarn);CS1591;CS0436</NoWarn>
 		<Authors>lenfon</Authors>
-		<Description>A base implementation of strongly typed ids.</Description>
-		<PackageTags>id;strongly-typed</PackageTags>
+		<Description>A base implementation of strongly typed ids that supports Newtonsoft.Json, System.Text.Json, EntityFramework Core, and Swashbuckle.AspNetCore.</Description>
+		<PackageTags>len;id;strongly-typed;primitive;value;DDD</PackageTags>
 		<PackageProjectUrl>https://github.com/lenfon/StronglyTypedId</PackageProjectUrl>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<RepositoryType>git</RepositoryType>
