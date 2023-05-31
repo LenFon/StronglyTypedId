@@ -17,6 +17,7 @@ namespace Len.StronglyTypedId.Sample1.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Buyer = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ModifierId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     Items = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
                 constraints: table =>
