@@ -13,8 +13,9 @@ public class SampleDbContext : DbContext
     {
         base.ConfigureConventions(configurationBuilder);
 
-        configurationBuilder.Properties<string>().HaveMaxLength(100);
-        configurationBuilder.AddStronglyTypedId();
+        StronglyTypedIds.ApplyTo(configurationBuilder);
+
+        configurationBuilder.Properties<UserId>().HaveMaxLength(100);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

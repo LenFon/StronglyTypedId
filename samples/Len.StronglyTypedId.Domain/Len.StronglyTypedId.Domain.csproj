@@ -7,9 +7,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generator\Len.StronglyTypedId.Generator.csproj" >
-			<OutputItemType>Analyzer</OutputItemType>
-		</ProjectReference>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 	</ItemGroup>
 
