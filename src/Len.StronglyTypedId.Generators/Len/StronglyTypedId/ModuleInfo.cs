@@ -2,6 +2,8 @@
 
 internal record ModuleInfo
 {
+    private readonly static System.Collections.Concurrent.ConcurrentDictionary<string, ImmutableArray<ITypeSymbol>> _cached = new();
+
     public ModuleInfo(string name, Version version, MetadataReference metadataReference, IAssemblySymbol? assemblySymbol)
     {
         Name = name;
@@ -18,32 +20,33 @@ internal record ModuleInfo
 
     public IAssemblySymbol? Assembly { get; }
 
-    public ImmutableArray<ITypeSymbol> GetTypes()
+    public ImmutableArray<ITypeSymbol> GetTypes() => _cached.GetOrAdd(Name, _ =>
     {
         if (Assembly is null)
         {
             return ImmutableArray<ITypeSymbol>.Empty;
         }
 
-        List<ITypeSymbol> typeSymbols = new();
+        var typeSymbols = new List<ITypeSymbol>();
+        var stack = new Stack<INamespaceOrTypeSymbol>(Assembly.GlobalNamespace.GetMembers());
 
-        GetTypeSymbols(Assembly.GlobalNamespace, typeSymbols);
+        while (stack.Count > 0)
+        {
+            var namespaceOrTypeSymbol = stack.Pop();
+
+            foreach (var item in namespaceOrTypeSymbol.GetMembers().OfType<INamespaceOrTypeSymbol>())
+            {
+                stack.Push(item);
+            }
+
+            if (namespaceOrTypeSymbol is ITypeSymbol typeSymbol)
+            {
+                typeSymbols.Add(typeSymbol);
+            }
+        }
 
         return typeSymbols.ToImmutableArray();
-    }
-
-    private static void GetTypeSymbols(INamespaceOrTypeSymbol symbol, List<ITypeSymbol> typeSymbols)
-    {
-        if (symbol is ITypeSymbol typeSymbol)
-        {
-            typeSymbols.Add(typeSymbol);
-        }
-
-        foreach (var memberSymbol in symbol.GetMembers().OfType<INamespaceOrTypeSymbol>())
-        {
-            GetTypeSymbols(memberSymbol, typeSymbols);
-        }
-    }
+    });
 
     internal class Comparer : IEqualityComparer<ModuleInfo>
     {
