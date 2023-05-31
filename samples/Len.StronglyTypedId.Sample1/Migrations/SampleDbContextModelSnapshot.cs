@@ -22,7 +22,7 @@ namespace Len.StronglyTypedId.Sample1.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Len.StronglyTypedId.Sample1.Models.Order", b =>
+            modelBuilder.Entity("Len.StronglyTypedId.Domain.Order", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
@@ -32,14 +32,18 @@ namespace Len.StronglyTypedId.Sample1.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("ModifierId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.HasKey("Id");
 
                     b.ToTable("Order");
                 });
 
-            modelBuilder.Entity("Len.StronglyTypedId.Sample1.Models.Order", b =>
+            modelBuilder.Entity("Len.StronglyTypedId.Domain.Order", b =>
                 {
-                    b.OwnsMany("Len.StronglyTypedId.Sample1.Models.Product", "Items", b1 =>
+                    b.OwnsMany("Len.StronglyTypedId.Domain.Product", "Items", b1 =>
                         {
                             b1.Property<Guid>("OrderId")
                                 .HasColumnType("uniqueidentifier");
@@ -54,8 +58,7 @@ namespace Len.StronglyTypedId.Sample1.Migrations
 
                             b1.Property<string>("Name")
                                 .IsRequired()
-                                .HasMaxLength(100)
-                                .HasColumnType("nvarchar(100)");
+                                .HasColumnType("nvarchar(max)");
 
                             b1.HasKey("OrderId", "Id");
 
