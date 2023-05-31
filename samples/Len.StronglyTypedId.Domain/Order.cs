@@ -13,5 +13,8 @@ public class Order
     public OrderId Id { get; set; }
 
     public UserId Buyer { get; set; } = default!;
+
     public List<Product> Items { get; set; } = new();
+
+    public UserId? ModifierId { get; set; }
 }
