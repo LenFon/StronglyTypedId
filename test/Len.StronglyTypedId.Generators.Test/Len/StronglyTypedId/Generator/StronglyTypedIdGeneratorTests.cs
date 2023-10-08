@@ -106,7 +106,7 @@ public class StronglyTypedIdGeneratorTests
                         global::System.Text.Json.JsonSerializer.Deserialize<Guid?>(ref reader, options) switch
                         {
                             { } value => new OrderId(value),
-                            _ => throw new InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
+                            _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
                         };
             
                     /// <inheritdoc/>
@@ -156,7 +156,7 @@ public class StronglyTypedIdGeneratorTests
                         {
                             { } value => new OrderId(value),
                             null when (objectType.IsClass || Nullable.GetUnderlyingType(objectType) is not null) => null,
-                            _ => throw new InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
+                            _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
                         };
 
                     /// <inheritdoc/>

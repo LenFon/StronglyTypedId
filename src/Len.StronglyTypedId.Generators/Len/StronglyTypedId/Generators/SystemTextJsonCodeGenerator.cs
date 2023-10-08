@@ -37,7 +37,7 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                             global::System.Text.Json.JsonSerializer.Deserialize<{{item.PrimitiveIdTypeName}}?>(ref reader, options) switch
                             {
                                 { } value => new {{item.Name}}(value),
-                                _ => throw new InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{item.Name}}")
+                                _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{item.Name}}")
                             };
                 
                         /// <inheritdoc/>

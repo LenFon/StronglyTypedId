@@ -40,7 +40,7 @@ internal class NewtonsoftJsonCodeGenerator : ICodeGenerator
                             {
                                 { } value => new {{item.Name}}(value),
                                 null when (objectType.IsClass || Nullable.GetUnderlyingType(objectType) is not null) => null,
-                                _ => throw new InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{item.Name}}")
+                                _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{item.Name}}")
                             };
                 
                         /// <inheritdoc/>
