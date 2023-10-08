@@ -35,7 +35,7 @@ Add the converter for a strongly typed id to the configuration of DbContext.
     }
 ```
 ## Swashbuckle.AspNetCore
-Add the converter for a strongly typed id to the configuration of DbContext.
+Add the converter for a strongly typed id to the configuration of Swagger.
 
 ```C#
     services.AddSwaggerGen(options =>
