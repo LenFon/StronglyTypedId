@@ -9,11 +9,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers()
-    //.AddNewtonsoftJson(options =>
-    //{
-    //    options.SerializerSettings.AddStronglyTypedId();
-    //})
-    ;
+//.AddNewtonsoftJson(options =>
+//{
+//    options.SerializerSettings.AddStronglyTypedId();
+//})
+;
 builder.Services.AddDbContext<SampleDbContext>(options =>
 {
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
@@ -24,6 +24,11 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<SampleDbContext>().Database.MigrateAsync();
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
