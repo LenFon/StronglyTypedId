@@ -26,21 +26,47 @@ namespace Len.StronglyTypedId.Sample1.Controllers
             return await _db.Set<Order>().FirstOrDefaultAsync(w => w.Id == id);
         }
 
+        /// <summary>
+        /// 添加订单
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
         [HttpPost]
-        public async Task Post([FromBody] UserId userId)
+        public async Task Post([FromBody] AddOrderInput input)
         {
-            await _db.AddAsync(new Order
-            {
-                Id = new OrderId(Guid.NewGuid()),
-                Buyer = userId,
-                Items = new List<Product>
+            await _db.AddAsync(
+                new Order
                 {
-                    new Product{ Key=new ProductId(1),Name="product 1" },
-                    new Product{ Key=new ProductId(2),Name="product 1" },
+                    Id = new OrderId(Guid.NewGuid()),
+                    Buyer = input.Buyer,
+                    Items = input.OrderLines.Select(s => new Product { Key = s.Id, Name = s.Name, }).ToList()
                 }
-            });
+            );
 
             await _db.SaveChangesAsync();
+        }
+
+        public class AddOrderInput
+        {
+            /// <summary>
+            /// 买家Id
+            /// </summary>
+            public UserId Buyer { get; set; }
+
+            public List<OrderLine> OrderLines { get; set; }
+
+            public class OrderLine
+            {
+                /// <summary>
+                /// 商品Id
+                /// </summary>
+                public ProductId Id { get; set; }
+
+                /// <summary>
+                /// 商品名称
+                /// </summary>
+                public string Name { get; set; } = default!;
+            }
         }
 
         [HttpDelete("{id}")]
