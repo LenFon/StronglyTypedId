@@ -2,8 +2,6 @@
 
 internal record ModuleInfo
 {
-    private readonly static System.Collections.Concurrent.ConcurrentDictionary<string, ImmutableArray<ITypeSymbol>> _cached = new();
-
     public ModuleInfo(string name, Version version, MetadataReference metadataReference, IAssemblySymbol? assemblySymbol)
     {
         Name = name;
@@ -20,7 +18,7 @@ internal record ModuleInfo
 
     public IAssemblySymbol? Assembly { get; }
 
-    public ImmutableArray<ITypeSymbol> GetTypes() => _cached.GetOrAdd(Name, _ =>
+    public ImmutableArray<ITypeSymbol> GetTypes()
     {
         if (Assembly is null)
         {
@@ -46,7 +44,7 @@ internal record ModuleInfo
         }
 
         return typeSymbols.ToImmutableArray();
-    });
+    }
 
     internal class Comparer : IEqualityComparer<ModuleInfo>
     {
