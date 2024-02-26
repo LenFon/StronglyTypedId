@@ -44,6 +44,11 @@ Add the converter for a strongly typed id to the configuration of Swagger.
     });
 ```
 
+## QA
+**Question**: Why has the analyzer in the library dependent on strongly-typed IDs not generated the latest code?
+
+**Answer**: It could be due to the Visual Studio cache. Please **clean the solution** and regenerate it. Alternatively, you can disregard this situation, as the compiled assembly will include the latest code.
+
 [nuget-package]: https://www.nuget.org/packages/Len.StronglyTypedId/
 [badge-nuget]: https://img.shields.io/nuget/v/Len.StronglyTypedId.svg
 [badge-codecov]: https://codecov.io/github/LenFon/StronglyTypedId/branch/master/graph/badge.svg?token=S3PBV7W190
