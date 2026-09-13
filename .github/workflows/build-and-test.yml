@@ -7,7 +7,7 @@ on:
   push:
     branches: 
       - dev
-      - master
+      - main
     paths:
       - "src/**/*.cs"
       - "src/**/*.csproj"
@@ -16,7 +16,7 @@ on:
   pull_request:
     branches:
       - dev
-      - master
+      - main
     paths:
       - "src/**/*.cs"
       - "src/**/*.csproj"
@@ -32,16 +32,27 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 7.0.x
+        # net8.0 与 net10.0 两个目标框架的测试都要跑，必须显式安装两者运行时，
+        # 避免依赖 runner 镜像预装的 .NET 8 环境。
+        dotnet-version: |
+          8.0.x
+          10.0.x
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage"
+    - name: Test (net8.0 行为校验)
+      run: dotnet test --framework net8.0 --no-build --verbosity normal
+    - name: Restore coverage tool
+      run: dotnet tool restore
+    - name: Test + coverage (net10.0)
+      # 用 dotnet-coverage 直接包住测试进程采集覆盖率：MTP 原生扩展在本仓库只产出空数据（10 字节空壳），故改用此方式。
+      # 仅 net10.0 参与覆盖率；net8.0 仅做行为校验（见上一步）。
+      run: dotnet tool run dotnet-coverage -- collect -f cobertura -o TestResults/coverage.net10.cobertura.xml dotnet test --framework net10.0 --no-build --verbosity normal
     - name: Codecov
       uses: codecov/codecov-action@v3
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        files: "TestResults/coverage.net10.cobertura.xml"

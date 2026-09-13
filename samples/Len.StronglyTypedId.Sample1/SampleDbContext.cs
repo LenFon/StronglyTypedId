@@ -3,12 +3,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Len.StronglyTypedId.Sample1;
 
-public class SampleDbContext : DbContext
+public class SampleDbContext(DbContextOptions<SampleDbContext> options) : DbContext(options)
 {
-    public SampleDbContext(DbContextOptions<SampleDbContext> options) : base(options)
-    {
-    }
-
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);

@@ -14,5 +14,5 @@ TypeMustBePartialMessage = 	The type '{0}' must be defined as partial.
 TypeMustBePartialTitle = 	Type must be defined as partial	
 TypeMustBeRecordMessage = 	The type '{0}' must be defined as a record.	
 TypeMustBeRecordTitle	 = Type must be defined as a record	
-TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterMessage = 	The type '{0}' must have a primary constructor with exactly one parameter.	
-TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterTitle = 	Type must have a primary constructor with exactly one parameter
+TypeMustHaveSingleParameterPrimaryConstructorMessage = 	The type '{0}' must have a primary constructor with exactly one parameter.	
+TypeMustHaveSingleParameterPrimaryConstructorTitle = 	Type must have a primary constructor with exactly one parameter
