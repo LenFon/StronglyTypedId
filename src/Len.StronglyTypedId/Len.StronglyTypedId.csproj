@@ -6,6 +6,32 @@
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 	<ItemGroup>
+		<!-- 开发期：让生成器/分析器在本解决方案内可用（不参与打包依赖） -->
 		<ProjectReference Include="..\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
+
+	<!--
+	  打包后让 Len.StronglyTypedId 依赖 Len.StronglyTypedId.Generators。
+	  原因：上面的 ProjectReference 标记了 OutputItemType=Analyzer，打包时不会被写入 nuspec 的
+	  <dependencies>；而 Generators 项目本身 IncludeBuildOutput=false，普通 ProjectReference 同样不会
+	  产生包依赖。Pack 内部会重新生成 nuspec，因此只能在 Pack 完成后（AfterTargets=Pack）直接修补
+	  产物 .nupkg 里的 nuspec。两者始终同源同版本，依赖版本取 $(Version)。
+	-->
+	<Target Name="InjectGeneratorsPackageDependency" AfterTargets="Pack">
+		<PropertyGroup>
+			<_PkgPath>$([MSBuild]::EnsureTrailingSlash('$(PackageOutputPath)'))$(PackageId).$(PackageVersion).nupkg</_PkgPath>
+			<_PkgPatchDir>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch\</_PkgPatchDir>
+		</PropertyGroup>
+		<RemoveDir Directories="$(_PkgPatchDir)" Condition="Exists('$(_PkgPatchDir)')" />
+		<Unzip SourceFiles="$(_PkgPath)" DestinationFolder="$(_PkgPatchDir)" />
+		<ItemGroup>
+			<_PkgNuspec Include="$(_PkgPatchDir)*.nuspec" />
+		</ItemGroup>
+		<XmlPoke XmlInputPath="@(_PkgNuspec)"
+		         Query="//*[local-name()='package']/*[local-name()='metadata']/*[local-name()='dependencies']/*[local-name()='group']"
+		         Value="&lt;dependency id='Len.StronglyTypedId.Generators' version='$(Version)' /&gt;" />
+		<Delete Files="$(_PkgPath)" />
+		<ZipDirectory SourceDirectory="$(_PkgPatchDir)" DestinationFile="$(_PkgPath)" Overwrite="true" />
+		<RemoveDir Directories="$(_PkgPatchDir)" />
+	</Target>
 </Project>
