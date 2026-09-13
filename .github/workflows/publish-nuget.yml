@@ -8,6 +8,10 @@ on:
     tags:
     - '*'
 
+permissions:
+  contents: read
+  id-token: write   # 启用 GitHub OIDC 令牌签发，供 NuGet 受信任发布交换短期 API 密钥
+
 jobs:
   build:
 
@@ -30,7 +34,14 @@ jobs:
     - name: Build
       run: dotnet build  -c Release --no-restore  --property:OutputPath=../../bin/Release
 
+    # 通过 OIDC 向 nuget.org 换取短期 API 密钥（无需存储长期密钥）。
+    # 注意：私有仓库首次创建受信任发布策略后，会进入「待完全激活」状态，
+    # 仅有 7 天临时激活窗口；在窗口内成功发布一次即永久激活，否则自动失效（可随时重启）。
+    - name: NuGet login (OIDC → 临时 API 密钥)
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: ${{ secrets.NUGET_USER }}  # nuget.org 用户名（配置文件名），不是邮箱
+
     - name: Publish the package to nuget.org
-      run: dotnet nuget push bin/Release/*.nupkg -k $NUGET_AUTH_TOKEN -s https://api.nuget.org/v3/index.json
-      env:
-        NUGET_AUTH_TOKEN: ${{ secrets.NUGET_API_KEY }}
+      run: dotnet nuget push bin/Release/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
