@@ -1,5 +1,7 @@
 ﻿namespace Len.StronglyTypedId.Generators;
 
+// 同 StronglyTypedIdAnalyzer：程序集合并后引用 Microsoft.CodeAnalysis.Workspaces 触发 RS1038，局部豁免。
+#pragma warning disable RS1038
 [Generator]
 internal class StronglyTypedIdGenerator : IIncrementalGenerator
 {
@@ -7,37 +9,38 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        //Debugger.Launch();
         var stronglyTypedIdInfos = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 "Len.StronglyTypedId.StronglyTypedIdAttribute",
                 CouldBeStronglyTypedId,
                 GetStronglyTypedIdInfoOrNull)
-           .Where(static w => w is not null)
-           .Select(static (s, _) => s!.Value)
+           .Where(static info => info is not null)
+           .Select(static (info, _) => info!.Value)
            .Collect();
 
         var modules = context.MetadataReferencesProvider
             .Combine(context.CompilationProvider)
-            .SelectMany(static (s, _) => s.Left.GetModules(s.Right))
+            .SelectMany(static (source, _) => source.Left.GetModules(source.Right))
             .WithComparer(new ModuleInfo.Comparer())
             .Collect();
 
-        var dbContexts = context.SyntaxProvider
-            .CreateSyntaxProvider(ClouldBeEfCoreDbContext, static (context, _) => true)
-            .Collect();
+        // 只需知道「是否存在」DbContext 约定配置，故把匹配结果收敛为单个布尔值，
+        // 避免把无意义的 bool 数组一路带到输出阶段。
+        var hasDbContextConventions = context.SyntaxProvider
+            .CreateSyntaxProvider(CouldBeEfCoreDbContext, static (_, _) => true)
+            .Collect()
+            .Select(static (matches, _) => !matches.IsDefaultOrEmpty);
 
-        var swaggers = context.SyntaxProvider.CreateSyntaxProvider(
-            static (syntaxNode, _) => syntaxNode is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "AddSwaggerGen" },
-            static (context, _) => true)
-            .Collect();
+        var idsAndModules = stronglyTypedIdInfos.Combine(modules);
 
-        context.RegisterSourceOutput(stronglyTypedIdInfos.Combine(modules), GenerateCode);
-        context.RegisterSourceOutput(stronglyTypedIdInfos.Combine(modules).Combine(dbContexts), EfCoreGenerateCode);
-        context.RegisterSourceOutput(stronglyTypedIdInfos.Combine(modules).Combine(swaggers), SwaggerGenerateCode);
+        // Swagger 代码是否生成，仅由是否引用了 Swashbuckle.AspNetCore.SwaggerGen.dll 决定，
+        // 不再依赖源码中是否出现 AddSwaggerGen（参见 SwaggerCodeGenerator）。
+        context.RegisterSourceOutput(idsAndModules, GenerateCoreCode);
+        context.RegisterSourceOutput(idsAndModules.Combine(hasDbContextConventions), GenerateEfCoreCode);
+        context.RegisterSourceOutput(idsAndModules, GenerateSwaggerCode);
     }
 
-    private static bool ClouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken cancellationToken)
+    private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
     {
         if (syntaxNode is not MethodDeclarationSyntax
             {
@@ -50,66 +53,70 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return false;
         }
 
-        if (!modifiers.Any(SyntaxKind.OverrideKeyword) || !modifiers.Any(SyntaxKind.ProtectedKeyword))
-        {
-            return false;
-        }
-
-        return true;
+        return modifiers.Any(SyntaxKind.OverrideKeyword) && modifiers.Any(SyntaxKind.ProtectedKeyword);
     }
 
-    private static bool CouldBeStronglyTypedId(SyntaxNode syntaxNode, CancellationToken cancellationToken)
+    private static bool CouldBeStronglyTypedId(SyntaxNode syntaxNode, CancellationToken _)
     {
         if (syntaxNode is not RecordDeclarationSyntax
             {
                 ParameterList.Parameters: [{ Type: not NullableTypeSyntax, Identifier.ValueText: "Value" }],
-                TypeParameterList: null, //非泛型
-                Parent: BaseNamespaceDeclarationSyntax, //非嵌套类型，并且有命名空间
+                TypeParameterList: null, // 非泛型
+                Parent: BaseNamespaceDeclarationSyntax, // 非嵌套类型，并且有命名空间
                 Modifiers: var modifiers and not [],
             })
         {
             return false;
         }
 
-        if (!modifiers.Any(SyntaxKind.PartialKeyword) || modifiers.Any(SyntaxKind.AbstractKeyword))
+        return modifiers.Any(SyntaxKind.PartialKeyword) && !modifiers.Any(SyntaxKind.AbstractKeyword);
+    }
+
+    private static void GenerateCoreCode(
+        SourceProductionContext context,
+        (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
+    {
+        var generators = GetCodeGenerators(args.Modules);
+
+        if (generators.IsDefaultOrEmpty)
         {
-            return false;
+            return;
         }
 
-        return true;
-    }
-
-    private static void EfCoreGenerateCode(SourceProductionContext context, ((ImmutableArray<StronglyTypedIdTypeInfo>, ImmutableArray<ModuleInfo>), ImmutableArray<bool>) args)
-    {
-        var ((stronglyTypedIdInfos, modules), dbContexts) = args;
-
-        if (dbContexts.IsDefaultOrEmpty) return;
-
-        GetEfCoreCodeGenerator(modules)?.Excute(stronglyTypedIdInfos, modules, context, _version);
-    }
-
-    private static void GenerateCode(SourceProductionContext context, (ImmutableArray<StronglyTypedIdTypeInfo>, ImmutableArray<ModuleInfo>) args)
-    {
-        var (stronglyTypedIdInfos, modules) = args;
-
-        var generators = GetCodeGenerators(modules);
-
-        if (generators.IsDefaultOrEmpty) return;
-
-        foreach (var generator in generators
-            .Where(w => w.Name is not nameof(EfCoreCodeGenerator) or nameof(SwaggerCodeGenerator))
-            .OrderBy(o => o.Order))
+        // EfCore 与 Swagger 由各自的 RegisterSourceOutput 单独注册，这里只跑核心生成器。
+        foreach (var generator in generators.OrderBy(generator => generator.Order))
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            generator.Excute(stronglyTypedIdInfos, modules, context, _version);
+            generator.Generate(args.Infos, args.Modules, context, _version);
         }
+    }
+
+    private static void GenerateEfCoreCode(
+        SourceProductionContext context,
+        ((ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) IdsAndModules, bool HasDbContextConventions) args)
+    {
+        if (!args.HasDbContextConventions)
+        {
+            return;
+        }
+
+        var (infos, modules) = args.IdsAndModules;
+
+        GetEfCoreCodeGenerator(modules)?.Generate(infos, modules, context, _version);
+    }
+
+    private static void GenerateSwaggerCode(
+        SourceProductionContext context,
+        (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
+    {
+        GetSwaggerCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
     }
 
     private static ImmutableArray<ICodeGenerator> GetCodeGenerators(ImmutableArray<ModuleInfo> modules)
     {
         var codeGenerators = modules
-            .Select(s => s switch
+            .Select(module => module switch
             {
                 { Name: "System.Text.Json.dll" } => SystemTextJsonCodeGenerator.Instance,
                 { Name: "Len.StronglyTypedId.dll" } => StronglyTypedIdCodeGenerator.Instance,
@@ -118,23 +125,16 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             })
             .OfType<ICodeGenerator>();
 
-        return codeGenerators.Any() ? ImmutableArray.CreateRange(codeGenerators) : ImmutableArray<ICodeGenerator>.Empty;
+        return [.. codeGenerators];
     }
 
-    private static ICodeGenerator? GetEfCoreCodeGenerator(ImmutableArray<ModuleInfo> modules)
-    {
-        foreach (var item in modules)
-        {
-            if (item is { Name: "Microsoft.EntityFrameworkCore.dll", Version.Major: >= 7 })
-            {
-                return EfCoreCodeGenerator.Instance;
-            }
-        }
+    private static ICodeGenerator? GetEfCoreCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
+        modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7) ? EfCoreCodeGenerator.Instance : null;
 
-        return null;
-    }
+    private static ICodeGenerator? GetSwaggerCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
+        modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6) ? SwaggerCodeGenerator.Instance : null;
 
-    private static StronglyTypedIdTypeInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken cancellationToken)
+    private static StronglyTypedIdInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken _)
     {
         if (context is not
             {
@@ -147,47 +147,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return null;
         }
 
-        var supportedTypeNames = new string[]
-        {
-            nameof(Guid),
-            nameof(String),
-            nameof(Byte),
-            nameof(SByte),
-            nameof(Int16),
-            nameof(Int32),
-            nameof(Int64),
-            nameof(UInt16),
-            nameof(UInt32),
-            nameof(UInt64)
-        };
-
-        if (!supportedTypeNames.Contains(ctorArgType.Name))
-        {
-            return null;
-        }
-
-        return new(symbol);
-    }
-
-    private static ICodeGenerator? GetSwaggerCodeGenerator(ImmutableArray<ModuleInfo> modules)
-    {
-        foreach (var item in modules)
-        {
-            if (item is { Name: "Swashbuckle.AspNetCore.SwaggerGen.dll", Version.Major: >= 6 })
-            {
-                return SwaggerCodeGenerator.Instance;
-            }
-        }
-
-        return null;
-    }
-
-    private static void SwaggerGenerateCode(SourceProductionContext context, ((ImmutableArray<StronglyTypedIdTypeInfo>, ImmutableArray<ModuleInfo>), ImmutableArray<bool>) args)
-    {
-        var ((stronglyTypedIdInfos, modules), swaggers) = args;
-
-        if (swaggers.IsDefaultOrEmpty) return;
-
-        GetSwaggerCodeGenerator(modules)?.Excute(stronglyTypedIdInfos, modules, context, _version);
+        return SupportedPrimitiveTypes.IsSupported(ctorArgType.Name) ? new StronglyTypedIdInfo(symbol) : null;
     }
 }

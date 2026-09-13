@@ -43,6 +43,24 @@ public partial record StringIdV2(string Value);
 public partial record ByteIdV2(byte Value);
 
 [StronglyTypedId]
+public partial record struct SByteId(sbyte Value);
+
+[StronglyTypedId]
+public partial record struct Int16Id(short Value);
+
+[StronglyTypedId]
+public partial record struct UInt16Id(ushort Value);
+
+[StronglyTypedId]
+public partial record SByteIdV2(sbyte Value);
+
+[StronglyTypedId]
+public partial record Int16IdV2(short Value);
+
+[StronglyTypedId]
+public partial record UInt16IdV2(ushort Value);
+
+[StronglyTypedId]
 public partial record struct StringIdV3(System.String Value);
 
 public partial record NotStronglyTypedId();

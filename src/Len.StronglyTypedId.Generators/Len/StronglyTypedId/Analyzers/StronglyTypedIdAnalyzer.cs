@@ -2,6 +2,10 @@
 
 namespace Len.StronglyTypedId.Analyzers;
 
+// 本程序集与 CodeFixProvider 合并后必须引用 Microsoft.CodeAnalysis.Workspaces，因而触发 RS1038。
+// 命令行编译时 Roslyn 会逐个跳过因缺少 Workspaces 而无法解析的扩展点，生成器与分析器仍正常加载
+// （消费者项目实测：源码生成正常、诊断正常、无 CS8032），故在此处局部豁免该规则而非全项目 NoWarn。
+#pragma warning disable RS1038
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 {
@@ -16,28 +20,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.RegisterSymbolAction(AnalyzeNamedType, SymbolKind.NamedType);
     }
 
-    private void AnalyzeNamedType(SymbolAnalysisContext context)
+    private static void AnalyzeNamedType(SymbolAnalysisContext context)
     {
-        if (!context.Symbol.GetAttributes()
-            .Any(w => w.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute"))
+        if (context.Symbol is not INamedTypeSymbol type
+            || !type.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute"))
         {
             return;
         }
-
-        var type = (INamedTypeSymbol)context.Symbol;
-        var supportedTypeNames = new string[]
-        {
-            nameof(Guid),
-            nameof(String),
-            nameof(Byte),
-            nameof(SByte),
-            nameof(Int16),
-            nameof(Int32),
-            nameof(Int64),
-            nameof(UInt16),
-            nameof(UInt32),
-            nameof(UInt64)
-        };
 
         foreach (var declaringSyntaxReference in type.DeclaringSyntaxReferences)
         {
@@ -45,86 +34,61 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
             if (syntax is not RecordDeclarationSyntax declaration)
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Descriptors.TypeMustBeRecord,
-                    syntax.GetLocation(),
-                    type.Name));
+                Report(context, Descriptors.TypeMustBeRecord, syntax.GetLocation(), type.Name);
                 continue;
             }
 
             if (declaration.Modifiers.Any(SyntaxKind.AbstractKeyword))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Descriptors.TypeCannotBeAbstract,
-                    declaration.GetLocation(),
-                    type.Name));
+                Report(context, Descriptors.TypeCannotBeAbstract, declaration.GetLocation(), type.Name);
                 continue;
             }
 
             if (!declaration.Modifiers.Any(SyntaxKind.PartialKeyword))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Descriptors.TypeMustBePartial,
-                    declaration.GetLocation(),
-                    type.Name));
+                Report(context, Descriptors.TypeMustBePartial, declaration.GetLocation(), type.Name);
                 continue;
             }
 
             if (declaration.TypeParameterList is not null)
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                   Descriptors.TypeCannotBeGeneric,
-                   declaration.GetLocation(),
-                   type.Name));
+                Report(context, Descriptors.TypeCannotBeGeneric, declaration.GetLocation(), type.Name);
                 continue;
             }
 
             if (declaration.Parent is not BaseNamespaceDeclarationSyntax)
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                  Descriptors.TypeCannotBeNestedAndMustHaveNamespace,
-                  declaration.GetLocation(),
-                  type.Name));
+                Report(context, Descriptors.TypeCannotBeNestedAndMustHaveNamespace, declaration.GetLocation(), type.Name);
                 continue;
             }
 
             if (declaration.ParameterList is not { Parameters: [var parameter] })
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                  Descriptors.TypeMustHavePrimaryConstructorWithExactlyHaveOneParameter,
-                  declaration.GetLocation(),
-                  type.Name));
+                Report(context, Descriptors.TypeMustHaveSingleParameterPrimaryConstructor, declaration.GetLocation(), type.Name);
                 continue;
             }
 
             if (parameter.Type is NullableTypeSyntax)
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                  Descriptors.ParameterCannotBeNullable,
-                  parameter.Type.GetLocation(),
-                  parameter.Type));
+                Report(context, Descriptors.ParameterCannotBeNullable, parameter.Type.GetLocation(), parameter.Type);
                 continue;
             }
 
             if (parameter.Identifier.ValueText != "Value")
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Descriptors.ParameterNameMustBeValue,
-                    parameter.Identifier.GetLocation(),
-                    parameter.Identifier.ValueText));
+                Report(context, Descriptors.ParameterNameMustBeValue, parameter.Identifier.GetLocation(), parameter.Identifier.ValueText);
                 continue;
             }
 
-            var ctorArgType = type.Constructors.First().Parameters.First().Type;
-            if (!supportedTypeNames.Contains(ctorArgType.Name))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Descriptors.ParameterTypeIsInvalid,
-                    parameter.Type!.GetLocation(),
-                    parameter.Type));
+            var constructorParameterType = type.Constructors[0].Parameters[0].Type;
 
-                continue;
+            if (!SupportedPrimitiveTypes.IsSupported(constructorParameterType.Name))
+            {
+                Report(context, Descriptors.ParameterTypeIsInvalid, parameter.Type!.GetLocation(), parameter.Type);
             }
         }
     }
+
+    private static void Report(SymbolAnalysisContext context, DiagnosticDescriptor descriptor, Location location, object argument)
+        => context.ReportDiagnostic(Diagnostic.Create(descriptor, location, argument));
 }
