@@ -30,9 +30,9 @@ jobs:
       with:
         dotnet-version: 10.0.x
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore ./Len.StronglyTypedId.slnx
     - name: Build
-      run: dotnet build  -c Release --no-restore  --property:OutputPath=../../bin/Release
+      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore --property:OutputPath=../../bin/Release/
 
     # 通过 OIDC 向 nuget.org 换取短期 API 密钥（无需存储长期密钥）。
     # 注意：私有仓库首次创建受信任发布策略后，会进入「待完全激活」状态，
