@@ -28,7 +28,11 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        # net8.0 与 net10.0 两个目标框架都要打包，显式安装两者 SDK，
+        # 与 build-and-test.yml 保持一致，避免依赖 runner 镜像预装的 .NET 环境。
+        dotnet-version: |
+          8.0.x
+          10.0.x
     - name: Restore dependencies
       run: dotnet restore ./Len.StronglyTypedId.slnx
     - name: Build
