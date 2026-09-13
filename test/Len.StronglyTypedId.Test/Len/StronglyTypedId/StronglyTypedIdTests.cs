@@ -24,14 +24,11 @@ public class StronglyTypedIdTests
     }
 
     [Fact]
-    public void TryGetPrimitiveIdType_Should_ReturnFalse_WhenTypeIsNull()
+    public void TryGetPrimitiveIdType_Should_ThrowArgumentNullException_WhenTypeIsNull()
     {
-        var ex = Assert.Throws<ArgumentNullException>(() =>
-        {
-            Type? type = null;
+        Type? type = null;
 
-            var isStronglyTypedId = type!.TryGetPrimitiveIdType(out var primitiveIdType);
-        });
+        var ex = Assert.Throws<ArgumentNullException>(() => type!.TryGetPrimitiveIdType(out _));
 
         Assert.Equal("type", ex.ParamName);
     }
@@ -48,7 +45,7 @@ public class StronglyTypedIdTests
     [Theory]
     [InlineData(typeof(NotStronglyTypedId), null)]
     [InlineData(typeof(IStronglyTypedId<GuidId, Guid>), null)]
-    public void GetPrimitiveIdType_Should_ReturnNull_When(Type type, Type expectedPrimitiveId)
+    public void GetPrimitiveIdType_Should_ReturnNull_When(Type type, Type? expectedPrimitiveId)
     {
         type.GetPrimitiveIdType().Should().Be(expectedPrimitiveId);
     }

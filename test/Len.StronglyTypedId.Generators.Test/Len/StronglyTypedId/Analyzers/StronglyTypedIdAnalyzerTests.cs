@@ -2,7 +2,6 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
-using Microsoft.CodeAnalysis.Testing.Verifiers;
 
 namespace Len.StronglyTypedId.Analyzers;
 
@@ -89,7 +88,7 @@ public class StronglyTypedIdAnalyzerTests
             public partial record struct OrderId;
             """";
 
-        var expected = Verify.Diagnostic(Descriptors.TypeMustHavePrimaryConstructorWithExactlyHaveOneParameter)
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveSingleParameterPrimaryConstructor)
             .WithSpan(5, 1, 6, 38).WithArguments("OrderId");
 
         await Verify.VerifyAnalyzerAsync(code, expected);
@@ -107,7 +106,7 @@ public class StronglyTypedIdAnalyzerTests
             public partial record struct OrderId(Guid Value, Guid Value2);
             """";
 
-        var expected = Verify.Diagnostic(Descriptors.TypeMustHavePrimaryConstructorWithExactlyHaveOneParameter)
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveSingleParameterPrimaryConstructor)
             .WithSpan(5, 1, 6, 63).WithArguments("OrderId");
 
         await Verify.VerifyAnalyzerAsync(code, expected);
@@ -225,7 +224,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     [Fact]
-    public async Task Should_SkipAnalyzingCode()
+    public async Task AnalyzingCode_Should_Skip()
     {
         var code = """"
             using System;

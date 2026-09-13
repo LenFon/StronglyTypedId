@@ -1,6 +1,14 @@
 ﻿namespace Len.StronglyTypedId;
 
-internal record ModuleInfo
+/// <summary>
+/// 描述一个被引用程序集（模块），用于按程序集名与主版本号决定启用哪些代码生成器。
+/// </summary>
+/// <remarks>
+/// 两处版本语义不同，阅读时不要混淆：
+/// 决定启用哪个生成器看的是主版本号（<see cref="ModuleInfoExtensions.HasModule"/>），
+/// 而模块集合去重看的是完整版本号（<see cref="Comparer"/>）。
+/// </remarks>
+internal sealed record ModuleInfo
 {
     public ModuleInfo(string name, Version version, MetadataReference metadataReference, IAssemblySymbol? assemblySymbol)
     {
@@ -22,7 +30,7 @@ internal record ModuleInfo
     {
         if (Assembly is null)
         {
-            return ImmutableArray<ITypeSymbol>.Empty;
+            return [];
         }
 
         var typeSymbols = new List<ITypeSymbol>();
@@ -32,9 +40,9 @@ internal record ModuleInfo
         {
             var namespaceOrTypeSymbol = stack.Pop();
 
-            foreach (var item in namespaceOrTypeSymbol.GetMembers().OfType<INamespaceOrTypeSymbol>())
+            foreach (var member in namespaceOrTypeSymbol.GetMembers().OfType<INamespaceOrTypeSymbol>())
             {
-                stack.Push(item);
+                stack.Push(member);
             }
 
             if (namespaceOrTypeSymbol is ITypeSymbol typeSymbol)
@@ -43,19 +51,20 @@ internal record ModuleInfo
             }
         }
 
-        return typeSymbols.ToImmutableArray();
+        return [.. typeSymbols];
     }
 
-    internal class Comparer : IEqualityComparer<ModuleInfo>
+    /// <summary>
+    /// 按「程序集名 + 完整版本号」判定模块等价性，忽略 <see cref="MetadataReference"/>、
+    /// <see cref="Assembly"/> 等实例差异。
+    /// </summary>
+    internal sealed class Comparer : IEqualityComparer<ModuleInfo>
     {
-        public bool Equals(ModuleInfo x, ModuleInfo y)
-        {
-            return x.Name == y.Name && x.Version == y.Version;
-        }
+        public bool Equals(ModuleInfo? x, ModuleInfo? y)
+            => ReferenceEquals(x, y)
+                || (x is not null && y is not null && x.Name == y.Name && x.Version == y.Version);
 
         public int GetHashCode(ModuleInfo obj)
-        {
-            return obj.Name.GetHashCode();
-        }
+            => unchecked((obj.Name.GetHashCode() * 397) ^ obj.Version.GetHashCode());
     }
 }

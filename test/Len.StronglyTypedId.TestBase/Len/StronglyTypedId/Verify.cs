@@ -4,16 +4,15 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
-using Microsoft.CodeAnalysis.Testing.Verifiers;
 
 namespace Len.StronglyTypedId;
 
 public static class Verify
 {
     public static DiagnosticResult Diagnostic(string? diagnosticId = null)
-     => diagnosticId == null ?
-         CSharpAnalyzerVerifier<StronglyTypedIdAnalyzer, XUnitVerifier>.Diagnostic() :
-         CSharpAnalyzerVerifier<StronglyTypedIdAnalyzer, XUnitVerifier>.Diagnostic(diagnosticId);
+        => diagnosticId is null
+            ? CSharpAnalyzerVerifier<StronglyTypedIdAnalyzer, DefaultVerifier>.Diagnostic()
+            : CSharpAnalyzerVerifier<StronglyTypedIdAnalyzer, DefaultVerifier>.Diagnostic(diagnosticId);
 
     public static DiagnosticResult Diagnostic(DiagnosticDescriptor descriptor)
         => new(descriptor);
@@ -29,7 +28,7 @@ public static class Verify
         => VerifyCodeFixAsync(source, DiagnosticResult.EmptyDiagnosticResults, fixedSource);
 
     public static Task VerifyCodeFixAsync(string source, DiagnosticResult expected, string fixedSource)
-        => VerifyCodeFixAsync(source, new[] { expected }, fixedSource);
+        => VerifyCodeFixAsync(source, [expected], fixedSource);
 
     public static Task VerifyCodeFixAsync(string source, DiagnosticResult[] expected, string fixedSource)
     {
@@ -43,45 +42,35 @@ public static class Verify
         return test.RunAsync();
     }
 
-    private class TestAnalyzer : CSharpAnalyzerTest<StronglyTypedIdAnalyzer, XUnitVerifier>
+    /// <summary>
+    /// 分析器测试与 CodeFix 测试共用的默认配置：
+    /// 关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
+    /// </summary>
+    private static void ApplyDefaults(AnalyzerTest<DefaultVerifier> test)
     {
-        public TestAnalyzer()
-        {
-            CompilerDiagnostics = CompilerDiagnostics.None;
-            ReferenceAssemblies = new ReferenceAssemblies(
-                        "net7.0",
-                        new PackageIdentity(
-                            "Microsoft.NETCore.App.Ref",
-                            "7.0.0"),
-                        Path.Combine("ref", "net7.0"));
+        test.CompilerDiagnostics = CompilerDiagnostics.None;
+        test.ReferenceAssemblies = new ReferenceAssemblies(
+            "net8.0",
+            new PackageIdentity("Microsoft.NETCore.App.Ref", "8.0.0"),
+            Path.Combine("ref", "net8.0"));
 
-            TestState.AdditionalReferences.Add(typeof(StronglyTypedIdAttribute).Assembly);
-        }
-
-        protected override ParseOptions CreateParseOptions()
-        {
-            return new CSharpParseOptions(LanguageVersion.Latest, DocumentationMode.Diagnose);
-        }
+        test.TestState.AdditionalReferences.Add(typeof(StronglyTypedIdAttribute).Assembly);
     }
 
-    private class TestCodeFix : CSharpCodeFixTest<StronglyTypedIdAnalyzer, StronglyTypedIdCodeFixProvider, XUnitVerifier>
+    private static ParseOptions CreateDefaultParseOptions()
+        => new CSharpParseOptions(LanguageVersion.Latest, DocumentationMode.Diagnose);
+
+    private class TestAnalyzer : CSharpAnalyzerTest<StronglyTypedIdAnalyzer, DefaultVerifier>
     {
-        public TestCodeFix()
-        {
-            CompilerDiagnostics = CompilerDiagnostics.None;
-            ReferenceAssemblies = new ReferenceAssemblies(
-                        "net7.0",
-                        new PackageIdentity(
-                            "Microsoft.NETCore.App.Ref",
-                            "7.0.0"),
-                        Path.Combine("ref", "net7.0"));
+        public TestAnalyzer() => ApplyDefaults(this);
 
-            TestState.AdditionalReferences.Add(typeof(StronglyTypedIdAttribute).Assembly);
-        }
+        protected override ParseOptions CreateParseOptions() => CreateDefaultParseOptions();
+    }
 
-        protected override ParseOptions CreateParseOptions()
-        {
-            return new CSharpParseOptions(LanguageVersion.Latest, DocumentationMode.Diagnose);
-        }
+    private class TestCodeFix : CSharpCodeFixTest<StronglyTypedIdAnalyzer, StronglyTypedIdCodeFixProvider, DefaultVerifier>
+    {
+        public TestCodeFix() => ApplyDefaults(this);
+
+        protected override ParseOptions CreateParseOptions() => CreateDefaultParseOptions();
     }
 }

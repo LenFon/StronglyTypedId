@@ -51,4 +51,4 @@ Add the converter for a strongly typed id to the configuration of Swagger.
 
 [nuget-package]: https://www.nuget.org/packages/Len.StronglyTypedId/
 [badge-nuget]: https://img.shields.io/nuget/v/Len.StronglyTypedId.svg
-[badge-codecov]: https://codecov.io/github/LenFon/StronglyTypedId/branch/master/graph/badge.svg?token=S3PBV7W190
+[badge-codecov]: https://codecov.io/github/LenFon/StronglyTypedId/branch/main/graph/badge.svg?token=S3PBV7W190

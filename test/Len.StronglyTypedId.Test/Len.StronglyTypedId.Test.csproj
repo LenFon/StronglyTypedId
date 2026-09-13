@@ -1,27 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<Import Project="..\..\test.props" />
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<!-- 运行时库已多目标 net8.0;net10.0，测试同步多目标，确保 net10.0 产物同样被用例覆盖。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
-	  <ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
+		<!-- 显式钉定 Roslyn 版本：经 TestBase -> Generators（Workspaces 5.9.0）传递进来的
+		     System.Collections.Immutable / System.Reflection.Metadata 为 10.0，
+		     否则解析时只能匹配到 net8.0 框架引用包的 8.0，产生 MSB3277 版本冲突警告。
+		     与 TestBase / Generators.Test 的既有做法保持一致（PrivateAssets=all，不外传）。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <PackageReference Update="coverlet.collector" Version="6.0.0">
-	    <PrivateAssets>all</PrivateAssets>
-	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-	  </PackageReference>
-	  <PackageReference Update="Microsoft.NET.Test.Sdk" Version="17.8.0" />
-	  <PackageReference Update="xunit" Version="2.6.2" />
-	  <PackageReference Update="xunit.runner.visualstudio" Version="2.5.4">
-	    <PrivateAssets>all</PrivateAssets>
-	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-	  </PackageReference>
+	  <ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+	  <ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -2,40 +2,57 @@
 
 namespace Len.StronglyTypedId;
 
+/// <summary>
+/// Provides methods to inspect the primitive type behind a strongly typed id.
+/// </summary>
 public static class StronglyTypedIdExtensions
 {
+    /// <summary>
+    /// Gets the primitive type wrapped by the specified strongly typed id.
+    /// </summary>
+    /// <param name="type">The strongly typed id type to inspect.</param>
+    /// <returns>
+    /// The wrapped primitive type, or <see langword="null"/> when <paramref name="type"/> is not a strongly typed id.
+    /// </returns>
     public static Type? GetPrimitiveIdType(this Type type)
-    {
-        if (type.TryGetPrimitiveIdType(out var primitiveIdType))
-        {
-            return primitiveIdType;
-        }
+        => type.TryGetPrimitiveIdType(out var primitiveIdType) ? primitiveIdType : null;
 
-        return default;
-    }
+    /// <summary>
+    /// Determines whether the specified type is a strongly typed id.
+    /// </summary>
+    /// <param name="type">The type to inspect.</param>
+    public static bool IsStronglyTypedId(this Type type) => type.TryGetPrimitiveIdType(out _);
 
-    public static bool IsStronglyTypedId(this Type type) => type.TryGetPrimitiveIdType(out var _);
-
+    /// <summary>
+    /// Attempts to get the primitive type wrapped by the specified strongly typed id.
+    /// </summary>
+    /// <param name="type">The type to inspect.</param>
+    /// <param name="primitiveIdType">The wrapped primitive type when this method returns <see langword="true"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="type"/> is a strongly typed id; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
     public static bool TryGetPrimitiveIdType(this Type type, [NotNullWhen(true)] out Type? primitiveIdType)
     {
-        ArgumentNullException.ThrowIfNull(type, nameof(type));
+        ArgumentNullException.ThrowIfNull(type);
 
+        // 接口、抽象类、枚举与数组都不可能承载强类型 Id 的实现。
         if (type.IsAbstract || type.IsInterface || type.IsEnum || type.IsArray)
         {
-            primitiveIdType = default;
+            primitiveIdType = null;
             return false;
         }
 
-        var interfaceType = type.GetInterfaces()
-            .FirstOrDefault(w => w.IsGenericType && w.GetGenericTypeDefinition() == typeof(IStronglyTypedId<,>));
+        var stronglyTypedIdInterface = type.GetInterfaces()
+            .FirstOrDefault(interfaceType => interfaceType.IsGenericType
+                && interfaceType.GetGenericTypeDefinition() == typeof(IStronglyTypedId<,>));
 
-        if (interfaceType == null)
+        if (stronglyTypedIdInterface is null)
         {
-            primitiveIdType = default;
+            primitiveIdType = null;
             return false;
         }
 
-        primitiveIdType = interfaceType.GetGenericArguments()[1];
+        // IStronglyTypedId<TSelf, TPrimitiveId> 的第二个类型实参即底层基元类型。
+        primitiveIdType = stronglyTypedIdInterface.GetGenericArguments()[1];
 
         return true;
     }

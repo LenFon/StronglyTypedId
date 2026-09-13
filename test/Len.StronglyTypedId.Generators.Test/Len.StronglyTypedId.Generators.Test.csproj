@@ -2,35 +2,28 @@
 
 	<Import Project="..\..\test.props" />
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<!-- 测试多目标：net8.0 / net10.0 各跑一遍，覆盖运行时库两个目标框架下的生成与诊断行为。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 	<ItemGroup>
-
-		<!--<PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.5.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.5.0" />-->
+		<!-- 显式钉定 Roslyn 版本，与生成器/CodeFix 程序集保持一致（5.9.0），
+		     消除因 SourceGenerators.Testing 传递依赖较低 Microsoft.CodeAnalysis 版本引发的 CS1705 冲突。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- 生成器快照测试需引用 EF Core 与 Swashbuckle，才能使 EfCoreCodeGenerator / SwaggerCodeGenerator 被触发。 -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore" />
+		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
-
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.1" />
-		<PackageReference Update="coverlet.collector" Version="6.0.0">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
-		<PackageReference Update="Microsoft.NET.Test.Sdk" Version="17.8.0" />
-		<PackageReference Update="xunit" Version="2.6.2" />
-		<PackageReference Update="xunit.runner.visualstudio" Version="2.5.4">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" />
 	</ItemGroup>
 
 </Project>

@@ -1,0 +1,40 @@
+<Project>
+
+	<PropertyGroup>
+		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+	</PropertyGroup>
+
+	<!-- 打包 / 源码链接（common.props 引用） -->
+	<ItemGroup>
+		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
+	</ItemGroup>
+
+	<!-- src：编译器层扩展与运行时库 -->
+	<ItemGroup>
+		<PackageVersion Include="IndexRange" Version="1.1.1" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+	</ItemGroup>
+
+	<!-- test：测试框架与 Roslyn 测试框架 -->
+	<ItemGroup>
+		<PackageVersion Include="FluentAssertions" Version="8.10.0" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" Version="1.1.4" />
+		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+		<PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+		<PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.5.0" />
+		<PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+		<PackageVersion Include="xunit.v3" Version="4.0.1" />
+	</ItemGroup>
+
+	<!-- samples：示例项目 -->
+	<ItemGroup>
+		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.0" />
+		<PackageVersion Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+	</ItemGroup>
+</Project>

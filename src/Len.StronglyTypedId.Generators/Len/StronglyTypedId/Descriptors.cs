@@ -1,9 +1,12 @@
-﻿using System.Globalization;
+﻿namespace Len.StronglyTypedId;
 
-namespace Len.StronglyTypedId;
-
+/// <summary>
+/// 集中定义强类型 Id 分析器的全部诊断：规则 ID、严重级别与本地化后的标题/提示。
+/// </summary>
 internal static class Descriptors
 {
+    private const string Category = "StronglyTypedIdAnalyzer";
+
     public const string ParameterCannotBeNullableId = "STIAO006";
     public const string ParameterNameMustBeValueId = "STIAO007";
     public const string ParameterTypeIsInvalidId = "STIAO008";
@@ -12,143 +15,93 @@ internal static class Descriptors
     public const string TypeCannotBeNestedAndMustHaveNamespaceId = "STIAO004";
     public const string TypeMustBePartialId = "STIAO001";
     public const string TypeMustBeRecordId = "STIAO000";
-    public const string TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterId = "STIAO005";
+    public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIAO005";
 
     public static readonly DiagnosticDescriptor ParameterCannotBeNullable
         = new(ParameterCannotBeNullableId,
-            "ParameterCannotBeNullableTitle".Translate(),
-            "ParameterCannotBeNullableMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("ParameterCannotBeNullableTitle"),
+            new LocalizedString("ParameterCannotBeNullableMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor ParameterNameMustBeValue
         = new(ParameterNameMustBeValueId,
-            "ParameterNameMustBeValueTitle".Translate(),
-            "ParameterNameMustBeValueMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("ParameterNameMustBeValueTitle"),
+            new LocalizedString("ParameterNameMustBeValueMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor ParameterTypeIsInvalid
         = new(ParameterTypeIsInvalidId,
-            "ParameterTypeIsInvalidTitle".Translate(),
-            "ParameterTypeIsInvalidMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("ParameterTypeIsInvalidTitle"),
+            new LocalizedString("ParameterTypeIsInvalidMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor TypeCannotBeAbstract
         = new(TypeCannotBeAbstractId,
-            "TypeCannotBeAbstractTitle".Translate(),
-            "TypeCannotBeAbstractMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("TypeCannotBeAbstractTitle"),
+            new LocalizedString("TypeCannotBeAbstractMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor TypeCannotBeGeneric
         = new(TypeCannotBeGenericId,
-            "TypeCannotBeGenericTitle".Translate(),
-            "TypeCannotBeGenericMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("TypeCannotBeGenericTitle"),
+            new LocalizedString("TypeCannotBeGenericMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor TypeCannotBeNestedAndMustHaveNamespace
         = new(TypeCannotBeNestedAndMustHaveNamespaceId,
-            "TypeCannotBeNestedAndMustHaveNamespaceTitle".Translate(),
-            "TypeCannotBeNestedAndMustHaveNamespaceMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("TypeCannotBeNestedAndMustHaveNamespaceTitle"),
+            new LocalizedString("TypeCannotBeNestedAndMustHaveNamespaceMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor TypeMustBePartial
         = new(TypeMustBePartialId,
-            "TypeMustBePartialTitle".Translate(),
-            "TypeMustBePartialMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("TypeMustBePartialTitle"),
+            new LocalizedString("TypeMustBePartialMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
     public static readonly DiagnosticDescriptor TypeMustBeRecord
        = new(TypeMustBeRecordId,
-            "TypeMustBeRecordTitle".Translate(),
-            "TypeMustBeRecordMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+            new LocalizedString("TypeMustBeRecordTitle"),
+            new LocalizedString("TypeMustBeRecordMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
-    public static readonly DiagnosticDescriptor TypeMustHavePrimaryConstructorWithExactlyHaveOneParameter
-        = new(TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterId,
-            "TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterTitle".Translate(),
-            "TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterMessage".Translate(),
-            "StronglyTypedIdAnalyzer",
+    public static readonly DiagnosticDescriptor TypeMustHaveSingleParameterPrimaryConstructor
+        = new(TypeMustHaveSingleParameterPrimaryConstructorId,
+            new LocalizedString("TypeMustHaveSingleParameterPrimaryConstructorTitle"),
+            new LocalizedString("TypeMustHaveSingleParameterPrimaryConstructorMessage"),
+            Category,
             DiagnosticSeverity.Error,
             true);
 
-    public static DiagnosticDescriptor[] All => new[]
-    {
+    /// <summary>
+    /// 全部诊断描述符，顺序与规则 ID 的语义分组一致。
+    /// </summary>
+    public static readonly DiagnosticDescriptor[] All =
+    [
         TypeMustBeRecord,
         TypeMustBePartial,
         TypeCannotBeAbstract,
         TypeCannotBeGeneric,
         TypeCannotBeNestedAndMustHaveNamespace,
-        TypeMustHavePrimaryConstructorWithExactlyHaveOneParameter,
+        TypeMustHaveSingleParameterPrimaryConstructor,
         ParameterCannotBeNullable,
         ParameterNameMustBeValue,
         ParameterTypeIsInvalid,
-    };
-}
-
-file static class StringExtensions
-{
-    private readonly static Lazy<Dictionary<string, string>> _translations = new(() => GetTranslations(), true);
-
-    public static string Translate(this string key) => _translations.Value.ContainsKey(key) ? _translations.Value[key] : key;
-
-    private static Dictionary<string, string> GetTranslations()
-    {
-        var translations = new Dictionary<string, string>();
-        var assembly = typeof(StringExtensions).Assembly;
-        var name = $".Locales.{CultureInfo.CurrentCulture.Name}.txt";
-        var resourceNames = assembly.GetManifestResourceNames();
-        var resourceName = resourceNames.FirstOrDefault(w => w.Contains(name));
-
-        if (resourceName == null)
-        {
-            name = $".Locales.{CultureInfo.CurrentCulture.TwoLetterISOLanguageName}.txt";
-            resourceName = resourceNames.FirstOrDefault(w => w.Contains(name));
-        }
-
-        if (resourceName == null)
-        {
-            name = ".Locales.en.txt";
-            resourceName = resourceNames.FirstOrDefault(w => w.Contains(name));
-        }
-
-        using var stream = assembly.GetManifestResourceStream(resourceName);
-        using var streamReader = new StreamReader(stream);
-
-        while (!streamReader.EndOfStream)
-        {
-            var line = streamReader.ReadLine();
-            var isEmpty = string.IsNullOrWhiteSpace(line);
-            var isComment = !isEmpty && line.Trim().StartsWith("#");
-            var isKeyValuePair = !isEmpty && !isComment && line.Contains("=");
-
-            if (isEmpty || isComment || !isKeyValuePair)
-                continue;
-
-            var kvp = line.Split(new[] { '=' }, 2);
-            var key = kvp[0].Trim();
-            var value = kvp[1].Trim();
-
-            if (key != null && value != null)
-            {
-                translations.Add(key, value);
-            }
-        }
-
-        return translations;
-    }
+    ];
 }

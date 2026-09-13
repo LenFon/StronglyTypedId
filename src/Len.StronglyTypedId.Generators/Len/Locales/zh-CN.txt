@@ -14,5 +14,5 @@ TypeMustBePartialMessage = 	类型‘{0}’必须被定义为局部类型。
 TypeMustBePartialTitle = 	类型必须被定义为局部类型。	
 TypeMustBeRecordMessage = 	类型‘{0}’必须被定义为记录类型。	
 TypeMustBeRecordTitle = 	类型必须被定义为记录类型	
-TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterMessage = 	类型‘{0}’必须有一个仅包含一个参数的主构造函数。	
-TypeMustHavePrimaryConstructorWithExactlyHaveOneParameterTitle = 	类型必须有一个仅包含一个参数的主构造函数。	
+TypeMustHaveSingleParameterPrimaryConstructorMessage = 	类型‘{0}’必须有一个仅包含一个参数的主构造函数。	
+TypeMustHaveSingleParameterPrimaryConstructorTitle = 	类型必须有一个仅包含一个参数的主构造函数。	
