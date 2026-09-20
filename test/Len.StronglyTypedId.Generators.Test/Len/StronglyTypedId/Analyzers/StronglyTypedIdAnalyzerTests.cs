@@ -1,7 +1,9 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using FluentAssertions;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
+using System.Globalization;
 
 namespace Len.StronglyTypedId.Analyzers;
 
@@ -330,5 +332,31 @@ public class StronglyTypedIdAnalyzerTests
             """";
 
         await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    public static TheoryData<DiagnosticDescriptor, string> ParameterDiagnostics => new()
+    {
+        { Descriptors.ParameterNameMustBeValue, "Value1" },
+        { Descriptors.ParameterTypeIsInvalid, "bool" },
+    };
+
+    /// <summary>
+    /// 回归用例：STIAO007 / STIAO008 的文案必须保留 <c>{0}</c> 占位符。
+    /// </summary>
+    /// <remarks>
+    /// 分析器实现传入了实参（参数名 / 参数类型），文案缺少占位符时它们被静默丢弃，
+    /// 诊断里看不到究竟是哪个名字或哪个类型。断言「渲染文本包含实参」与当前区域性无关：
+    /// 不显式指定区域性时 <see cref="LocalizedString"/> 回退到内嵌的 en 资源。
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(ParameterDiagnostics))]
+    public void Diagnostic_MessageFormat_Should_ContainArgument(DiagnosticDescriptor descriptor, string argument)
+    {
+        var message = string.Format(
+            CultureInfo.InvariantCulture,
+            descriptor.MessageFormat.ToString(),
+            argument);
+
+        message.Should().Contain(argument);
     }
 }
