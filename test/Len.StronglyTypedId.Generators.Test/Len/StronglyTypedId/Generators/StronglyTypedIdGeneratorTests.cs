@@ -160,7 +160,7 @@ public class StronglyTypedIdGeneratorTests
                         serializer.Deserialize<Guid?>(reader) switch
                         {
                             { } value => new OrderId(value),
-                            null when (objectType.IsClass || Nullable.GetUnderlyingType(objectType) is not null) => null,
+                            null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,
                             _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
                         };
 
@@ -318,7 +318,11 @@ public class StronglyTypedIdGeneratorTests
         actualCodes.Should().Contain(c => c!.Contains($"Create({primitive} value)"));
     }
 
-    private static IEnumerable<string?> GetGeneratedCode(string sourceCode)
+    /// <summary>
+    /// 构造被测合成编译：先按 <see cref="ShouldReferenceAssembly"/> 过滤 AppDomain 中已加载的程序集，
+    /// 再并上默认种子程序集与调用方通过 <paramref name="extraAssemblyTypes"/> 显式指定的程序集。
+    /// </summary>
+    private static CSharpCompilation CreateDefaultCompilation(string sourceCode, params Type[] extraAssemblyTypes)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
@@ -329,25 +333,34 @@ public class StronglyTypedIdGeneratorTests
             typeof(Newtonsoft.Json.JsonSerializer).Assembly
         };
 
+        // ShouldReferenceAssembly 只过滤来自 AppDomain 的程序集（防止 TestBase / EF Core / Swagger 等
+        // 程序集因被其它测试加载而污染发现结果）。通过 extraAssemblyTypes 显式注入的程序集不在此列，
+        // 必须原样保留，否则 EF Core / Swagger 生成器将检测不到对应模块而不生成代码。
         var references = AppDomain.CurrentDomain
             .GetAssemblies()
             .Union(assemblies)
             .Distinct()
             .Where(assembly => !assembly.IsDynamic)
             .Where(ShouldReferenceAssembly)
+            .Union(extraAssemblyTypes.Select(type => type.Assembly).Where(assembly => !assembly.IsDynamic))
             .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
             .Cast<MetadataReference>();
 
-        var compilation = CSharpCompilation.Create(
+        return CSharpCompilation.Create(
             "Len.StronglyTypedId.Generator.Test",
             [syntaxTree],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
+    }
+
+    private static IEnumerable<string?> GetGeneratedCode(string sourceCode)
+    {
+        var compilation = CreateDefaultCompilation(sourceCode);
 
         var generator = new StronglyTypedIdGenerator();
 
-        var ee = CSharpGeneratorDriver
+        CSharpGeneratorDriver
             .Create(generator)
             .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 
@@ -363,33 +376,7 @@ public class StronglyTypedIdGeneratorTests
     /// </summary>
     private static IReadOnlyDictionary<string, string> GetGeneratedCodeByHint(string sourceCode, params Type[] extraAssemblyTypes)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
-
-        var assemblies = new[]
-        {
-            typeof(StronglyTypedIdAttribute).Assembly,
-            typeof(System.Text.Json.JsonSerializer).Assembly,
-            typeof(Newtonsoft.Json.JsonSerializer).Assembly,
-        };
-
-        // ShouldReferenceAssembly 只过滤来自 AppDomain 的程序集（防止 TestBase / EF Core / Swagger 等
-        // 程序集因被其它测试加载而污染发现结果）。通过 extraAssemblyTypes 显式注入的程序集不在此列，
-        // 必须原样保留，否则 EF Core / Swagger 生成器将检测不到对应模块而不生成代码。
-        var references = AppDomain.CurrentDomain
-            .GetAssemblies()
-            .Union(assemblies)
-            .Distinct()
-            .Where(assembly => !assembly.IsDynamic)
-            .Where(ShouldReferenceAssembly)
-            .Union(extraAssemblyTypes.Select(t => t.Assembly).Where(a => !a.IsDynamic))
-            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
-            .Cast<MetadataReference>();
-
-        var compilation = CSharpCompilation.Create(
-            "Len.StronglyTypedId.Generator.Test",
-            [syntaxTree],
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var compilation = CreateDefaultCompilation(sourceCode, extraAssemblyTypes);
 
         var generator = new StronglyTypedIdGenerator();
 
@@ -590,6 +577,54 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(code);
 
         generated.Keys.Should().NotContain("StronglyTypedIds.Swagger.g.cs");
+    }
+
+    #endregion
+
+    #region 生成产物的可编译性（消费者未开启 ImplicitUsings）
+
+    /// <summary>
+    /// 回归用例：全部生成产物在「<c>ImplicitUsings=disable</c> 的消费者」里必须能编译。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// using 指令的作用域是文件级：合成编译的源码里虽有 <c>using System;</c>，但生成出来的每个文件
+    /// 都得自带（或用全限定名写明）它依赖的每一个类型。这与
+    /// <c>&lt;ImplicitUsings&gt;disable&lt;/ImplicitUsings&gt;</c>（且非 Web SDK）的消费者等价。
+    /// </para>
+    /// <para>
+    /// 曾如此暴露过 Newtonsoft 产物里的裸 <c>Nullable</c>（<c>System.Nullable</c> 的短名）：开启
+    /// ImplicitUsings 的消费者因为隐式 <c>global using System;</c> 而侥幸通过，关闭后即 CS0103。
+    /// 断言放在此处而非某个具体生成器的测试里，是因为它守护的是全部生成器共有的契约。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void GeneratedCode_Should_Compile_WithoutImplicitUsings()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
+
+        // 显式传入取消令牌：生成 + Emit 是本套件里最重的两步，xUnit1051 要求的正是这个。
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _, cancellationToken);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: cancellationToken);
+
+        var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
     }
 
     #endregion
