@@ -43,6 +43,38 @@ public static class Verify
     }
 
     /// <summary>
+    /// 验证 FixAll（<c>WellKnownFixAllProviders.BatchFixer</c>）：源码里的全部可修复诊断被一次性修复。
+    /// </summary>
+    /// <param name="source">原始源码。</param>
+    /// <param name="expected">期望的分析器诊断，顺序需与 Roslyn 的报告顺序一致。</param>
+    /// <param name="fixedSource">批处理修复后的源码。</param>
+    /// <remarks>
+    /// <para>
+    /// 逐条修复的期望（<c>FixedCode</c>）与批处理的期望（<c>BatchFixedCode</c>）都设为
+    /// <paramref name="fixedSource"/>：当 <c>FixedCode</c> 缺省时，测试框架会把它当作「与源码相同」，
+    /// 于是逐条修复阶段必然失败。
+    /// </para>
+    /// <para>
+    /// 迭代次数显式给出，不去依赖框架的自动推断：逐条修复每轮只处理一条诊断，因而轮数等于诊断条数；
+    /// 批处理一轮即可收敛。
+    /// </para>
+    /// </remarks>
+    public static Task VerifyCodeFixAllAsync(string source, DiagnosticResult[] expected, string fixedSource)
+    {
+        var test = new TestCodeFix
+        {
+            TestCode = source,
+            FixedCode = fixedSource,
+            BatchFixedCode = fixedSource,
+            NumberOfIncrementalIterations = expected.Length,
+            NumberOfFixAllIterations = 1,
+        };
+
+        test.ExpectedDiagnostics.AddRange(expected);
+        return test.RunAsync();
+    }
+
+    /// <summary>
     /// 分析器测试与 CodeFix 测试共用的默认配置：
     /// 关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
     /// </summary>

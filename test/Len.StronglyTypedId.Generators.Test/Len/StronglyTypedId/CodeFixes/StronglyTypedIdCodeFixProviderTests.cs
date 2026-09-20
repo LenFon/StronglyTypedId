@@ -187,4 +187,50 @@ public class StronglyTypedIdCodeFixProviderTests
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
+
+    /// <summary>
+    /// FixAll（<c>BatchFixer</c>）：一次把源码里全部可修复诊断处理完。
+    /// </summary>
+    /// <remarks>
+    /// 既有用例都是「一条诊断、一次修复」。FixAll 走的是 <c>GetFixAllProvider()</c> 返回的批处理器，
+    /// 与逐条修复是两条不同的代码路径：批处理会把各诊断的改动合并到同一份语法树后再整体应用，
+    /// 因此「两条诊断分别位于不同声明上、且都要就地加 partial」这一情形需要单独把守。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFixAll_Should_FixEveryRepairableDiagnosticInOnePass()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+            
+            [StronglyTypedId]
+            public record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public record struct ProductId(Guid Value);
+            """";
+
+        var batchFixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+            
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct ProductId(Guid Value);
+            """";
+
+        var expected = new[]
+        {
+            Verify.Diagnostic(Descriptors.TypeMustBePartial)
+                .WithSpan(5, 1, 6, 42).WithArguments("OrderId"),
+            Verify.Diagnostic(Descriptors.TypeMustBePartial)
+                .WithSpan(8, 1, 9, 44).WithArguments("ProductId"),
+        };
+
+        await Verify.VerifyCodeFixAllAsync(code, expected, batchFixedCode);
+    }
 }

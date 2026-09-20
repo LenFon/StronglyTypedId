@@ -143,6 +143,104 @@ public class StronglyTypedIdInfoTests
 
     #endregion
 
+    #region 属性映射：命名空间、名称与 record 形态
+
+    [Fact]
+    public void Info_Should_ExposeAllNameForms_ForNestedNamespace()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced.Deep;
+
+            public partial record struct OrderId(int Value);
+            """,
+            "Referenced.Deep.OrderId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.Name.Should().Be("OrderId");
+        info.Namespace.Should().Be("Referenced.Deep");
+        info.FullyQualifiedNamespace.Should().Be("global::Referenced.Deep");
+        info.FullyQualifiedName.Should().Be("global::Referenced.Deep.OrderId");
+        // FullName 用作生成文件的 hint name，因此不带 global:: 前缀。
+        info.FullName.Should().Be("Referenced.Deep.OrderId");
+    }
+
+    /// <summary>
+    /// <see cref="StronglyTypedIdInfo.TypeKindSuffix"/> 决定生成代码里 <c>record</c> 后面是否补 <c>struct</c>：
+    /// 值类型 record 漏掉它就会生成 <c>partial record OrderId</c>，与源处的 <c>record struct</c> 不匹配。
+    /// </summary>
+    [Theory]
+    [InlineData("record struct", " struct")]
+    [InlineData("record", null)]
+    public void Info_Should_MapTypeKindSuffix(string declaration, string? expectedSuffix)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            public partial {{declaration}} OrderId(int Value);
+            """,
+            "Referenced.OrderId");
+
+        new StronglyTypedIdInfo(type).TypeKindSuffix.Should().Be(expectedSuffix);
+    }
+
+    #endregion
+
+    #region 解析失败：既无接口也无单参数构造函数
+
+    /// <summary>
+    /// 两条解析路径都落空时必须报错，而不是回退成一个「把类型自身当作基元」的错误结果。
+    /// </summary>
+    [Fact]
+    public void Info_Should_Throw_WhenTypeHasNeitherInterfaceNorSingleParameterConstructor()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public class Plain
+            {
+                public Plain(int number, string tag)
+                {
+                    Number = number;
+                    Tag = tag;
+                }
+
+                public int Number { get; }
+
+                public string Tag { get; }
+            }
+            """,
+            "Referenced.Plain");
+
+        var act = () => new StronglyTypedIdInfo(type);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Referenced.Plain*");
+    }
+
+    /// <summary>
+    /// 数组等非具名类型既不可能实现接口，也没有构造函数，同样走失败分支。
+    /// </summary>
+    [Fact]
+    public void Info_Should_Throw_ForNonNamedType()
+    {
+        var compilation = CSharpCompilation.Create(
+            "ReferencedAssembly",
+            [CSharpSyntaxTree.ParseText("namespace Referenced { public class Marker { } }")],
+            GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var arrayType = compilation.CreateArrayTypeSymbol(compilation.GetSpecialType(SpecialType.System_Int32));
+
+        var act = () => new StronglyTypedIdInfo(arrayType);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    #endregion
+
     #region 辅助
 
     /// <summary>
