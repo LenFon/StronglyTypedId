@@ -107,7 +107,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         var constructorParameterType = type.Constructors[0].Parameters[0].Type;
 
-        if (!SupportedPrimitiveTypes.IsSupported(constructorParameterType.Name))
+        if (!SupportedPrimitiveTypes.IsSupported(constructorParameterType))
         {
             Report(context, Descriptors.ParameterTypeIsInvalid, parameter.Type!.GetLocation(), parameter.Type);
         }

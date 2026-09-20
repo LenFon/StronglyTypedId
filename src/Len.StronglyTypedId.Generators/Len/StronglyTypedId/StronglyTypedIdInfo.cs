@@ -35,7 +35,12 @@ internal readonly record struct StronglyTypedIdInfo
 
     public StronglyTypedIdInfo(ITypeSymbol type)
     {
-        FullyQualifiedNamespace = type.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace，直接解引用会抛
+        // NullReferenceException。这里与「基元类型解析失败」保持同一异常语义，便于定位问题。
+        var containingNamespace = type.ContainingNamespace
+            ?? throw new InvalidOperationException($"无法从类型“{type.ToDisplayString()}”解析强类型 Id 信息：该类型不是具名类型。");
+
+        FullyQualifiedNamespace = containingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         Namespace = FullyQualifiedNamespace[GlobalPrefix.Length..];
         Name = type.Name;
         FullyQualifiedName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
