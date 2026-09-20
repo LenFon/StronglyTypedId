@@ -11,3 +11,4 @@ STIAO005 | StronglyTypedIdAnalyzer | Error |
 STIAO006 | StronglyTypedIdAnalyzer | Error |
 STIAO007 | StronglyTypedIdAnalyzer | Error |
 STIAO008 | StronglyTypedIdAnalyzer | Error |
+STIAO009 | StronglyTypedIdAnalyzer | Error |

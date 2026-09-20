@@ -306,14 +306,14 @@ public class StronglyTypedIdAnalyzerTests
             public partial record struct OrderId(Guid Value);
             """";
 
-        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeNestedAndMustHaveNamespace)
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveNamespace)
             .WithSpan(4, 1, 5, 50).WithArguments("OrderId");
 
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
     [Fact]
-    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNested()
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenContainingTypeCannotBePartial()
     {
         var code = """"
             using System;
@@ -327,8 +327,79 @@ public class StronglyTypedIdAnalyzerTests
             }
             """";
 
-        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeNestedAndMustHaveNamespace)
-            .WithSpan(7, 5, 8, 54).WithArguments("OrderId");
+        // 容器缺 partial：生成代码要补的成员只能嵌回容器里，而没写 partial 的容器重开不了。
+        // 诊断落在整个容器声明上（要改的是容器，不是 Id），故 {0} 是容器名。
+        var expected = Verify.Diagnostic(Descriptors.ContainingTypeMustBePartial)
+            .WithSpan(5, 1, 9, 2).WithArguments("Test");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    [Theory]
+    [InlineData("public partial class Container")]
+    [InlineData("public partial struct Container")]
+    [InlineData("public partial record Container")]
+    [InlineData("public partial interface Container")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNestedInPartialContainer(string container)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            {{container}}
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenContainingTypeIsGeneric()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        // 泛型容器同样属于「重开不了」：重开它必须复现类型参数表与约束，而且容器一旦带上类型参数，
+        // Id 的全名就成了 Container<T>.OrderId（含 <>，连 hint name 都不合法）。故不支持，
+        // 复用「不能是泛型」这条既有规则的措辞，{0} 取容器名，读起来依旧自洽。
+        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeGeneric)
+            .WithSpan(5, 1, 9, 2).WithArguments("Container");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenContainingTypeIsFileLocal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            file partial class Container
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        // file 本地类型即使写了 partial 也没用：它的各段只能待在同一个文件里，而生成代码在另一个文件中。
+        // 与「容器缺 partial」共用一条规则，因为要求同出一源 —— 容器必须能被生成代码重开一次。
+        var expected = Verify.Diagnostic(Descriptors.ContainingTypeMustBePartial)
+            .WithSpan(5, 1, 9, 2).WithArguments("Container");
 
         await Verify.VerifyAnalyzerAsync(code, expected);
     }

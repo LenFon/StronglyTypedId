@@ -314,6 +314,140 @@ public class StronglyTypedIdInfoTests
 
     #endregion
 
+    #region 包含类型链：嵌套类型
+
+    [Fact]
+    public void Info_Should_ExposeContainingTypeChain_ForNestedType()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Outer
+            {
+                partial class Inner
+                {
+                    public partial record struct OrderId(System.Guid Value);
+                }
+            }
+            """,
+            "Referenced.Outer+Inner+OrderId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.NestingDepth.Should().Be(2);
+        // 最外层在前，逐层一行；显式写出真实的可访问性 —— 内层省略修饰符时隐式为 private，
+        // 与重开时写下的可访问性必须一致，否则 CS0262。
+        info.ContainingTypeDeclarations.Should().Be("public partial class Outer\nprivate partial class Inner");
+        info.FullyQualifiedName.Should().Be("global::Referenced.Outer.Inner.OrderId");
+        info.FullName.Should().Be("Referenced.Outer.Inner.OrderId");
+        info.Name.Should().Be("OrderId");
+        info.Namespace.Should().Be("Referenced");
+    }
+
+    [Fact]
+    public void Info_Should_LeaveContainingTypeChainEmpty_ForTopLevelType()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial record struct OrderId(System.Guid Value);
+            """,
+            "Referenced.OrderId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.NestingDepth.Should().Be(0);
+        info.ContainingTypeDeclarations.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("public partial class Container", "public partial class Container")]
+    [InlineData("public partial struct Container", "public partial struct Container")]
+    [InlineData("public partial record Container", "public partial record Container")]
+    [InlineData("public partial record struct Container", "public partial record struct Container")]
+    [InlineData("public partial interface Container", "public partial interface Container")]
+    [InlineData("partial class Container", "internal partial class Container")]
+    public void Info_Should_RestateContainingType_WithAccessibilityAndKind(string container, string expected)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            {{container}}
+            {
+                public partial record struct OrderId(System.Guid Value);
+            }
+            """,
+            "Referenced.Container+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations.Should().Be(expected);
+    }
+
+    #endregion
+
+    #region 嵌套包装：把声明块嵌回包含类型
+
+    /// <remarks>
+    /// 断言用 <c>"\n"</c> 拼接而不是原始字符串字面量：本方法的契约就是只用 <c>\n</c> 逐行拼接，
+    /// 行尾风格统一交给调用方最后的 <c>NormalizeLineEndings</c>。原始字符串字面量的行尾跟随测试文件
+    /// （本工作区是 CRLF），拿它做期望值会把「平台行尾」混进对拼接契约的断言里。
+    /// </remarks>
+    [Fact]
+    public void NestInContainingTypes_Should_WrapAndIndent_WhenNested()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Outer
+            {
+                public partial struct Inner
+                {
+                    public partial record struct OrderId(System.Guid Value);
+                }
+            }
+            """,
+            "Referenced.Outer+Inner+OrderId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        var wrapped = GeneratedCode.NestInContainingTypes(info, "partial record struct OrderId\n{\n    int Value;\n}");
+
+        wrapped.Should().Be(
+            "public partial class Outer\n" +
+            "{\n" +
+            "    public partial struct Inner\n" +
+            "    {\n" +
+            "        partial record struct OrderId\n" +
+            "        {\n" +
+            "            int Value;\n" +
+            "        }\n" +
+            "    }\n" +
+            "}");
+    }
+
+    [Fact]
+    public void NestInContainingTypes_Should_ReturnSameBlock_ForTopLevelType()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial record struct OrderId(System.Guid Value);
+            """,
+            "Referenced.OrderId");
+
+        var info = new StronglyTypedIdInfo(type);
+        var block = "partial record struct OrderId\n{\n}";
+
+        // 顶层类型原样返回同一个实例：产物与不支持嵌套时逐字节一致，既有快照才继续是回归基线。
+        GeneratedCode.NestInContainingTypes(info, block).Should().BeSameAs(block);
+    }
+
+    #endregion
+
     #region 辅助
 
     /// <summary>

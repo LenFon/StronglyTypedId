@@ -29,7 +29,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         }
 
         // 强类型 Id 可以跨多个 partial 声明分段声明（例如后续段追加成员），各段共享同一个类型符号。
-        // 类型级约束（必须 record / 不能 abstract / 必须 partial / 不能泛型 / 必须有命名空间且不能嵌套）
+        // 类型级约束（必须 record / 不能 abstract / 必须 partial / 不能泛型 / 必须在命名空间内 /
+        // 包含类型必须能被生成代码重开）
         // 描述的是整个类型，因此跨全部声明段判定且最多报告一次；而主构造函数及其参数只存在于声明主
         // 构造函数的那一段，故参数级约束只在该段上判定。
         // 若按段逐条校验，只追加成员的后续段会因缺少 ParameterList 被误判为 STIAO005（类型必须有且
@@ -77,10 +78,35 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // partial 类型的各段必须位于同一容器内，因此判定首个声明段即可。
-        if (records[0].Parent is not BaseNamespaceDeclarationSyntax)
+        // 嵌套类型是被支持的：partial 的各段必须位于同一容器内，因此判定首个声明段即可。
+        // 生成代码要补的是 Id 自身的成员，只能把声明逐层嵌回原本的包含类型里，因此链上每一层都必须能被
+        // 原样重开 —— 要求 partial、不能是泛型、不能是 file 本地类型。这里逐层向上判定，报错落在
+        // 最内层那个不合规的容器上，即使用者真正要改的那一处；若容器都不合规而整体又不在命名空间内，
+        // 报在 Id 自己身上。泛型容器复用「不能是泛型」这条既有规则，{0} 取容器名，措辞依旧自洽。
+        // 定位取整个类型声明（与其它类型级规则一致），而不是只标标识符：指向子片段的位置会让
+        // 代码修复测试框架判定为「非本地的分析器诊断」而拒绝走修复流程。
+        var container = records[0].Parent;
+
+        while (container is TypeDeclarationSyntax declaration)
         {
-            Report(context, Descriptors.TypeCannotBeNestedAndMustHaveNamespace, records[0].GetLocation(), type.Name);
+            if (declaration.TypeParameterList is not null)
+            {
+                Report(context, Descriptors.TypeCannotBeGeneric, declaration.GetLocation(), declaration.Identifier.ValueText);
+                return;
+            }
+
+            if (!declaration.Modifiers.Any(SyntaxKind.PartialKeyword) || declaration.Modifiers.Any(SyntaxKind.FileKeyword))
+            {
+                Report(context, Descriptors.ContainingTypeMustBePartial, declaration.GetLocation(), declaration.Identifier.ValueText);
+                return;
+            }
+
+            container = declaration.Parent;
+        }
+
+        if (container is not BaseNamespaceDeclarationSyntax)
+        {
+            Report(context, Descriptors.TypeMustHaveNamespace, records[0].GetLocation(), type.Name);
             return;
         }
 

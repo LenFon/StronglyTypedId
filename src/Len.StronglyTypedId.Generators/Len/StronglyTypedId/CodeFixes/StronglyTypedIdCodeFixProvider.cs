@@ -14,21 +14,24 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.TypeCannotBeAbstractId,
             Descriptors.ParameterNameMustBeValueId,
             Descriptors.ParameterCannotBeNullableId,
-            Descriptors.TypeCannotBeGenericId);
+            Descriptors.TypeCannotBeGenericId,
+            Descriptors.ContainingTypeMustBePartialId);
 
     public override FixAllProvider? GetFixAllProvider()
     {
         return WellKnownFixAllProviders.BatchFixer;
     }
 
-    public override Task RegisterCodeFixesAsync(CodeFixContext context)
+    public override async Task RegisterCodeFixesAsync(CodeFixContext context)
     {
+        var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken);
+
         foreach (var diagnostic in context.Diagnostics)
         {
             // 只有可修复的诊断才在 Descriptors.All 中登记，找不到即代表无需提供修复。
             var descriptor = Descriptors.All.FirstOrDefault(item => item.Id == diagnostic.Id);
 
-            if (descriptor is null)
+            if (descriptor is null || root is null || !IsFixable(diagnostic, root))
             {
                 continue;
             }
@@ -42,14 +45,40 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                  Descriptors.ParameterNameMustBeValueId => UpdateParameterNameToValueAsync(context, diagnostic, token),
                                  Descriptors.ParameterCannotBeNullableId => RemoveNullableAsync(context, diagnostic, token),
                                  Descriptors.TypeCannotBeGenericId => RemoveGenericAsync(context, diagnostic, token),
+                                 Descriptors.ContainingTypeMustBePartialId => AddPartialToContainingTypeAsync(context, diagnostic, token),
                                  _ => Task.FromResult(context.Document),
                              },
                              title);
 
             context.RegisterCodeFix(action, diagnostic);
         }
+    }
 
-        return Task.CompletedTask;
+    /// <summary>
+    /// 判断该诊断的靶子是否真的适用对应修复。
+    /// </summary>
+    /// <remarks>
+    /// 两条规则各自有两种触发原因，原因不同则可行的修复也不同 —— 不加区分就会给出「点了没反应」
+    /// 甚至把人写坏的入口。
+    /// </remarks>
+    private static bool IsFixable(Diagnostic diagnostic, SyntaxNode root)
+    {
+        switch (diagnostic.Id)
+        {
+            // 泛型靶子有两种：Id 自己泛型（删掉类型参数表即可）与包含类型泛型（删掉容器的类型参数会改坏
+            // 使用者的设计，不该提供修复）。只在靶子是 record 时给修复。
+            case Descriptors.TypeCannotBeGenericId:
+                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is RecordDeclarationSyntax;
+
+            // 触发原因有两种：容器缺 partial，或容器是 file 本地类型。只在缺 partial 时提供修复 ——
+            // 否则会往已有的 partial 之后再插一个（file partial class → file partial partial class）。
+            case Descriptors.ContainingTypeMustBePartialId:
+                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } declaration
+                    && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword);
+
+            default:
+                return true;
+        }
     }
 
     private static Task<Document> AddPartialKeywordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
@@ -62,6 +91,36 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
     private static Task<Document> RemoveGenericAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceRecordDeclarationAsync(context, diagnostic, token, RemoveTypeParametersAndConstraints);
+
+    /// <summary>
+    /// 给诊断所在的包含类型补上 <c>partial</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="AddPartialKeywordAsync"/> 的区别只在靶子：嵌套强类型 Id 的容器可以是 class、struct、
+    /// record 或 interface，不限于 record。
+    /// </remarks>
+    private static Task<Document> AddPartialToContainingTypeAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+        => ReplaceTypeDeclarationAsync(context, diagnostic, token,
+            static declaration => declaration.AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword)));
+
+    /// <summary>
+    /// 用 <paramref name="replace"/> 的结果替换诊断所在的类型声明（record 之外的种类也适用）。
+    /// </summary>
+    private static async Task<Document> ReplaceTypeDeclarationAsync(
+        CodeFixContext context,
+        Diagnostic diagnostic,
+        CancellationToken token,
+        Func<TypeDeclarationSyntax, TypeDeclarationSyntax> replace)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<TypeDeclarationSyntax>(root, diagnostic) is not { } declaration)
+        {
+            return context.Document;
+        }
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(declaration, replace(declaration)));
+    }
 
     /// <summary>
     /// 移除 record 的类型参数表，并把紧随其后的约束子句一并移除。
