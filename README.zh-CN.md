@@ -19,6 +19,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [快速开始](#getting-started)
 - [支持的基元类型](#supported-primitive-types)
 - [生成器会生成什么](#what-gets-generated)
+- [嵌套类型](#nested-types)
 - [序列化](#serialization)
 - [Entity Framework Core](#entity-framework-core)
 - [Swashbuckle](#swashbuckle)
@@ -131,7 +132,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 
 ## 生成器会生成什么 <a href="#top" style="float:right">↑ 返回目录</a>
 
-对于每一个被标注的类型，生成器会在**同一命名空间**下产出一份 `partial` 声明，你手写的声明不会被改动。
+对于每一个被标注的类型，生成器会在**同一命名空间**下产出一份 `partial` 声明（嵌套类型则嵌回它的包含
+类型里，见[嵌套类型](#nested-types)），你手写的声明不会被改动。
 具体产出取决于当前编译引用了什么：
 
 | 编译中的条件                                                                          | 生成的代码                                                                          |
@@ -153,6 +155,33 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
 `internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，两个 `ApplyTo`
 重载都并存于该类中。调用它们需要 `using Len.StronglyTypedId;`（声明特性时通常已经有了）。
+
+<a id="nested-types"></a>
+
+## 嵌套类型 <a href="#top" style="float:right">↑ 返回目录</a>
+
+强类型 Id 可以声明在类、结构、记录或接口内部。`partial` 的各段必须处于同一容器内，因此生成代码会把
+声明**逐层嵌回原本的包含类型**，而不是落在命名空间层级：
+
+```csharp
+public partial class OrderAggregate          // 容器必须 partial
+{
+    [StronglyTypedId]
+    public partial record struct OrderId(Guid Value);
+}
+
+var id = OrderAggregate.OrderId.Create(value);   // 按嵌套名使用，与普通类型无异
+```
+
+前置条件只有一条：**包含类型必须都能被生成代码原样重开**——链上每一层都必须是 `partial`、不是泛型、
+也不是 `file` 本地类型。不满足时由 [STIAO009](#diagnostics)（缺 `partial`，或 `file` 本地类型）
+或 [STIAO003](#diagnostics)（泛型容器）报错，前者附带补 `partial` 的代码修复。
+
+限制：容器不能带类型参数。重开 `Outer<T>` 需要复现它的类型参数表与约束，而且 `Outer<T>.OrderId`
+这样的全名带 `<>`，无法作为生成文件的名称。
+
+嵌套不影响其它任何能力：比较与排序、格式化与 span 解析、两种 JSON 序列化、
+System.Text.Json 字典键、EF Core 转换器与 Swagger `MapType` 都照常工作。
 
 <a id="serialization"></a>
 
@@ -286,11 +315,12 @@ if (typeof(OrderId).IsStronglyTypedId())
 | STIAO001 | 类型必须是 `partial`。                                     | 补上 `partial`       |
 | STIAO002 | 类型不能是 `abstract`。                                    | 去掉 `abstract`      |
 | STIAO003 | 类型不能是 `generic`（泛型）。                             | 移除类型参数表       |
-| STIAO004 | 类型不能嵌套，且必须声明在命名空间内。                     | —                    |
+| STIAO004 | 类型必须声明在命名空间内。                                 | —                    |
 | STIAO005 | 类型必须拥有单参数的主构造函数。                           | —                    |
 | STIAO006 | 主构造函数参数不能为可空类型。                             | 去掉 `?` 后缀        |
 | STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数           |
 | STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | —                    |
+| STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补上 `partial` |
 
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以
 拆成多个 `partial` 声明段：类型级规则按整个类型判定一次，参数级规则只在声明主构造函数的那一段上判定，
