@@ -106,11 +106,14 @@ internal class EfCoreCodeGenerator : ICodeGenerator
     /// 是否存在位于其它命名空间的同名强类型 Id，需要以命名空间前缀消歧。
     /// </param>
     /// <remarks>
-    /// 冲突时使用「命名空间_类型名」（<c>Domain.OrderId</c> → <c>Domain_OrderIdConverter</c>）：
+    /// 冲突时使用「全名（含包含类型）里的分隔符换成下划线」（<c>Domain.OrderId</c> → <c>Domain_OrderIdConverter</c>、
+    /// <c>Domain.OrderAggregate.OrderId</c> → <c>Domain_OrderAggregate_OrderIdConverter</c>）：
     /// 结果只由该 Id 自身决定，与同一次编译里是否恰好还有别的 Id 无关。
+    /// 消歧必须带上包含类型链，不能只用命名空间 + 短名 —— 嵌套之后
+    /// <c>Domain.A.OrderId</c> 与 <c>Domain.B.OrderId</c> 会落到同一个类名上，撞 CS0102。
     /// </remarks>
     private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
-            ? $"{idInfo.Namespace.Replace('.', '_')}_{idInfo.Name}Converter"
+            ? $"{idInfo.FullName.Replace('.', '_')}Converter"
             : $"{idInfo.Name}Converter";
 }

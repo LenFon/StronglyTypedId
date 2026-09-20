@@ -197,6 +197,39 @@ public class StronglyTypedIdCodeFixProviderTests
     /// 因此「两条诊断分别位于不同声明上、且都要就地加 partial」这一情形需要单独把守。
     /// </remarks>
     [Fact]
+    public async Task CodeFix_Should_AddPartialToContainingType()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+            
+            public class Container
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+            
+            public partial class Container
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ContainingTypeMustBePartial)
+            .WithSpan(5, 1, 9, 2).WithArguments("Container");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    [Fact]
     public async Task CodeFixAll_Should_FixEveryRepairableDiagnosticInOnePass()
     {
         var code = """"
