@@ -67,6 +67,10 @@ internal readonly record struct StronglyTypedIdInfo
         FullName = type.ToDisplayString();
         TypeKindSuffix = type.TypeKind == TypeKind.Struct ? " struct" : null;
 
+        var containingTypes = GetContainingTypeDeclarations(type);
+        ContainingTypeDeclarations = containingTypes.Declarations;
+        NestingDepth = containingTypes.Depth;
+
         var primitiveIdType = GetPrimitiveIdType(type);
 
         PrimitiveIdTypeName = primitiveIdType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -117,6 +121,20 @@ internal readonly record struct StronglyTypedIdInfo
     /// which makes it a legal hint name but unsuitable for use inside generated code.
     /// </remarks>
     public string FullName { get; }
+
+    /// <summary>
+    /// 包含类型链的重开声明，最外层在前、每层一行；顶层类型为空串。
+    /// </summary>
+    /// <remarks>
+    /// 形如 <c>public partial class Outer</c>。生成代码要补的是嵌套类型自身的成员，而 partial 的各段
+    /// 必须处于同一容器内，故只能把声明逐层放回原本的包含类型中 —— 每一层都得被原样重开一次。
+    /// </remarks>
+    public string ContainingTypeDeclarations { get; }
+
+    /// <summary>
+    /// 包含类型链的层数；顶层类型为 0。
+    /// </summary>
+    public int NestingDepth { get; }
 
     /// <summary>
     /// The type kind suffix appended right after the <c>record</c> keyword, e.g. <c>" struct"</c>.
@@ -204,6 +222,79 @@ internal readonly record struct StronglyTypedIdInfo
 
         throw new InvalidOperationException($"无法从类型“{type.ToDisplayString()}”解析基元 Id 类型：它既未实现 {InterfaceName}<TSelf, TPrimitiveId>，也不具备单参数构造函数。");
     }
+
+    /// <summary>
+    /// 自内向外取出包含类型链，反转成最外层在前，并逐层渲染为可重开该类型的 partial 声明。
+    /// </summary>
+    /// <remarks>
+    /// 这里刻意返回「拼接好的字符串 + 层数」而不是集合：本类型是 <see langword="readonly"/> record struct，
+    /// 描述符靠成员级相等性去重（<see cref="StronglyTypedIdDiscovery.Discover"/> 的 <c>Distinct</c>），
+    /// 而集合类型（如 <c>ImmutableArray&lt;T&gt;</c>）只按底层数组引用比较 —— 一旦相等性失效，同一个
+    /// hint name 会被 <c>AddSource</c> 两次，生成器整个产出被丢弃，而编译器只报一条 CS8785 警告。
+    /// </remarks>
+    private static (string Declarations, int Depth) GetContainingTypeDeclarations(ITypeSymbol type)
+    {
+        var levels = new List<string>();
+
+        for (var container = type.ContainingType; container is not null; container = container.ContainingType)
+        {
+            levels.Add(GetContainingTypeDeclaration(container));
+        }
+
+        // 向上取到的是最内层在前，而生成代码要从最外层开始逐层包进去。
+        levels.Reverse();
+
+        return (string.Join("\n", levels), levels.Count);
+    }
+
+    /// <summary>
+    /// 把包含类型渲染成可重开它的 partial 声明，形如 <c>public partial class Outer</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只写可访问性与类型种类关键字，其余修饰符（<c>static</c> / <c>abstract</c> / <c>sealed</c> /
+    /// <c>readonly</c> / <c>ref</c> / <c>new</c>）一律不写 —— 实测 partial 各段只要「没说」就不冲突
+    /// （逐项省略均不报错），而「说错」才是错误：<c>abstract</c> 不能加在接口上、<c>sealed</c> 不能加在
+    /// 值类型上，两者都是 CS0106。写全套修饰符反而会在接口容器与结构容器上直接生成非法代码。
+    /// </para>
+    /// <para>
+    /// 可访问性必须照抄：嵌套类型省略可访问性时隐式为 <c>private</c>，与使用者写下的 <c>public</c> /
+    /// <c>internal</c> 相冲会 CS0262，而显式写出真实的可访问性则必然一致。
+    /// </para>
+    /// <para>
+    /// 种类关键字不能只看 <see cref="ITypeSymbol.TypeKind"/>：<c>record</c> 与 <c>class</c>
+    /// 的 <see cref="TypeKind"/> 同为 <see cref="TypeKind.Class"/>，必须结合
+    /// <see cref="ITypeSymbol.IsRecord"/> 才能区分，否则 <c>record Outer</c> 会被重开成
+    /// <c>partial class Outer</c>，种类不一致报错。
+    /// </para>
+    /// </remarks>
+    private static string GetContainingTypeDeclaration(INamedTypeSymbol type)
+    {
+        var keyword = type switch
+        {
+            { IsRecord: true, TypeKind: TypeKind.Struct } => "record struct",
+            { IsRecord: true } => "record",
+            { TypeKind: TypeKind.Struct } => "struct",
+            { TypeKind: TypeKind.Interface } => "interface",
+            _ => "class",
+        };
+
+        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {type.Name}";
+    }
+
+    /// <summary>
+    /// 把符号的可访问性渲染成 C# 关键字。
+    /// </summary>
+    private static string GetAccessibilityKeyword(Accessibility accessibility)
+        => accessibility switch
+        {
+            Accessibility.Public => "public",
+            Accessibility.Internal => "internal",
+            Accessibility.Protected => "protected",
+            Accessibility.ProtectedOrInternal => "protected internal",
+            Accessibility.ProtectedAndInternal => "private protected",
+            _ => "private",
+        };
 
     /// <summary>
     /// 判断给定类型是否实现了指定的接口。

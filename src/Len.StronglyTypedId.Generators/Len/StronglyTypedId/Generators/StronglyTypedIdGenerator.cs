@@ -61,7 +61,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         if (syntaxNode is not RecordDeclarationSyntax
             {
                 TypeParameterList: null, // 非泛型
-                Parent: BaseNamespaceDeclarationSyntax, // 非嵌套类型，并且有命名空间
                 Modifiers: var modifiers and not [],
             } record)
         {
@@ -78,7 +77,31 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return false;
         }
 
-        return modifiers.Any(SyntaxKind.PartialKeyword) && !modifiers.Any(SyntaxKind.AbstractKeyword);
+        if (!modifiers.Any(SyntaxKind.PartialKeyword) || modifiers.Any(SyntaxKind.AbstractKeyword))
+        {
+            return false;
+        }
+
+        // 逐层向上检查容器，最后要求整条链落在命名空间里。
+        // 嵌套类型是被支持的，但生成代码要新增的是嵌套类型自身的成员，而 partial 的各段必须处于同一
+        // 容器内 —— 生成代码只能把声明逐层嵌回原来的包含类型，因此每一层都必须能被原样重开。
+        // 这里挡掉的写法（顶层无命名空间 / 容器非 partial / 容器泛型 / 容器是 file 本地类型）分析器都会
+        // 另行报错（STIAO004 / STIAO009 / STIAO003），先挡掉是为了不再为已知非法的写法生成一份编译不过的代码。
+        var container = record.Parent;
+
+        while (container is TypeDeclarationSyntax declaration)
+        {
+            if (declaration.TypeParameterList is not null
+                || declaration.Modifiers.Any(SyntaxKind.FileKeyword)
+                || !declaration.Modifiers.Any(SyntaxKind.PartialKeyword))
+            {
+                return false;
+            }
+
+            container = declaration.Parent;
+        }
+
+        return container is BaseNamespaceDeclarationSyntax;
     }
 
     private static void GenerateCoreCode(

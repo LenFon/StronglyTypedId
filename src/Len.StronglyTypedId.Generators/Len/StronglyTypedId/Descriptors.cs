@@ -7,15 +7,32 @@ internal static class Descriptors
 {
     private const string Category = "StronglyTypedIdAnalyzer";
 
+    public const string ContainingTypeMustBePartialId = "STIAO009";
     public const string ParameterCannotBeNullableId = "STIAO006";
     public const string ParameterNameMustBeValueId = "STIAO007";
     public const string ParameterTypeIsInvalidId = "STIAO008";
     public const string TypeCannotBeAbstractId = "STIAO002";
     public const string TypeCannotBeGenericId = "STIAO003";
-    public const string TypeCannotBeNestedAndMustHaveNamespaceId = "STIAO004";
+    public const string TypeMustHaveNamespaceId = "STIAO004";
     public const string TypeMustBePartialId = "STIAO001";
     public const string TypeMustBeRecordId = "STIAO000";
     public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIAO005";
+
+    /// <summary>
+    /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
+    /// </summary>
+    /// <remarks>
+    /// 两种情况同一条规则，因为要求同出一源：生成代码要新增的是嵌套 Id 自身的成员，而 partial 的各段
+    /// 必须处于同一容器内，所以只能把这个容器在生成的文件里重新打开一次。缺 partial 的容器做不到；
+    /// <c>file</c> 本地类型则连「在另一个文件里重开」这条路本身都不存在。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ContainingTypeMustBePartial
+        = new(ContainingTypeMustBePartialId,
+            new LocalizedString("ContainingTypeMustBePartialTitle"),
+            new LocalizedString("ContainingTypeMustBePartialMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
 
     public static readonly DiagnosticDescriptor ParameterCannotBeNullable
         = new(ParameterCannotBeNullableId,
@@ -57,10 +74,10 @@ internal static class Descriptors
             DiagnosticSeverity.Error,
             true);
 
-    public static readonly DiagnosticDescriptor TypeCannotBeNestedAndMustHaveNamespace
-        = new(TypeCannotBeNestedAndMustHaveNamespaceId,
-            new LocalizedString("TypeCannotBeNestedAndMustHaveNamespaceTitle"),
-            new LocalizedString("TypeCannotBeNestedAndMustHaveNamespaceMessage"),
+    public static readonly DiagnosticDescriptor TypeMustHaveNamespace
+        = new(TypeMustHaveNamespaceId,
+            new LocalizedString("TypeMustHaveNamespaceTitle"),
+            new LocalizedString("TypeMustHaveNamespaceMessage"),
             Category,
             DiagnosticSeverity.Error,
             true);
@@ -98,10 +115,11 @@ internal static class Descriptors
         TypeMustBePartial,
         TypeCannotBeAbstract,
         TypeCannotBeGeneric,
-        TypeCannotBeNestedAndMustHaveNamespace,
+        TypeMustHaveNamespace,
         TypeMustHaveSingleParameterPrimaryConstructor,
         ParameterCannotBeNullable,
         ParameterNameMustBeValue,
         ParameterTypeIsInvalid,
+        ContainingTypeMustBePartial,
     ];
 }
