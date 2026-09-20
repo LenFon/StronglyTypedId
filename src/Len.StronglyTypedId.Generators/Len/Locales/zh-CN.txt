@@ -1,8 +1,8 @@
 ﻿ParameterCannotBeNullableMessage = 参数‘{0}’不能为可空类型。	
 ParameterCannotBeNullableTitle = 	参数不能为可空类型	
-ParameterNameMustBeValueMessage = 	参数名应该是‘Value’。	
+ParameterNameMustBeValueMessage = 	参数名‘{0}’应该是‘Value’。	
 ParameterNameMustBeValueTitle = 	参数名应该是‘Value’	
-ParameterTypeIsInvalidMessage = 	参数类型必须是以下之一：Guid、String、byte、short、int、long、sbyte、ushort、uint或ulong。	
+ParameterTypeIsInvalidMessage = 	参数类型‘{0}’必须是以下之一：Guid、String、byte、short、int、long、sbyte、ushort、uint或ulong。	
 ParameterTypeIsInvalidTitle = 	参数类型无效	
 TypeCannotBeAbstractMessage = 	类型‘{0}’不能被声明为抽象的。	
 TypeCannotBeAbstractTitle = 	类型不能被声明为抽象的	

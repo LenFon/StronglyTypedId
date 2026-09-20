@@ -1,8 +1,8 @@
 ﻿ParameterCannotBeNullableMessage = The parameter '{0}' must not be nullable.	
 ParameterCannotBeNullableTitle = Parameter must not be nullable	
-ParameterNameMustBeValueMessage = The parameter name should be ‘Value’.	
+ParameterNameMustBeValueMessage = The parameter name ‘{0}’ should be ‘Value’.	
 ParameterNameMustBeValueTitle = Parameter name should be ‘Value’.	
-ParameterTypeIsInvalidMessage = The parameter type must be one of the following: Guid, String, byte, short, int, long, sbyte, ushort, uint, or ulong.	
+ParameterTypeIsInvalidMessage = The parameter type ‘{0}’ must be one of the following: Guid, String, byte, short, int, long, sbyte, ushort, uint, or ulong.	
 ParameterTypeIsInvalidTitle	 = Parameter type is not valid	
 TypeCannotBeAbstractMessage	 = The type '{0}' cannot be declared abstract.	
 TypeCannotBeAbstractTitle	 = Type cannot be declared abstract	
