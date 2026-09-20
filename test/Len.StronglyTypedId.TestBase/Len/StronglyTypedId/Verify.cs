@@ -46,6 +46,12 @@ public static class Verify
     /// 分析器测试与 CodeFix 测试共用的默认配置：
     /// 关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
     /// </summary>
+    /// <remarks>
+    /// 这里必须保持 <see cref="CompilerDiagnostics.None"/>：分析器用例的源码片段普遍不含
+    /// <c>using System;</c>（<c>Guid</c> 是错误类型符号）；而 CodeFix 用例在 net10.0 目标下还会因为
+    /// 被测程序集是 net10 构建、引用程序集却固定在 net8.0 而报 CS1705。修复产物的正确性由
+    /// <c>FixedCode</c> 的精确文本比对把守。
+    /// </remarks>
     private static void ApplyDefaults(AnalyzerTest<DefaultVerifier> test)
     {
         test.CompilerDiagnostics = CompilerDiagnostics.None;
