@@ -120,6 +120,9 @@ public class SwaggerCodeGeneratorTests
 
     #region V1（Microsoft.OpenApi 1.x / Swashbuckle 6.x–9.x）：覆盖全部基元分支
 
+    // 源码必须带 using System;：否则 Guid 在合成编译里是「错误类型符号」，
+    // SymbolDisplayFormat.FullyQualifiedFormat 会把它渲染成裸 Guid，与真实消费者环境
+    // （global::System.Guid）不一致，令按短名匹配的基元分支「恰好」命中而掩盖缺陷。
     [Theory]
     [InlineData("Guid", "string", "uuid")]
     [InlineData("int", "integer", "int32")]
@@ -135,6 +138,8 @@ public class SwaggerCodeGeneratorTests
     public void Swagger_V1_Should_GenerateMapType_ForPrimitive(string primitive, string openApiType, string? format)
     {
         var code = $$"""
+            using System;
+
             namespace Len.StronglyTypedId;
 
             [StronglyTypedId]
@@ -157,6 +162,8 @@ public class SwaggerCodeGeneratorTests
     public void Swagger_V1_Should_GenerateMultipleMapTypeCalls_ForMultipleIds()
     {
         var code = """
+            using System;
+
             namespace Len.StronglyTypedId;
 
             [StronglyTypedId]
@@ -175,6 +182,34 @@ public class SwaggerCodeGeneratorTests
     }
 
     /// <summary>
+    /// 回归用例：源码能解析出 <c>System.Guid</c> 时，基元分支仍必须命中并输出 <c>format: uuid</c>。
+    /// </summary>
+    /// <remarks>
+    /// <c>SymbolDisplayFormat.FullyQualifiedFormat</c> 的 UseSpecialTypes 只把 C# 关键字渲染成短名，
+    /// <c>System.Guid</c> 这类普通 BCL 类型得到的是 <c>global::System.Guid</c>。曾按短名字面量匹配
+    /// 基元类型，<c>"Guid"</c> 分支因而永不命中，Guid 强类型 Id 在 OpenAPI 文档里丢掉 format: uuid。
+    /// 既有用例未能发现，是因为源码片段缺少 <c>using System;</c>，<c>Guid</c> 在那里是错误类型符号、
+    /// 反而显示为裸 <c>Guid</c>。
+    /// </remarks>
+    [Fact]
+    public void Swagger_V1_Should_GenerateUuidFormat_WhenGuidIsResolved()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
+
+        generated.Should().Contain(
+            """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" });""");
+    }
+
+    /// <summary>
     /// 回归用例：Swashbuckle 7/8/9 仍依赖 Microsoft.OpenApi 1.6.x，必须继续按 V1 生成；
     /// 只有 Swashbuckle 10+ 才引入 Microsoft.OpenApi 2.x。
     /// </summary>
@@ -190,6 +225,8 @@ public class SwaggerCodeGeneratorTests
     public void Swagger_V1_Should_StayOnV1_WhenSwashbuckleV7ToV9Referenced(string swaggerGenVersion)
     {
         var code = """
+            using System;
+
             namespace Len.StronglyTypedId;
 
             [StronglyTypedId]
@@ -234,6 +271,8 @@ public class SwaggerCodeGeneratorTests
     public void Swagger_V2_Should_UseOpenApiSchemaEnum_WhenSwashbuckleV10AndOpenApiV2Referenced()
     {
         var code = """
+            using System;
+
             namespace Len.StronglyTypedId;
 
             [StronglyTypedId]
