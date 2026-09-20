@@ -11,11 +11,32 @@
 		<RepositoryUrl>https://github.com/lenfon/StronglyTypedId</RepositoryUrl>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<!-- Include symbol files (*.pdb) in the built .nupkg -->
-		<AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+		<!--
+		  生成器产物这类未纳入版本控制的源文件也嵌入 pdb，否则 F11 只能停在「找不到源代码」。
+		  符号包本身只在 Len.StronglyTypedId 项目里开启：分析器包除 analyzers/dotnet/cs 下的 dll 外没有任何
+		  打包内容，开符号包会直接撞 NU5017（既无依赖项也无内容的包）。
+		-->
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<!--
+		  打包时做 API 兼容性校验（SDK 内置，无需额外包）：任何「删成员 / 改签名 / 去掉目标框架 /
+		  降低程序集版本」都会在 dotnet pack 阶段直接报错，而不是等使用者升级后才发现。
+		  基线取同一代的最近一次发布（1.3.0-preview.5，同为 net8.0;net10.0）。刻意不用更早的 1.2.1：
+		  它尚支持 net7.0，与之比对会命中 PKV006，那是上一代与本代的差异，不是待修的回归。
+		  基线版本与 version.props 无关：后者由发布流程的 TagToVersion 按 git tag 覆写。
+		-->
+		<EnablePackageValidation>true</EnablePackageValidation>
+		<PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == ''">1.3.0-preview.5</PackageValidationBaselineVersion>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+	</PropertyGroup>
+	<!--
+	  CI 上开启确定性构建：编译进 pdb / 程序集的路径改写为源码管理路径（/_/…），
+	  这样同一份源码在任何机器上都能产出逐字节一致的程序集，且符号服务器能据此定位到 GitHub 上的源文件。
+	  只在 CI 环境启用是因为它要求工作树可追溯到远端仓库，本地未提交的实验性改动会被它挡住（发警告）。
+	-->
+	<PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == '' and '$(CI)' == 'true'">
+		<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.SourceLink.GitHub">
