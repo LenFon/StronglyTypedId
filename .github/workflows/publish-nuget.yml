@@ -49,3 +49,8 @@ jobs:
 
     - name: Publish the package to nuget.org
       run: dotnet nuget push bin/Release/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+
+    # 符号包必须单独再推一次：通配符 *.nupkg 不匹配 *.snupkg（结尾是 .snupkg 而非 .nupkg）。
+    # 顺序上必须在主包之后——nuget.org 要求符号包对应的包已存在。
+    - name: Publish the symbol package to nuget.org
+      run: dotnet nuget push bin/Release/*.snupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

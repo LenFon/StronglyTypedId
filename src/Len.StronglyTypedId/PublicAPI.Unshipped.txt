@@ -1,0 +1,3 @@
+#nullable enable
+Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.get -> string?
+Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.set -> void

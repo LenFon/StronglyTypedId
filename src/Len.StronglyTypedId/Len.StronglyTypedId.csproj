@@ -4,10 +4,33 @@
 		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<!--
+		  RS0016/RS0017 由 Microsoft.CodeAnalysis.PublicApiAnalyzers 报出，默认是警告。本仓库的基线是
+		  「0 警告」，靠默认严重级别等于没有约束（一次 NoWarn 或一次 WarningsNotAsErrors 就绕过去了），
+		  因此显式升为错误：公开 API 的新增与删除都必须落在 PublicAPI.*.txt 里被评审到。
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
+		<!--
+		  符号单独成包（.snupkg）而不是塞进主包：主包只留使用者运行期真正需要的东西，
+		  调试符号按需从 nuget.org 符号服务器下载。这里刻意不再用
+		  AllowedOutputExtensionsInPackageBuildOutputFolder 把 .pdb 塞进 lib/（上一代的 1.2.x 正是那么发的，
+		  结果是每个使用者的还原目录里都躺着一份用不上的 pdb）。
+		-->
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 	</PropertyGroup>
+	<ItemGroup>
+		<!-- 公开 API 基线：Shipped 是已发布过的形态，Unshipped 是尚未随包发布的形态。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+	</ItemGroup>
 	<ItemGroup>
 		<!-- 开发期：让生成器/分析器在本解决方案内可用（不参与打包依赖） -->
 		<ProjectReference Include="..\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AdditionalFiles Include="PublicAPI.Shipped.txt" />
+		<AdditionalFiles Include="PublicAPI.Unshipped.txt" />
 	</ItemGroup>
 
 	<!--

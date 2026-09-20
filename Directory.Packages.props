@@ -14,6 +14,7 @@
 		<PackageVersion Include="IndexRange" Version="1.1.1" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
 	</ItemGroup>
 
 	<!-- test：测试框架与 Roslyn 测试框架 -->
