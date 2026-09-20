@@ -20,12 +20,34 @@ internal static class MetadataReferenceExtensions
             && portable.GetMetadata() is AssemblyMetadata assemblyMetadata)
         {
             var assemblySymbol = compilation.GetAssemblyOrModuleSymbol(portable) as IAssemblySymbol;
-            return assemblyMetadata.GetModules()
-                .Select(m => new ModuleInfo(
-                              m.Name,
-                              m.GetMetadataReader().GetAssemblyDefinition().Version,
-                              portable,
-                              assemblySymbol));
+            var modules = new List<ModuleInfo>();
+
+            foreach (var module in assemblyMetadata.GetModules())
+            {
+                // GetMetadata() 对模块级（netmodule）引用也会返回被包裹的 AssemblyMetadata，
+                // 但其模块不含程序集清单，GetAssemblyDefinition() 会抛异常（主流运行时为
+                // InvalidOperationException，部分环境下为 BadImageFormatException）。
+                // 仅保留真正含程序集清单的模块；netmodule 引用因此安全跳过而非崩溃。
+                Version version;
+                try
+                {
+                    version = module.GetMetadataReader().GetAssemblyDefinition().Version;
+                }
+                catch (BadImageFormatException)
+                {
+                    // 模块级（netmodule）引用不含程序集清单。不同运行时下 GetAssemblyDefinition()
+                    // 可能抛 BadImageFormatException 或 InvalidOperationException，统一按「无清单」跳过。
+                    continue;
+                }
+                catch (InvalidOperationException)
+                {
+                    continue;
+                }
+
+                modules.Add(new ModuleInfo(module.Name, version, portable, assemblySymbol));
+            }
+
+            return modules;
         }
 
         return [];
