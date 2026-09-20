@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<Import Project="..\..\bench.props" />
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<!--
+	  本工程不含基准代码，只承担一件事：把「一个同时使用 EF Core 与 Swashbuckle 的消费者」
+	  用包引用表达出来，并把由此解析出的编译引用清单原样交付给基准。基准的引用集因此不是
+	  在代码里猜出来的，而是编译器真正吃进去的那一份。
+	-->
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+		<!-- 被引用程序集里已有强类型 Id，正是 Discover 的跨程序集分支的用途；
+		     用仓库既有的示例领域程序集充当这一角色，不为基准另造程序集。 -->
+		<ProjectReference Include="..\..\samples\Len.StronglyTypedId.Domain\Len.StronglyTypedId.Domain.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.EntityFrameworkCore" />
+		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+		<PackageReference Include="Newtonsoft.Json" />
+	</ItemGroup>
+
+	<!--
+	  EF Core 与 Swashbuckle 的现实宿主是 ASP.NET Core 应用，故连框架引用也照实声明：
+	  它会让引用集多出 Microsoft.AspNetCore.App 的一整组引用程序集，与真实项目一致。
+	-->
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<!--
+	  把本次编译实际解析出的引用清单（@(ReferencePath)，含框架的「引用程序集」）嵌入程序集。
+	  基准进程由 BenchmarkDotNet 在另一个目录下托管，运行时的输出目录并不等于本工程的编译期引用集，
+	  只能随程序集一起带过去。
+	-->
+	<Target Name="EmbedCompileReferencePaths" BeforeTargets="BeforeCompile">
+		<WriteLinesToFile File="$(IntermediateOutputPath)reference-paths.txt"
+		                  Lines="@(ReferencePath)"
+		                  Overwrite="true"
+		                  WriteOnlyWhenDifferent="true"
+		                  Encoding="utf-8" />
+	</Target>
+
+	<ItemGroup>
+		<EmbeddedResource Include="$(IntermediateOutputPath)reference-paths.txt" LogicalName="reference-paths.txt" />
+	</ItemGroup>
+
+</Project>

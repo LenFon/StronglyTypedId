@@ -31,6 +31,11 @@
 		<PackageVersion Include="xunit.v3" Version="4.0.1" />
 	</ItemGroup>
 
+	<!-- bench：基准工程（bench.props 引用） -->
+	<ItemGroup>
+		<PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+	</ItemGroup>
+
 	<!-- samples：示例项目 -->
 	<ItemGroup>
 		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
