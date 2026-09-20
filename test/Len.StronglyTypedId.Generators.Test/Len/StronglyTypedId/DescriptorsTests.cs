@@ -42,8 +42,18 @@ public class DescriptorsTests
         {
             descriptor.Id.Should().MatchRegex(_ruleIdPattern, "规则 ID 是对外承诺，不能改号");
             descriptor.Category.Should().Be("StronglyTypedIdAnalyzer");
-            descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);
             descriptor.IsEnabledByDefault.Should().BeTrue();
+
+            // STIAO011（BypassCreate）是「建议性」诊断：仅当 Id 设了 Validator 时提示绕过 Create 的直接构造，
+            // 默认 Info 以避免无验证器场景下的噪声（各项目可在 .editorconfig 里调级）。其余规则一律 Error。
+            if (descriptor.Id == Descriptors.BypassCreateId)
+            {
+                descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO011 是建议性诊断");
+            }
+            else
+            {
+                descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);
+            }
         }
     }
 

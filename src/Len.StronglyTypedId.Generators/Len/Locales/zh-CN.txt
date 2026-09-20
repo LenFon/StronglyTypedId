@@ -18,3 +18,7 @@ TypeMustHaveNamespaceMessage = 	类型‘{0}’必须被声明在命名空间内
 TypeMustHaveNamespaceTitle = 	类型必须被声明在命名空间内	
 TypeMustHaveSingleParameterPrimaryConstructorMessage = 	类型‘{0}’必须有一个仅包含一个参数的主构造函数。	
 TypeMustHaveSingleParameterPrimaryConstructorTitle = 	类型必须有一个仅包含一个参数的主构造函数。	
+ValidatorReferenceInvalidTitle = 验证器方法必须是合法的静态 bool 方法
+ValidatorReferenceInvalidMessage = [StronglyTypedId(Validator = ...)] 引用的验证器方法“{0}”必须是签名为“static bool {0}({1} value)”的静态方法。
+BypassCreateTitle = 强类型 Id 被直接构造
+BypassCreateMessage = 直接构造“{0}”会绕过 Create 与 TryParse 强制的验证。请改用 {0}.Create(...)。

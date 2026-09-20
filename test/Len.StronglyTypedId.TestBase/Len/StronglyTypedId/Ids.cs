@@ -86,6 +86,16 @@ public partial record struct ShortStringId(string Value)
 
 public partial record NotStronglyTypedId();
 
+// readonly record struct 形态：生成器必须把 readonly 修饰符透出到生成的 partial 段，否则与使用者
+// 写下的 readonly 段对「是否 readonly struct」不一致而编译失败。
+[StronglyTypedId]
+public readonly partial record struct ReadonlyGuidId(Guid Value);
+
+// 逐类型开启 TypeConverter：生成的嵌套转换器经 TypeDescriptor 在字符串与 Id 间往返，
+// 覆盖 XmlSerializer / IConfiguration 绑定 / Newtonsoft 字典键读路径等场景。
+[StronglyTypedId(TypeConverter = true)]
+public partial record struct ConvertibleGuidId(Guid Value);
+
 // 嵌套类型的 Id：包含类型必须声明为 partial —— partial 的各段必须处于同一容器内，生成代码要补的
 // 成员只能逐层嵌回容器里，故容器得能被生成代码原样重开一次。
 // 三种容器种类各取一个，覆盖「种类关键字按符号判定」这条路径：record 与 class 的 TypeKind 同为 Class，

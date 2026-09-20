@@ -1,3 +1,9 @@
 #nullable enable
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.StronglyTypedIdDefaultsAttribute() -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.get -> string?
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.set -> void
+Len.StronglyTypedId.StronglyTypedIdAttribute.TypeConverter.get -> bool
+Len.StronglyTypedId.StronglyTypedIdAttribute.TypeConverter.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.get -> string?
 Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.set -> void

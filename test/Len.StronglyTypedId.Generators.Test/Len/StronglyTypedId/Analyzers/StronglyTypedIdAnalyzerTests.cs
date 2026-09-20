@@ -436,6 +436,200 @@ public class StronglyTypedIdAnalyzerTests
         await Verify.VerifyAnalyzerAsync(code);
     }
 
+    #region 验证器引用校验（STIAO010）
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Validator = nameof(Validate))]</c> 指向的方法不存在。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorMethodMissing()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 验证器方法返回类型不是 <see cref="bool"/>。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorMethodHasWrongReturnType()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Validate(Guid value) => value;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 验证器方法的参数类型与基元 Id 类型不一致。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorMethodHasWrongParameterType()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(int value) => value > 0;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 验证器方法不是静态成员，生成代码（处于同一 partial 内）无法可达。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorMethodIsNotStatic()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    #endregion
+
+    #region 绕过 Create 直接构造（STIAO011）
+
+    /// <summary>
+    /// 设了验证器的 Id 通过 <c>new</c> 直接构造时，应提示 STIAO011（绕过校验）。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenConstructedDirectlyWithValidator()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => new OrderId(Guid.NewGuid());
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(13, 31, 13, 58);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 无验证器的 Id 直接构造不构成问题，不应报告 STIAO011。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenConstructedDirectlyWithoutValidator()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            public class Usage
+            {
+                public OrderId Build() => new OrderId(Guid.NewGuid());
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    #endregion
+
+    #region 装配级默认验证器（STIAO010 的装配级形态）
+
+    /// <summary>
+    /// 装配级 <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 作用于全体 Id，
+    /// 当某个 Id 自带匹配的静态验证器方法时不报告任何诊断。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenAssemblyDefaultValidatorMatches()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Validator = "Validate")]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 装配级默认验证器要求名为 <c>Validate</c> 的方法，但本程序集的 Id 没有该方法时应报告 STIAO010。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyDefaultValidatorHasNoMatchingMethod()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Validator = "Validate")]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(7, 1, 8, 50);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    #endregion
+
     public static TheoryData<DiagnosticDescriptor, string> ParameterDiagnostics => new()
     {
         { Descriptors.ParameterNameMustBeValue, "Value1" },

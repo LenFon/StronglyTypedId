@@ -38,6 +38,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(idsAndModules, GenerateCoreCode);
         context.RegisterSourceOutput(idsAndModules.Combine(hasDbContextConventions), GenerateEfCoreCode);
         context.RegisterSourceOutput(idsAndModules, GenerateSwaggerCode);
+        context.RegisterSourceOutput(idsAndModules, GenerateDapperCode);
+        context.RegisterSourceOutput(idsAndModules, GenerateAspNetCoreOpenApiCode);
     }
 
     private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
@@ -145,6 +147,20 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         GetSwaggerCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
     }
 
+    private static void GenerateDapperCode(
+        SourceProductionContext context,
+        (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
+    {
+        GetDapperCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+    }
+
+    private static void GenerateAspNetCoreOpenApiCode(
+        SourceProductionContext context,
+        (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
+    {
+        GetAspNetCoreOpenApiCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+    }
+
     private static ImmutableArray<ICodeGenerator> GetCodeGenerators(ImmutableArray<ModuleInfo> modules)
     {
         var codeGenerators = modules
@@ -166,6 +182,12 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     private static ICodeGenerator? GetSwaggerCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
         modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6) ? SwaggerCodeGenerator.Instance : null;
 
+    private static ICodeGenerator? GetDapperCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
+        modules.HasModule("Dapper.dll", 2) ? DapperCodeGenerator.Instance : null;
+
+    private static ICodeGenerator? GetAspNetCoreOpenApiCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
+        modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9) ? AspNetCoreOpenApiCodeGenerator.Instance : null;
+
     private static StronglyTypedIdInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken _)
     {
         if (context is not
@@ -179,6 +201,22 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return null;
         }
 
-        return SupportedPrimitiveTypes.IsSupported(ctorArgType) ? new StronglyTypedIdInfo(symbol) : null;
+        var defaultValidator = GetAssemblyDefaultValidator(context.SemanticModel.Compilation.Assembly);
+
+        return SupportedPrimitiveTypes.IsSupported(ctorArgType) ? new StronglyTypedIdInfo(symbol, defaultValidator) : null;
     }
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 指定的默认验证器方法名。
+    /// </summary>
+    /// <remarks>
+    /// 生成器项目不引用运行时程序集，故只能以字符串匹配 <c>Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute</c>。
+    /// 未声明时返回 <see langword="null"/>，此时逐类型 <c>Validator</c> 仍是唯一来源。
+    /// </remarks>
+    private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
+        => assembly.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute")
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "Validator")
+            .Value.Value as string;
 }
