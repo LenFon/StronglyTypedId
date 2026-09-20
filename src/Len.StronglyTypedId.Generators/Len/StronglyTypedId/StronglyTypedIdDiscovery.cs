@@ -13,7 +13,7 @@ internal static class StronglyTypedIdDiscovery
         ImmutableArray<ModuleInfo> modules)
         => modules
             .SelectMany(module => module.GetTypes())
-            .Where(type => type.Interfaces.Any(@interface => @interface.Name == StronglyTypedIdInfo.InterfaceName))
+            .Where(type => type.Interfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface))
             .Select(type => new StronglyTypedIdInfo(type))
             .Union(declaredInfos)
             .Distinct();
