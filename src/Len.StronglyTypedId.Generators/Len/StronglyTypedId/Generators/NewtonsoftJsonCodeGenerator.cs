@@ -44,7 +44,7 @@ internal class NewtonsoftJsonCodeGenerator : ICodeGenerator
                             serializer.Deserialize<{{idInfo.PrimitiveIdTypeName}}?>(reader) switch
                             {
                                 { } value => new {{idInfo.Name}}(value),
-                                null when (objectType.IsClass || Nullable.GetUnderlyingType(objectType) is not null) => null,
+                                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,
                                 _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{idInfo.Name}}")
                             };
                 
