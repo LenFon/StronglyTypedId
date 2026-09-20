@@ -45,4 +45,28 @@ public class StronglyTypedIdAttribute : Attribute
     /// </para>
     /// </remarks>
     public string? Validator { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is generated
+    /// for the strongly typed id.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is off by default, and it is <em>not</em> turned on automatically when an integration is referenced.
+    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> changes the global semantics of the type:
+    /// <see cref="System.ComponentModel.TypeDescriptor"/> is the landing point of <c>XmlSerializer</c>,
+    /// <c>IConfiguration</c> binding, XAML and the WinForms/WPF design-time surfaces, and a type may already
+    /// carry its own <c>[TypeConverter]</c> — generating one on top of that would collide.
+    /// </para>
+    /// <para>
+    /// Turning it on also closes the read half of Newtonsoft.Json dictionary keys: restoring a key from its text
+    /// goes through <c>TypeDescriptor</c> rather than <c>JsonConverter.ReadJson</c>, so a custom
+    /// <c>JsonConverter</c> cannot take over that path.
+    /// </para>
+    /// <code>
+    /// [StronglyTypedId(TypeConverter = true)]
+    /// public partial record struct OrderId(Guid Value);
+    /// </code>
+    /// </remarks>
+    public bool TypeConverter { get; set; }
 }

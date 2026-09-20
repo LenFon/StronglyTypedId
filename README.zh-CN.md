@@ -20,10 +20,15 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [支持的基元类型](#supported-primitive-types)
 - [生成器会生成什么](#what-gets-generated)
 - [值校验](#value-validation)
+- [TryCreate 与 UTF-8 接口](#trycreate-and-utf8)
+- [类型转换器（TypeConverter）](#type-converter)
+- [程序集级默认设置](#assembly-defaults)
 - [嵌套类型](#nested-types)
 - [序列化](#serialization)
 - [Entity Framework Core](#entity-framework-core)
 - [Swashbuckle](#swashbuckle)
+- [Dapper](#dapper)
+- [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [用接口约束泛型](#using-the-interface)
 - [运行时反射](#reflection-helpers)
 - [诊断与代码修复](#diagnostics)
@@ -44,6 +49,14 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
   `SortedSet<T>` 与区间判断都无需自定义比较器。
 - **值校验** —— 把 `Validator` 指向 Id 自身的静态方法，即可让 `Create` 与 `TryParse` 拒绝非法取值
   （见[值校验](#value-validation)）。
+- **`TryCreate` 工厂** —— `Create` 的非抛异常版本：解析失败返回 `false`，`result` 为 `default`，而不是抛异常。
+- **UTF-8 接口** —— 对支持相应接口的基元类型（如 .NET 10 的 `Guid`）自动生成 `IUtf8SpanFormattable` 与
+  `IUtf8SpanParsable<TSelf>`，可直接以 `ReadOnlySpan<byte>` 解析 / 格式化。
+- **逐类型类型转换器** —— 用 `[StronglyTypedId(TypeConverter = true)]` 开启后，生成的嵌套 `TypeConverter`
+  经 `TypeDescriptor` 在字符串与强类型 Id 间往返，覆盖配置绑定 / `XmlSerializer` 等场景。
+- **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
+- **Dapper 集成** —— 引用 `Dapper` ≥ 2.0.0 时生成 `TypeHandler` 与 `ApplyTo(IDbConnection)`。
+- **ASP.NET Core OpenAPI 集成** —— 引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时生成 `ApplyTo(OpenApiOptions)` 架构映射。
 - **序列化** —— 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，
   其中 `System.Text.Json` 还支持字典键。
 - **Entity Framework Core** —— 在需要时生成 EF Core（≥ 7.0.0）值转换器。
@@ -151,6 +164,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 | 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`    |
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
+| 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
+| 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                          | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 核心实现会补上：
 
@@ -159,12 +174,15 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
   `IComparisonOperators<TSelf, TSelf, bool>` 的实现。
 - 基元类型具备时的 `IFormattable` 与 `ISpanFormattable` —— 以 `string` 为基元的 Id 例外，
   因为 `string` 并未实现这两者。
+- 基元类型具备时的 `IUtf8SpanFormattable`（net8.0+ 即可用）与 `IUtf8SpanParsable<TSelf>`（`Guid` 自 .NET 10 起才实现，故按基元类型条件生成）—— 提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
 - 静态的 `Create(TPrimitiveId value)` 工厂。
+- 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂——解析失败返回 `false`，`result` 为 `default`。
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。对于以 `string` 为基元的
   Id，`TryParse` 不接受 `null` 与空字符串。
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。
 - 返回被包装值文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
   以及基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+- 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
 
 各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
 `internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，两个 `ApplyTo`
@@ -196,6 +214,60 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // 返回 false，不抛�
 之外（用户输入、数据库、报文）时，请让它经过 `Create` 或解析成员。
 
 不设置 `Validator` 时完全不生成校验代码——生成成员的行为与没有该属性时逐字节一致。
+
+<a id="trycreate-and-utf8"></a>
+
+## TryCreate 与 UTF-8 接口 <a href="#top" style="float:right">↑ 返回目录</a>
+
+`Create` 抛异常，`TryCreate` 不抛——后者在解析失败时返回 `false`，并把 `result` 置为 `default`：
+
+```csharp
+OrderId.TryCreate(Guid.NewGuid(), out var id);          // true
+OrderId.TryCreate(badValue, out var invalid);           // false，result 为 default(OrderId)
+```
+
+`Guid` 自 .NET 10 起实现 `IUtf8SpanParsable<Guid>`，生成器据此为 `GuidId` 一并实现 `IUtf8SpanFormattable`
+（net8.0+ 即可用）与 `IUtf8SpanParsable<GuidId>`，并提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse`。
+以 `string` 为基元的 Id 两者都不生成（`string` 未实现）：
+
+```csharp
+var utf8 = Encoding.UTF8.GetBytes(orderId.Value.ToString());
+var same = OrderId.Parse(utf8, CultureInfo.InvariantCulture); // IUtf8SpanParsable<TSelf>
+```
+
+<a id="type-converter"></a>
+
+## 类型转换器（TypeConverter） <a href="#top" style="float:right">↑ 返回目录</a>
+
+默认只生成 JSON 转换器。需要经 `TypeDescriptor` 在字符串与 Id 间往返时（配置绑定、`XmlSerializer`、
+Newtonsoft 字典键读路径等），用 `TypeConverter = true` 逐类型开启：
+
+```csharp
+[StronglyTypedId(TypeConverter = true)]
+public partial record struct ConvertibleGuidId(Guid Value);
+```
+
+生成的嵌套 `XxxTypeConverter` 会带上 `[TypeConverter(typeof(XxxTypeConverter))]` 特性，因此
+`TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` 即可在字符串与 Id 间转换，引用类型 Id 的
+`null` 会解析回 `default`。
+
+> 该转换器仅覆盖「字符串 ↔ Id」这一路径；它不替代 JSON 转换器，二者各自独立生效。
+
+<a id="assembly-defaults"></a>
+
+## 程序集级默认设置（StronglyTypedIdDefaults） <a href="#top" style="float:right">↑ 返回目录</a>
+
+同一程序集里很多 Id 想共用同一个验证器时，可用程序集特性统一设置默认 `Validator`，免去逐个标注：
+
+```csharp
+[assembly: StronglyTypedIdDefaults(Validator = "MyValidators.NonEmpty")]
+```
+
+`StronglyTypedIdDefaults.Validator` 仅作为**默认**：单个 Id 上写了 `[StronglyTypedId(Validator = ...)]`
+时，以该 Id 自己的为准；都没写时才回落到程序集默认值。
+
+> 验证器方法仍需满足 [值校验](#value-validation) 的签名约定（`static bool Validate(TPrimitiveId value)`），
+> 否则由 [STIAO010](#diagnostics) 报错。
 
 <a id="nested-types"></a>
 
@@ -328,6 +400,45 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 | `long`     | `integer`      | `int64`  |
 | `ulong`    | `integer`      | `uint64` |
 
+<a id="dapper"></a>
+
+## Dapper <a href="#top" style="float:right">↑ 返回目录</a>
+
+引用 `Dapper` ≥ 2.0.0 时，为每个强类型 Id 生成 `TypeHandler`，并提供一个统一入口：
+
+```csharp
+using Dapper;
+
+// 为连接注册所有强类型 Id 的 TypeHandler。
+StronglyTypedIds.ApplyTo(connection);
+
+connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Create(Guid.NewGuid()) });
+```
+
+每个 Id 的 `TypeHandler` 会把数据库值（值类型取 `Value`、引用类型取自身）写入参数，并把读取到的值
+经 `Create` 还原为 Id。不同命名空间下同名 Id 的 `TypeHandler` 会以「命名空间下划线连接」前缀避免冲突
+（与 EF Core 转换器同名处理一致）。
+
+> 引用 `Dapper` 但主版本低于 2.0.0 时不生成，避免与旧版 `SqlMapper.TypeHandler` API 不兼容。
+
+<a id="aspnetcore-openapi"></a>
+
+## ASP.NET Core OpenAPI <a href="#top" style="float:right">↑ 返回目录</a>
+
+引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时，为每个强类型 Id 生成 OpenAPI 架构映射，与 Swashbuckle
+的 `ApplyTo(SwaggerGenOptions)` 平行：
+
+```csharp
+builder.Services.AddOpenApi(options =>
+{
+    StronglyTypedIds.ApplyTo(options);
+});
+```
+
+映射把每个 Id 解析为其底层基元类型的 schema，`format` 取值与 [Swashbuckle](#swashbuckle) 一节相同。
+
+> 该集成与 Swashbuckle 互不依赖：二者可单独或同时存在，各自生成自己的 `ApplyTo` 重载。
+
 <a id="using-the-interface"></a>
 
 ## 用接口约束泛型 <a href="#top" style="float:right">↑ 返回目录</a>
@@ -381,6 +492,8 @@ if (typeof(OrderId).IsStronglyTypedId())
 | STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数           |
 | STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | —                    |
 | STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补上 `partial` |
+| STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | — |
+| STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | — |
 
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以
 拆成多个 `partial` 声明段：类型级规则按整个类型判定一次，参数级规则只在声明主构造函数的那一段上判定，
