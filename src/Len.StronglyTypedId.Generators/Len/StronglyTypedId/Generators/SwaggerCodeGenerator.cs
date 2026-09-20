@@ -6,7 +6,6 @@
 internal class SwaggerCodeGenerator : ICodeGenerator
 {
     private const string OpenApiAssemblyName = "Microsoft.OpenApi.dll";
-    private const string SwaggerGenAssemblyName = "Swashbuckle.AspNetCore.SwaggerGen.dll";
 
     internal static readonly ICodeGenerator Instance = new SwaggerCodeGenerator();
 
@@ -48,16 +47,29 @@ internal class SwaggerCodeGenerator : ICodeGenerator
     }
 
     /// <summary>
-    /// 判断当前编译引用的是否为 Microsoft.OpenApi 2.x（或引入它的 Swashbuckle 7+）。
+    /// 判断当前编译引用的是否为 Microsoft.OpenApi 2.x。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只以 <c>Microsoft.OpenApi.dll</c> 的主版本为判据，不可改用「Swashbuckle.AspNetCore.SwaggerGen 主版本
+    /// 不低于某个值」作代理：实测 Swashbuckle 7.0.0 依赖 Microsoft.OpenApi ≥ 1.6.22、8.0.0 与 9.0.0 依赖
+    /// ≥ 1.6.23，直到 10.0.0 才升级到 2.3.0 —— 代理判据的分界线是 <b>10</b> 而不是 7，以 7 为界会把
+    /// 7/8/9 误判为 2.x，进而生成 1.6.x 下并不存在的 <c>Microsoft.OpenApi.JsonSchemaType</c> 与迁移后的
+    /// 命名空间，令使用者编译失败。
+    /// </para>
+    /// <para>
+    /// Microsoft.OpenApi 是 Swashbuckle 的传递依赖，其程序集必然出现在使用者的编译引用中，
+    /// 因此本判据无需借助 Swashbuckle 自身的版本号。
+    /// </para>
+    /// </remarks>
     private static bool UsesMicrosoftOpenApiV2(ImmutableArray<ModuleInfo> modules)
-        => modules.HasModule(OpenApiAssemblyName, 2) || modules.HasModule(SwaggerGenAssemblyName, 7);
+        => modules.HasModule(OpenApiAssemblyName, 2);
 
     /// <summary>
     /// 按 Microsoft.OpenApi 主版本生成 <c>OpenApiSchema</c> 初始化表达式。
     /// </summary>
     /// <remarks>
-    /// Microsoft.OpenApi 2.x（随 Swashbuckle 7+ 引入）相对 1.x 有两处破坏性变更：
+    /// Microsoft.OpenApi 2.x（随 Swashbuckle 10+ 引入）相对 1.x 有两处破坏性变更：
     ///   1) OpenApiSchema 命名空间由 Microsoft.OpenApi.Models 迁移到 Microsoft.OpenApi；
     ///   2) OpenApiSchema.Type 由 string 变为 Microsoft.OpenApi.JsonSchemaType? 枚举。
     /// 这里按主版本分支生成，使同一份生成器同时兼容新旧 Swashbuckle / Microsoft.OpenApi。

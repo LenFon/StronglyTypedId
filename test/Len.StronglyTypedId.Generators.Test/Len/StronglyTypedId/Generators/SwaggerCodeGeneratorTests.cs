@@ -16,9 +16,11 @@ namespace Len.StronglyTypedId.Generators;
 /// 以及多 Id 生成的 MapType 连接。
 /// </summary>
 /// <remarks>
-/// V1 与 V2 由 <see cref="SwaggerCodeGenerator.UsesMicrosoftOpenApiV2"/> 决定，取决于编译引用中是否出现
-/// Microsoft.OpenApi 2.x 或 Swashbuckle.AspNetCore.SwaggerGen 7+。测试环境仅直接引用 Swashbuckle 6.x
-/// （Microsoft.OpenApi 1.x），故 V2 通过合成指定名称与版本的程序集引用（emit 临时 DLL）注入对应模块。
+/// V1 与 V2 由 <see cref="SwaggerCodeGenerator.UsesMicrosoftOpenApiV2"/> 决定，且只取决于编译引用中
+/// Microsoft.OpenApi 的主版本。测试环境仅直接引用 Swashbuckle 6.x（Microsoft.OpenApi 1.x），
+/// 故 V2 通过合成 Microsoft.OpenApi 2.x 的程序集引用（emit 临时 DLL）注入对应模块。
+/// 注意 Swashbuckle 7/8/9 仍依赖 Microsoft.OpenApi 1.6.x，直到 10.0.0 才升级到 2.x，
+/// 因此「Swashbuckle 主版本」不能作为 OpenApi 主版本的代理判据（见下方 V1 回归用例）。
 /// </remarks>
 public class SwaggerCodeGeneratorTests
 {
@@ -116,7 +118,7 @@ public class SwaggerCodeGeneratorTests
 
     #endregion
 
-    #region V1（Microsoft.OpenApi 1.x / Swashbuckle 6.x）：覆盖全部基元分支
+    #region V1（Microsoft.OpenApi 1.x / Swashbuckle 6.x–9.x）：覆盖全部基元分支
 
     [Theory]
     [InlineData("Guid", "string", "uuid")]
@@ -172,9 +174,41 @@ public class SwaggerCodeGeneratorTests
         generated.Should().Contain("\r\n\t\t");
     }
 
+    /// <summary>
+    /// 回归用例：Swashbuckle 7/8/9 仍依赖 Microsoft.OpenApi 1.6.x，必须继续按 V1 生成；
+    /// 只有 Swashbuckle 10+ 才引入 Microsoft.OpenApi 2.x。
+    /// </summary>
+    /// <remarks>
+    /// 曾经以「Swashbuckle.AspNetCore.SwaggerGen 主版本 ≥ 7」代理 OpenApi 2.x 判据，
+    /// 使 7/8/9 的使用者拿到 1.6.x 下并不存在的 <c>Microsoft.OpenApi.JsonSchemaType</c>
+    /// 与迁移后的命名空间，直接编译失败。
+    /// </remarks>
+    [Theory]
+    [InlineData("7.0.0.0")]
+    [InlineData("8.0.0.0")]
+    [InlineData("9.0.0.0")]
+    public void Swagger_V1_Should_StayOnV1_WhenSwashbuckleV7ToV9Referenced(string swaggerGenVersion)
+    {
+        var code = """
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        // 只注入合成的 Swashbuckle.AspNetCore.SwaggerGen.dll（不含 Microsoft.OpenApi 2.x），
+        // 且不引用真实 Swashbuckle 6.x，避免同名程序集重复引用。
+        var generated = GetSwaggerGeneratedCode(
+            code,
+            EmitSyntheticReference("Swashbuckle.AspNetCore.SwaggerGen", swaggerGenVersion));
+
+        generated.Should().Contain(
+            """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" });""");
+    }
+
     #endregion
 
-    #region V2（Microsoft.OpenApi 2.x / Swashbuckle 7+）：OpenApiSchema 命名空间迁移 + JsonSchemaType 枚举
+    #region V2（Microsoft.OpenApi 2.x / Swashbuckle 10+）：OpenApiSchema 命名空间迁移 + JsonSchemaType 枚举
 
     [Fact]
     public void Swagger_V2_Should_UseOpenApiSchemaEnum_WhenMicrosoftOpenApiV2Referenced()
@@ -186,7 +220,7 @@ public class SwaggerCodeGeneratorTests
             public partial record OrderId(int Value);
             """;
 
-        // 注入合成 Microsoft.OpenApi.dll v2.0.0.0：触发 UsesMicrosoftOpenApiV2 的第一条 || 分支。
+        // 注入合成 Microsoft.OpenApi.dll v2.0.0.0：触发 UsesMicrosoftOpenApiV2 判据。
         var generated = GetSwaggerGeneratedCode(
             code,
             Swagger6Reference,
@@ -197,7 +231,7 @@ public class SwaggerCodeGeneratorTests
     }
 
     [Fact]
-    public void Swagger_V2_Should_UseOpenApiSchemaEnum_WhenSwashbuckleV7Referenced()
+    public void Swagger_V2_Should_UseOpenApiSchemaEnum_WhenSwashbuckleV10AndOpenApiV2Referenced()
     {
         var code = """
             namespace Len.StronglyTypedId;
@@ -206,11 +240,12 @@ public class SwaggerCodeGeneratorTests
             public partial record OrderId(Guid Value);
             """;
 
-        // 注入合成 Swashbuckle.AspNetCore.SwaggerGen.dll v7.0.0.0（不再引用真实 Swashbuckle 6.x，
-        // 避免同名程序集重复引用）：触发 UsesMicrosoftOpenApiV2 的第二条 || 分支。
+        // 真实配对：Swashbuckle.AspNetCore.SwaggerGen 10.x 携带 Microsoft.OpenApi 2.x。
+        // 注入两个合成程序集（不引用真实 Swashbuckle 6.x，避免同名程序集重复引用）。
         var generated = GetSwaggerGeneratedCode(
             code,
-            EmitSyntheticReference("Swashbuckle.AspNetCore.SwaggerGen", "7.0.0.0"));
+            EmitSyntheticReference("Swashbuckle.AspNetCore.SwaggerGen", "10.0.0.0"),
+            EmitSyntheticReference("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
             "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" });");
