@@ -60,11 +60,20 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     {
         if (syntaxNode is not RecordDeclarationSyntax
             {
-                ParameterList.Parameters: [{ Type: not NullableTypeSyntax, Identifier.ValueText: "Value" }],
                 TypeParameterList: null, // 非泛型
                 Parent: BaseNamespaceDeclarationSyntax, // 非嵌套类型，并且有命名空间
                 Modifiers: var modifiers and not [],
-            })
+            } record)
+        {
+            return false;
+        }
+
+        // 带主构造函数时，参数名与可空性在语法层即可判定，提前排除。
+        // 不带主构造函数的那一段必须放行：attribute 可能标在不承载主构造函数的段上（例如主构造函数
+        // 写在另一个 partial 段里），而本谓词只会对「带 attribute 的那一段」被调用。若在此一律要求
+        // (Value) 形状，这种分段写法既不会产出任何代码、也不会报任何诊断——分析器是按「类型」判定的。
+        if (record.ParameterList is { } parameterList
+            && parameterList.Parameters is not [{ Type: not NullableTypeSyntax, Identifier.ValueText: "Value" }])
         {
             return false;
         }
@@ -147,6 +156,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return null;
         }
 
-        return SupportedPrimitiveTypes.IsSupported(ctorArgType.Name) ? new StronglyTypedIdInfo(symbol) : null;
+        return SupportedPrimitiveTypes.IsSupported(ctorArgType) ? new StronglyTypedIdInfo(symbol) : null;
     }
 }
