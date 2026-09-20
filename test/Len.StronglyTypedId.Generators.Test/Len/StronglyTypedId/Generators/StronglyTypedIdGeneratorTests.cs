@@ -487,6 +487,57 @@ public class StronglyTypedIdGeneratorTests
         generated.Keys.Should().NotContain(k => k.EndsWith(".EntityFrameworkCore.g.cs"));
     }
 
+    /// <summary>
+    /// 回归用例：不同命名空间下的同名强类型 Id 都生成进同一个 <c>StronglyTypedIds</c> 类，
+    /// 转换器类名必须区分，否则相互冲突（CS0102 等）。
+    /// </summary>
+    /// <remarks>
+    /// 只有确实出现同名时才给类名加命名空间前缀，无冲突场景下既有的 <c>OrderIdConverter</c>
+    /// 命名保持不变（见上方 <c>EfCore_Should_GenerateConverter_WhenReferencedAndConfigureConventions</c>）。
+    /// </remarks>
+    [Fact]
+    public void EfCore_Should_DisambiguateConverterNames_WhenSameNameInDifferentNamespaces()
+    {
+        var code = """
+            using Len.StronglyTypedId;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Domain
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+
+            namespace Contracts
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+
+            namespace Host
+            {
+                public class TestDbContext : DbContext
+                {
+                    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) { }
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
+
+        generated["Domain.OrderId.EntityFrameworkCore.g.cs"]
+            .Should().Contain("class Domain_OrderIdConverter :")
+            .And.Contain("HaveConversion(typeof(Domain_OrderIdConverter))");
+
+        generated["Contracts.OrderId.EntityFrameworkCore.g.cs"]
+            .Should().Contain("class Contracts_OrderIdConverter :")
+            .And.Contain("HaveConversion(typeof(Contracts_OrderIdConverter))");
+
+        generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
+            .Should().Contain("Domain_OrderIdConverter.ApplyTo(configurationBuilder);")
+            .And.Contain("Contracts_OrderIdConverter.ApplyTo(configurationBuilder);");
+    }
+
     #endregion
 
     #region Swagger 生成器（SwaggerCodeGenerator）
