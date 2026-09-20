@@ -29,7 +29,10 @@ public class SwaggerCodeGeneratorTests
     private static MetadataReference Swagger6Reference { get; }
         = MetadataReference.CreateFromFile(typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions).Assembly.Location);
 
-    private static string GetSwaggerGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
+    private static MetadataReference OpenApiReference { get; }
+        = MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location);
+
+    private static CSharpCompilation CreateCompilation(string sourceCode, params MetadataReference[] extraReferences)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
@@ -38,6 +41,9 @@ public class SwaggerCodeGeneratorTests
             typeof(StronglyTypedIdAttribute).Assembly,
             typeof(System.Text.Json.JsonSerializer).Assembly,
             typeof(Newtonsoft.Json.JsonSerializer).Assembly,
+            // SwaggerGenOptions.MapType<T> 所在的命名空间由 Abstractions 提供；不预置的话它未必已被
+            // 加载进 AppDomain，合成编译里就会出现「使用了不存在的 using」的假阳性。
+            typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly,
         };
 
         // 过滤会触发其它生成器 / 污染发现结果的程序集（Swashbuckle / Microsoft.OpenApi 等需显式注入，
@@ -53,16 +59,19 @@ public class SwaggerCodeGeneratorTests
             .Concat(extraReferences)
             .ToArray();
 
-        var compilation = CSharpCompilation.Create(
+        return CSharpCompilation.Create(
             "Len.StronglyTypedId.Swagger.Test",
             [syntaxTree],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
 
-        var generator = new StronglyTypedIdGenerator();
+    private static string GetSwaggerGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
+    {
+        var compilation = CreateCompilation(sourceCode, extraReferences);
 
         var result = CSharpGeneratorDriver
-            .Create(generator)
+            .Create(new StronglyTypedIdGenerator())
             .RunGenerators(compilation)
             .GetRunResult();
 
@@ -308,6 +317,93 @@ public class SwaggerCodeGeneratorTests
 
         generated.Should().Contain(
             "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String });");
+    }
+
+    #endregion
+
+    #region 消费者可编译性：生成文件必须自带扩展方法所需的 using
+
+    /// <summary>
+    /// 生成文件顶部声明的 <c>using Microsoft.Extensions.DependencyInjection;</c>。
+    /// </summary>
+    private const string DependencyInjectionUsing = "using Microsoft.Extensions.DependencyInjection;";
+
+    /// <summary>
+    /// 回归用例：Swagger 产物自带 <c>using Microsoft.Extensions.DependencyInjection;</c>。
+    /// </summary>
+    /// <remarks>
+    /// <c>SwaggerGenOptions.MapType&lt;T&gt;</c> 是定义在 <c>Microsoft.Extensions.DependencyInjection</c>
+    /// 命名空间下的扩展方法（容器类 <c>SwaggerGenOptionsExtensions</c>，Swashbuckle 6.x 与 10.x 一致），
+    /// 只能由 using 指令引入，无法改用全限定名调用。
+    /// </remarks>
+    [Fact]
+    public void Swagger_Should_DeclareDependencyInjectionUsing()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
+
+        generated.Should().Contain(DependencyInjectionUsing);
+    }
+
+    /// <summary>
+    /// 回归用例：Swagger 产物在「隐式 using 不含 DependencyInjection 的消费者」里必须能编译。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Web SDK（<c>Microsoft.NET.Sdk.Web</c>）的隐式 using 恰好包含
+    /// <c>Microsoft.Extensions.DependencyInjection</c>，因此 Sample 项目全绿也掩盖了此缺陷；
+    /// 类库 / 控制台等非 Web SDK 消费者不含该隐式 using，若生成文件不自带，会得到
+    /// <c>CS1061：“SwaggerGenOptions”未包含“MapType”的定义</c>。
+    /// </para>
+    /// <para>
+    /// 下方合成编译的源码里刻意只有 <c>using System;</c>（不含任何 DependencyInjection 相关 using），
+    /// 等价于非 Web SDK 消费者 —— 这正是「572 全绿仍有缺陷」的那类系统性环境偏差，
+    /// 故必须真正 Emit 一次生成产物，而不是只比对文本。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Swagger_Should_Compile_WhenConsumerHasNoImplicitDependencyInjectionUsing()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var compilation = CreateCompilation(code, Swagger6Reference, OpenApiReference);
+
+        var result = CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGenerators(compilation)
+            .GetRunResult();
+
+        result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        // 只编译 Swagger 产物：其它产物（Newtonsoft / EF Core / 核心）的可编译性由
+        // StronglyTypedIdGeneratorTests.GeneratedCode_Should_Compile_WithoutImplicitUsings 统一守护，
+        // 避免本用例被别的生成器的问题带偏。
+        var swaggerSource = result.Results[0].GeneratedSources
+            .First(source => source.HintName == "StronglyTypedIds.Swagger.g.cs");
+
+        using var stream = new MemoryStream();
+        var emit = compilation
+            .AddSyntaxTrees(CSharpSyntaxTree.ParseText(swaggerSource.SourceText.ToString(), path: swaggerSource.HintName))
+            .Emit(stream);
+
+        var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
     }
 
     #endregion
