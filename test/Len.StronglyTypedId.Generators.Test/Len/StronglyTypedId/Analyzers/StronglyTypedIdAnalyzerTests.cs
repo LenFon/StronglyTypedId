@@ -245,6 +245,37 @@ public class StronglyTypedIdAnalyzerTests
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
+    /// <summary>
+    /// 回归用例：使用者自定义的 <c>X.Guid</c> 并不是 BCL 的 <see cref="System.Guid"/>，必须报 STIAO008。
+    /// </summary>
+    /// <remarks>
+    /// 基元类型判据曾只比简单名：这种同名类型会被当作合法基元放行，生成器随后把它嵌进生成代码，
+    /// 使用者最终看到的是若干条报在<b>生成文件</b>里的 CS0315（类型不满足泛型约束），
+    /// 而不是一条指向自己源码的 STIAO008。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenParameterTypeSharesSimpleNameWithBclType()
+    {
+        var code = """"
+            namespace Probe.Fake
+            {
+                public struct Guid
+                {
+                }
+            }
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Probe.Fake.Guid Value);
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
+            .WithSpan(11, 42, 11, 57).WithArguments("Probe.Fake.Guid");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
 
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenCannotPartial()
