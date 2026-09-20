@@ -86,35 +86,6 @@ public class SwaggerCodeGeneratorTests
         => assembly.GetName().Name is not
             ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi");
 
-    /// <summary>
-    /// emit 一个指定程序集名与版本（仅含占位类型）的临时 DLL，作为 MetadataReference 注入，
-    /// 使 GetModules 产出的 ModuleInfo 命中目标名称与版本，从而触发对应的 OpenApi 模式分支。
-    /// </summary>
-    private static MetadataReference EmitSyntheticReference(string assemblyName, string version)
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "StiSwaggerHarness");
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, assemblyName + ".dll");
-
-        var source = $$"""
-            using System.Reflection;
-            [assembly: AssemblyVersion("{{version}}")]
-            public class Placeholder { }
-            """;
-
-        var compilation = CSharpCompilation.Create(
-            assemblyName,
-            [CSharpSyntaxTree.ParseText(source)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        using var ms = new MemoryStream();
-        var emit = compilation.Emit(ms);
-        emit.Success.Should().BeTrue(string.Join("\n", emit.Diagnostics));
-        File.WriteAllBytes(path, ms.ToArray());
-        return MetadataReference.CreateFromFile(path);
-    }
-
     #endregion
 
     #region 顺序属性
@@ -246,7 +217,7 @@ public class SwaggerCodeGeneratorTests
         // 且不引用真实 Swashbuckle 6.x，避免同名程序集重复引用。
         var generated = GetSwaggerGeneratedCode(
             code,
-            EmitSyntheticReference("Swashbuckle.AspNetCore.SwaggerGen", swaggerGenVersion));
+            SyntheticAssembly.GetOrCreate("Swashbuckle.AspNetCore.SwaggerGen", swaggerGenVersion));
 
         generated.Should().Contain(
             """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" });""");
@@ -270,7 +241,7 @@ public class SwaggerCodeGeneratorTests
         var generated = GetSwaggerGeneratedCode(
             code,
             Swagger6Reference,
-            EmitSyntheticReference("Microsoft.OpenApi", "2.0.0.0"));
+            SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
             "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.Integer, Format = \"int32\" });");
@@ -292,8 +263,8 @@ public class SwaggerCodeGeneratorTests
         // 注入两个合成程序集（不引用真实 Swashbuckle 6.x，避免同名程序集重复引用）。
         var generated = GetSwaggerGeneratedCode(
             code,
-            EmitSyntheticReference("Swashbuckle.AspNetCore.SwaggerGen", "10.0.0.0"),
-            EmitSyntheticReference("Microsoft.OpenApi", "2.0.0.0"));
+            SyntheticAssembly.GetOrCreate("Swashbuckle.AspNetCore.SwaggerGen", "10.0.0.0"),
+            SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
             "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" });");
@@ -313,7 +284,7 @@ public class SwaggerCodeGeneratorTests
         var generated = GetSwaggerGeneratedCode(
             code,
             Swagger6Reference,
-            EmitSyntheticReference("Microsoft.OpenApi", "2.0.0.0"));
+            SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
             "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String });");
