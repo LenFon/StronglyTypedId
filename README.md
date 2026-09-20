@@ -20,6 +20,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Getting started](#getting-started)
 - [Supported primitive types](#supported-primitive-types)
 - [What gets generated](#what-gets-generated)
+- [Nested types](#nested-types)
 - [Serialization](#serialization)
 - [Entity Framework Core](#entity-framework-core)
 - [Swashbuckle](#swashbuckle)
@@ -137,6 +138,8 @@ supported, and will surface as an error in the generated code.
 ## What gets generated <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 For each annotated type the generator emits a `partial` declaration in the **same namespace** as the id —
+nested ids are declared back inside their containing types instead (see
+[Nested types](#nested-types)) —
 your own declaration is never modified. What is emitted depends on what the compilation references:
 
 | Condition in the compilation                                                                        | Generated code                                                                              |
@@ -159,6 +162,37 @@ The integration entry points are emitted into a single generated class —
 `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
 `ApplyTo` overloads live side by side no matter how many ids the project declares. Add
 `using Len.StronglyTypedId;` (already required for the attribute itself) to call them.
+
+<a id="nested-types"></a>
+
+## Nested types <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+A strongly typed id may be declared inside a class, struct, record or interface. Since all parts of a
+`partial` type must share the same container, the generated declaration is **nested back into the
+original containing types** rather than emitted at namespace level:
+
+```csharp
+public partial class OrderAggregate          // the container must be partial
+{
+    [StronglyTypedId]
+    public partial record struct OrderId(Guid Value);
+}
+
+var id = OrderAggregate.OrderId.Create(value);   // used through its nested name, like any other type
+```
+
+The only prerequisite is that **every containing type can be reopened verbatim** by the generated code:
+each level must be `partial`, non-generic, and not a `file`-local type. Violations are reported by
+[STIAO009](#diagnostics) (missing `partial`, or `file`-local) and [STIAO003](#diagnostics) (generic
+container); the former comes with a code fix that adds `partial`.
+
+Limitation: containing types cannot be generic. Reopening `Outer<T>` would require reproducing its type
+parameter list and constraints, and a full name such as `Outer<T>.OrderId` contains `<>`, which is not
+a legal generated file name.
+
+Nesting does not affect any other capability: comparison and ordering, formatting and span parsing,
+both JSON serializers, System.Text.Json dictionary keys, EF Core converters and Swagger `MapType` all
+work as usual.
 
 <a id="serialization"></a>
 
@@ -297,11 +331,12 @@ compiler culture.
 | STIAO001 | The type must be `partial`.                                                 | Add `partial`                  |
 | STIAO002 | The type cannot be `abstract`.                                              | Remove `abstract`              |
 | STIAO003 | The type cannot be `generic`.                                               | Remove the type parameter list |
-| STIAO004 | The type cannot be nested and must declare a namespace.                     | —                              |
+| STIAO004 | The type must declare a namespace.                                          | —                              |
 | STIAO005 | The type must have a single-parameter primary constructor.                  | —                              |
 | STIAO006 | The primary constructor parameter cannot be nullable.                       | Remove the `?` suffix          |
 | STIAO007 | The primary constructor parameter must be named `Value`.                    | Rename the parameter           |
 | STIAO008 | The primary constructor parameter type must be a supported primitive type.  | —                              |
+| STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the containing type |
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are
