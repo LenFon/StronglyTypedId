@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<RootNamespace />
 		<Authors>lenfon</Authors>
-		<Description>A base implementation of strongly typed ids that supports Newtonsoft.Json, System.Text.Json, EntityFramework Core, and Swashbuckle.AspNetCore.</Description>
+		<Description>A source generator, analyzer, and code fix provider that turns a one-line record declaration into a fully featured strongly typed id, with built-in System.Text.Json, Newtonsoft.Json, Entity Framework Core, Dapper, Swashbuckle, and ASP.NET Core OpenAPI integrations.</Description>
 		<PackageTags>len;id;strongly-typed;primitive;value;DDD</PackageTags>
 		<PackageProjectUrl>https://github.com/lenfon/StronglyTypedId</PackageProjectUrl>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>

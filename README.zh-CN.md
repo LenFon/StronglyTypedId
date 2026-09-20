@@ -40,7 +40,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 10 条规则里有 6 条附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 12 条规则里有 6 条附带代码修复，
   可一键修好声明（见[诊断与代码修复](#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并为具备相应接口的基元类型（除 `string` 外的全部）
@@ -71,7 +71,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 | 组件                              | 要求                                                                                     |
 | --------------------------------- | ---------------------------------------------------------------------------------------- |
 | 项目的目标框架                    | **`net8.0`、`net10.0`** 或更高兼容框架（运行时库的目标框架为 `net8.0` 与 `net10.0`）。    |
-| .NET SDK                          | **8.0 及以上**（生成器目标框架为 `netstandard2.0`，需要 **Roslyn 4.4+**，即 6.0.3xx 之后的任意 SDK）。 |
+| .NET SDK                          | **8.0 及以上**（生成器目标框架为 `netstandard2.0`，需要 **Roslyn 4.4+**，由 .NET 8 SDK 及更高版本提供）。引用本包的项目须以 `net8.0` / `net10.0` 或更高框架为目标——见上表第一行。 |
 | Newtonsoft.Json                   | ≥ **13.0.0**（仅在使用 Newtonsoft.Json 转换器时需要）。                                   |
 | EntityFrameworkCore               | ≥ **7.0.0**（仅在使用 EF Core 转换器时需要）。                                            |
 | Swashbuckle.AspNetCore.SwaggerGen | ≥ **6.0.0**（仅在使用 Swagger 架构映射时需要）。                                          |

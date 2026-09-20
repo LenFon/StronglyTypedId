@@ -42,7 +42,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
 - **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and six of the
-  ten rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+  twelve rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` for every primitive that has them (all but `string`).
@@ -79,7 +79,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 | Component                              | Requirement                                                                              |
 | -------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Target framework of your project       | **`net8.0`, `net10.0`**, or a later compatible framework (the runtime library targets `net8.0` and `net10.0`). |
-| .NET SDK                               | **8.0 or later** (the generator targets `netstandard2.0` and needs **Roslyn 4.4+**, shipped by every SDK since 6.0.3xx). |
+| .NET SDK                               | **8.0 or later** (the generator targets `netstandard2.0` and needs **Roslyn 4.4+**, which the .NET 8 SDK and later provide). A consuming project must target `net8.0`/`net10.0` or later — see the row above. |
 | Newtonsoft.Json                        | ≥ **13.0.0** (only when using the Newtonsoft.Json converter).                            |
 | EntityFrameworkCore                    | ≥ **7.0.0** (only when using the EF Core converter).                                     |
 | Swashbuckle.AspNetCore.SwaggerGen      | ≥ **6.0.0** (only when generating Swagger schema mappings).                              |
