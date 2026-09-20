@@ -31,14 +31,34 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string ValidatorArgumentName = "Validator";
 
     /// <summary>
-    /// <c>System.IFormattable</c> 的显示名（含 <c>global::</c> 前缀）。
+    /// attribute 中用于开启 <c>System.ComponentModel.TypeConverter</c> 生成的命名实参名。
     /// </summary>
-    private const string FormattableName = "global::System.IFormattable";
+    internal const string TypeConverterArgumentName = "TypeConverter";
 
     /// <summary>
-    /// <c>System.ISpanFormattable</c> 的显示名（含 <c>global::</c> 前缀）。
+    /// BCL 接口所属命名空间的显示名（含 <c>global::</c> 前缀）。
     /// </summary>
-    private const string SpanFormattableName = "global::System.ISpanFormattable";
+    private const string SystemNamespace = "global::System";
+
+    /// <summary>
+    /// <c>System.IFormattable</c> 的简单名。
+    /// </summary>
+    private const string FormattableName = "IFormattable";
+
+    /// <summary>
+    /// <c>System.ISpanFormattable</c> 的简单名。
+    /// </summary>
+    private const string SpanFormattableName = "ISpanFormattable";
+
+    /// <summary>
+    /// <c>System.IUtf8SpanParsable&lt;TSelf&gt;</c> 的简单名。
+    /// </summary>
+    private const string Utf8SpanParsableName = "IUtf8SpanParsable";
+
+    /// <summary>
+    /// <c>System.IUtf8SpanFormattable</c> 的简单名。
+    /// </summary>
+    private const string Utf8SpanFormattableName = "IUtf8SpanFormattable";
 
     /// <summary>
     /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
@@ -53,7 +73,7 @@ internal readonly record struct StronglyTypedIdInfo
             && @interface.TypeArguments.Length == 2
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == InterfaceNamespace;
 
-    public StronglyTypedIdInfo(ITypeSymbol type)
+    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null)
     {
         // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace，直接解引用会抛
         // NullReferenceException。这里与「基元类型解析失败」保持同一异常语义，便于定位问题。
@@ -65,7 +85,12 @@ internal readonly record struct StronglyTypedIdInfo
         Name = type.Name;
         FullyQualifiedName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         FullName = type.ToDisplayString();
+        // readonly 修饰符只作用在 struct 形态的强类型 Id 上（引用类型 record 无 readonly 概念），
+        // 且必须作为「出现在 record 关键字之前的修饰符」透出（写作 partial readonly record struct），
+        // 否则 C# 报错「readonly 必须位于成员类型和名称之前」。各 partial 段对「是否 readonly struct」一致，
+        // 漏写会让使用者原本的 readonly record struct 在合并生成段后编译失败。
         TypeKindSuffix = type.TypeKind == TypeKind.Struct ? " struct" : null;
+        ReadOnlyRecordModifier = type.TypeKind == TypeKind.Struct && type.IsReadOnly ? "readonly " : string.Empty;
 
         var containingTypes = GetContainingTypeDeclarations(type);
         ContainingTypeDeclarations = containingTypes.Declarations;
@@ -75,12 +100,15 @@ internal readonly record struct StronglyTypedIdInfo
 
         PrimitiveIdTypeName = primitiveIdType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-        // 三项能力都由基元类型的符号判定，而非按类型名硬编码分支：与 SupportedPrimitiveTypes 保持同一取向
+        // 各项能力都由基元类型的符号判定，而非按类型名硬编码分支：与 SupportedPrimitiveTypes 保持同一取向
         // —— 判据落在符号上，类型名只用于展示。
         IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
         IsFormattable = ImplementsInterface(primitiveIdType, FormattableName);
         IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName);
-        ValidatorName = GetValidatorName(type);
+        IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName);
+        IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
+        ValidatorName = GetValidatorName(type) ?? defaultValidatorName;
+        HasTypeConverter = GetBooleanArgument(type, TypeConverterArgumentName);
     }
 
     /// <summary>
@@ -145,6 +173,12 @@ internal readonly record struct StronglyTypedIdInfo
     public string? TypeKindSuffix { get; }
 
     /// <summary>
+    /// 当强类型 Id 是 <c>readonly record struct</c> 时，在 <c>partial</c> 与 <c>record</c> 之间插入的
+    /// <c> readonly</c> 修饰符；否则为空串。引用类型 record 无 readonly 概念，恒为空串。
+    /// </summary>
+    public string ReadOnlyRecordModifier { get; }
+
+    /// <summary>
     /// The fully qualified name of the primitive type wrapped by the strongly typed id.
     /// </summary>
     public string PrimitiveIdTypeName { get; }
@@ -173,6 +207,29 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsSpanFormattable { get; }
 
     /// <summary>
+    /// 基元类型是否实现 <c>System.IUtf8SpanParsable&lt;TSelf&gt;</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="IsFormattable"/> 同样是「基元本就具备才透出」。这条判据必须在符号上做，
+    /// 不能按类型名硬编码：<c>Guid</c> 自 <b>.NET 10</b> 起才实现该接口，在 net8.0 消费者下生成的
+    /// <c>Parse(ReadOnlySpan&lt;byte&gt;…)</c> 会因为 <c>IUtf8SpanParsable&lt;Guid&gt;</c> 不存在而编译失败。
+    /// 因此同一份源码在 net8.0 与 net10.0 消费者下的产物本就<b>允许不同</b>，
+    /// 这与模块闸门（按引用程序集决定生成什么）是同一种设计。
+    /// </para>
+    /// </remarks>
+    public bool IsUtf8SpanParsable { get; }
+
+    /// <summary>
+    /// 基元类型是否实现 <c>System.IUtf8SpanFormattable</c>。
+    /// </summary>
+    /// <remarks>
+    /// net8.0 与 net10.0 下 <c>Guid</c> 与全部数值基元均为 <see langword="true"/>，<c>string</c> 为
+    /// <see langword="false"/>（<c>string</c> 连 <c>ISpanFormattable</c> 都不具备）。
+    /// </remarks>
+    public bool IsUtf8SpanFormattable { get; }
+
+    /// <summary>
     /// <c>[StronglyTypedId]</c> 上 <c>Validator</c> 指定的验证器方法名；未指定时为 <see langword="null"/>。
     /// </summary>
     /// <remarks>
@@ -181,6 +238,23 @@ internal readonly record struct StronglyTypedIdInfo
     /// 因此「直接 new 主构造函数」绕不过验证 —— 该限制由生成器无法改写使用者声明的主构造函数所致。
     /// </remarks>
     public string? ValidatorName { get; }
+
+    /// <summary>
+    /// <c>[StronglyTypedId]</c> 是否要求为该类型生成 <c>System.ComponentModel.TypeConverter</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这是一项<b>逐类型显式开启</b>的能力，不随引用程序集自动打开。理由：<c>[TypeConverter]</c> 会改变类型的
+    /// 全局语义（<c>TypeDescriptor</c> 是 <c>XmlSerializer</c>、<c>ConfigurationBinder</c>、XAML / DataGrid
+    /// 等老 API 的公共入口），而使用者完全可能已经自标了一个同名特性 —— 自动生成会直接与之相撞。
+    /// 这与 <c>Validator</c> 一样，属于「不侵占使用者声明的语义」。
+    /// </para>
+    /// <para>
+    /// 打开后还可一并补上 Newtonsoft.Json 字典键的<b>读</b>路径：Newtonsoft 还原键文本走的是
+    /// <c>TypeDescriptor</c>，<c>JsonConverter.ReadJson</c> 接管不到，只有类型自带转换器时才通。
+    /// </para>
+    /// </remarks>
+    public bool HasTypeConverter { get; }
 
     /// <summary>
     /// 解析强类型 Id 所包装的基元类型符号。
@@ -297,10 +371,28 @@ internal readonly record struct StronglyTypedIdInfo
         };
 
     /// <summary>
-    /// 判断给定类型是否实现了指定的接口。
+    /// 判断给定类型是否实现了指定的 BCL 接口。
     /// </summary>
+    /// <remarks>
+    /// 判据是「简单名 + 所属命名空间为 <c>System</c>」，不能改回比较完整显示名：
+    /// <c>IUtf8SpanParsable&lt;TSelf&gt;</c> 是泛型接口，实现侧带类型实参
+    /// （<c>global::System.IUtf8SpanParsable&lt;global::System.Guid&gt;</c>），与字面量永远不相等。
+    /// 命名空间必须一并校验，否则使用者自定义的同名接口会被误判为具备该能力，
+    /// 进而在生成代码里调用并不存在的成员。
+    /// </remarks>
     private static bool ImplementsInterface(ITypeSymbol type, string interfaceName)
-        => type.AllInterfaces.Any(@interface => @interface.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == interfaceName);
+        => type.AllInterfaces.Any(@interface => @interface.Name == interfaceName
+            && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == SystemNamespace);
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上指定命名实参的布尔值，未指定时返回 <see langword="false"/>。
+    /// </summary>
+    private static bool GetBooleanArgument(ITypeSymbol type, string argumentName)
+        => type.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == argumentName)
+            .Value.Value is true;
 
     /// <summary>
     /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参指向的方法名。

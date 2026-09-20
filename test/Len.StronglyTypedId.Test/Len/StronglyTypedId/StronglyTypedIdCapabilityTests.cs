@@ -1,4 +1,5 @@
-﻿using FluentAssertions;
+﻿using System.ComponentModel;
+using FluentAssertions;
 using System.Globalization;
 
 namespace Len.StronglyTypedId;
@@ -366,6 +367,136 @@ public class StronglyTypedIdCapabilityTests
         low.ToString().Should().Be("00000000-0000-0000-0000-000000000001");
         ((IFormattable)low).ToString("N", CultureInfo.InvariantCulture)
             .Should().Be(low.Value.ToString("N", CultureInfo.InvariantCulture));
+    }
+
+    #endregion
+
+    #region 工厂方法 TryCreate / UTF-8 接口 / 类型转换器 / 只读结构
+
+    /// <summary>
+    /// <c>TryCreate</c> 是 <c>Create</c> 的非抛异常版本：合法取值直接返回目标 Id。
+    /// </summary>
+    [Fact]
+    public void TryCreate_Should_ReturnTrue_ForValidValue()
+    {
+        GuidId.TryCreate(LowGuid, out var guidId).Should().BeTrue();
+        guidId.Should().Be(GuidId.Create(LowGuid));
+
+        Int32Id.TryCreate(42, out var intId).Should().BeTrue();
+        intId.Should().Be(Int32Id.Create(42));
+    }
+
+    /// <summary>
+    /// <c>TryCreate</c> 经由验证器拒绝非法取值：仅当 Id 设了 <c>Validator</c> 时才会失败。
+    /// </summary>
+    [Fact]
+    public void TryCreate_Should_ReturnFalse_WhenValidatorRejects()
+    {
+        // 值类型 Id：TryCreate 失败时 result 为 default 值（零结构体）。
+        NonEmptyGuidId.TryCreate(Guid.Empty, out var emptyId).Should().BeFalse();
+        emptyId.Should().Be(default(NonEmptyGuidId));
+
+        // 引用类型 Id：TryCreate 失败时 result 为 null（default 引用）。
+        NonEmptyInt32Id.TryCreate(0, out var zeroId).Should().BeFalse();
+        (zeroId is null).Should().BeTrue();
+
+        // 无验证器的 Id：任何取值都合法，TryCreate 恒返回 true。
+        GuidId.TryCreate(Guid.Empty, out var anyId).Should().BeTrue();
+        anyId.Should().Be(GuidId.Create(Guid.Empty));
+    }
+
+    /// <summary>
+    /// <c>IUtf8SpanFormattable</c> 自 .NET 8 起即可用，两个框架的 Guid / Int32 都实现，故生成的 Id 恒实现。
+    /// </summary>
+    [Fact]
+    public void Utf8Formattable_Should_BeEmitted_WhenPrimitiveSupportsIt()
+    {
+        typeof(GuidId).Should().BeAssignableTo<IUtf8SpanFormattable>();
+        typeof(Int32Id).Should().BeAssignableTo<IUtf8SpanFormattable>();
+    }
+
+#if NET10_0_OR_GREATER
+    /// <summary>
+    /// <c>Guid</c> 自 .NET 10 起实现 <c>IUtf8SpanParsable&lt;Guid&gt;</c>，生成器据此为
+    /// <c>GuidId</c> 实现 <c>IUtf8SpanParsable&lt;GuidId&gt;</c> 并提供 UTF-8 的 <c>Parse</c> / <c>TryParse</c>。
+    /// 该接口仅 net10.0+ 可用，用例以编译期 <c>#if</c> 门控避免 net8.0 约束违例（CS0315）。
+    /// </summary>
+    [Fact]
+    public void Utf8Parsable_Should_BeEmitted_WhenPrimitiveSupportsIt()
+    {
+        typeof(IUtf8SpanParsable<GuidId>).IsAssignableFrom(typeof(GuidId)).Should().BeTrue();
+
+        var utf8 = System.Text.Encoding.UTF8.GetBytes(LowGuid.ToString());
+        GuidId.Parse(utf8.AsSpan(), CultureInfo.InvariantCulture).Should().Be(GuidId.Create(LowGuid));
+        GuidId.TryParse(utf8.AsSpan(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Should().Be(GuidId.Create(LowGuid));
+        GuidId.TryParse(
+                System.Text.Encoding.UTF8.GetBytes("not-a-guid").AsSpan(),
+                CultureInfo.InvariantCulture,
+                out _)
+            .Should().BeFalse();
+    }
+#endif
+
+    /// <summary>
+    /// 逐类型开启 <c>TypeConverter</c> 后，<c>TypeDescriptor</c> 能在字符串与强类型 Id 间往返。
+    /// </summary>
+    /// <remarks>
+    /// 生成的类型必须自带 <c>[TypeConverter(typeof(...))]</c>，且转换器自身是 public sealed 嵌套类、
+    /// 带无参构造函数，<c>Activator.CreateInstance</c> 可达。
+    /// </remarks>
+    [Fact]
+    public void TypeConverter_Should_RoundTripViaTypeDescriptor()
+    {
+        var attribute = (TypeConverterAttribute)Attribute.GetCustomAttribute(
+            typeof(ConvertibleGuidId), typeof(TypeConverterAttribute))!;
+        attribute.ConverterTypeName.Should().Contain("ConvertibleGuidIdTypeConverter");
+
+        var converter = TypeDescriptor.GetConverter(typeof(ConvertibleGuidId));
+        converter.CanConvertFrom(typeof(string)).Should().BeTrue();
+        converter.CanConvertTo(typeof(string)).Should().BeTrue();
+
+        var id = (ConvertibleGuidId)converter.ConvertFrom(LowGuid.ToString())!;
+        id.Should().Be(ConvertibleGuidId.Create(LowGuid));
+
+        converter.ConvertTo(id, typeof(string)).Should().Be(LowGuid.ToString());
+    }
+
+    /// <summary>
+    /// 回归用例：开启 <c>TypeConverter</c> 后，Newtonsoft.Json 字典键的<b>读</b>路径也通了。
+    /// </summary>
+    /// <remarks>
+    /// Newtonsoft 还原字典键文本走 <c>TypeDescriptor</c> 而非 <c>JsonConverter.ReadJson</c>，
+    /// 因此只有类型自带转换器时键才能被还原。未开启 TypeConverter 的 <c>GuidId</c> 经由同一路径会失败，
+    /// 见 <see cref="StronglyTypedIdCapabilityTests"/> 中 Newtonsoft 写路径用例的注释。
+    /// </remarks>
+    [Fact]
+    public void NewtonsoftJson_Should_RoundTripKeyedDictionary_WhenTypeConverterEnabled()
+    {
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(
+            new Dictionary<ConvertibleGuidId, int> { [ConvertibleGuidId.Create(LowGuid)] = 1 });
+
+        var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<ConvertibleGuidId, int>>(json);
+
+        parsed.Should().NotBeNull();
+        parsed!.Keys.Single().Should().Be(ConvertibleGuidId.Create(LowGuid));
+    }
+
+    /// <summary>
+    /// <c>readonly record struct</c> 形态的强类型 Id 必须先编译通过：生成器必须把 <c>readonly</c> 修饰符
+    /// 透出到生成的 partial 段，否则与使用者写下的 readonly 段对「是否 readonly struct」不一致而编译失败。
+    /// </summary>
+    [Fact]
+    public void ReadonlyRecordStruct_Should_CompileAndBehaveLikeRecordStruct()
+    {
+        var value = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var id = ReadonlyGuidId.Create(value);
+
+        id.Value.Should().Be(value);
+        (id == ReadonlyGuidId.Create(value)).Should().BeTrue();
+        ReadonlyGuidId.TryParse(value.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Should().Be(id);
+        id.ToString().Should().Be(value.ToString());
     }
 
     #endregion

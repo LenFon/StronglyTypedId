@@ -18,6 +18,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
 
         context.RegisterSymbolAction(AnalyzeNamedType, SymbolKind.NamedType);
+        context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression);
     }
 
     private static void AnalyzeNamedType(SymbolAnalysisContext context)
@@ -136,9 +137,142 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         if (!SupportedPrimitiveTypes.IsSupported(constructorParameterType))
         {
             Report(context, Descriptors.ParameterTypeIsInvalid, parameter.Type!.GetLocation(), parameter.Type);
+            return;
+        }
+
+        // 形状校验全部通过后，基元类型已确定且合法，此时再校验 Validator 指向的方法签名。
+        // 放在最后而非与形状校验并行，是因为它需要「主构造函数参数类型」作为比对基准，
+        // 而该类型只有在通过了上面的单参数 / 非可空 / 受支持基元等校验后才可靠。
+        var validatorName = GetEffectiveValidatorName(type, context.Compilation.Assembly);
+
+        if (validatorName is not null)
+        {
+            ValidateValidator(context, type, validatorName, constructorParameterType, records);
         }
     }
 
-    private static void Report(SymbolAnalysisContext context, DiagnosticDescriptor descriptor, Location location, object argument)
-        => context.ReportDiagnostic(Diagnostic.Create(descriptor, location, argument));
+    /// <summary>
+    /// 校验 <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法是否为合法的静态验证器。
+    /// </summary>
+    /// <remarks>
+    /// 校验项：方法存在、是静态成员、返回 <see cref="bool"/>、恰好一个参数且参数类型等于基元 Id 类型。
+    /// 可见性不约束为 public —— 生成代码与 Id 类型处于同一 partial 内，private 也可达；约束可见性反而会
+    /// 把本可工作的写法误判为非法。任一条件不满足即报 <see cref="Descriptors.ValidatorReferenceInvalid"/>，
+    /// 定位在 attribute 的 <c>Validator</c> 实参上（找不到时退回首个声明段）。
+    /// </remarks>
+    private static void ValidateValidator(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        string validatorName,
+        ITypeSymbol primitiveType,
+        RecordDeclarationSyntax[] records)
+    {
+        var method = type.GetMembers(validatorName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
+
+        var location = FindValidatorArgumentLocation(records) ?? records[0].GetLocation();
+
+        if (method is null
+            || method.ReturnType.SpecialType != SpecialType.System_Boolean
+            || method.Parameters.Length != 1
+            || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, primitiveType))
+        {
+            Report(context, Descriptors.ValidatorReferenceInvalid, location, validatorName, primitiveType.ToDisplayString());
+        }
+    }
+
+    /// <summary>
+    /// 在声明段里定位 <c>[StronglyTypedId(Validator = …)]</c> 中 <c>Validator</c> 实参的语法位置。
+    /// </summary>
+    private static Location? FindValidatorArgumentLocation(RecordDeclarationSyntax[] records)
+    {
+        foreach (var record in records)
+        {
+            foreach (var attributeList in record.AttributeLists)
+            {
+                foreach (var attribute in attributeList.Attributes)
+                {
+                    var attributeName = attribute.Name.ToString();
+
+                    if (attributeName is not ("StronglyTypedId" or "StronglyTypedIdAttribute" or "Len.StronglyTypedId.StronglyTypedIdAttribute")
+                        && !attributeName.EndsWith("StronglyTypedIdAttribute", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    foreach (var argument in attribute.ArgumentList?.Arguments ?? default)
+                    {
+                        if (argument.NameEquals?.Name.Identifier.ValueText == "Validator")
+                        {
+                            return argument.GetLocation();
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    private static string? GetValidatorName(INamedTypeSymbol type)
+        => type.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute")
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "Validator")
+            .Value.Value as string;
+
+    /// <summary>
+    /// 取生效的验证器方法名：优先逐类型 <c>Validator</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.Validator</c>。
+    /// </summary>
+    private static string? GetEffectiveValidatorName(INamedTypeSymbol type, IAssemblySymbol assembly)
+        => GetValidatorName(type) ?? GetAssemblyDefaultValidator(assembly);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 的默认验证器方法名；未声明时为 <see langword="null"/>。
+    /// </summary>
+    private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
+        => assembly.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute")
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "Validator")
+            .Value.Value as string;
+
+    /// <summary>
+    /// 判断类型是否由 <c>[StronglyTypedId]</c> 标记。
+    /// </summary>
+    private static bool HasStronglyTypedIdAttribute(INamedTypeSymbol type)
+        => type.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute");
+
+    /// <summary>
+    /// 检测直接 <c>new Xxx(...)</c> 构造强类型 Id 的写法，仅在该 Id 设了 <c>Validator</c> 时提示（STIAO011）。
+    /// </summary>
+    /// <remarks>
+    /// 生成代码里的 <c>new Xxx(...)</c>（位于 <c>Create</c> / <c>TryParse</c> 内）由
+    /// <see cref="AnalysisContext.ConfigureGeneratedCodeAnalysis"/> 对生成代码的豁免而自动忽略，不会误报。
+    /// </remarks>
+    private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not ObjectCreationExpressionSyntax creation)
+        {
+            return;
+        }
+
+        var method = context.SemanticModel.GetSymbolInfo(creation, context.CancellationToken).Symbol as IMethodSymbol;
+        var type = method?.ContainingType;
+
+        if (type is null || !HasStronglyTypedIdAttribute(type) || GetEffectiveValidatorName(type, context.SemanticModel.Compilation.Assembly) is null)
+        {
+            return;
+        }
+
+        Report(context, Descriptors.BypassCreate, creation.GetLocation(), type.Name);
+    }
+
+    private static void Report(SymbolAnalysisContext context, DiagnosticDescriptor descriptor, Location location, params object[] arguments)
+        => context.ReportDiagnostic(Diagnostic.Create(descriptor, location, arguments));
+
+    private static void Report(SyntaxNodeAnalysisContext context, DiagnosticDescriptor descriptor, Location location, params object[] arguments)
+        => context.ReportDiagnostic(Diagnostic.Create(descriptor, location, arguments));
 }

@@ -21,10 +21,15 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Supported primitive types](#supported-primitive-types)
 - [What gets generated](#what-gets-generated)
 - [Value validation](#value-validation)
+- [TryCreate & UTF-8 interfaces](#trycreate-and-utf8)
+- [TypeConverter](#type-converter)
+- [Assembly-level defaults](#assembly-defaults)
 - [Nested types](#nested-types)
 - [Serialization](#serialization)
 - [Entity Framework Core](#entity-framework-core)
 - [Swashbuckle](#swashbuckle)
+- [Dapper](#dapper)
+- [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [Using the interface](#using-the-interface)
 - [Reflection helpers](#reflection-helpers)
 - [Diagnostics](#diagnostics)
@@ -45,6 +50,19 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   so `OrderBy`, `SortedSet<T>` and ranges work without a custom comparer.
 - **Value validation** — point `Validator` at a static method of the id to make `Create` and `TryParse`
   reject invalid values (see [Value validation](#value-validation)).
+- **`TryCreate` factory** — the non-throwing counterpart of `Create`: on a failed parse it returns `false`
+  and sets `result` to `default` instead of throwing.
+- **UTF-8 interfaces** — for primitives that expose them (`Guid` from .NET 10, for example),
+  `IUtf8SpanFormattable` and `IUtf8SpanParsable<TSelf>` are generated automatically, enabling
+  `ReadOnlySpan<byte>` parsing and formatting.
+- **Per-type TypeConverter** — set `[StronglyTypedId(TypeConverter = true)]` to emit a nested `TypeConverter`
+  that round-trips between string and the id through `TypeDescriptor`, covering config binding /
+  `XmlSerializer` scenarios.
+- **Assembly-level defaults** — use `[assembly: StronglyTypedIdDefaults(Validator = ...)]` to set a default
+  validator for the whole assembly.
+- **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and `ApplyTo(IDbConnection)` are generated.
+- **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
+  `ApplyTo(OpenApiOptions)` schema mappings are generated.
 - **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
   automatically, including `System.Text.Json` dictionary-key support.
 - **Entity Framework Core** — value converters for EF Core (≥ 7.0.0) are generated when needed.
@@ -158,6 +176,8 @@ your own declaration is never modified. What is emitted depends on what the comp
 | `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`                         |
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
+| `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
+| `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                             | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 The core implementation adds:
 
@@ -166,12 +186,17 @@ The core implementation adds:
   `IComparisonOperators<TSelf, TSelf, bool>`.
 - `IFormattable` and `ISpanFormattable` as well — except for `string`-backed ids, since `string`
   implements neither, so those members are emitted only for primitives that have them.
+- `IUtf8SpanFormattable` (available since net8.0) and `IUtf8SpanParsable<TSelf>` (`Guid` implements it only
+  from .NET 10, so it is emitted per primitive) — providing `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
 - A static `Create(TPrimitiveId value)` factory.
+- A static `TryCreate(TPrimitiveId value, out TSelf result)` factory — on a failed parse it returns `false` and sets `result` to `default`.
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. For
   `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
 - `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
 - `ToString()` returning the text of the wrapped value (not the record's `OrderId { Value = … }` form),
   along with `ToString(string?, IFormatProvider?)` and `TryFormat(...)` where the primitive supports them.
+- A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
+  round-tripping between string and the id through `TypeDescriptor`; a `null` reference-type id resolves back to `default`.
 
 The integration entry points are emitted into a single generated class —
 `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
@@ -207,6 +232,64 @@ code.
 
 Leaving `Validator` unset emits no validation code at all — the generated members then behave exactly as
 if the property did not exist.
+
+<a id="trycreate-and-utf8"></a>
+
+## TryCreate & UTF-8 interfaces <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+`Create` throws; `TryCreate` does not — it returns `false` on a failed parse and sets `result` to `default`:
+
+```csharp
+OrderId.TryCreate(Guid.NewGuid(), out var id);              // true
+OrderId.TryCreate(badValue, out var invalid);               // false, result is default(OrderId)
+```
+
+`Guid` implements `IUtf8SpanParsable<Guid>` from .NET 10, so the generator also emits `IUtf8SpanFormattable`
+(available since net8.0) and `IUtf8SpanParsable<GuidId>` for `GuidId`, together with `ReadOnlySpan<byte>`
+`Parse` / `TryParse`. `string`-backed ids emit neither (because `string` implements neither):
+
+```csharp
+var utf8 = Encoding.UTF8.GetBytes(orderId.Value.ToString());
+var same = OrderId.Parse(utf8, CultureInfo.InvariantCulture); // IUtf8SpanParsable<TSelf>
+```
+
+<a id="type-converter"></a>
+
+## TypeConverter <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+By default only JSON converters are generated. When you need round-tripping through `TypeDescriptor` — config
+binding, `XmlSerializer`, the Newtonsoft dictionary-key read path, and so on — enable it per type with
+`TypeConverter = true`:
+
+```csharp
+[StronglyTypedId(TypeConverter = true)]
+public partial record struct ConvertibleGuidId(Guid Value);
+```
+
+The generated nested `XxxTypeConverter` carries a `[TypeConverter(typeof(XxxTypeConverter))]` attribute, so
+`TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` can convert between string and the id, and a `null`
+reference-type id resolves back to `default`.
+
+> This converter covers only the "string ↔ id" path; it does not replace the JSON converters, which remain
+> independent and active.
+
+<a id="assembly-defaults"></a>
+
+## Assembly-level defaults (StronglyTypedIdDefaults) <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+When many ids in an assembly share the same validator, set a default at the assembly level instead of repeating
+it on each one:
+
+```csharp
+[assembly: StronglyTypedIdDefaults(Validator = "MyValidators.NonEmpty")]
+```
+
+`StronglyTypedIdDefaults.Validator` is only a **default**: an id that declares
+`[StronglyTypedId(Validator = ...)]` keeps its own validator; the assembly default is used only when neither
+the attribute nor the assembly default is set.
+
+> The validator method must still satisfy the [Value validation](#value-validation) signature convention
+> (`static bool Validate(TPrimitiveId value)`), otherwise [STIAO010](#diagnostics) is reported.
 
 <a id="nested-types"></a>
 
@@ -349,6 +432,50 @@ with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.
 | `long`     | `integer`      | `int64`  |
 | `ulong`    | `integer`      | `uint64` |
 
+<a id="dapper"></a>
+
+## Dapper <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+When `Dapper` ≥ 2.0.0 is referenced, a `TypeHandler` is generated for every strongly typed id, along with a
+single entry point:
+
+```csharp
+using Dapper;
+
+// Register TypeHandlers for all strongly typed ids on the connection.
+StronglyTypedIds.ApplyTo(connection);
+
+connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Create(Guid.NewGuid()) });
+```
+
+Each id's `TypeHandler` writes the database value (the `Value` for value types, the id itself for reference
+types) into the parameter, and reconstructs the id through `Create` when reading. Ids with the same short name
+in different namespaces get a "namespace-underscored" prefix on their `TypeHandler` to avoid collisions (the
+same disambiguation used for EF Core converters).
+
+> Referencing `Dapper` with a major version below 2.0.0 emits nothing, to avoid incompatibility with the
+> older `SqlMapper.TypeHandler` API.
+
+<a id="aspnetcore-openapi"></a>
+
+## ASP.NET Core OpenAPI <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+When `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced, OpenAPI schema mappings are generated for every
+strongly typed id, in parallel to Swashbuckle's `ApplyTo(SwaggerGenOptions)`:
+
+```csharp
+builder.Services.AddOpenApi(options =>
+{
+    StronglyTypedIds.ApplyTo(options);
+});
+```
+
+Each id is mapped to the schema of its underlying primitive, with the same `format` values as in the
+[Swashbuckle](#swashbuckle) section.
+
+> This integration is independent of Swashbuckle: either, both, or neither may be present, and each generates
+> its own `ApplyTo` overload.
+
 <a id="using-the-interface"></a>
 
 ## Using the interface <a href="#table-of-contents" style="float:right">↑ Back to top</a>
@@ -404,6 +531,8 @@ compiler culture.
 | STIAO007 | The primary constructor parameter must be named `Value`.                    | Rename the parameter           |
 | STIAO008 | The primary constructor parameter type must be a supported primitive type.  | —                              |
 | STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the containing type |
+| STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | — |
+| STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | — |
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are

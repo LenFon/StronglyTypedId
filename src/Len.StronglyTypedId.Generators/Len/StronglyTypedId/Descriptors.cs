@@ -11,6 +11,8 @@ internal static class Descriptors
     public const string ParameterCannotBeNullableId = "STIAO006";
     public const string ParameterNameMustBeValueId = "STIAO007";
     public const string ParameterTypeIsInvalidId = "STIAO008";
+    public const string ValidatorReferenceInvalidId = "STIAO010";
+    public const string BypassCreateId = "STIAO011";
     public const string TypeCannotBeAbstractId = "STIAO002";
     public const string TypeCannotBeGenericId = "STIAO003";
     public const string TypeMustHaveNamespaceId = "STIAO004";
@@ -107,6 +109,41 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法不存在、非静态、返回类型不是 <see cref="bool"/>，
+    /// 或形参类型不等于基元 Id 类型。
+    /// </summary>
+    /// <remarks>
+    /// 这是结构性缺口：一旦写错，错误会跑到生成代码里变成 CS0103 / CS0117 / CS1503，位置和原因都极难理解，
+    /// 且踩在 CS8785（生成器整段产出被丢弃、全项目生成归零）的风险链上。在分析器里提前校验，
+    /// 错误直接落在 attribute 上，属于纯新增诊断、不改任何生成逻辑，风险最低。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ValidatorReferenceInvalid
+        = new(ValidatorReferenceInvalidId,
+            new LocalizedString("ValidatorReferenceInvalidTitle"),
+            new LocalizedString("ValidatorReferenceInvalidMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 直接 <c>new OrderId(...)</c> 构造强类型 Id，绕过了 <c>Create</c> / <c>TryParse</c> 强制的验证器。
+    /// </summary>
+    /// <remarks>
+    /// 仅当该 Id 设了 <c>Validator</c> 时才提示：无验证器时主构造函数本就可无校验地构造，不构成问题。
+    /// 严重级别默认 <see cref="DiagnosticSeverity.Info"/>（建议性），且各项目可在 <c>.editorconfig</c> 里
+    /// 通过 <c>dotnet_diagnostic.STIAO011.severity</c> 调整为 warning / error / none，避免噪声。
+    /// 生成代码里的 <c>new Xxx(...)</c>（位于生成的 <c>Create</c> / <c>TryParse</c> 内）由分析器对生成代码的
+    /// 豁免配置自动忽略，不会误报。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor BypassCreate
+        = new(BypassCreateId,
+            new LocalizedString("BypassCreateTitle"),
+            new LocalizedString("BypassCreateMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
     /// 全部诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -121,5 +158,7 @@ internal static class Descriptors
         ParameterNameMustBeValue,
         ParameterTypeIsInvalid,
         ContainingTypeMustBePartial,
+        ValidatorReferenceInvalid,
+        BypassCreate,
     ];
 }

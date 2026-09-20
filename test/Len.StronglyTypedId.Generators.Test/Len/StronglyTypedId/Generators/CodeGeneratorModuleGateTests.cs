@@ -137,6 +137,85 @@ public class CodeGeneratorModuleGateTests
 
     #endregion
 
+    #region Dapper：Dapper 主版本 >= 2
+
+    [Fact]
+    public void Dapper_Should_Generate_WhenDapperMajorVersionIsTwo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.0.0.0"));
+
+        generated.Should().ContainKey("Len.StronglyTypedId.OrderId.Dapper.g.cs");
+        generated.Should().ContainKey("StronglyTypedIds.Dapper.g.cs");
+    }
+
+    [Fact]
+    public void Dapper_Should_NotGenerate_WhenDapperMajorVersionIsOne()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "1.0.0.0"));
+
+        generated.Keys.Should().NotContain(key => key.EndsWith(".Dapper.g.cs", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Dapper_Should_GenerateTypeHandlerAndApplyTo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.Dapper.g.cs"]
+            .Should().Contain("class OrderIdTypeHandler : global::Dapper.SqlMapper.TypeHandler<global::Len.StronglyTypedId.OrderId>")
+            .And.Contain("public override void SetValue(")
+            .And.Contain("public override global::Len.StronglyTypedId.OrderId? Parse(object value)");
+
+        generated["StronglyTypedIds.Dapper.g.cs"]
+            .Should().Contain("public static void ApplyTo(global::Dapper.IDbConnection connection)")
+            .And.Contain("global::Dapper.SqlMapper.AddTypeHandler");
+    }
+
+    #endregion
+
+    #region Microsoft.AspNetCore.OpenApi：主版本 >= 9
+
+    [Fact]
+    public void AspNetCoreOpenApi_Should_Generate_WhenMajorVersionIsNine()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", "9.0.0.0"));
+
+        generated.Should().ContainKey("StronglyTypedIds.AspNetCoreOpenApi.g.cs");
+    }
+
+    [Fact]
+    public void AspNetCoreOpenApi_Should_NotGenerate_WhenMajorVersionIsEight()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", "8.0.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreOpenApi.g.cs");
+    }
+
+    [Fact]
+    public void AspNetCoreOpenApi_Should_GenerateSchemaTransformer()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", "9.0.0.0"));
+
+        generated["StronglyTypedIds.AspNetCoreOpenApi.g.cs"]
+            .Should().Contain("class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer")
+            .And.Contain("public static void ApplyTo(global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options)")
+            .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\"),");
+    }
+
+    #endregion
+
     #region 辅助
 
     private const string IdSource = """

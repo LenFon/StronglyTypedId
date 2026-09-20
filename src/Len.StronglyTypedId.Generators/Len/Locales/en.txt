@@ -18,3 +18,7 @@ TypeMustHaveNamespaceMessage = 	The type '{0}' must be declared in a namespace.
 TypeMustHaveNamespaceTitle = 	Type must be declared in a namespace	
 TypeMustHaveSingleParameterPrimaryConstructorMessage = 	The type '{0}' must have a primary constructor with exactly one parameter.	
 TypeMustHaveSingleParameterPrimaryConstructorTitle = 	Type must have a primary constructor with exactly one parameter
+ValidatorReferenceInvalidTitle = Validator method must be a valid static bool method
+ValidatorReferenceInvalidMessage = The validator method '{0}' referenced by [StronglyTypedId(Validator = ...)] must be a static method with the signature 'static bool {0}({1} value)'.
+BypassCreateTitle = Strongly typed id constructed directly
+BypassCreateMessage = Constructing '{0}' directly bypasses the validation enforced by Create and TryParse. Use {0}.Create(...) instead.

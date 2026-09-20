@@ -26,11 +26,22 @@ internal sealed record ModuleInfo
 
     public IAssemblySymbol? Assembly { get; }
 
+    // 每个模块的类型表只依赖 Assembly 符号，且在同一编译里完全稳定：
+    // 4 个生成器（EF Core / Swagger / Dapper / 内置 OpenAPI）各自调用 Discover 时都会遍历一次，
+    // 不加缓存就会把整棵命名空间树重复枚举多遍。用实例级懒缓存把重复枚举收敛为一次。
+    // 字段不参与 record 的相等性比较（record 只比对声明的属性），因此缓存的存在不影响去重逻辑。
+    private ImmutableArray<ITypeSymbol>? _typesCache;
+
     public ImmutableArray<ITypeSymbol> GetTypes()
     {
         if (Assembly is null)
         {
             return [];
+        }
+
+        if (_typesCache is { } cached)
+        {
+            return cached;
         }
 
         var typeSymbols = new List<ITypeSymbol>();
@@ -51,7 +62,9 @@ internal sealed record ModuleInfo
             }
         }
 
-        return [.. typeSymbols];
+        _typesCache = [.. typeSymbols];
+
+        return _typesCache.Value;
     }
 
     /// <summary>

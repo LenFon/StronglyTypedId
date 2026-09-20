@@ -1,4 +1,6 @@
-﻿using Len.StronglyTypedId.Analyzers;
+﻿using System.IO;
+using System.Reflection;
+using Len.StronglyTypedId.Analyzers;
 using Len.StronglyTypedId.CodeFixes;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -92,7 +94,24 @@ public static class Verify
             new PackageIdentity("Microsoft.NETCore.App.Ref", "8.0.0"),
             Path.Combine("ref", "net8.0"));
 
-        test.TestState.AdditionalReferences.Add(typeof(StronglyTypedIdAttribute).Assembly);
+        // 引用程序集固定在 net8.0，故附加的运行时程序集必须同样取 net8.0 构建的那一份。
+        // 在 net10.0 测试宿主里 typeof(StronglyTypedIdAttribute).Assembly 会指向 net10.0 构建的
+        // Len.StronglyTypedId.dll，与 net8.0 引用程序集产生版本错位，使
+        // [StronglyTypedId(Validator = ...)] 的命名实参无法绑定（被静默丢弃），验证器相关诊断
+        // （STIAO010 / STIAO011）在 net10.0 下零产出。改取同目录下的 net8.0 产物即可对齐。
+        var runtimeAssembly = typeof(StronglyTypedIdAttribute).Assembly;
+        var net8Location = runtimeAssembly.Location.Replace(
+            $"{Path.DirectorySeparatorChar}net10.0{Path.DirectorySeparatorChar}",
+            $"{Path.DirectorySeparatorChar}net8.0{Path.DirectorySeparatorChar}");
+
+        if (File.Exists(net8Location))
+        {
+            test.TestState.AdditionalReferences.Add(MetadataReference.CreateFromFile(net8Location));
+        }
+        else
+        {
+            test.TestState.AdditionalReferences.Add(runtimeAssembly);
+        }
     }
 
     private static ParseOptions CreateDefaultParseOptions()
