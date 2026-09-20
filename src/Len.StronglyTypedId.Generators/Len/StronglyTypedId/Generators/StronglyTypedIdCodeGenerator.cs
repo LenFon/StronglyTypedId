@@ -1,9 +1,17 @@
-﻿namespace Len.StronglyTypedId.Generators;
+﻿using System.Text;
+
+namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// 生成强类型 Id 的核心实现：<c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>、<c>IParsable&lt;TSelf&gt;</c>
-/// 与相等性运算符。
+/// 生成强类型 Id 的核心实现：<c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>、解析与格式化接口、
+/// 比较接口以及比较运算符。
 /// </summary>
+/// <remarks>
+/// 基元类型本就具备的能力（排序、按格式串格式化、零分配的 span 解析与格式化）在此透出到强类型 Id 上。
+/// 其中格式化相关的接口并不是所有受支持基元都具备 —— <c>string</c> 未实现 <c>IFormattable</c> ——
+/// 因此这两项由 <see cref="StronglyTypedIdInfo.IsFormattable"/> / <see cref="StronglyTypedIdInfo.IsSpanFormattable"/>
+/// 按基元类型的符号判定后条件生成。
+/// </remarks>
 internal class StronglyTypedIdCodeGenerator : ICodeGenerator
 {
     internal static readonly ICodeGenerator Instance = new StronglyTypedIdCodeGenerator();
@@ -28,9 +36,15 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
                 partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}} :
                     global::Len.StronglyTypedId.IStronglyTypedId<{{idInfo.Name}}, {{idInfo.PrimitiveIdTypeName}}>,
                     global::System.IParsable<{{idInfo.Name}}>,
-                    global::System.Numerics.IEqualityOperators<{{idInfo.Name}}, {{idInfo.Name}}, bool>
+                    global::System.ISpanParsable<{{idInfo.Name}}>,
+                    global::System.IComparable<{{idInfo.Name}}>,
+                    global::System.Numerics.IEqualityOperators<{{idInfo.Name}}, {{idInfo.Name}}, bool>,
+                    global::System.Numerics.IComparisonOperators<{{idInfo.Name}}, {{idInfo.Name}}, bool>{{GetFormattableInterfaces(idInfo)}}
                 {
-                    public static {{idInfo.Name}} Create({{idInfo.PrimitiveIdTypeName}} value) => new {{idInfo.Name}}(value);
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static {{idInfo.Name}} Create({{idInfo.PrimitiveIdTypeName}} value) =>{{GetCreateExpression(idInfo)}};
 
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
@@ -53,19 +67,231 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
                         global::System.IFormatProvider? provider,
                         [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.Name}} result)
                     {
-                        if ({{(idInfo.PrimitiveIdTypeName == "string" ? "value is { Length: > 0 } val" : $"{idInfo.PrimitiveIdTypeName}.TryParse(value, provider, out var val)")}})
+                        if ({{GetTryParseCondition(idInfo, isSpan: false)}})
                         {
-                            result = new {{idInfo.Name}}(val);
+                            result = new {{idInfo.Name}}({{GetTryParseValue(idInfo, isSpan: false)}});
                             return true;
                         }
 
                         result = default;
                         return false;
                     }
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static {{idInfo.Name}} Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                    {
+                        if (!TryParse(value, provider, out var id))
+                        {
+                            throw new global::System.ArgumentException("Could not parse supplied value.", nameof(value));
+                        }
+
+                        return id;
+                    }
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static bool TryParse(
+                        global::System.ReadOnlySpan<char> value,
+                        global::System.IFormatProvider? provider,
+                        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.Name}} result)
+                    {
+                        if ({{GetTryParseCondition(idInfo, isSpan: true)}})
+                        {
+                            result = new {{idInfo.Name}}({{GetTryParseValue(idInfo, isSpan: true)}});
+                            return true;
+                        }
+
+                        result = default;
+                        return false;
+                    }
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public int CompareTo({{GetCompareToParameter(idInfo)}}) => {{GetCompareToBody(idInfo)}};
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static bool operator <({{idInfo.Name}} left, {{idInfo.Name}} right) => left.Value.CompareTo(right.Value) < 0;
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static bool operator >({{idInfo.Name}} left, {{idInfo.Name}} right) => left.Value.CompareTo(right.Value) > 0;
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static bool operator <=({{idInfo.Name}} left, {{idInfo.Name}} right) => left.Value.CompareTo(right.Value) <= 0;
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public static bool operator >=({{idInfo.Name}} left, {{idInfo.Name}} right) => left.Value.CompareTo(right.Value) >= 0;
+
+                    /// <inheritdoc/>
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(StronglyTypedIdCodeGenerator)}}", "{{version}}")]
+                    public override string ToString() => Value.ToString() ?? string.Empty;{{GetFormattableMembers(idInfo, version)}}
                 }
                 """;
 
-            context.AddSource($"{idInfo.FullName}.g.cs", code);
+            context.AddSource($"{idInfo.FullName}.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        }
+    }
+
+    /// <summary>
+    /// 追加到基类型列表末尾的格式化接口，未实现时返回空串。
+    /// </summary>
+    /// <remarks>
+    /// 片段拼在最后一个必选接口的同一行行尾：逗号留在该行末尾，其余接口各自换行并与其它接口同样缩进一层。
+    /// 这样「有 / 无」两种形态都不会破坏模板既有的排版，缩进也不依赖原始字符串字面量的裁剪规则。
+    /// </remarks>
+    private static string GetFormattableInterfaces(StronglyTypedIdInfo idInfo)
+    {
+        var interfaces = new List<string>(2);
+
+        if (idInfo.IsFormattable)
+        {
+            interfaces.Add("global::System.IFormattable");
+        }
+
+        if (idInfo.IsSpanFormattable)
+        {
+            interfaces.Add("global::System.ISpanFormattable");
+        }
+
+        return interfaces.Count == 0 ? string.Empty : ",\n    " + string.Join(",\n    ", interfaces);
+    }
+
+    /// <summary>
+    /// 取 <c>Create</c> 的表达式体。
+    /// </summary>
+    /// <remarks>
+    /// 指定了 <c>Validator</c> 时用条件表达式内联校验：这样「有无验证器」两种形态共用同一个模板，
+    /// 未指定验证器时的产物与加入该能力之前逐字符一致。
+    /// </remarks>
+    private static string GetCreateExpression(StronglyTypedIdInfo idInfo)
+        => idInfo.ValidatorName is null
+            ? $" new {idInfo.Name}(value)"
+            : $" {idInfo.ValidatorName}(value) ? new {idInfo.Name}(value) : throw new global::System.ArgumentException($\"The value '{{value}}' is not a valid {idInfo.Name}.\", nameof(value))";
+
+    /// <summary>
+    /// 取 <c>TryParse</c> 的解析条件。
+    /// </summary>
+    /// <remarks>
+    /// 指定了验证器时把校验并入条件：<c>TryParse</c> 的契约是「非法即返回 false」，不能借抛异常实现。
+    /// </remarks>
+    private static string GetTryParseCondition(StronglyTypedIdInfo idInfo, bool isSpan)
+    {
+        var condition = GetTryParseConditionCore(idInfo, isSpan);
+
+        return idInfo.ValidatorName is null
+            ? condition
+            : $"{condition} && {idInfo.ValidatorName}({GetTryParseValue(idInfo, isSpan)})";
+    }
+
+    private static string GetTryParseConditionCore(StronglyTypedIdInfo idInfo, bool isSpan)
+        => idInfo.IsStringPrimitive
+            // 字符串基元没有可用的 TryParse，用非空即合法来表达；span 重载按 Length 判定，避免额外分配。
+            ? isSpan ? "value.Length > 0" : "value is { Length: > 0 }"
+            : $"{idInfo.PrimitiveIdTypeName}.TryParse(value, provider, out var val)";
+
+    /// <summary>
+    /// 取传给构造函数的基元值表达式。
+    /// </summary>
+    /// <remarks>
+    /// 其余基元的解析结果落在 <c>out var val</c> 上；字符串基元则直接取参数本身（span 重载先转成字符串）。
+    /// </remarks>
+    private static string GetTryParseValue(StronglyTypedIdInfo idInfo, bool isSpan)
+        => idInfo.IsStringPrimitive
+            ? isSpan ? "value.ToString()" : "value"
+            : "val";
+
+    /// <summary>
+    /// 取 <c>CompareTo</c> 的形参。
+    /// </summary>
+    /// <remarks>
+    /// <c>IComparable&lt;TSelf&gt;</c> 声明的形参是 <c>T? other</c>，在无约束泛型里对值类型即 <c>T</c> 本身、
+    /// 对引用类型才是可空标注。因此 record 与 record struct 的签名必须分开生成，写错会招来 CS8767。
+    /// </remarks>
+    private static string GetCompareToParameter(StronglyTypedIdInfo idInfo)
+        => idInfo.TypeKindSuffix is null ? $"{idInfo.Name}? other" : $"{idInfo.Name} other";
+
+    /// <summary>
+    /// 取 <c>CompareTo</c> 的表达式体。
+    /// </summary>
+    /// <remarks>
+    /// 引用类型的 <see langword="null"/> 排在有序序列的末尾，与 <c>Comparer&lt;T&gt;.Default</c> 的约定一致。
+    /// </remarks>
+    private static string GetCompareToBody(StronglyTypedIdInfo idInfo)
+        => idInfo.TypeKindSuffix is null
+            ? "other is null ? 1 : Value.CompareTo(other.Value)"
+            : "Value.CompareTo(other.Value)";
+
+    /// <summary>
+    /// 生成格式化成员的文本，未实现格式化接口时返回空串。
+    /// </summary>
+    /// <remarks>
+    /// 片段整体拼在最后一个必选成员所在的同一行行尾，因而以两个换行符开头（空一行后再起成员）。
+    /// 缩进按产物中的层级逐行写死，不依赖原始字符串字面量的缩进裁剪 —— 后者在「结束分隔符与内容同行」
+    /// 的写法下不易推断，而这里逐行拼接的结果完全可预期。行尾风格由
+    /// <see cref="GeneratedCode.NormalizeLineEndings"/> 在最后统一。
+    /// </remarks>
+    private static string GetFormattableMembers(StronglyTypedIdInfo idInfo, string version)
+    {
+        var members = new StringBuilder();
+
+        if (idInfo.IsFormattable)
+        {
+            AppendMember(
+                members,
+                version,
+                "public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>",
+                "    Value.ToString(format, formatProvider);");
+        }
+
+        if (idInfo.IsSpanFormattable)
+        {
+            // 经接口调用而非具体类型成员：基元类型里 Guid 的「带 IFormatProvider 的 TryFormat」是显式接口实现，
+            // 按具体类型名调用会 CS1501；只有按接口调用才能对所有受支持基元一致成立。代价是值类型装箱一次，
+            // 但仍省去 IFormattable 路径上必然产生的中间字符串。
+            AppendMember(
+                members,
+                version,
+                "public bool TryFormat(",
+                "    global::System.Span<char> destination,",
+                "    out int charsWritten,",
+                "    global::System.ReadOnlySpan<char> format,",
+                "    global::System.IFormatProvider? provider) =>",
+                "    ((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);");
+        }
+
+        return members.ToString();
+    }
+
+    /// <summary>
+    /// 向 <paramref name="builder"/> 追加一个带生成器标注的成员。
+    /// </summary>
+    /// <param name="builder">目标缓冲区。</param>
+    /// <param name="version">写入 <c>GeneratedCodeAttribute</c> 的生成器版本。</param>
+    /// <param name="declarationLines">
+    /// 成员自身的各行（不含缩进），按产物中的相对缩进给出；除首行外各自缩进一层。
+    /// </param>
+    private static void AppendMember(StringBuilder builder, string version, params string[] declarationLines)
+    {
+        builder.Append('\n').Append('\n');
+        builder.Append("    /// <inheritdoc/>").Append('\n');
+        builder.Append("    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]").Append('\n');
+        builder.Append($"    [global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"{nameof(StronglyTypedIdCodeGenerator)}\", \"{version}\")]");
+
+        foreach (var declarationLine in declarationLines)
+        {
+            builder.Append('\n').Append("    ").Append(declarationLine);
         }
     }
 }

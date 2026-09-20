@@ -241,6 +241,79 @@ public class StronglyTypedIdInfoTests
 
     #endregion
 
+    #region 派生能力：格式化接口、string 特判与验证器名
+
+    /// <summary>
+    /// 格式化相关能力取自<b>基元类型的符号</b>而不是类型名字面量，因此这些断言同时也是生成模板
+    /// 分支条件的依据：<c>string</c> 未实现 <c>IFormattable</c>，所以 string 基元的 Id 也不能实现它，
+    /// 生成器必须据此条件生成。这条事实一旦变化，模板的分支就要跟着改。
+    /// </summary>
+    [Theory]
+    [InlineData("int", false, true, true)]
+    [InlineData("string", true, false, false)]
+    [InlineData("System.Guid", false, true, true)]
+    public void Info_Should_DerivePrimitiveCapabilities_FromPrimitiveSymbol(
+        string primitive,
+        bool isStringPrimitive,
+        bool isFormattable,
+        bool isSpanFormattable)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            public partial record struct NewId({{primitive}} Value);
+            """,
+            "Referenced.NewId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.IsStringPrimitive.Should().Be(isStringPrimitive);
+        info.IsFormattable.Should().Be(isFormattable);
+        info.IsSpanFormattable.Should().Be(isSpanFormattable);
+    }
+
+    /// <summary>
+    /// <c>Validator</c> 是 attribute 的命名实参，会被写进元数据，因此引用程序集里的强类型 Id 与本次编译
+    /// 新声明的走同一条读取路径（生成器入口无需另行传递）。
+    /// </summary>
+    [Fact]
+    public void Info_Should_ReadValidatorName_FromAttributeNamedArgument()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId(Validator = nameof(Validate))]
+                public partial record struct NewId(int Value)
+                {
+                    private static bool Validate(int value) => value > 0;
+                }
+            }
+            """,
+            "Len.StronglyTypedId.NewId");
+
+        new StronglyTypedIdInfo(type).ValidatorName.Should().Be("Validate");
+    }
+
+    [Fact]
+    public void Info_Should_LeaveValidatorNameNull_WhenAttributeOmitsIt()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId]
+                public partial record struct NewId(int Value);
+            }
+            """,
+            "Len.StronglyTypedId.NewId");
+
+        new StronglyTypedIdInfo(type).ValidatorName.Should().BeNull();
+    }
+
+    #endregion
+
     #region 辅助
 
     /// <summary>
