@@ -17,6 +17,9 @@
 		<!-- 生成器快照测试需引用 EF Core 与 Swashbuckle，才能使 EfCoreCodeGenerator / SwaggerCodeGenerator 被触发。 -->
 		<PackageReference Include="Microsoft.EntityFrameworkCore" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+		<!-- ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」的消费者画像下可被触发，
+		     并为 MVC / 路由集成提供可编译的命名空间和类型（MvcOptions / IModelBinder / IRouteConstraint 等）。 -->
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />

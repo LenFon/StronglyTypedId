@@ -29,6 +29,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Entity Framework Core](#entity-framework-core)
 - [Swashbuckle](#swashbuckle)
 - [Dapper](#dapper)
+- [ASP.NET Core MVC](#aspnet-core-mvc)
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [Using the interface](#using-the-interface)
 - [Reflection helpers](#reflection-helpers)
@@ -61,6 +62,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **Assembly-level defaults** — use `[assembly: StronglyTypedIdDefaults(Validator = ...)]` to set a default
   validator for the whole assembly.
 - **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and `ApplyTo(IDbConnection)` are generated.
+- **ASP.NET Core MVC integration** — when `Microsoft.AspNetCore.Mvc` (or its `Microsoft.AspNetCore.Mvc.Core` facade) ≥ 2.0.0 is referenced, a model-binder provider and per-id route constraints are generated so `[FromRoute]`/`[FromQuery]` and `{id:OrderId}` bind correctly.
 - **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
   `ApplyTo(OpenApiOptions)` schema mappings are generated.
 - **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
@@ -177,6 +179,7 @@ your own declaration is never modified. What is emitted depends on what the comp
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
 | `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
+| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
 | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                             | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 The core implementation adds:
@@ -455,6 +458,42 @@ same disambiguation used for EF Core converters).
 
 > Referencing `Dapper` with a major version below 2.0.0 emits nothing, to avoid incompatibility with the
 > older `SqlMapper.TypeHandler` API.
+
+<a id="aspnet-core-mvc"></a>
+
+## ASP.NET Core MVC <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+When `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (on .NET 8 / .NET 10 the `Microsoft.AspNetCore.Mvc.Core`
+and `Microsoft.AspNetCore.Mvc.Abstractions` assemblies also satisfy the gate), the generator emits a single
+model-binder provider plus one route constraint per id, so strongly typed ids bind and validate without any
+per-type boilerplate:
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+
+// Register the model-binder provider and the per-id route constraints.
+builder.Services.AddControllers(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+```
+
+```csharp
+[ApiController]
+[Route("api/orders")]
+public class OrdersController : ControllerBase
+{
+    // "ABC123" from the route or query is bound into OrderId via IParsable<OrderId>.TryParse.
+    [HttpGet("{id}")]
+    public IActionResult Get([FromRoute] OrderId id) => Ok(id);
+
+    // The {id:OrderId} constraint validates the segment format before the action runs.
+    [HttpGet("v2/{id:OrderId}")]
+    public IActionResult GetV2([FromRoute] OrderId id) => Ok(id);
+}
+```
+
+> The binder only takes over for types that implement `IStronglyTypedId<TSelf, TPrimitiveId>`; every other
+> type falls through to MVC's default binding chain. The bind itself reuses the `IParsable<TSelf>` member that
+> every id already has, so there is no per-request reflection beyond a one-time type check at registration.
 
 <a id="aspnetcore-openapi"></a>
 

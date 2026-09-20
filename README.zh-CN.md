@@ -28,6 +28,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [Entity Framework Core](#entity-framework-core)
 - [Swashbuckle](#swashbuckle)
 - [Dapper](#dapper)
+- [ASP.NET Core MVC](#aspnet-core-mvc)
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [用接口约束泛型](#using-the-interface)
 - [运行时反射](#reflection-helpers)
@@ -56,6 +57,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
   经 `TypeDescriptor` 在字符串与强类型 Id 间往返，覆盖配置绑定 / `XmlSerializer` 等场景。
 - **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
 - **Dapper 集成** —— 引用 `Dapper` ≥ 2.0.0 时生成 `TypeHandler` 与 `ApplyTo(IDbConnection)`。
+- **ASP.NET Core MVC 集成** —— 引用 `Microsoft.AspNetCore.Mvc`（或其 `Microsoft.AspNetCore.Mvc.Core` 门面）≥ 2.0.0 时，生成模型绑定提供者与逐 Id 路由约束，使 `[FromRoute]`/`[FromQuery]` 与 `{id:OrderId}` 开箱即用。
 - **ASP.NET Core OpenAPI 集成** —— 引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时生成 `ApplyTo(OpenApiOptions)` 架构映射。
 - **序列化** —— 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，
   其中 `System.Text.Json` 还支持字典键。
@@ -165,6 +167,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
 | 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
+| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
 | 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                          | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 核心实现会补上：
@@ -420,6 +423,40 @@ connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Cr
 （与 EF Core 转换器同名处理一致）。
 
 > 引用 `Dapper` 但主版本低于 2.0.0 时不生成，避免与旧版 `SqlMapper.TypeHandler` API 不兼容。
+
+<a id="aspnet-core-mvc"></a>
+
+## ASP.NET Core MVC <a href="#top" style="float:right">↑ 返回目录</a>
+
+引用 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 时（.NET 8 / .NET 10 上 `Microsoft.AspNetCore.Mvc.Core`
+与 `Microsoft.AspNetCore.Mvc.Abstractions` 程序集同样满足门控），生成器会产出一个模型绑定提供者与
+逐 Id 的路由约束，使强类型 Id 无需任何逐类型样板即可完成绑定与校验：
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+
+// 注册模型绑定提供者与逐 Id 路由约束。
+builder.Services.AddControllers(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+```
+
+```csharp
+[ApiController]
+[Route("api/orders")]
+public class OrdersController : ControllerBase
+{
+    // 路由或查询里的 "ABC123" 经 IParsable<OrderId>.TryParse 绑定为 OrderId。
+    [HttpGet("{id}")]
+    public IActionResult Get([FromRoute] OrderId id) => Ok(id);
+
+    // {id:OrderId} 约束会在进入 Action 前按该 Id 的解析规则校验分段格式。
+    [HttpGet("v2/{id:OrderId}")]
+    public IActionResult GetV2([FromRoute] OrderId id) => Ok(id);
+}
+```
+
+> 绑定器只对实现了 `IStronglyTypedId<TSelf, TPrimitiveId>` 的类型接管；其余类型回退到 MVC 默认绑定链路。
+> 绑定本身复用每个 Id 已有的 `IParsable<TSelf>` 成员，因此除注册时的一次性类型判定外没有逐请求反射开销。
 
 <a id="aspnetcore-openapi"></a>
 
