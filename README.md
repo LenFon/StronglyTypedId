@@ -20,6 +20,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Getting started](#getting-started)
 - [Supported primitive types](#supported-primitive-types)
 - [What gets generated](#what-gets-generated)
+- [Value validation](#value-validation)
 - [Nested types](#nested-types)
 - [Serialization](#serialization)
 - [Entity Framework Core](#entity-framework-core)
@@ -35,10 +36,17 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
-- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and five of the
-  nine rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
-- **Parsing & formatting** — `IParsable<TSelf>` support (`Parse` / `TryParse`) is generated automatically.
-- **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated automatically.
+- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and six of the
+  ten rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+- **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
+  for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
+  and `ISpanFormattable` for every primitive that has them (all but `string`).
+- **Comparison & ordering** — each id implements `IComparable<TSelf>` and the four comparison operators,
+  so `OrderBy`, `SortedSet<T>` and ranges work without a custom comparer.
+- **Value validation** — point `Validator` at a static method of the id to make `Create` and `TryParse`
+  reject invalid values (see [Value validation](#value-validation)).
+- **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
+  automatically, including `System.Text.Json` dictionary-key support.
 - **Entity Framework Core** — value converters for EF Core (≥ 7.0.0) are generated when needed.
 - **Swagger / OpenAPI** — schema mappings for Swashbuckle.AspNetCore are generated when referenced,
   for both Microsoft.OpenApi 1.x and 2.x.
@@ -58,8 +66,9 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 | EntityFrameworkCore                    | ≥ **7.0.0** (only when using the EF Core converter).                                     |
 | Swashbuckle.AspNetCore.SwaggerGen      | ≥ **6.0.0** (only when generating Swagger schema mappings).                              |
 
-The generated code relies on `IParsable<T>` and `IEqualityOperators<,,>`, which is why the runtime library
-starts at `net8.0` rather than following the generator's much lower `netstandard2.0` baseline.
+The generated code relies on `IParsable<T>`, `ISpanParsable<T>` and the comparison / equality operator
+interfaces in `System.Numerics`, which is why the runtime library starts at `net8.0` rather than following
+the generator's much lower `netstandard2.0` baseline.
 
 <a id="getting-started"></a>
 
@@ -131,7 +140,7 @@ The wrapped `Value` parameter may be one of:
 
 The type is matched by its name, so writing `System.Guid` (or an aliased using) works exactly the same.
 Only the types above are recognised — a type of your own that merely happens to be called `Guid` is not
-supported, and will surface as an error in the generated code.
+supported, and is rejected by [STIAO008](#diagnostics).
 
 <a id="what-gets-generated"></a>
 
@@ -142,26 +151,62 @@ nested ids are declared back inside their containing types instead (see
 [Nested types](#nested-types)) —
 your own declaration is never modified. What is emitted depends on what the compilation references:
 
-| Condition in the compilation                                                                        | Generated code                                                                              |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Always                                                                                              | Core implementation → `<Namespace>.<TypeName>.g.cs`                                          |
-| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]`                                         |
-| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]`                                         |
-| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` + `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)`         |
-| `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)`                                                 |
+| Condition in the compilation                                                                        | Generated code                                                                                       |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Always                                                                                              | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                   |
+| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`                         |
+| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`                         |
+| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
 
 The core implementation adds:
 
-- Implementation of `IStronglyTypedId<TSelf, TPrimitiveId>`, `IParsable<TSelf>`,
-  and `IEqualityOperators<TSelf, TSelf, bool>`.
+- Implementation of `IStronglyTypedId<TSelf, TPrimitiveId>`, `IParsable<TSelf>`, `ISpanParsable<TSelf>`,
+  `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
+  `IComparisonOperators<TSelf, TSelf, bool>`.
+- `IFormattable` and `ISpanFormattable` as well — except for `string`-backed ids, since `string`
+  implements neither, so those members are emitted only for primitives that have them.
 - A static `Create(TPrimitiveId value)` factory.
-- `Parse` / `TryParse`, delegating to the primitive type. For `string`-backed ids, `null` and empty
-  strings are not accepted by `TryParse`.
+- `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. For
+  `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
+- `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
+- `ToString()` returning the text of the wrapped value (not the record's `OrderId { Value = … }` form),
+  along with `ToString(string?, IFormatProvider?)` and `TryFormat(...)` where the primitive supports them.
 
 The integration entry points are emitted into a single generated class —
 `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
 `ApplyTo` overloads live side by side no matter how many ids the project declares. Add
 `using Len.StronglyTypedId;` (already required for the attribute itself) to call them.
+
+<a id="value-validation"></a>
+
+## Value validation <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+The generator constrains the *shape* of an id, not the *values* it may hold. Point `Validator` at a
+static method of the id itself, and the generated entry points will refuse invalid values:
+
+```csharp
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct OrderId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
+OrderId.Create(Guid.Empty);                            // throws ArgumentException
+OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // false, no exception
+```
+
+The method must be a static member of the id with the signature `static bool Validate(TPrimitiveId value)`,
+returning `true` for an acceptable value. It is called from `Create` and from both `TryParse` overloads,
+so `TryParse` keeps its contract and returns `false` instead of throwing. The JSON and Entity Framework
+Core integrations construct through `Create`, so deserialization rejects invalid values as well.
+
+One thing a source generator cannot do is intercept your primary constructor: `new OrderId(...)` bypasses
+the validator. Route values through `Create` (or the parsing members) when they come from outside your
+code.
+
+Leaving `Validator` unset emits no validation code at all — the generated members then behave exactly as
+if the property did not exist.
 
 <a id="nested-types"></a>
 
@@ -215,6 +260,28 @@ Same zero-config behavior through a generated `[JsonConverter]` attribute.
 var json = JsonConvert.SerializeObject(new OrderId(Guid.NewGuid()));
 var id   = JsonConvert.DeserializeObject<OrderId>(json);
 ```
+
+### Dictionary keys
+
+A `JsonConverter<T>` does not see dictionary keys by default — `System.Text.Json` only knows the built-in
+key types and throws `NotSupportedException` for anything else — so the generated converter overrides
+`ReadAsPropertyName` / `WriteAsPropertyName` as well:
+
+```csharp
+var cart = new Dictionary<OrderId, int> { [id] = 3 };
+
+var json = JsonSerializer.Serialize(cart);                        // {"3f2c…":3}
+var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
+```
+
+Keys are written as the invariant-culture text of the primitive value, so the same data always produces
+the same key no matter the current culture. A `string`-backed id uses the string itself, so an empty
+string round-trips; a key that cannot be parsed throws `JsonException`.
+
+Newtonsoft.Json routes dictionary keys through `TypeConverter` / `ToString()` rather than through
+`JsonConverter`, so its keys never reach the generated converter. They still round-trip — the generated
+`ToString()` returns the text of the primitive value — but that text follows the current culture. Attach
+your own `[TypeConverter]` to the id if you need to control the key format.
 
 Both converters serialize the id as its underlying primitive value rather than as an object, so the JSON
 payload keeps the same shape it had before the id was introduced. A `null` reference-type id is written
@@ -377,7 +444,25 @@ discarded. Please open an issue with the compiler output and a minimal reproduct
 **Q: Is the id usable as a `Dictionary`/`HashSet` key?**
 
 A: Yes. `record` and `record struct` both generate structural equality, `GetHashCode`, `==` and `!=`
-over the wrapped `Value`.
+over the wrapped `Value`. Serializing a dictionary keyed by an id is supported as well — see
+[Dictionary keys](#serialization).
+
+**Q: Can I order ids, or use them in a `SortedSet<T>`?**
+
+A: Yes. Every id implements `IComparable<TSelf>` plus `<`, `>`, `<=` and `>=` over the wrapped value, so
+`OrderBy`, `SortedSet<T>` and range checks work without a custom comparer. Reference-type ids treat
+`null` as the smallest value, matching `Comparer<T>.Default`.
+
+**Q: What does `ToString()` print?**
+
+A: The text of the wrapped primitive value (`"42"`, `"3f2c…"`) rather than the record's default
+`OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated strings.
+
+**Q: I set `Validator`, but `new OrderId(...)` still accepts an invalid value.**
+
+A: The primary constructor belongs to your declaration, and a source generator cannot inject code into
+it, so only the generated entry points are validated. JSON, EF Core and user input all come in through
+`Create` / `Parse` / `TryParse`, where the validator does apply — see [Value validation](#value-validation).
 
 <a id="license"></a>
 
