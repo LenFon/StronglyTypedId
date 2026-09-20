@@ -15,6 +15,24 @@ internal readonly record struct StronglyTypedIdInfo
     /// </remarks>
     internal const string InterfaceName = "IStronglyTypedId";
 
+    /// <summary>
+    /// 运行时程序集中 <c>Len.StronglyTypedId</c> 命名空间的显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    internal const string InterfaceNamespace = "global::Len.StronglyTypedId";
+
+    /// <summary>
+    /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
+    /// </summary>
+    /// <remarks>
+    /// 简单名、命名空间与类型实参个数三者必须同时校验。只比简单名会把使用者或第三方程序集里恰好
+    /// 同名（例如只带一个类型实参）的接口一并纳入，随后解析基元类型失败并抛出异常，令整个生成器的
+    /// 产出被丢弃 —— 而编译器只报一条 CS8785 警告，使用者看到的是「生成代码全部消失」。
+    /// </remarks>
+    internal static bool IsStronglyTypedIdInterface(INamedTypeSymbol @interface)
+        => @interface.Name == InterfaceName
+            && @interface.TypeArguments.Length == 2
+            && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == InterfaceNamespace;
+
     public StronglyTypedIdInfo(ITypeSymbol type)
     {
         FullyQualifiedNamespace = type.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -101,8 +119,7 @@ internal readonly record struct StronglyTypedIdInfo
     {
         if (type is INamedTypeSymbol namedType)
         {
-            var stronglyTypedIdInterface = namedType.Interfaces.FirstOrDefault(
-                @interface => @interface.Name == InterfaceName && @interface.TypeArguments.Length == 2);
+            var stronglyTypedIdInterface = namedType.Interfaces.FirstOrDefault(IsStronglyTypedIdInterface);
 
             if (stronglyTypedIdInterface is not null)
             {
