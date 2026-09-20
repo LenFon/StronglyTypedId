@@ -216,6 +216,48 @@ public class CodeGeneratorModuleGateTests
 
     #endregion
 
+    #region ASP.NET Core MVC：Microsoft.AspNetCore.Mvc 主版本 >= 2
+
+    [Fact]
+    public void AspNetCoreMvc_Should_Generate_WhenMajorVersionIsTwo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.Mvc", "2.0.0.0"));
+
+        generated.Should().ContainKey("StronglyTypedIds.AspNetCoreMvc.g.cs");
+    }
+
+    [Fact]
+    public void AspNetCoreMvc_Should_NotGenerate_WhenMajorVersionIsOne()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.Mvc", "1.0.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreMvc.g.cs");
+    }
+
+    [Fact]
+    public void AspNetCoreMvc_Should_GenerateProviderAndApplyTo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.Mvc", "2.1.0.0"));
+
+        var code = generated["StronglyTypedIds.AspNetCoreMvc.g.cs"];
+
+        code.Should().Contain("public static void ApplyTo(global::Microsoft.AspNetCore.Mvc.MvcOptions options)")
+            .And.Contain("options.ModelBinderProviders.Insert(0, new StronglyTypedIdModelBinderProvider());")
+            .And.Contain("public static void ApplyTo(global::Microsoft.AspNetCore.Routing.RouteOptions options)")
+            .And.Contain("options.ConstraintMap[\"OrderId\"] = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdRouteConstraint<global::Len.StronglyTypedId.OrderId>);")
+            .And.Contain("private sealed class StronglyTypedIdModelBinderProvider")
+            .And.Contain("private sealed class StronglyTypedIdModelBinder<TId>")
+            .And.Contain("private sealed class StronglyTypedIdRouteConstraint<TId>");
+    }
+
+    #endregion
+
     #region 辅助
 
     private const string IdSource = """
@@ -257,6 +299,11 @@ public class CodeGeneratorModuleGateTests
         "Swashbuckle.AspNetCore.SwaggerGen",
         "Microsoft.OpenApi",
         "Newtonsoft.Json",
+        "Microsoft.AspNetCore.Mvc",
+        "Microsoft.AspNetCore.Mvc.Core",
+        "Microsoft.AspNetCore.Mvc.Abstractions",
+        "Microsoft.AspNetCore.OpenApi",
+        "Microsoft.AspNetCore.Routing",
     ];
 
     private static IReadOnlyDictionary<string, string> RunGenerator(string sourceCode, params MetadataReference[] extraReferences)

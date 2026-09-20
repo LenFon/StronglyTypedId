@@ -40,6 +40,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(idsAndModules, GenerateSwaggerCode);
         context.RegisterSourceOutput(idsAndModules, GenerateDapperCode);
         context.RegisterSourceOutput(idsAndModules, GenerateAspNetCoreOpenApiCode);
+        context.RegisterSourceOutput(idsAndModules, GenerateAspNetCoreMvcCode);
     }
 
     private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
@@ -161,6 +162,13 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         GetAspNetCoreOpenApiCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
     }
 
+    private static void GenerateAspNetCoreMvcCode(
+        SourceProductionContext context,
+        (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
+    {
+        GetAspNetCoreMvcCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+    }
+
     private static ImmutableArray<ICodeGenerator> GetCodeGenerators(ImmutableArray<ModuleInfo> modules)
     {
         var codeGenerators = modules
@@ -187,6 +195,20 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
     private static ICodeGenerator? GetAspNetCoreOpenApiCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
         modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9) ? AspNetCoreOpenApiCodeGenerator.Instance : null;
+
+    private static ICodeGenerator? GetAspNetCoreMvcCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
+        // MVC 可用性需覆盖「门面 / 实现」拆分与 .NET 版本差异：
+        //   · Microsoft.AspNetCore.Mvc.dll —— 框架引用引入的门面程序集（仅做类型转发），
+        //     真实消费者的编译引用里必有，是「MVC 是否可用」的规范判据。
+        //   · Microsoft.AspNetCore.Mvc.Core.dll / Microsoft.AspNetCore.Mvc.Abstractions.dll ——
+        //     实际定义 IModelBinder / MvcOptions 的实现程序集，随 .NET 版本不同而由其一承载
+        //     （如 .NET 8 落在 Abstractions、.NET 10 落在 Core）。测试画像里只加载了承载
+        //     类型定义的那个，门面常因类型转发而未直接进入编译引用。
+        // 三者任一出现即代表 MVC 可用，保证真实消费者与测试画像判定一致。
+        (modules.HasModule("Microsoft.AspNetCore.Mvc.dll", 2)
+            || modules.HasModule("Microsoft.AspNetCore.Mvc.Core.dll", 2)
+            || modules.HasModule("Microsoft.AspNetCore.Mvc.Abstractions.dll", 2))
+            ? AspNetCoreMvcCodeGenerator.Instance : null;
 
     private static StronglyTypedIdInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken _)
     {
