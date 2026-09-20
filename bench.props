@@ -1,0 +1,8 @@
+<Project>
+	<PropertyGroup>
+		<RootNamespace />
+
+		<!-- 基准工程只用于本地量化，不产出可发布物。 -->
+		<IsPackable>false</IsPackable>
+	</PropertyGroup>
+</Project>

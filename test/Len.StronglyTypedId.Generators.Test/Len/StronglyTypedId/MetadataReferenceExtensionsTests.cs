@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.IO;
 using System.Reflection;
+using System.Reflection.Metadata;
 using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -156,6 +157,103 @@ public class MetadataReferenceExtensionsTests
         {
             File.Delete(netmodulePath);
         }
+    }
+
+    #endregion
+
+    #region 分支三：元数据形态异常的 PE 引用
+
+    /// <summary>
+    /// <c>GetMetadata()</c> 返回的不是 <see cref="AssemblyMetadata"/> 时，<see cref="MetadataReferenceExtensions.GetModules"/>
+    /// 必须安全返回空集合，而不是抛异常或返回 null。
+    /// </summary>
+    /// <remarks>
+    /// 真实引用里走不到这条路径，故用 <see cref="StubbedPortableExecutableReference"/> 构造出该形态。
+    /// </remarks>
+    [Fact]
+    public void GetModules_Should_ReturnEmpty_ForNonAssemblyMetadata()
+    {
+        var reference = new StubbedPortableExecutableReference(
+            () => ModuleMetadata.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location));
+
+        reference.GetModules(CreateConsumerCompilation()).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 程序集元数据里含有「不含程序集清单」的模块（模块级 netmodule）时，该模块必须被跳过而非令整个调用崩溃。
+    /// </summary>
+    /// <remarks>
+    /// 这与上方 <c>GetModules_Should_ReturnEmpty_ForModuleOnlyNetmoduleReference</c> 覆盖的是不同环节：
+    /// 那条走真实文件引用、由 Roslyn 在 <c>AssemblyMetadata.GetModules()</c> 内部就把无清单模块滤掉；
+    /// 这条则把无清单模块直接塞进 <see cref="AssemblyMetadata"/>，从而真正执行到
+    /// <c>GetAssemblyDefinition()</c> 的失败兜底（<see cref="BadImageFormatException"/> /
+    /// <see cref="InvalidOperationException"/>）——不同运行时抛其中一种。
+    /// </remarks>
+    [Fact]
+    public void GetModules_Should_SkipModuleWithoutAssemblyManifest()
+    {
+        var netmoduleMetadata = ModuleMetadata.CreateFromImage(EmitNetmoduleImage());
+        var reference = new StubbedPortableExecutableReference(() => AssemblyMetadata.Create(netmoduleMetadata));
+
+        reference.GetModules(CreateConsumerCompilation()).Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region 辅助
+
+    /// <summary>
+    /// 可控的 <see cref="PortableExecutableReference"/> 替身：<c>GetMetadata()</c> 的返回值由构造参数决定。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MetadataReference"/> 的构造函数是 <c>internal</c>，测试程序集无法直接继承；
+    /// <see cref="PortableExecutableReference"/> 的构造函数是 <c>protected</c>，可以继承并在
+    /// <c>GetMetadataImpl</c> 里返回任意 <see cref="Metadata"/>。三个抽象成员中只有第一个参与本测试，
+    /// 另外两个是基类契约要求的占位实现。
+    /// </remarks>
+    private sealed class StubbedPortableExecutableReference : PortableExecutableReference
+    {
+        private readonly Func<Metadata> _metadataFactory;
+
+        public StubbedPortableExecutableReference(Func<Metadata> metadataFactory)
+            : this(metadataFactory, MetadataReferenceProperties.Module)
+        {
+        }
+
+        private StubbedPortableExecutableReference(Func<Metadata> metadataFactory, MetadataReferenceProperties properties)
+            : base(properties)
+        {
+            _metadataFactory = metadataFactory;
+        }
+
+        protected override Metadata GetMetadataImpl() => _metadataFactory();
+
+        protected override DocumentationProvider CreateDocumentationProvider() => DocumentationProvider.Default;
+
+        protected override PortableExecutableReference WithPropertiesImpl(MetadataReferenceProperties properties)
+            => new StubbedPortableExecutableReference(_metadataFactory, properties);
+    }
+
+    private static CSharpCompilation CreateConsumerCompilation()
+        => CSharpCompilation.Create(
+            "Consumer",
+            [CSharpSyntaxTree.ParseText("public class Consumer { }")],
+            GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+    private static ImmutableArray<byte> EmitNetmoduleImage()
+    {
+        var moduleCompilation = CSharpCompilation.Create(
+            "StiNetmodule",
+            [CSharpSyntaxTree.ParseText("public class ModuleMarker { }")],
+            GetReferences(),
+            new CSharpCompilationOptions(OutputKind.NetModule));
+
+        using var stream = new MemoryStream();
+        var emitResult = moduleCompilation.Emit(stream);
+        emitResult.Success.Should().BeTrue(string.Join("\n", emitResult.Diagnostics));
+
+        return [.. stream.ToArray()];
     }
 
     #endregion

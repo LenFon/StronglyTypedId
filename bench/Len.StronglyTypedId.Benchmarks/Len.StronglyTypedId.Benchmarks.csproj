@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<Import Project="..\..\bench.props" />
+	<PropertyGroup>
+		<!-- BenchmarkDotNet 需要一个可执行宿主：它在运行时另建一个工程来承载被测代码。 -->
+		<OutputType>Exe</OutputType>
+		<!-- 生成器跑在编译器进程里，符号枚举成本与宿主的目标框架无关；单目标也省得
+		     `dotnet run` 在多目标下必须显式指定框架参数，基准也只需要一个框架。 -->
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 与生成器程序集保持同一 Roslyn 版本：生成器工程把 Microsoft.CodeAnalysis.CSharp.Workspaces
+		     声明为 PrivateAssets="all"，ProjectReference 传递不过来，必须显式引用。
+		     此处刻意不加 PrivateAssets：BenchmarkDotNet 生成的宿主工程是本工程的 ProjectReference 消费者，
+		     加了它 Roslyn 5.9 就流不过去，生成宿主只能退回 BenchmarkDotNet 自带的 Roslyn 4.14，
+		     运行时以「找不到 Microsoft.CodeAnalysis.CSharp 5.9.0」失败。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+		<!-- 基准框架只挂在本工程上：画像工程一旦沾上它，其引用清单里就会混进
+		     BenchmarkDotNet 及其传递依赖，基准的引用集也就不再是「消费者所见」。 -->
+		<PackageReference Include="BenchmarkDotNet" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 引用集由画像工程给出，这里只需要画像本身与生成器程序集（基准直接调用它的内部类型）。 -->
+		<ProjectReference Include="..\Len.StronglyTypedId.Benchmarks.Consumer\Len.StronglyTypedId.Benchmarks.Consumer.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+	</ItemGroup>
+
+</Project>
