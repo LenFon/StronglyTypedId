@@ -1,20 +1,27 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<!-- 与使用方（Test / Generators.Test）保持同一组目标框架，
+		     避免 net10.0 测试经此传递引用时解析到 net8.0 版运行时库。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<RootNamespace />
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageReference Include="FluentAssertions" Version="6.12.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.1" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing.XUnit" Version="1.1.1" />
+		<PackageReference Include="Newtonsoft.Json" />
+		<PackageReference Include="FluentAssertions" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" />
+		<!-- 显式钉定 Roslyn 版本，与生成器/CodeFix 程序集保持一致（5.9.0），
+		     消除因测试框架 1.1.4 传递依赖较低 Microsoft.CodeAnalysis 版本引发的 CS1705 冲突。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
-		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<!-- 合并后的单一程序集：既作为分析器/生成器参与本项目的源码生成（OutputItemType="Analyzer"），
+		     也作为编译期引用供 Verify.cs 引用 StronglyTypedIdCodeFixProvider（ReferenceOutputAssembly 默认为 true）。 -->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" />
 	</ItemGroup>
 </Project>

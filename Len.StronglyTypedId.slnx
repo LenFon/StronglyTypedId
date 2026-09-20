@@ -1,0 +1,33 @@
+<Solution>
+  <Folder Name="/.github/" />
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/build-and-test.yml" />
+    <File Path=".github/workflows/codeql-analysis.yml" />
+    <File Path=".github/workflows/publish-nuget.yml" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="LICENSE.txt" />
+    <File Path="README.md" />
+    <File Path="common.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="test.props" />
+    <File Path="version.props" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Len.StronglyTypedId.Domain/Len.StronglyTypedId.Domain.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.Sample1/Len.StronglyTypedId.Sample1.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.Sample2/Len.StronglyTypedId.Sample2.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.Sample3/Len.StronglyTypedId.Sample3.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj" />
+    <Project Path="src/Len.StronglyTypedId/Len.StronglyTypedId.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/Len.StronglyTypedId.Generators.Test/Len.StronglyTypedId.Generators.Test.csproj" />
+    <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />
+    <Project Path="test/Len.StronglyTypedId.TestBase/Len.StronglyTypedId.TestBase.csproj" />
+  </Folder>
+</Solution>

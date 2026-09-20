@@ -1,69 +1,61 @@
-using Microsoft.AspNetCore.Mvc;
+ï»¿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace Len.StronglyTypedId.Sample1.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class OrderController : ControllerBase
+    public class OrderController(SampleDbContext db) : ControllerBase
     {
-        private readonly SampleDbContext _db;
-
-        public OrderController(SampleDbContext db)
-        {
-            _db = db;
-        }
-
         [HttpGet]
         public async Task<IEnumerable<Order>> Get()
         {
-            return await _db.Set<Order>().ToListAsync();
+            return await db.Set<Order>().ToListAsync();
         }
 
         [HttpGet("{id}")]
         public async Task<Order?> Get(OrderId id)
         {
-            return await _db.Set<Order>().FirstOrDefaultAsync(w => w.Id == id);
+            return await db.Set<Order>().FirstOrDefaultAsync(w => w.Id == id);
         }
 
         /// <summary>
-        /// Ìí¼Ó¶©µ¥
+        /// æ·»åŠ è®¢å•
         /// </summary>
-        /// <param name="input"></param>
-        /// <returns></returns>
+        /// <param name="input">è®¢å•è¾“å…¥ï¼ŒåŒ…å«ä¹°å®¶ Id ä¸è®¢å•è¡Œã€‚</param>
         [HttpPost]
         public async Task Post([FromBody] AddOrderInput input)
         {
-            await _db.AddAsync(
+            await db.AddAsync(
                 new Order
                 {
                     Id = new OrderId(Guid.NewGuid()),
                     Buyer = input.Buyer,
-                    Items = input.OrderLines.Select(s => new Product { Key = s.Id, Name = s.Name, }).ToList()
+                    Items = [.. input.OrderLines.Select(s => new Product { Key = s.Id, Name = s.Name, })]
                 }
             );
 
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
 
         public class AddOrderInput
         {
             /// <summary>
-            /// Âò¼ÒId
+            /// ä¹°å®¶Id
             /// </summary>
             public UserId Buyer { get; set; }
 
-            public List<OrderLine> OrderLines { get; set; }
+            public List<OrderLine> OrderLines { get; set; } = [];
 
             public class OrderLine
             {
                 /// <summary>
-                /// ÉÌÆ·Id
+                /// å•†å“Id
                 /// </summary>
                 public ProductId Id { get; set; }
 
                 /// <summary>
-                /// ÉÌÆ·Ãû³Æ
+                /// å•†å“åç§°
                 /// </summary>
                 public string Name { get; set; } = default!;
             }
@@ -72,11 +64,11 @@ namespace Len.StronglyTypedId.Sample1.Controllers
         [HttpDelete("{id}")]
         public async Task Delete(OrderId id)
         {
-            var order = await _db.Set<Order>().FindAsync(id) ?? throw new Exception("¶©µ¥Î´ÕÒµ½");
+            var order = await db.Set<Order>().FindAsync(id) ?? throw new Exception("è®¢å•æœªæ‰¾åˆ°");
 
-            _db.Remove(order);
+            db.Remove(order);
 
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
 
         [HttpGet("test/{id}")]

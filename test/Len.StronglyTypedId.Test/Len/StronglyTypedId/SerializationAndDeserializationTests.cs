@@ -1,5 +1,4 @@
 ﻿using FluentAssertions;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Len.StronglyTypedId;
 
@@ -23,6 +22,12 @@ public class SerializationAndDeserializationTests
     [InlineData("D8AC85D4-ED76-4974-B055-8EF3508743F3", typeof(GuidIdV2), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
     [InlineData("d8ac85d4-ed76-4974-b055-8ef3508743f3", typeof(GuidId), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
     [InlineData("d8ac85d4-ed76-4974-b055-8ef3508743f3", typeof(GuidIdV2), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
+    [InlineData((sbyte)12, typeof(SByteId), "12")]
+    [InlineData((short)1234, typeof(Int16Id), "1234")]
+    [InlineData((ushort)1234, typeof(UInt16Id), "1234")]
+    [InlineData((sbyte)12, typeof(SByteIdV2), "12")]
+    [InlineData((short)1234, typeof(Int16IdV2), "1234")]
+    [InlineData((ushort)1234, typeof(UInt16IdV2), "1234")]
     public void Serialize_Should_ReturnJson_When(object data, Type type, string expectedJson)
     {
         var id = Activator.CreateInstance(type, type == typeof(GuidId) || type == typeof(GuidIdV2) ? Guid.Parse(data.ToString()!) : data);
@@ -46,6 +51,12 @@ public class SerializationAndDeserializationTests
     [InlineData("\"Len\"", typeof(StringIdV3), "Len")]
     [InlineData("\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"", typeof(GuidId), "D8AC85D4-ED76-4974-B055-8EF3508743F3")]
     [InlineData("\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"", typeof(GuidIdV2), "D8AC85D4-ED76-4974-B055-8EF3508743F3")]
+    [InlineData("12", typeof(SByteId), (sbyte)12)]
+    [InlineData("1234", typeof(Int16Id), (short)1234)]
+    [InlineData("1234", typeof(UInt16Id), (ushort)1234)]
+    [InlineData("12", typeof(SByteIdV2), (sbyte)12)]
+    [InlineData("1234", typeof(Int16IdV2), (short)1234)]
+    [InlineData("1234", typeof(UInt16IdV2), (ushort)1234)]
     public void Deserialize_Should_ReturnObject_When(string json, Type type, object expectedValue)
     {
         var value = type == typeof(GuidId) || type == typeof(GuidIdV2) ? Guid.Parse(expectedValue.ToString()!) : expectedValue;
