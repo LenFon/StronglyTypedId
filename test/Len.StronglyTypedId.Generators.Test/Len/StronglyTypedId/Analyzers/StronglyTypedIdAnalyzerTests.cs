@@ -23,6 +23,51 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenSegmentedPartialDeclaration()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            public partial record struct OrderId
+            {
+                public bool IsEmpty => Value == Guid.Empty;
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenMoreThanTwoPartialSegments()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            public partial record struct OrderId
+            {
+                public bool IsEmpty => Value == Guid.Empty;
+            }
+
+            public partial record struct OrderId
+            {
+                public Guid Unwrap() => Value;
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAbstract()
     {
         var code = """"
@@ -111,6 +156,56 @@ public class StronglyTypedIdAnalyzerTests
 
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
+
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenSegmentedPartialDeclarationHasNoPrimaryConstructor()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId;
+
+            public partial record struct OrderId
+            {
+                public bool IsEmpty => false;
+            }
+            """";
+
+        // 主构造函数整体缺失，报告一次并定位到首个声明段；而非每个声明段各报一次。
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveSingleParameterPrimaryConstructor)
+            .WithSpan(5, 1, 6, 38).WithArguments("OrderId");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenSegmentedPartialDeclarationHasInvalidParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value1);
+
+            public partial record struct OrderId
+            {
+                public bool IsEmpty => false;
+            }
+            """";
+
+        // 只有含主构造函数的那一段参与参数校验，因此非法参数只报告一次，
+        // 不会在后续声明段上再叠加一条 STIAO005。
+        var expected = Verify.Diagnostic(Descriptors.ParameterNameMustBeValue)
+            .WithSpan(6, 43, 6, 49).WithArguments("Value1");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
 
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenGeneric()
