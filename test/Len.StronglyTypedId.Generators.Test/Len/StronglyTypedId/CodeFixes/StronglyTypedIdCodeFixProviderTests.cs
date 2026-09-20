@@ -100,4 +100,91 @@ public class StronglyTypedIdCodeFixProviderTests
 
         await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
     }
+
+    [Fact]
+    public async Task CodeFix_Should_RemoveConstraintClauses_WhenGeneric()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId<T>(Guid Value) where T : class;
+            """";
+
+        // 只删 <T> 会留下 `where T : class`，而约束不允许出现在非泛型声明上（CS0080）。
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeGeneric)
+            .WithSpan(5, 1, 6, 69).WithArguments("OrderId");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    [Fact]
+    public async Task CodeFix_Should_PreserveParameterAttribute_WhenRenamingParameter()
+    {
+        var code = """"
+            using System;
+            using System.Diagnostics.CodeAnalysis;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId([AllowNull] Guid Value1);
+            """";
+
+        // 重建参数节点会丢掉参数上的 attribute，只剩「类型 + 名字」。
+        var fixedCode = """"
+            using System;
+            using System.Diagnostics.CodeAnalysis;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId([AllowNull] Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ParameterNameMustBeValue)
+            .WithSpan(7, 55, 7, 61).WithArguments("Value1");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    [Fact]
+    public async Task CodeFix_Should_PreserveParameterAttributeAndTrivia_WhenRemovingNullable()
+    {
+        var code = """"
+            using System;
+            using System.Diagnostics.CodeAnalysis;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId([AllowNull] /* raw */ Guid? Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+            using System.Diagnostics.CodeAnalysis;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId([AllowNull] /* raw */ Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ParameterCannotBeNullable)
+            .WithSpan(7, 60, 7, 65).WithArguments("Guid?");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
 }

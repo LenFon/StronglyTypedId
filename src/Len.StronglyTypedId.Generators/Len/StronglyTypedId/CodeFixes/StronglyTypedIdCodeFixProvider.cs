@@ -61,8 +61,29 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             static declaration => declaration.WithoutModifiers(SyntaxKind.AbstractKeyword));
 
     private static Task<Document> RemoveGenericAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
-        => ReplaceRecordDeclarationAsync(context, diagnostic, token,
-            static declaration => declaration.WithTypeParameterList(null));
+        => ReplaceRecordDeclarationAsync(context, diagnostic, token, RemoveTypeParametersAndConstraints);
+
+    /// <summary>
+    /// 移除 record 的类型参数表，并把紧随其后的约束子句一并移除。
+    /// </summary>
+    /// <remarks>
+    /// 只删类型参数表会留下 <c>where T : class</c>，而约束不允许出现在非泛型声明上（CS0080），
+    /// 修复产物依旧是非法代码。此外，分隔参数表与约束子句的空白是参数表末位的 trailing trivia，
+    /// 删掉约束子句后它会变成 <c>OrderId(Guid Value) ;</c>（多行写法下则是悬空换行），故一并清掉；
+    /// 没有约束子句时说明该处的 trivia 另有归属，保持原样。
+    /// </remarks>
+    private static RecordDeclarationSyntax RemoveTypeParametersAndConstraints(RecordDeclarationSyntax declaration)
+    {
+        if (declaration.ConstraintClauses.Count == 0)
+        {
+            return declaration.WithTypeParameterList(null);
+        }
+
+        return declaration
+            .WithTypeParameterList(null)
+            .WithConstraintClauses([])
+            .WithParameterList(declaration.ParameterList?.WithoutTrailingTrivia());
+    }
 
     private static Task<Document> UpdateParameterNameToValueAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceParameterAsync(context, diagnostic, token, stripNullableSuffix: false);
@@ -105,9 +126,17 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
-        var typeText = parameter.Type!.ToString();
-        var newParameter = SyntaxFactory.Parameter(SyntaxFactory.Identifier(ValueParameterName))
-            .WithType(SyntaxFactory.ParseTypeName(stripNullableSuffix ? typeText.TrimEnd('?') : typeText));
+        // 就地改写既有节点，而不是用 SyntaxFactory 重建：重建出的参数只带「类型 + 名字」，
+        // 参数上的 attribute、修饰符、默认值以及全部 trivia（注释、空白）都会被丢掉。
+        var newParameter = parameter.WithIdentifier(
+            SyntaxFactory.Identifier(parameter.Identifier.LeadingTrivia, ValueParameterName, parameter.Identifier.TrailingTrivia));
+
+        if (stripNullableSuffix && parameter.Type is NullableTypeSyntax nullableType)
+        {
+            // 用 ElementType 顶掉 `?`，并把整个可空类型节点的前后 trivia 交给它，否则
+            // `Guid? Value` 中附着在 `?` 上的空白（或注释）会丢失，拼成 `GuidValue`。
+            newParameter = newParameter.WithType(nullableType.ElementType.WithTriviaFrom(nullableType));
+        }
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(parameter, newParameter));
     }
