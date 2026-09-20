@@ -304,4 +304,69 @@ public class StronglyTypedIdCapabilityTests
     }
 
     #endregion
+
+    #region 嵌套类型
+
+    [Fact]
+    public void NestedId_Should_DeclareGeneratedMembers_OnNestedType()
+    {
+        // 关键判据：生成代码必须把 partial 段嵌回容器里。若它落在命名空间层级，会另起一个同名顶层类型，
+        // 整份代码照样编译通过 —— 只有「从容器里取这个类型」并要求它具备生成成员，才能发现区别。
+        typeof(OrderAggregate).GetNestedType(nameof(OrderAggregate.OrderId)).Should().Be(typeof(OrderAggregate.OrderId));
+        typeof(ShipmentBatch).GetNestedType(nameof(ShipmentBatch.BatchId)).Should().Be(typeof(ShipmentBatch.BatchId));
+        typeof(Inventory).GetNestedType(nameof(Inventory.SkuId)).Should().Be(typeof(Inventory.SkuId));
+
+        var value = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var orderId = OrderAggregate.OrderId.Create(value);
+
+        orderId.Value.Should().Be(value);
+        // 以 Type 重载断言可赋值：IStronglyTypedId 带静态抽象成员，把它本身当类型参数用会 CS8920。
+        typeof(OrderAggregate.OrderId).Should().BeAssignableTo(typeof(IStronglyTypedId<OrderAggregate.OrderId, Guid>));
+        OrderAggregate.OrderId.TryParse(orderId.ToString(), null, out var parsed).Should().BeTrue();
+        parsed.Should().Be(orderId);
+    }
+
+    [Fact]
+    public void NestedId_Should_TransferThroughBothJsonLibraries()
+    {
+        var value = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string Json = "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"";
+
+        var orderId = OrderAggregate.OrderId.Create(value);
+        var batchId = ShipmentBatch.BatchId.Create(value);
+        var skuId = Inventory.SkuId.Create("SKU-1");
+
+        System.Text.Json.JsonSerializer.Serialize(orderId).Should().Be(Json);
+        System.Text.Json.JsonSerializer.Deserialize<OrderAggregate.OrderId>(Json).Should().Be(orderId);
+        Newtonsoft.Json.JsonConvert.SerializeObject(orderId).Should().Be(Json);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<OrderAggregate.OrderId>(Json).Should().Be(orderId);
+
+        // 结构容器与 record 容器里的 Id 走同一条路径（容器种类只影响生成代码如何重开容器）。
+        System.Text.Json.JsonSerializer.Serialize(batchId).Should().Be(Json);
+        System.Text.Json.JsonSerializer.Deserialize<ShipmentBatch.BatchId>(Json).Should().Be(batchId);
+
+        // string 基元的嵌套 Id：解析与序列化都直接以取值本身为准。
+        System.Text.Json.JsonSerializer.Serialize(skuId).Should().Be("\"SKU-1\"");
+        System.Text.Json.JsonSerializer.Deserialize<Inventory.SkuId>("\"SKU-1\"").Should().Be(skuId);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<Inventory.SkuId>("\"SKU-1\"").Should().Be(skuId);
+    }
+
+    [Fact]
+    public void NestedId_Should_CompareAndFormat_LikeItsPrimitive()
+    {
+        var low = OrderAggregate.OrderId.Create(Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        var high = OrderAggregate.OrderId.Create(Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        // 等值边界用另一个变量表示：直接写 low <= low 会命中 CS1718（对同一变量比较）。
+        var equalToLow = OrderAggregate.OrderId.Create(Guid.Parse("00000000-0000-0000-0000-000000000001"));
+
+        (low < high).Should().BeTrue();
+        (high > low).Should().BeTrue();
+        (low <= equalToLow).Should().BeTrue();
+        low.CompareTo(high).Should().BeLessThan(0);
+        low.ToString().Should().Be("00000000-0000-0000-0000-000000000001");
+        ((IFormattable)low).ToString("N", CultureInfo.InvariantCulture)
+            .Should().Be(low.Value.ToString("N", CultureInfo.InvariantCulture));
+    }
+
+    #endregion
 }
