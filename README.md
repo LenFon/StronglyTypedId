@@ -180,7 +180,7 @@ services.AddSwaggerGen(options =>
 });
 ```
 
-This works with both Microsoft.OpenApi 1.x (Swashbuckle 6.x) and 2.x (Swashbuckle 7.x).
+This works with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.x and later).
 
 <a id="using-the-interface"></a>
 
