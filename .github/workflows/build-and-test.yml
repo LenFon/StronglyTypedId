@@ -13,6 +13,9 @@ on:
       - "src/**/*.csproj"
       - "test/**/*.cs"
       - "test/**/*.csproj"
+      - "bench/**/*.cs"
+      - "bench/**/*.csproj"
+      - "bench.props"
   pull_request:
     branches:
       - dev
@@ -22,6 +25,9 @@ on:
       - "src/**/*.csproj"
       - "test/**/*.cs"
       - "test/**/*.csproj"
+      - "bench/**/*.cs"
+      - "bench/**/*.csproj"
+      - "bench.props"
   workflow_dispatch:
 
 jobs:
