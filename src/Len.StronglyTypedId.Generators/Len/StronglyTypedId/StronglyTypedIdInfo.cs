@@ -21,6 +21,26 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string InterfaceNamespace = "global::Len.StronglyTypedId";
 
     /// <summary>
+    /// 运行时程序集中 <c>StronglyTypedIdAttribute</c> 的显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    internal const string AttributeName = "global::Len.StronglyTypedId.StronglyTypedIdAttribute";
+
+    /// <summary>
+    /// attribute 中用于指定验证器方法的命名实参名。
+    /// </summary>
+    internal const string ValidatorArgumentName = "Validator";
+
+    /// <summary>
+    /// <c>System.IFormattable</c> 的显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    private const string FormattableName = "global::System.IFormattable";
+
+    /// <summary>
+    /// <c>System.ISpanFormattable</c> 的显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    private const string SpanFormattableName = "global::System.ISpanFormattable";
+
+    /// <summary>
     /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
     /// </summary>
     /// <remarks>
@@ -46,7 +66,17 @@ internal readonly record struct StronglyTypedIdInfo
         FullyQualifiedName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         FullName = type.ToDisplayString();
         TypeKindSuffix = type.TypeKind == TypeKind.Struct ? " struct" : null;
-        PrimitiveIdTypeName = GetPrimitiveIdTypeName(type);
+
+        var primitiveIdType = GetPrimitiveIdType(type);
+
+        PrimitiveIdTypeName = primitiveIdType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // 三项能力都由基元类型的符号判定，而非按类型名硬编码分支：与 SupportedPrimitiveTypes 保持同一取向
+        // —— 判据落在符号上，类型名只用于展示。
+        IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
+        IsFormattable = ImplementsInterface(primitiveIdType, FormattableName);
+        IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName);
+        ValidatorName = GetValidatorName(type);
     }
 
     /// <summary>
@@ -102,7 +132,40 @@ internal readonly record struct StronglyTypedIdInfo
     public string PrimitiveIdTypeName { get; }
 
     /// <summary>
-    /// 解析强类型 Id 所包装的基元类型名。
+    /// 基元类型是否为 <c>string</c>。
+    /// </summary>
+    /// <remarks>
+    /// 仅用于选择生成模板的形态（<c>string</c> 基元的解析、格式化与字典键路径都与其它基元不同）。
+    /// 判据取自符号的 <see cref="ITypeSymbol.SpecialType"/>，不比较 <see cref="PrimitiveIdTypeName"/> 的字面量。
+    /// </remarks>
+    public bool IsStringPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否实现 <c>System.IFormattable</c>。
+    /// </summary>
+    /// <remarks>
+    /// 只有为 <see langword="true"/> 时生成的强类型 Id 才会一并实现 <c>IFormattable</c>：
+    /// 该接口要求 <c>ToString(string?, IFormatProvider?)</c>，而受支持基元里的 <c>string</c> 并不具备它。
+    /// </remarks>
+    public bool IsFormattable { get; }
+
+    /// <summary>
+    /// 基元类型是否实现 <c>System.ISpanFormattable</c>。
+    /// </summary>
+    public bool IsSpanFormattable { get; }
+
+    /// <summary>
+    /// <c>[StronglyTypedId]</c> 上 <c>Validator</c> 指定的验证器方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 验证器是强类型 Id 类型自身的静态方法，签名形如 <c>static bool Validate(TPrimitiveId value)</c>，
+    /// 返回 <see langword="true"/> 表示取值合法。生成代码只在 <c>Create</c> 与两个 <c>TryParse</c> 重载里调用它，
+    /// 因此「直接 new 主构造函数」绕不过验证 —— 该限制由生成器无法改写使用者声明的主构造函数所致。
+    /// </remarks>
+    public string? ValidatorName { get; }
+
+    /// <summary>
+    /// 解析强类型 Id 所包装的基元类型符号。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -120,7 +183,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// <exception cref="InvalidOperationException">
     /// 该类型既未实现 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>，也不具备单参数构造函数。
     /// </exception>
-    private static string GetPrimitiveIdTypeName(ITypeSymbol type)
+    private static ITypeSymbol GetPrimitiveIdType(ITypeSymbol type)
     {
         if (type is INamedTypeSymbol namedType)
         {
@@ -128,17 +191,37 @@ internal readonly record struct StronglyTypedIdInfo
 
             if (stronglyTypedIdInterface is not null)
             {
-                return stronglyTypedIdInterface.TypeArguments[1].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                return stronglyTypedIdInterface.TypeArguments[1];
             }
 
             var constructor = namedType.Constructors.FirstOrDefault(candidate => candidate.Parameters.Length == 1);
 
             if (constructor is not null)
             {
-                return constructor.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                return constructor.Parameters[0].Type;
             }
         }
 
         throw new InvalidOperationException($"无法从类型“{type.ToDisplayString()}”解析基元 Id 类型：它既未实现 {InterfaceName}<TSelf, TPrimitiveId>，也不具备单参数构造函数。");
     }
+
+    /// <summary>
+    /// 判断给定类型是否实现了指定的接口。
+    /// </summary>
+    private static bool ImplementsInterface(ITypeSymbol type, string interfaceName)
+        => type.AllInterfaces.Any(@interface => @interface.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == interfaceName);
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参指向的方法名。
+    /// </summary>
+    /// <remarks>
+    /// 命名实参会被写入程序集元数据，因此引用程序集里的强类型 Id 与本次编译新声明的走同一条读取路径，
+    /// 无需在生成器入口处另行传递。
+    /// </remarks>
+    private static string? GetValidatorName(ITypeSymbol type)
+        => type.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == ValidatorArgumentName)
+            .Value.Value as string;
 }

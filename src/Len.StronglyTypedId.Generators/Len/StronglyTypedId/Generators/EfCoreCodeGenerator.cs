@@ -53,7 +53,7 @@ internal class EfCoreCodeGenerator : ICodeGenerator
                         /// </summary>
                         [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                         [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(EfCoreCodeGenerator)}}", "{{version}}")]
-                        public {{converterName}}() : base(v => v.Value, val => new {{idInfo.FullyQualifiedName}}(val))
+                        public {{converterName}}() : base(v => v.Value, val => {{idInfo.FullyQualifiedName}}.Create(val))
                         {
                         }
 

@@ -1,8 +1,17 @@
-﻿namespace Len.StronglyTypedId.Generators;
+﻿using System.Text;
+
+namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
 /// 为强类型 Id 生成 System.Text.Json 转换器。
 /// </summary>
+/// <remarks>
+/// 除值的读写外，还必须重写 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>。STJ 处理字典键时
+/// 走的是这两条路径，而 <c>JsonConverter&lt;T&gt;</c> 的默认实现只认得内建的键类型（<c>string</c> 等），
+/// 其余一律抛 <c>NotSupportedException</c>，并在异常里直接提示「重写这两个方法以支持字典键」。
+/// 也就是说，重写之前 <c>Dictionary&lt;OrderId, TValue&gt;</c> —— DDD 里「按 Id 索引的子集合」这种常见
+/// 结构 —— 序列化与反序列化都完全不可用。
+/// </remarks>
 internal class SystemTextJsonCodeGenerator : ICodeGenerator
 {
     internal static readonly ICodeGenerator Instance = new SystemTextJsonCodeGenerator();
@@ -41,7 +50,7 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                             global::System.Text.Json.JsonSerializerOptions options) =>
                             global::System.Text.Json.JsonSerializer.Deserialize<{{idInfo.PrimitiveIdTypeName}}?>(ref reader, options) switch
                             {
-                                { } value => new {{idInfo.Name}}(value),
+                                { } value => {{idInfo.Name}}.Create(value),
                                 _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{idInfo.Name}}")
                             };
                 
@@ -62,11 +71,91 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                                 writer.WriteNullValue();
                             }
                         }
+                
+                        /// <inheritdoc/>
+                        [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                        [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(SystemTextJsonCodeGenerator)}}", "{{version}}")]
+                        public override void WriteAsPropertyName(
+                            global::System.Text.Json.Utf8JsonWriter writer,
+                            {{idInfo.Name}} value,
+                            global::System.Text.Json.JsonSerializerOptions options)
+                        {
+                            if (value is { Value: var primitiveId })
+                            {
+                                writer.WritePropertyName({{GetPropertyNameExpression(idInfo)}});
+                            }
+                            else
+                            {
+                                throw new global::System.NotSupportedException($"A null {{idInfo.Name}} cannot be written as a JSON property name.");
+                            }
+                        }{{GetReadAsPropertyName(idInfo, version)}}
                     }
                 }
                 """;
 
-            context.AddSource($"{idInfo.FullName}.SystemTextJson.g.cs", code);
+            context.AddSource($"{idInfo.FullName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
         }
+    }
+
+    /// <summary>
+    /// 取写属性名时用的表达式。
+    /// </summary>
+    /// <remarks>
+    /// 受支持的基元类型里除 <c>string</c> 外都实现了 <c>IFormattable</c>，这里以其为准取「不变文化」的文本形式：
+    /// 属性名的格式不应随当前区域性漂移，否则同一份数据在不同区域设置下会写出不同的键。
+    /// </remarks>
+    private static string GetPropertyNameExpression(StronglyTypedIdInfo idInfo)
+        => idInfo.IsStringPrimitive
+            ? "primitiveId"
+            : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
+
+    /// <summary>
+    /// 生成 <c>ReadAsPropertyName</c> 成员，整体拼接在最后一个成员的同一行行尾。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 属性名一定是 JSON 字符串，因此这里必须自行完成转换：<c>Read</c> 依赖 <c>TokenType</c> 为
+    /// <c>String</c> / <c>Number</c>，遇到 <c>PropertyName</c> 会在内层转换器里失败，不能转调。
+    /// </para>
+    /// <para>
+    /// <c>string</c> 基元直接取属性名构造，与 <c>Read</c> 的语义严格一致（都不过滤空串，故空串键可往返）；
+    /// 其余基元按不变文化解析，失败时抛 <c>JsonException</c> —— 属性名路径上与框架一致的异常类型。
+    /// </para>
+    /// <para>
+    /// 缩进按产物中的层级逐行写死（嵌套转换器类的成员为 8 空格），不依赖原始字符串字面量的缩进裁剪规则；
+    /// 行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 在最后统一。
+    /// </para>
+    /// </remarks>
+    private static string GetReadAsPropertyName(StronglyTypedIdInfo idInfo, string version)
+    {
+        var builder = new StringBuilder();
+
+        builder.Append('\n').Append('\n');
+        builder.Append("        /// <inheritdoc/>").Append('\n');
+        builder.Append("        [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]").Append('\n');
+        builder.Append($"        [global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"{nameof(SystemTextJsonCodeGenerator)}\", \"{version}\")]").Append('\n');
+        builder.Append($"        public override {idInfo.Name} ReadAsPropertyName(").Append('\n');
+        builder.Append("            ref global::System.Text.Json.Utf8JsonReader reader,").Append('\n');
+        builder.Append("            global::System.Type typeToConvert,").Append('\n');
+        builder.Append("            global::System.Text.Json.JsonSerializerOptions options)").Append('\n');
+        builder.Append("        {").Append('\n');
+
+        if (idInfo.IsStringPrimitive)
+        {
+            builder.Append($"            return {idInfo.Name}.Create(reader.GetString()!);").Append('\n');
+        }
+        else
+        {
+            builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
+            builder.Append($"            if ({idInfo.Name}.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))").Append('\n');
+            builder.Append("            {").Append('\n');
+            builder.Append("                return id;").Append('\n');
+            builder.Append("            }").Append('\n').Append('\n');
+            builder.Append($"            throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{{propertyName}}' to a {idInfo.Name}.\");").Append('\n');
+        }
+
+        builder.Append("        }");
+
+        return builder.ToString();
     }
 }

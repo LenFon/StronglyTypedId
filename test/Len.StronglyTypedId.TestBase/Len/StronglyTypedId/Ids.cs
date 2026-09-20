@@ -63,5 +63,26 @@ public partial record UInt16IdV2(ushort Value);
 [StronglyTypedId]
 public partial record struct StringIdV3(System.String Value);
 
+// 以下三个 Id 用 Validator 钩子覆盖「取值校验」：验证器是 Id 类型自身的私有静态方法，
+// 生成代码在 Create 与两个 TryParse 重载里调用它。三种基元各自代表一条分支 ——
+// Guid/int 的解析结果落在 out 参数上，string 则直接以参数本身参与校验。
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct NonEmptyGuidId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record NonEmptyInt32Id(int Value)
+{
+    private static bool Validate(int value) => value > 0;
+}
+
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct ShortStringId(string Value)
+{
+    private static bool Validate(string value) => value.Length <= 8;
+}
+
 public partial record NotStronglyTypedId();
 
