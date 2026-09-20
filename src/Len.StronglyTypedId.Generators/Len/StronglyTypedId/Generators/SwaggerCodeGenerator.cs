@@ -92,7 +92,7 @@ internal class SwaggerCodeGenerator : ICodeGenerator
                 ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
                 : $$"""new {{schemaTypeName}} { Type = {{typeExpression}}, Format = "{{format}}" }""";
 
-        return primitiveIdTypeName switch
+        return GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
         {
             "Guid" => Schema(TypeExpression("string"), "uuid"),
             "int" => Schema(TypeExpression("integer"), "int32"),
@@ -105,5 +105,23 @@ internal class SwaggerCodeGenerator : ICodeGenerator
             "ushort" => Schema(TypeExpression("integer"), "uint16"),
             _ => Schema(TypeExpression("string"), null),
         };
+    }
+
+    /// <summary>
+    /// 把基元类型的显示名归一化为不含命名空间限定的短名。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StronglyTypedIdInfo.PrimitiveIdTypeName"/> 由
+    /// <c>SymbolDisplayFormat.FullyQualifiedFormat</c> 产出，其 <c>UseSpecialTypes</c> 只把 C# 关键字渲染成
+    /// 短名（<c>System.Int32</c> → <c>int</c>、<c>System.String</c> → <c>string</c>），普通 BCL 类型则一律
+    /// 带前缀（<c>System.Guid</c> → <c>global::System.Guid</c>）。若直接按字面量分支匹配，<c>"Guid"</c>
+    /// 分支永不命中，Guid 强类型 Id 在 OpenAPI 文档里会丢掉 <c>format: uuid</c>。
+    /// 关键字本身不含 <c>.</c>，取末段后原样保留，因此两种形态可统一处理。
+    /// </remarks>
+    private static string GetPrimitiveIdTypeShortName(string primitiveIdTypeName)
+    {
+        var separatorIndex = primitiveIdTypeName.LastIndexOf('.');
+
+        return separatorIndex < 0 ? primitiveIdTypeName : primitiveIdTypeName[(separatorIndex + 1)..];
     }
 }
