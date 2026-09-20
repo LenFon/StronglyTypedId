@@ -774,7 +774,7 @@ public class StronglyTypedIdGeneratorTests
     /// </summary>
     private static bool ShouldReferenceAssembly(Assembly assembly)
         => assembly.GetName().Name is not
-            ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi");
+            ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi" or "Microsoft.AspNetCore.Mvc" or "Microsoft.AspNetCore.Mvc.Core" or "Microsoft.AspNetCore.Mvc.Abstractions" or "Microsoft.AspNetCore.OpenApi" or "Microsoft.AspNetCore.Routing");
 
     #region EF Core 生成器（EfCoreCodeGenerator）
 
