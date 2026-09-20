@@ -23,18 +23,7 @@ internal readonly record struct StronglyTypedIdInfo
         FullyQualifiedName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         FullName = type.ToDisplayString();
         TypeKindSuffix = type.TypeKind == TypeKind.Struct ? " struct" : null;
-        PrimitiveIdTypeName = type switch
-        {
-            INamedTypeSymbol { Constructors: var constructors } => constructors
-                .First(constructor => constructor.Parameters.Length == 1)
-                .Parameters[0]
-                .Type
-                .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-            { Interfaces: var interfaces } => interfaces
-                .First(@interface => @interface.Name == InterfaceName)
-                .TypeArguments[1]
-                .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-        };
+        PrimitiveIdTypeName = GetPrimitiveIdTypeName(type);
     }
 
     /// <summary>
@@ -88,4 +77,46 @@ internal readonly record struct StronglyTypedIdInfo
     /// The fully qualified name of the primitive type wrapped by the strongly typed id.
     /// </summary>
     public string PrimitiveIdTypeName { get; }
+
+    /// <summary>
+    /// 解析强类型 Id 所包装的基元类型名。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 优先读取 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的第二个类型实参：它是基元类型的权威来源，
+    /// 既不需要类型具备任何特定形状的构造函数，也不会被其它构造函数干扰。引用程序集中已生成的强类型 Id
+    /// 走这条路径。
+    /// </para>
+    /// <para>
+    /// 本次编译新声明的强类型 Id 尚未实现该接口（实现由生成代码补充），因此回退到按单参数构造函数推断。
+    /// 判断顺序不能颠倒：所有具名类型都满足 <see cref="INamedTypeSymbol"/>，若让构造函数分支先行，
+    /// 会同时引入两类缺陷——类型没有单参数构造函数时取首个元素直接抛异常；引用类型 <c>record</c> 会额外
+    /// 生成 <c>Foo(Foo original)</c> 复制构造函数，主构造函数参数多于一个时会把该记录自身误判为基元类型。
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// 该类型既未实现 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>，也不具备单参数构造函数。
+    /// </exception>
+    private static string GetPrimitiveIdTypeName(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType)
+        {
+            var stronglyTypedIdInterface = namedType.Interfaces.FirstOrDefault(
+                @interface => @interface.Name == InterfaceName && @interface.TypeArguments.Length == 2);
+
+            if (stronglyTypedIdInterface is not null)
+            {
+                return stronglyTypedIdInterface.TypeArguments[1].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            }
+
+            var constructor = namedType.Constructors.FirstOrDefault(candidate => candidate.Parameters.Length == 1);
+
+            if (constructor is not null)
+            {
+                return constructor.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            }
+        }
+
+        throw new InvalidOperationException($"无法从类型“{type.ToDisplayString()}”解析基元 Id 类型：它既未实现 {InterfaceName}<TSelf, TPrimitiveId>，也不具备单参数构造函数。");
+    }
 }
