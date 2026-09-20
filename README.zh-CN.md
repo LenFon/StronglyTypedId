@@ -179,7 +179,7 @@ services.AddSwaggerGen(options =>
 });
 ```
 
-该实现同时兼容 Microsoft.OpenApi 1.x（Swashbuckle 6.x）与 2.x（Swashbuckle 7.x）。
+该实现同时兼容 Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及更高版本）。
 
 <a id="using-the-interface"></a>
 
