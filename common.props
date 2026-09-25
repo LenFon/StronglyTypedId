@@ -10,7 +10,7 @@
 		<RepositoryType>git</RepositoryType>
 		<RepositoryUrl>https://github.com/lenfon/StronglyTypedId</RepositoryUrl>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
 		<!--
 		  生成器产物这类未纳入版本控制的源文件也嵌入 pdb，否则 F11 只能停在「找不到源代码」。
 		  符号包本身只在 Len.StronglyTypedId 项目里开启：分析器包除 analyzers/dotnet/cs 下的 dll 外没有任何
@@ -52,6 +52,6 @@
 		</PackageReference>
 	</ItemGroup>
 	<ItemGroup>
-		<None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+		<None Include="..\..\PACKAGE.md" Pack="true" PackagePath="\"/>
 	</ItemGroup>
 </Project>
