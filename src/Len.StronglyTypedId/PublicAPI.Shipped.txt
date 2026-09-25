@@ -1,0 +1,10 @@
+#nullable enable
+Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>
+Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>.Create(TPrimitiveId value) -> TSelf
+Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>.Value.get -> TPrimitiveId
+Len.StronglyTypedId.StronglyTypedIdAttribute
+Len.StronglyTypedId.StronglyTypedIdAttribute.StronglyTypedIdAttribute() -> void
+Len.StronglyTypedId.StronglyTypedIdExtensions
+static Len.StronglyTypedId.StronglyTypedIdExtensions.GetPrimitiveIdType(this System.Type! type) -> System.Type?
+static Len.StronglyTypedId.StronglyTypedIdExtensions.IsStronglyTypedId(this System.Type! type) -> bool
+static Len.StronglyTypedId.StronglyTypedIdExtensions.TryGetPrimitiveIdType(this System.Type! type, out System.Type? primitiveIdType) -> bool

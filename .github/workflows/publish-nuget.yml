@@ -8,6 +8,10 @@ on:
     tags:
     - '*'
 
+permissions:
+  contents: read
+  id-token: write   # 启用 GitHub OIDC 令牌签发，供 NuGet 受信任发布交换短期 API 密钥
+
 jobs:
   build:
 
@@ -24,13 +28,29 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        # net8.0 与 net10.0 两个目标框架都要打包，显式安装两者 SDK，
+        # 与 build-and-test.yml 保持一致，避免依赖 runner 镜像预装的 .NET 环境。
+        dotnet-version: |
+          8.0.x
+          10.0.x
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore ./Len.StronglyTypedId.slnx
     - name: Build
-      run: dotnet build  -c Release --no-restore  --property:OutputPath=../../bin/Release
+      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore --property:OutputPath=../../bin/Release/
+
+    # 通过 OIDC 向 nuget.org 换取短期 API 密钥（无需存储长期密钥）。
+    # 注意：私有仓库首次创建受信任发布策略后，会进入「待完全激活」状态，
+    # 仅有 7 天临时激活窗口；在窗口内成功发布一次即永久激活，否则自动失效（可随时重启）。
+    - name: NuGet login (OIDC → 临时 API 密钥)
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: ${{ secrets.NUGET_USER }}  # nuget.org 用户名（配置文件名），不是邮箱
 
     - name: Publish the package to nuget.org
-      run: dotnet nuget push bin/Release/*.nupkg -k $NUGET_AUTH_TOKEN -s https://api.nuget.org/v3/index.json
-      env:
-        NUGET_AUTH_TOKEN: ${{ secrets.NUGET_API_KEY }}
+      run: dotnet nuget push bin/Release/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+
+    # 符号包必须单独再推一次：通配符 *.nupkg 不匹配 *.snupkg（结尾是 .snupkg 而非 .nupkg）。
+    # 顺序上必须在主包之后——nuget.org 要求符号包对应的包已存在。
+    - name: Publish the symbol package to nuget.org
+      run: dotnet nuget push bin/Release/*.snupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
