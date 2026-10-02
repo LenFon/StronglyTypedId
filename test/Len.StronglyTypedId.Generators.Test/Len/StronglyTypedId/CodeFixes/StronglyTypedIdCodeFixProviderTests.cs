@@ -266,4 +266,54 @@ public class StronglyTypedIdCodeFixProviderTests
 
         await Verify.VerifyCodeFixAllAsync(code, expected, batchFixedCode);
     }
+
+    /// <summary>
+    /// 绕过验证器直接用 <c>new</c> 构造（STIAO011）时，CodeFix 应把它重写成 <c>Xxx.Create(...)</c>。
+    /// </summary>
+    /// <remarks>
+    /// 该诊断只在 Id 设了验证器时触发，而该情形下生成代码已提供静态 <c>Create</c> 工厂，
+    /// 重写后的调用点强制经过校验，与诊断的意图一致。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFix_Should_ReplaceNewWithCreate_WhenBypassingValidator()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => new OrderId(Guid.NewGuid());
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => OrderId.Create(Guid.NewGuid());
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate)
+            .WithArguments("OrderId").WithSpan(13, 31, 13, 58);
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
 }
