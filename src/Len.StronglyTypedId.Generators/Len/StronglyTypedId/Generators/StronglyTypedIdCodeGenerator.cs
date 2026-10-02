@@ -368,6 +368,8 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
 
         AppendTryCreateMember(members, idInfo, version);
 
+        AppendDeconstructMember(members, idInfo, version);
+
         if (idInfo.IsFormattable)
         {
             AppendMember(
@@ -471,6 +473,24 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
             $"    result = new {idInfo.Name}(value);",
             "    return true;",
             "}");
+    }
+
+    /// <summary>
+    /// 追加 <c>Deconstruct</c>：让用户以 <c>(var value) = id;</c> 解构出基元值。
+    /// </summary>
+    /// <remarks>
+    /// 单参数的解构在 C# 里合法（<c>var (v) = id;</c> 与模式 <c>id is (var v)</c> 都可用），
+    /// 且对所有强类型 Id 一致成立 —— 每个 Id 都有且只有一个 <c>Value</c>。仅追加一个无条件成员，
+    /// 不影响既有成员的逐字符基线。
+    /// </remarks>
+    private static void AppendDeconstructMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
+    {
+        AppendMember(
+            builder,
+            version,
+            ["<summary>Deconstructs the strongly typed id into its underlying primitive value.</summary>",
+             "<param name=\"value\">The underlying primitive value.</param>"],
+            $"public void Deconstruct(out {idInfo.PrimitiveIdTypeName} value) => value = Value;");
     }
 
     /// <summary>

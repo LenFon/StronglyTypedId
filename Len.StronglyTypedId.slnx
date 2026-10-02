@@ -27,6 +27,7 @@
     <Project Path="samples/Len.StronglyTypedId.Sample1/Len.StronglyTypedId.Sample1.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample2/Len.StronglyTypedId.Sample2.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample3/Len.StronglyTypedId.Sample3.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.SampleConsole/Len.StronglyTypedId.SampleConsole.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj" />

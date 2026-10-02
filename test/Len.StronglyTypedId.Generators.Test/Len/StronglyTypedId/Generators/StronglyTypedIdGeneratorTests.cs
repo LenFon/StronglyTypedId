@@ -1242,6 +1242,19 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("public override string ToString() => Value.ToString() ?? string.Empty;");
     }
 
+    /// <summary>
+    /// 每个强类型 Id 都应生成单参数 <c>Deconstruct</c>，让用户以 <c>(var value) = id;</c> 解构出基元值。
+    /// </summary>
+    [Theory]
+    [InlineData("Guid", "global::System.Guid")]
+    [InlineData("int", "int")]
+    public void Generator_Should_EmitDeconstruct_ForPrimitive(string primitive, string primitiveType)
+    {
+        var generated = GetGeneratedCodeByHint(OrderIdSource(primitive))["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should().Contain($"public void Deconstruct(out {primitiveType} value) => value = Value;");
+    }
+
     #region P1：TypeConverter opt-in / P4：装配级默认验证器
 
     /// <summary>

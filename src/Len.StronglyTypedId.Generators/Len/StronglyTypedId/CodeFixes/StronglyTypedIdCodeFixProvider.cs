@@ -15,7 +15,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.ParameterNameMustBeValueId,
             Descriptors.ParameterCannotBeNullableId,
             Descriptors.TypeCannotBeGenericId,
-            Descriptors.ContainingTypeMustBePartialId);
+            Descriptors.ContainingTypeMustBePartialId,
+            Descriptors.BypassCreateId);
 
     public override FixAllProvider? GetFixAllProvider()
     {
@@ -44,9 +45,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                  Descriptors.TypeCannotBeAbstractId => RemoveAbstractKeywordAsync(context, diagnostic, token),
                                  Descriptors.ParameterNameMustBeValueId => UpdateParameterNameToValueAsync(context, diagnostic, token),
                                  Descriptors.ParameterCannotBeNullableId => RemoveNullableAsync(context, diagnostic, token),
-                                 Descriptors.TypeCannotBeGenericId => RemoveGenericAsync(context, diagnostic, token),
-                                 Descriptors.ContainingTypeMustBePartialId => AddPartialToContainingTypeAsync(context, diagnostic, token),
-                                 _ => Task.FromResult(context.Document),
+                                Descriptors.TypeCannotBeGenericId => RemoveGenericAsync(context, diagnostic, token),
+                                Descriptors.ContainingTypeMustBePartialId => AddPartialToContainingTypeAsync(context, diagnostic, token),
+                                Descriptors.BypassCreateId => ReplaceWithCreateAsync(context, diagnostic, token),
+                                _ => Task.FromResult(context.Document),
                              },
                              title);
 
@@ -149,6 +151,36 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
     private static Task<Document> RemoveNullableAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceParameterAsync(context, diagnostic, token, stripNullableSuffix: true);
+
+    /// <summary>
+    /// 把诊断所在的 <c>new Xxx(value)</c> 重写成 <c>Xxx.Create(value)</c>，使构造强制经过验证器。
+    /// </summary>
+    /// <remarks>
+    /// STIAO011 仅在 Id 设了验证器时触发：该情形下生成代码里已有静态 <c>Create</c> 工厂，用它替换直接构造
+    /// 既消除诊断、又保留校验语义。原 <c>new</c> 关键字的缩进（前导 trivia）交给新的调用表达式，
+    /// 参数列表原样保留，因此 <c>new Xxx(Value: value)</c> 这类具名实参也会一并迁移；类型拼写（含
+    /// <c>global::</c> 前缀或命名空间限定）沿用 <c>creation.Type</c>，不会丢失。
+    /// </remarks>
+    private static async Task<Document> ReplaceWithCreateAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<ObjectCreationExpressionSyntax>(root, diagnostic) is not { } creation)
+        {
+            return context.Document;
+        }
+
+        var createInvocation = SyntaxFactory.InvocationExpression(
+            SyntaxFactory.MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                creation.Type,
+                SyntaxFactory.IdentifierName("Create")),
+            creation.ArgumentList!);
+
+        var withTrivia = createInvocation.WithLeadingTrivia(creation.GetLeadingTrivia());
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(creation, withTrivia));
+    }
 
     /// <summary>
     /// 用 <paramref name="replace"/> 的结果替换诊断所在的 record 声明。
