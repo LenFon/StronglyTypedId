@@ -1,4 +1,11 @@
-﻿namespace Len.StronglyTypedId.CodeFixes;
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CodeActions;
+using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Xunit;
+
+namespace Len.StronglyTypedId.CodeFixes;
 
 public class StronglyTypedIdCodeFixProviderTests
 {
@@ -687,5 +694,97 @@ public class StronglyTypedIdCodeFixProviderTests
         };
 
         await Verify.VerifyCodeFixAllAsync(code, expected, batchFixedCode);
+    }
+
+    /// <summary>
+    /// STIAO005 的 IsFixable 负向分支：record 已有 body 构造函数、却无单参主构造函数时，
+    /// 再加主构造会与既有 body 构造撞 CS0111。此时诊断虽触发，但 CodeFix 不应提供任何修复入口 ——
+    /// RegisterCodeFixesAsync 经 IsFixable 门禁直接跳过，注册 0 个 CodeAction。
+    /// 该场景无法用 VerifyCodeFixAsync 表达（框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldNotOfferFix_WhenRecordHasBodyConstructor()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId
+            {
+                public OrderId(Guid value) { }
+            }
+            """;
+
+        var offered = await CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.TypeMustHaveSingleParameterPrimaryConstructor,
+            "OrderId");
+
+        Assert.Empty(offered);
+    }
+
+    /// <summary>
+    /// 对照：同一 harness 在「可修复」情形下确实会注册修复（record 无主构造、也无 body 构造时 STIAO005 可修），
+    /// 证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldOfferFix_WhenRecordHasNoConstructor()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId { }
+            """;
+
+        var offered = await CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.TypeMustHaveSingleParameterPrimaryConstructor,
+            "OrderId");
+
+        Assert.Single(offered);
+    }
+
+    /// <summary>
+    /// 直接驱动 CodeFixProvider：把源码解析成 Document，在指定诊断（定位在 record 声明上）上调用
+    /// RegisterCodeFixesAsync，收集它注册的 CodeAction。用于断言「不提供修复」这类 VerifyCodeFixAsync
+    /// 框架本身不支持的场景（后者假定修复一定会被应用）。
+    /// </summary>
+    private static async Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
+        string source,
+        DiagnosticDescriptor descriptor,
+        string typeName)
+    {
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
+        var root = tree.GetRoot();
+        var recordDeclaration = root.DescendantNodes().OfType<RecordDeclarationSyntax>().First();
+        var location = Location.Create(tree, recordDeclaration.Span);
+        var diagnostic = Diagnostic.Create(descriptor, location, typeName);
+
+        using var workspace = new AdhocWorkspace();
+        var projectId = ProjectId.CreateNewId();
+        var project = workspace.CurrentSolution
+            .AddProject(projectId, "TestProject", "TestProject", LanguageNames.CSharp)
+            .GetProject(projectId)!
+            .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
+            .WithParseOptions(parseOptions);
+        var document = project.AddDocument("Test.cs", tree.GetRoot());
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            CancellationToken.None);
+
+        var provider = new StronglyTypedIdCodeFixProvider();
+        await provider.RegisterCodeFixesAsync(context);
+
+        return actions;
     }
 }
