@@ -387,6 +387,85 @@ public class StronglyTypedIdInfoTests
 
     #endregion
 
+    #region 容器可访问性：覆盖 GetAccessibilityKeyword 的非常见分支
+
+    /// <summary>
+    /// 覆盖 <see cref="StronglyTypedIdInfo.GetAccessibilityKeyword"/> 的 <see cref="Accessibility.Protected"/> 分支：
+    /// 嵌套类型落在 <c>protected</c> 容器里时，重开声明必须写出 <c>protected</c>。
+    /// </summary>
+    [Fact]
+    public void Info_Should_RestateProtectedContainingType_WithAccessibility()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Outer
+            {
+                protected partial class Inner
+                {
+                    public partial record struct OrderId(System.Guid Value);
+                }
+            }
+            """,
+            "Referenced.Outer+Inner+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations.Should()
+            .Be("public partial class Outer\nprotected partial class Inner");
+    }
+
+    /// <summary>
+    /// 覆盖 <see cref="StronglyTypedIdInfo.GetAccessibilityKeyword"/> 的
+    /// <see cref="Accessibility.ProtectedOrInternal"/> 分支（<c>protected internal</c>）。
+    /// </summary>
+    [Fact]
+    public void Info_Should_RestateProtectedInternalContainingType_WithAccessibility()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Outer
+            {
+                protected internal partial class Inner
+                {
+                    public partial record struct OrderId(System.Guid Value);
+                }
+            }
+            """,
+            "Referenced.Outer+Inner+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations.Should()
+            .Be("public partial class Outer\nprotected internal partial class Inner");
+    }
+
+    /// <summary>
+    /// 覆盖 <see cref="StronglyTypedIdInfo.GetAccessibilityKeyword"/> 的
+    /// <see cref="Accessibility.ProtectedAndInternal"/> 分支（<c>private protected</c>）。
+    /// </summary>
+    [Fact]
+    public void Info_Should_RestatePrivateProtectedContainingType_WithAccessibility()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Outer
+            {
+                private protected partial class Inner
+                {
+                    public partial record struct OrderId(System.Guid Value);
+                }
+            }
+            """,
+            "Referenced.Outer+Inner+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations.Should()
+            .Be("public partial class Outer\nprivate protected partial class Inner");
+    }
+
+    #endregion
+
     #region 嵌套包装：把声明块嵌回包含类型
 
     /// <remarks>

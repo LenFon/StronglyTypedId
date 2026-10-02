@@ -1,4 +1,7 @@
-﻿using FluentAssertions;
+﻿// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
+// 统一在此文件禁用该测试框架分析器警告。
+#pragma warning disable xUnit1051
+using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Testing;
@@ -1672,6 +1675,129 @@ public class StronglyTypedIdGeneratorTests
             .ToArray();
 
         failures.Should().BeEmpty(string.Join("\n", failures.Select(failure => failure.ToString())));
+    }
+
+    #endregion
+
+    #region 生成器入口的语法闸门与防御分支
+
+    /// <summary>
+    /// 嵌套在泛型容器里的强类型 Id 不应被生成：<see cref="StronglyTypedIdGenerator.CouldBeStronglyTypedId"/>
+    /// 必须在容器链上遇到泛型容器时提前返回 <see langword="false"/>。
+    /// </summary>
+    /// <remarks>
+    /// 覆盖 <c>CouldBeStronglyTypedId</c> 里「容器是泛型」的提前返回分支（对应生成器源码的容器循环体）。
+    /// 泛型容器既不支持 partial 重开，分析器侧也会另行报错，先于生成器挡掉。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenContainerIsGeneric()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 核心生成器集合为空时 <see cref="StronglyTypedIdGenerator.GenerateCoreCode"/> 必须提前返回，
+    /// 而不是对空集合做无意义遍历或抛 <see cref="NullReferenceException"/>。
+    /// </summary>
+    /// <remarks>
+    /// 覆盖 <c>GenerateCoreCode</c> 的 <c>if (generators.IsDefaultOrEmpty) return;</c> 防御分支。
+    /// 触发方式：用合成程序集提供同名 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c> 让强类型 Id 仍被发现，
+    /// 但刻意不引用任何核心生成器依赖的程序集（System.Text.Json / Len.StronglyTypedId.dll / Newtonsoft.Json），
+    /// 使 <c>GetCodeGenerators</c> 返回空集。合成程序集名为 FakeSti，模块名不会命中任何核心生成器判据。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenNoCoreGeneratorModuleReferenced()
+    {
+        var fakeAttributeReference = EmitFakeStronglyTypedIdAttributeAssembly();
+
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var compilation = CreateCompilationWithoutCoreGenerators(code, fakeAttributeReference);
+
+        var result = CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGenerators(compilation)
+            .GetRunResult();
+
+        result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+        // 没有任何核心生成器 → 不产出任何文件，但生成器本身不应崩溃。
+        result.Results[0].GeneratedSources.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 构造「只提供 [StronglyTypedId] 属性、但不引用任何核心生成器依赖程序集」的编译，
+    /// 使 <see cref="StronglyTypedIdGenerator.GetCodeGenerators"/> 返回空集。
+    /// </summary>
+    private static CSharpCompilation CreateCompilationWithoutCoreGenerators(string sourceCode, MetadataReference fakeAttributeReference)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+
+        var references = new MetadataReference[]
+        {
+            fakeAttributeReference,
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+        };
+
+        return CSharpCompilation.Create(
+            "Len.StronglyTypedId.Defensive.Test",
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    /// <summary>
+    /// 合成一个「名为 FakeSti、含 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c> 但没有任何真实 API」的程序集。
+    /// </summary>
+    /// <remarks>
+    /// 用它替代真实运行时程序集引用后，强类型 Id 仍会被生成器按属性全名发现，但模块名是
+    /// <c>FakeSti.dll</c> 而非 <c>Len.StronglyTypedId.dll</c>，于是核心生成器集合为空。
+    /// </remarks>
+    private static MetadataReference EmitFakeStronglyTypedIdAttributeAssembly()
+    {
+        var source = """
+            namespace Len.StronglyTypedId
+            {
+                public class StronglyTypedIdAttribute : System.Attribute
+                {
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            "FakeSti",
+            [CSharpSyntaxTree.ParseText(source)],
+            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emit = compilation.Emit(stream);
+        emit.Success.Should().BeTrue(string.Join("\n", emit.Diagnostics));
+
+        var path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "FakeSti." + System.Guid.NewGuid().ToString("N") + ".dll");
+        System.IO.File.WriteAllBytes(path, stream.ToArray());
+
+        return MetadataReference.CreateFromFile(path);
     }
 
     #region 消费者画像测试源码
