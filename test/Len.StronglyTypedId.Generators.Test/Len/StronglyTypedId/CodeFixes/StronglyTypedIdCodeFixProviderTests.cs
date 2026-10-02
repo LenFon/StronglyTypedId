@@ -316,4 +316,199 @@ public class StronglyTypedIdCodeFixProviderTests
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
+
+    /// <summary>
+    /// STIAO000：把 class 转成 record（保留修饰符 / 主构造函数 / 成员 / 标识符）。
+    /// </summary>
+    /// <remarks>
+    /// 输入特意写成「命名空间内、已 partial、主构造函数合法」的 class，使修复只改关键字、不再级联其它规则：
+    /// 转换后得到的 <c>partial record OrderId(Guid Value)</c> 已满足 partial / 命名空间 / 主构造全部约束。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFix_Should_ConvertClassToRecord_WhenTypeMustBeRecord()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial class OrderId(Guid Value) { }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value) { }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeMustBeRecord)
+            .WithSpan(5, 1, 6, 45).WithArguments("OrderId");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO004：把最外层类型包进命名空间块（占位名固定 MyNamespace，由使用者改名）。
+    /// </summary>
+    /// <remarks>
+    /// 顶层类型（直接挂在编译单元下）才触发 STIAO004；此处必须显式 <c>using Len.StronglyTypedId;</c>
+    /// 让特性在命名空间外也能绑定，否则分析器会因找不到特性而零产出。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFix_Should_WrapInNamespace_WhenTypeMustHaveNamespace()
+    {
+        var code = """"
+            using System;
+            using Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace MyNamespace
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveNamespace)
+            .WithSpan(4, 1, 5, 50).WithArguments("OrderId");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO005：缺主构造函数时补一个单参主构造 (Guid Value)。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_AddPrimaryConstructor_WhenMissing()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId { }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value) { }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveSingleParameterPrimaryConstructor)
+            .WithSpan(5, 1, 6, 34).WithArguments("OrderId");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO005：主构造函数多参数时整段替换为单参版本，并把参数名规整为 Value。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_FixPrimaryConstructor_WhenMultipleParameters()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid value, string name);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeMustHaveSingleParameterPrimaryConstructor)
+            .WithSpan(5, 1, 6, 56).WithArguments("OrderId");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO008：把非受支持基元类型参数改成 Guid（名称此前已是 Value）。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_ChangeParameterTypeToGuid_WhenTypeInvalid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Foo Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
+            .WithSpan(6, 31, 6, 34).WithArguments("Foo");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO010：删掉 [StronglyTypedId] 里无效的 Validator 命名实参（唯一实参时连同括号一起删）。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_RemoveValidatorArgument_WhenValidatorInvalid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record OrderId(Guid Value)
+            {
+                private static int Validate(Guid value) => 0;
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value)
+            {
+                private static int Validate(Guid value) => 0;
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithSpan(5, 18, 5, 46).WithArguments("Validate", "System.Guid");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
 }

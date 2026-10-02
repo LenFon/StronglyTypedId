@@ -16,7 +16,12 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.ParameterCannotBeNullableId,
             Descriptors.TypeCannotBeGenericId,
             Descriptors.ContainingTypeMustBePartialId,
-            Descriptors.BypassCreateId);
+            Descriptors.BypassCreateId,
+            Descriptors.TypeMustBeRecordId,
+            Descriptors.TypeMustHaveNamespaceId,
+            Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId,
+            Descriptors.ParameterTypeIsInvalidId,
+            Descriptors.ValidatorReferenceInvalidId);
 
     public override FixAllProvider? GetFixAllProvider()
     {
@@ -46,8 +51,13 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                  Descriptors.ParameterNameMustBeValueId => UpdateParameterNameToValueAsync(context, diagnostic, token),
                                  Descriptors.ParameterCannotBeNullableId => RemoveNullableAsync(context, diagnostic, token),
                                 Descriptors.TypeCannotBeGenericId => RemoveGenericAsync(context, diagnostic, token),
-                                Descriptors.ContainingTypeMustBePartialId => AddPartialToContainingTypeAsync(context, diagnostic, token),
+                                 Descriptors.ContainingTypeMustBePartialId => AddPartialToContainingTypeAsync(context, diagnostic, token),
                                 Descriptors.BypassCreateId => ReplaceWithCreateAsync(context, diagnostic, token),
+                                Descriptors.TypeMustBeRecordId => ConvertToRecordAsync(context, diagnostic, token),
+                                Descriptors.TypeMustHaveNamespaceId => WrapInNamespaceAsync(context, diagnostic, token),
+                                Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => EnsurePrimaryConstructorAsync(context, diagnostic, token),
+                                Descriptors.ParameterTypeIsInvalidId => ChangeParameterTypeToGuidAsync(context, diagnostic, token),
+                                Descriptors.ValidatorReferenceInvalidId => RemoveValidatorArgumentAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -77,6 +87,33 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             case Descriptors.ContainingTypeMustBePartialId:
                 return FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } declaration
                     && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword);
+
+            // 类型必须 record：靶子当前是 class 或 struct（record 不会触发本规则），直接转关键字即可。
+            case Descriptors.TypeMustBeRecordId:
+                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is ClassDeclarationSyntax or StructDeclarationSyntax;
+
+            // 类型必须在命名空间内：仅当最外层容器直接挂在编译单元下（链上没有任何命名空间）才包命名空间；
+            // 嵌在类型里又不在命名空间的情形，包的是最外层那个类型，同样是这一个判定。
+            case Descriptors.TypeMustHaveNamespaceId:
+                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } nsCandidate
+                    && GetOutermostType(nsCandidate).Parent is CompilationUnitSyntax;
+
+            // 必须恰好一个单参数主构造函数：无主构造且没有任何 body 构造时可安全补一个（Guid Value）；
+            // 已有 body 构造时再加主构造会撞 CS0111，交给用户自己处理，不提供修复。
+            // 已有主构造但参数数 != 1 时，替换为单参主构造是安全的。
+            case Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId:
+                return FindNode<RecordDeclarationSyntax>(root, diagnostic) is { } recordDeclaration
+                    && (recordDeclaration.ParameterList is null
+                        ? !recordDeclaration.Members.OfType<ConstructorDeclarationSyntax>().Any()
+                        : recordDeclaration.ParameterList.Parameters.Count != 1);
+
+            // 基元类型非法：把参数类型改成受支持的 Guid 即可（名称此前已被 STIAO007 校验为 Value）。
+            case Descriptors.ParameterTypeIsInvalidId:
+                return true;
+
+            // 验证器引用无效：删掉 Validator 命名实参即可，无需判别原因。
+            case Descriptors.ValidatorReferenceInvalidId:
+                return FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null;
 
             default:
                 return true;
@@ -180,6 +217,174 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         var withTrivia = createInvocation.WithLeadingTrivia(creation.GetLeadingTrivia());
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(creation, withTrivia));
+    }
+
+    /// <summary>
+    /// 把 class / struct 关键字转成 record，使其通过 STIAO000。
+    /// </summary>
+    /// <remarks>
+    /// class / struct 与 record 是不同形状的语法节点，不能只换一个关键字 token，因此用
+    /// <c>SyntaxFactory.RecordDeclaration</c> 重建：原样搬移特性列表、修饰符、标识符、基列表、
+    /// 类型参数表、约束子句与全部成员，仅把关键字换成 <c>record</c>（引用记录）。
+    /// 转换后若还缺 partial / 主构造等，由各自的诊断继续提供修复（链式）。
+    /// <c>record struct</c> 也属 record，STIAO000 不会对其触发，故此处无需区分，统一转引用 record。
+    /// </remarks>
+    private static async Task<Document> ConvertToRecordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<TypeDeclarationSyntax>(root, diagnostic) is not { } declaration)
+        {
+            return context.Document;
+        }
+
+        var record = SyntaxFactory.RecordDeclaration(
+                SyntaxFactory.Token(SyntaxKind.RecordKeyword),
+                declaration.Identifier)
+            .WithAttributeLists(declaration.AttributeLists)
+            .WithModifiers(declaration.Modifiers)
+            .WithTypeParameterList(declaration.TypeParameterList)
+            .WithParameterList(declaration.ParameterList)
+            .WithBaseList(declaration.BaseList)
+            .WithConstraintClauses(declaration.ConstraintClauses)
+            .WithOpenBraceToken(declaration.OpenBraceToken)
+            .WithMembers(declaration.Members)
+            .WithCloseBraceToken(declaration.CloseBraceToken)
+            .WithSemicolonToken(declaration.SemicolonToken)
+            .WithLeadingTrivia(declaration.GetLeadingTrivia())
+            .WithTrailingTrivia(declaration.GetTrailingTrivia());
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(declaration, record));
+    }
+
+    /// <summary>
+    /// 把最外层类型包进命名空间块，使其通过 STIAO004。
+    /// </summary>
+    /// <remarks>
+    /// 诊断定位在 Id 声明上，但真正要包的是链上最外层那个直接挂在编译单元下的类型（Id 自身、或嵌它的容器）。
+    /// 命名空间名无从从报错推断：优先取项目的默认命名空间（RootNamespace），取不到时退回占位
+    /// <c>MyNamespace</c>，由使用者改名。STIAO004 只要求「位于命名空间内」，具体名称分析器不过问。
+    /// </remarks>
+    private static async Task<Document> WrapInNamespaceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<TypeDeclarationSyntax>(root, diagnostic) is not { } found)
+        {
+            return context.Document;
+        }
+
+        var outermost = GetOutermostType(found);
+
+        // 命名空间名无从从报错推断：统一用占位 MyNamespace，由使用者改名。这是结构性占位 ——
+        // STIAO004 只要求「在命名空间内」，具体叫什么分析器不过问。
+        var namespaceName = "MyNamespace";
+
+        // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 Formatter 规范化，
+        // 避免手工拼 trivia 时「特性与声明之间的换行」漏缩进而拼成无缩进。
+        var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(namespaceName))
+            .WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(outermost))
+            .WithOpenBraceToken(SyntaxFactory.Token(SyntaxKind.OpenBraceToken))
+            .WithCloseBraceToken(SyntaxFactory.Token(SyntaxKind.CloseBraceToken));
+
+        var newRoot = root.ReplaceNode(outermost, namespaceDeclaration);
+
+        var formattedRoot = Microsoft.CodeAnalysis.Formatting.Formatter.Format(
+            newRoot,
+            context.Document.Project.Solution.Workspace);
+
+        return context.Document.WithSyntaxRoot(formattedRoot);
+    }
+
+    /// <summary>
+    /// 补 / 改单参数主构造函数，使其通过 STIAO005。
+    /// </summary>
+    /// <remarks>
+    /// 占位类型用 <c>Guid</c>（最常见的强类型 Id 基元），名称固定 <c>Value</c> 以免再触发 STIAO007。
+    /// 无主构造时直接补；已有主构造但参数数 != 1 时整段替换为单参版本。已有 body 构造的情形由
+    /// <see cref="IsFixable"/> 拦下（再加主构造会撞 CS0111），不在此处理。
+    /// </remarks>
+    private static async Task<Document> EnsurePrimaryConstructorAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<RecordDeclarationSyntax>(root, diagnostic) is not { } recordDeclaration)
+        {
+            return context.Document;
+        }
+
+        var parameterList = SyntaxFactory.ParameterList(
+            SyntaxFactory.SingletonSeparatedList(
+                SyntaxFactory.Parameter(
+                    default(SyntaxList<AttributeListSyntax>),
+                    default(SyntaxTokenList),
+                    SyntaxFactory.ParseTypeName("Guid"),
+                    SyntaxFactory.Identifier("Value"),
+                    default(EqualsValueClauseSyntax))));
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(recordDeclaration, recordDeclaration.WithParameterList(parameterList)));
+    }
+
+    /// <summary>
+    /// 把非受支持基元类型的参数改成 <c>Guid</c>，使其通过 STIAO008。
+    /// </summary>
+    /// <remarks>
+    /// STIAO008 触发前 STIAO007 已确认参数名为 <c>Value</c>，故此处只换类型。参数上的 attribute、修饰符、
+    /// 默认值与全部 trivia（含附着在旧类型上的空白 / 注释）用 <c>WithType</c> 保留，
+    /// 新类型沿用旧类型的 trivia 以免拼成 <c>GuidValue</c>。
+    /// </remarks>
+    private static async Task<Document> ChangeParameterTypeToGuidAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<ParameterSyntax>(root, diagnostic) is not { } parameter)
+        {
+            return context.Document;
+        }
+
+        var newType = SyntaxFactory.ParseTypeName("Guid").WithTriviaFrom(parameter.Type!);
+        var updated = parameter.WithType(newType);
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(parameter, updated));
+    }
+
+    /// <summary>
+    /// 从 <c>[StronglyTypedId]</c> 中删掉无效的 <c>Validator = …</c> 命名实参，使其通过 STIAO010。
+    /// </summary>
+    /// <remarks>
+    /// 这是唯一能机械化消除 STIAO010 的改动：删掉指向错误方法的实参后，验证器回退到装配级默认（或无）。
+    /// 若该实参是 attribute 里唯一实参，则连同整对括号一起删掉；否则只移除它，
+    /// <see cref="SeparatedSyntaxList{TNode}.Remove"/> 会自动收拾相邻的逗号分隔符。
+    /// </remarks>
+    private static async Task<Document> RemoveValidatorArgumentAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<AttributeArgumentSyntax>(root, diagnostic) is not { } argument
+            || argument.Parent is not AttributeArgumentListSyntax argumentList
+            || argumentList.Parent is not AttributeSyntax attribute)
+        {
+            return context.Document;
+        }
+
+        var updatedAttribute = argumentList.Arguments.Count == 1
+            ? attribute.WithArgumentList(null)
+            : attribute.WithArgumentList(argumentList.WithArguments(argumentList.Arguments.Remove(argument)));
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(attribute, updatedAttribute));
+    }
+
+    /// <summary>
+    /// 沿父链向上取到直接挂在编译单元下的最外层类型声明（穿透嵌套容器）。
+    /// </summary>
+    private static TypeDeclarationSyntax GetOutermostType(TypeDeclarationSyntax node)
+    {
+        while (node.Parent is TypeDeclarationSyntax parent)
+        {
+            node = parent;
+        }
+
+        return node;
     }
 
     /// <summary>
