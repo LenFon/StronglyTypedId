@@ -29,6 +29,12 @@
 		  就不代表任何发布」的必然结果，不是待修的回归。低于基线时不挂基线，
 		  退化为包内一致性校验（同名程序集在各 TFM 之间是否一致）；发布流水线覆写版本号后，
 		  自动恢复为完整的跨版本比对。
+
+		  跨版本比对拦截到的破坏性变更若属有意为之（如为支持 enum 放宽
+		  IStronglyTypedId 的 TPrimitiveId 约束），处理方式是重建一次
+		  `dotnet build -c Release -p:Version=<高于基线> -p:ApiCompatGenerateSuppressionFile=true`，
+		  把生成的 src/Len.StronglyTypedId/CompatibilitySuppressions.xml 入库——
+		  该文件存在时 SDK 自动加载（条目不含版本号，随版本升级持续生效），禁止用 NoWarn 压制。
 		-->
 		<EnablePackageValidation>true</EnablePackageValidation>
 		<StronglyTypedIdPackageValidationBaseline>1.3.0-preview.5</StronglyTypedIdPackageValidationBaseline>
