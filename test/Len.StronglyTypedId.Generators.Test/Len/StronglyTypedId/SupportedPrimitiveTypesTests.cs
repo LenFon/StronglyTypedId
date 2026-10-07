@@ -53,6 +53,45 @@ public class SupportedPrimitiveTypesTests
         SupportedPrimitiveTypes.IsSupported(type!).Should().BeTrue();
     }
 
+    /// <summary>
+    /// 时间型与 decimal 基元（非 C# 的 <see cref="SpecialType"/>，走「具名类型 + 命名空间」分支）。
+    /// </summary>
+    [Theory]
+    [InlineData("System.DateTime")]
+    [InlineData("System.DateTimeOffset")]
+    [InlineData("System.TimeSpan")]
+    [InlineData("System.Decimal")]
+    public void IsSupported_Should_ReturnTrue_ForExtendedBclType(string metadataName)
+    {
+        var type = EmptyCompilation.GetTypeByMetadataName(metadataName);
+
+        type.Should().NotBeNull($"测试前提：{metadataName} 必须可被合成编译解析");
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// 枚举（无论命名空间、无论底层类型）一律支持：强类型 Id 的基元可以是任意枚举。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnTrue_ForEnum()
+    {
+        var compilation = CreateCompilation("""
+            namespace Probe.Fake;
+
+            public enum Status
+            {
+                Active,
+                Inactive
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Fake.Status");
+
+        type.Should().NotBeNull("测试前提：枚举必须可被合成编译解析");
+        type!.TypeKind.Should().Be(TypeKind.Enum);
+        SupportedPrimitiveTypes.IsSupported(type).Should().BeTrue();
+    }
+
     #endregion
 
     #region 不受支持的 BCL 类型
@@ -60,8 +99,6 @@ public class SupportedPrimitiveTypesTests
     [Theory]
     [InlineData(SpecialType.System_Boolean)]
     [InlineData(SpecialType.System_Char)]
-    [InlineData(SpecialType.System_Decimal)]
-    [InlineData(SpecialType.System_DateTime)]
     [InlineData(SpecialType.System_Object)]
     public void IsSupported_Should_ReturnFalse_ForUnsupportedBclType(SpecialType specialType)
     {

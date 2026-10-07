@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis.CodeActions;
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 
 namespace Len.StronglyTypedId.CodeFixes;
@@ -57,7 +58,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.TypeMustHaveNamespaceId => WrapInNamespaceAsync(context, diagnostic, token),
                                 Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => EnsurePrimaryConstructorAsync(context, diagnostic, token),
                                 Descriptors.ParameterTypeIsInvalidId => ChangeParameterTypeToGuidAsync(context, diagnostic, token),
-                                Descriptors.ValidatorReferenceInvalidId => RemoveValidatorArgumentAsync(context, diagnostic, token),
+                                Descriptors.ValidatorReferenceInvalidId => FixValidatorReferenceAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -349,10 +350,120 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
+    /// STIAO010 修复主入口：决定「生成验证器桩」还是「删掉 Validator 实参」。
+    /// </summary>
+    /// <remarks>
+    /// <list type="bullet">
+    ///   <item>指向的静态方法根本不存在时，在 Id 类型里补一个符合契约的桩方法（静态、返回 <see cref="bool"/>、
+    ///     恰好一个参数且类型等于基元 Id 类型）——这是比「删实参」更贴合意图的修复，保留校验语义。</item>
+    ///   <item>方法已存在却签名不符时，再生成同名方法会撞 CS0101，故退化为删掉实参（见
+    ///     <see cref="RemoveValidatorArgumentAsync"/>）。</item>
+    /// </list>
+    /// </remarks>
+    private static async Task<Document> FixValidatorReferenceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<RecordDeclarationSyntax>(root, diagnostic) is not { } recordDeclaration)
+        {
+            return context.Document;
+        }
+
+        var semanticModel = await context.Document.GetSemanticModelAsync(token);
+
+        if (semanticModel is null
+            || semanticModel.GetDeclaredSymbol(recordDeclaration, token) is not INamedTypeSymbol typeSymbol)
+        {
+            return context.Document;
+        }
+
+        var validatorName = GetValidatorName(typeSymbol);
+        var primitiveType = GetPrimitiveParameterType(recordDeclaration, semanticModel, token);
+
+        if (validatorName is null || primitiveType is null)
+        {
+            return context.Document;
+        }
+
+        // 方法已存在（但签名不符）时删掉实参；只有根本不存在时才生成桩，二者不可混用。
+        if (typeSymbol.GetMembers(validatorName).OfType<IMethodSymbol>().Any(member => member.IsStatic))
+        {
+            return await RemoveValidatorArgumentAsync(context, diagnostic, token);
+        }
+
+        return GenerateValidatorStub(context.Document, root, recordDeclaration, validatorName, primitiveType);
+    }
+
+    /// <summary>
+    /// 取 <c>[StronglyTypedId(Validator = …)]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    private static string? GetValidatorName(INamedTypeSymbol type)
+        => type.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute")
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "Validator")
+            .Value.Value as string;
+
+    /// <summary>
+    /// 取主构造函数唯一参数的类型（即基元 Id 类型），作为验证器桩方法的参数类型。
+    /// </summary>
+    /// <remarks>
+    /// 沿 record 的主构造函数参数列表取首个参数并用语义模型解析其类型 —— 不依赖
+    /// <c>IMethodSymbol.IsPrimaryConstructor</c>（该成员在 netstandard2.0 目标下的引用程序集里未必存在）。
+    /// </remarks>
+    private static ITypeSymbol? GetPrimitiveParameterType(
+        RecordDeclarationSyntax recordDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken token)
+    {
+        var parameter = recordDeclaration.ParameterList?.Parameters.FirstOrDefault();
+
+        return parameter?.Type is null
+            ? null
+            : semanticModel.GetTypeInfo(parameter.Type, token).Type;
+    }
+
+    /// <summary>
+    /// 在 Id 类型里生成一个符合契约的验证器桩方法，使其通过 STIAO010。
+    /// </summary>
+    /// <remarks>
+    /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：返回 <see cref="bool"/>、
+    /// 恰好一个参数且类型等于基元 Id 类型（用全限定名渲染以避免与任何同名局部类型冲突）、可见性 private
+    /// （生成代码与 Id 同 partial，可达）。<c>;</c> 结尾的声明会被就地转成带 body 的形式，最后交给
+    /// <see cref="Microsoft.CodeAnalysis.Formatting.Formatter"/> 统一缩进。
+    /// </remarks>
+    private static Document GenerateValidatorStub(
+        Document document,
+        SyntaxNode root,
+        TypeDeclarationSyntax typeDeclaration,
+        string validatorName,
+        ITypeSymbol primitiveType)
+    {
+        var typeDisplay = primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var method = SyntaxFactory.ParseMemberDeclaration($"private static bool {validatorName}({typeDisplay} value) => true;")!
+            .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+
+        var newDeclaration = typeDeclaration.OpenBraceToken.IsKind(SyntaxKind.None)
+            ? typeDeclaration
+                .WithSemicolonToken(default)
+                .WithOpenBraceToken(SyntaxFactory.Token(SyntaxKind.OpenBraceToken))
+                .WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(method))
+                .WithCloseBraceToken(SyntaxFactory.Token(SyntaxKind.CloseBraceToken)
+                    .WithTrailingTrivia(typeDeclaration.SemicolonToken.TrailingTrivia))
+            : typeDeclaration.AddMembers(method);
+
+        var formattedRoot = Microsoft.CodeAnalysis.Formatting.Formatter.Format(
+            root.ReplaceNode(typeDeclaration, newDeclaration),
+            document.Project.Solution.Workspace);
+
+        return document.WithSyntaxRoot(formattedRoot);
+    }
+
+    /// <summary>
     /// 从 <c>[StronglyTypedId]</c> 中删掉无效的 <c>Validator = …</c> 命名实参，使其通过 STIAO010。
     /// </summary>
     /// <remarks>
-    /// 这是唯一能机械化消除 STIAO010 的改动：删掉指向错误方法的实参后，验证器回退到装配级默认（或无）。
+    /// 这是 STIAO010 在「方法已存在却签名不符」时的退化修复：删掉指向错误方法的实参后，验证器回退到装配级默认（或无）。
     /// 若该实参是 attribute 里唯一实参，则连同整对括号一起删掉；否则只移除它，
     /// <see cref="SeparatedSyntaxList{TNode}.Remove"/> 会自动收拾相邻的逗号分隔符。
     /// </remarks>

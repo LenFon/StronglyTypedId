@@ -31,7 +31,12 @@ OrderId.TryParse("...", null, out var alsoParsed); // false instead of throwing
 ```
 
 Supported primitive types: `Guid`, `string`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`,
-`long`, `ulong`. Use `record struct` for a value type, `record` for a reference type.
+`long`, `ulong`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, and any `enum`. Use
+`record struct` for a value type, `record` for a reference type.
+
+String-backed ids are **interned**: equal string values share a single underlying instance, so a
+repeated id costs almost no extra memory. Interning is scoped per id type (not the global
+`string.Intern` pool), so it cannot leak memory for unbounded value sets.
 
 Point `Validator` at a static method to reject invalid values:
 
@@ -48,10 +53,21 @@ public partial record struct OrderId(Guid Value)
 All opt-in, generated only when the matching package is referenced:
 
 - **Serialization** — System.Text.Json and Newtonsoft.Json converters via a generated `[JsonConverter]`.
-- **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` in `ConfigureConventions`.
+- **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` in `ConfigureConventions`, or
+  `StronglyTypedIds.ApplyTo(modelBuilder)` from `OnModelCreating` when the context does not override
+  `ConfigureConventions`.
 - **Dapper** — `StronglyTypedIds.ApplyTo(connection)` registers `TypeHandler`s.
 - **Swashbuckle / OpenAPI** — `StronglyTypedIds.ApplyTo(options)` for `AddSwaggerGen` / `AddOpenApi`.
 - **ASP.NET Core MVC** — `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id` and `{id:OrderId}`.
+
+## Native AOT & trimming
+
+The runtime library is marked `<IsAotCompatible>true</IsAotCompatible>`: the core types and every
+generated converter avoid dynamic code generation and loading types by name, so strongly typed ids
+work in Native AOT and trimmed applications. The only reflection entry point,
+`StronglyTypedIdExtensions.TryGetPrimitiveIdType` / `GetPrimitiveIdType` / `IsStronglyTypedId`,
+is annotated with `[DynamicallyAccessedMembers(Interfaces)]` so the interface metadata that identifies
+a strongly typed id is preserved under trimming.
 
 ## License
 

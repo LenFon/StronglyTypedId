@@ -29,7 +29,9 @@ internal class AspNetCoreMvcCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules).ToList();
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
+            .Where(idInfo => !idInfo.IsInGenericContainer)
+            .ToList();
 
         // 每个 Id 注册为路由约束：路由模板里写 {id:OrderId} 即可按该 Id 的解析规则校验分段格式。
         // 同名简单名（不同命名空间）会按字典覆盖，取最后注册者——属极边缘冲突，沿用门控消歧哲学不予展开。

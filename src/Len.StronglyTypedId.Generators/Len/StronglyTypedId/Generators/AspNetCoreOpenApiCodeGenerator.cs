@@ -29,7 +29,9 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules).ToList();
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
+            .Where(idInfo => !idInfo.IsInGenericContainer)
+            .ToList();
 
         var schemaEntries = stronglyTypedIds
             .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(idInfo.PrimitiveIdTypeName)}, {GetFormatLiteral(idInfo.PrimitiveIdTypeName)}),")

@@ -22,7 +22,9 @@ internal class DapperCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules).ToList();
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
+            .Where(idInfo => !idInfo.IsInGenericContainer)
+            .ToList();
 
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
@@ -71,7 +73,7 @@ internal class DapperCodeGenerator : ICodeGenerator
                 }
                 """;
 
-            context.AddSource($"{idInfo.FullName}.Dapper.g.cs", handlerCode);
+            context.AddSource($"{idInfo.HintName}.Dapper.g.cs", handlerCode);
 
             registrations.Append($"\r\n\t\tglobal::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
         }
@@ -105,6 +107,6 @@ internal class DapperCodeGenerator : ICodeGenerator
     /// </summary>
     private static string GetHandlerName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
-            ? $"{idInfo.FullName.Replace('.', '_')}TypeHandler"
+            ? $"{idInfo.HintName.Replace('.', '_')}TypeHandler"
             : $"{idInfo.Name}TypeHandler";
 }

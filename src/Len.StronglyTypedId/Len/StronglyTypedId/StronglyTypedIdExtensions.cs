@@ -14,14 +14,14 @@ public static class StronglyTypedIdExtensions
     /// <returns>
     /// The wrapped primitive type, or <see langword="null"/> when <paramref name="type"/> is not a strongly typed id.
     /// </returns>
-    public static Type? GetPrimitiveIdType(this Type type)
+    public static Type? GetPrimitiveIdType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type)
         => type.TryGetPrimitiveIdType(out var primitiveIdType) ? primitiveIdType : null;
 
     /// <summary>
     /// Determines whether the specified type is a strongly typed id.
     /// </summary>
     /// <param name="type">The type to inspect.</param>
-    public static bool IsStronglyTypedId(this Type type) => type.TryGetPrimitiveIdType(out _);
+    public static bool IsStronglyTypedId([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type) => type.TryGetPrimitiveIdType(out _);
 
     /// <summary>
     /// Attempts to get the primitive type wrapped by the specified strongly typed id.
@@ -30,7 +30,7 @@ public static class StronglyTypedIdExtensions
     /// <param name="primitiveIdType">The wrapped primitive type when this method returns <see langword="true"/>.</param>
     /// <returns><see langword="true"/> when <paramref name="type"/> is a strongly typed id; otherwise, <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
-    public static bool TryGetPrimitiveIdType(this Type type, [NotNullWhen(true)] out Type? primitiveIdType)
+    public static bool TryGetPrimitiveIdType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type, [NotNullWhen(true)] out Type? primitiveIdType)
     {
         ArgumentNullException.ThrowIfNull(type);
 

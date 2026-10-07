@@ -76,7 +76,7 @@ internal class NewtonsoftJsonCodeGenerator : ICodeGenerator
             // 与另外两个内嵌式生成器一致地统一行尾：嵌套包装是按 \n 逐行拼出来的，
             // 与原始字符串字面量（跟随源文件行尾）相接会得到混排行尾。非嵌套时本调用是空操作，
             // 因为整段文本来自同一个字面量、行尾本就一致。
-            context.AddSource($"{idInfo.FullName}.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
+            context.AddSource($"{idInfo.HintName}.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
         }
     }
 }

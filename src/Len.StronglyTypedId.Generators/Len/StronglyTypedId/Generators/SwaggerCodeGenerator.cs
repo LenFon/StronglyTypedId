@@ -20,6 +20,7 @@ internal class SwaggerCodeGenerator : ICodeGenerator
         var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
 
         var mapTypeCalls = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
+            .Where(idInfo => !idInfo.IsInGenericContainer)
             .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo.PrimitiveIdTypeName, useOpenApiV2)});");
 
         // 生成文件必须自带 using Microsoft.Extensions.DependencyInjection：

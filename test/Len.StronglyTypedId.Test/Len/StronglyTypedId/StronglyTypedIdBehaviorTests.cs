@@ -328,5 +328,25 @@ public class StronglyTypedIdBehaviorTests
     // 以便 FluentAssertions 的扩展方法 Should() 能在静态类型上正常解析。
     private static object GetValue(object id) => ((dynamic)id).Value;
 
+    /// <summary>
+    /// string 基元的 Id 对相等的字符串取值做驻留：值相等但引用不同的两个字符串，
+    /// 经 <c>Create</c> 后会共享同一个底层字符串引用，减少重复 Id 的内存占用。
+    /// </summary>
+    [Fact]
+    public void StringId_Should_Intern_EqualValueStrings_ToSameReference()
+    {
+        // 构造两个「值相等但引用不同」的字符串：编译器不会对 new string(...) 自动驻留（与字面量区分开）。
+        var first = new string('a', 3);
+        var second = new string('a', 3);
+        ReferenceEquals(first, second).Should().BeFalse();
+
+        var left = StringId.Create(first);
+        var right = StringId.Create(second);
+
+        // 同一取值的两个实例共享底层字符串引用（内存驻留优化），且取值本身保持值相等。
+        ReferenceEquals(left.Value, right.Value).Should().BeTrue();
+        left.Value.Should().Be(second);
+    }
+
     #endregion
 }

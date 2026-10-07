@@ -655,7 +655,39 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// FixAll（BatchFixer）覆盖新修复：两个 class 各自触发 STIAO000，批处理一次性都转成 record。
+    /// STIAO010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的
+    /// 桩方法（静态、返回 bool、恰好一个参数且类型等于基元 Id 类型），而非删掉实参。
+    /// 桩方法用全限定名渲染基元类型，避免与任何同名局部类型冲突。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_GenerateValidatorStub_WhenValidatorMethodMissing()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record OrderId(Guid Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record OrderId(Guid Value)
+            {
+                private static bool Validate(global::System.Guid value) => true;
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithSpan(5, 18, 5, 46).WithArguments("Validate", "System.Guid");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
     /// 证明新修复同样走 BatchFixer 的「合并到同一语法树后整体应用」路径（与既有 TypeMustBePartial 的 FixAll 互补）。
     /// </summary>
     [Fact]

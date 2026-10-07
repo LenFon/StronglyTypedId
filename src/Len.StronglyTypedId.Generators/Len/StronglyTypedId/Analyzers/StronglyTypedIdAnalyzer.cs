@@ -81,21 +81,15 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         // 嵌套类型是被支持的：partial 的各段必须位于同一容器内，因此判定首个声明段即可。
         // 生成代码要补的是 Id 自身的成员，只能把声明逐层嵌回原本的包含类型里，因此链上每一层都必须能被
-        // 原样重开 —— 要求 partial、不能是泛型、不能是 file 本地类型。这里逐层向上判定，报错落在
+        // 原样重开 —— 要求 partial、不能是 file 本地类型。这里逐层向上判定，报错落在
         // 最内层那个不合规的容器上，即使用者真正要改的那一处；若容器都不合规而整体又不在命名空间内，
-        // 报在 Id 自己身上。泛型容器复用「不能是泛型」这条既有规则，{0} 取容器名，措辞依旧自洽。
+        // 报在 Id 自己身上。泛型容器已放开（重开的 partial 只需复现类型参数表、约束可省略），不再拦截。
         // 定位取整个类型声明（与其它类型级规则一致），而不是只标标识符：指向子片段的位置会让
         // 代码修复测试框架判定为「非本地的分析器诊断」而拒绝走修复流程。
         var container = records[0].Parent;
 
         while (container is TypeDeclarationSyntax declaration)
         {
-            if (declaration.TypeParameterList is not null)
-            {
-                Report(context, Descriptors.TypeCannotBeGeneric, declaration.GetLocation(), declaration.Identifier.ValueText);
-                return;
-            }
-
             if (!declaration.Modifiers.Any(SyntaxKind.PartialKeyword) || declaration.Modifiers.Any(SyntaxKind.FileKeyword))
             {
                 Report(context, Descriptors.ContainingTypeMustBePartial, declaration.GetLocation(), declaration.Identifier.ValueText);

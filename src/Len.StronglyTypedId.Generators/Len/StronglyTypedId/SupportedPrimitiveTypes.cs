@@ -33,7 +33,14 @@ internal static class SupportedPrimitiveTypes
         nameof(Int64),
         nameof(UInt16),
         nameof(UInt32),
-        nameof(UInt64));
+        nameof(UInt64),
+        // 时间型基元：DateTime / DateTimeOffset / TimeSpan 均实现 IParsable、IComparable、IFormattable
+        // 与 ISpanFormattable，生成逻辑（TryParse 经 ISpanParsable、格式化成员按符号判定）对它们天然适配。
+        nameof(DateTime),
+        nameof(DateTimeOffset),
+        nameof(TimeSpan),
+        // decimal 同理；其解析/格式化遵循传入的 IFormatProvider，与既有基元保持同一语义。
+        nameof(Decimal));
 
     /// <summary>
     /// 判断给定类型是否为受支持的强类型 Id 基元类型。
@@ -41,9 +48,15 @@ internal static class SupportedPrimitiveTypes
     /// <remarks>
     /// 非具名类型（数组、指针、类型参数等）不是 <see cref="INamedTypeSymbol"/>，直接判为不支持，
     /// 因此此处不会走到 <see cref="ISymbol.ContainingNamespace"/> 上。
+    /// <para>
+    /// 枚举（<see cref="TypeKind.Enum"/>）不受命名空间与简单名约束：枚举可能定义在任意命名空间，
+    /// 且一律派生自 <c>System.Enum</c>（具备 <c>IComparable</c> / <c>IFormattable</c>），其解析走
+    /// <c>Enum.TryParse&lt;TEnum&gt;</c>，与「按符号判定能力」的设计一致，故无条件支持。
+    /// </para>
     /// </remarks>
     public static bool IsSupported(ITypeSymbol type)
         => type is INamedTypeSymbol namedType
-            && namedType.ContainingNamespace.ToDisplayString() == PrimitiveNamespace
-            && _typeNames.Contains(namedType.Name);
+            && (namedType.TypeKind == TypeKind.Enum
+                || (namedType.ContainingNamespace.ToDisplayString() == PrimitiveNamespace
+                    && _typeNames.Contains(namedType.Name)));
 }

@@ -358,7 +358,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenContainingTypeIsGeneric()
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenContainingTypeIsGeneric()
     {
         var code = """"
             using System;
@@ -372,13 +372,9 @@ public class StronglyTypedIdAnalyzerTests
             }
             """";
 
-        // 泛型容器同样属于「重开不了」：重开它必须复现类型参数表与约束，而且容器一旦带上类型参数，
-        // Id 的全名就成了 Container<T>.OrderId（含 <>，连 hint name 都不合法）。故不支持，
-        // 复用「不能是泛型」这条既有规则的措辞，{0} 取容器名，读起来依旧自洽。
-        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeGeneric)
-            .WithSpan(5, 1, 9, 2).WithArguments("Container");
-
-        await Verify.VerifyAnalyzerAsync(code, expected);
+        // 泛型容器现已放开：重开的 partial 只需复现类型参数表（约束子句可省略），hint 名经净化去掉尖括号，
+        // 因此不再报 STIAO003。这里验证分析器对泛型容器不再产生任何诊断。
+        await Verify.VerifyAnalyzerAsync(code);
     }
 
     [Fact]

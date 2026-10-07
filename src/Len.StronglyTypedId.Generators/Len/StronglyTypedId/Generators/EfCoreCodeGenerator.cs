@@ -17,7 +17,9 @@ internal class EfCoreCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules).ToList();
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
+            .Where(idInfo => !idInfo.IsInGenericContainer)
+            .ToList();
 
         // 不同命名空间下的同名强类型 Id 都会生成进同一个 StronglyTypedIds 类：转换器若只取短名，
         // 二者就相互冲突（CS0102）。仅在确实出现同名时才用「命名空间_类型名」消歧，以免改动
@@ -29,6 +31,7 @@ internal class EfCoreCodeGenerator : ICodeGenerator
             .ToImmutableHashSet(StringComparer.Ordinal);
 
         var registrations = new StringBuilder();
+        var modelBuilderRegistrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
@@ -58,20 +61,44 @@ internal class EfCoreCodeGenerator : ICodeGenerator
                         }
 
                         /// <summary>
-                        /// Apply the {{idInfo.Name}} converter to the EntityFramework Core.
+                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core via conventions.
+                        /// Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
                         /// </summary>
                         /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                         [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                         [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(EfCoreCodeGenerator)}}", "{{version}}")]
                         public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder) =>
                             configurationBuilder.Properties<{{idInfo.FullyQualifiedName}}>().HaveConversion(typeof({{converterName}}));
+
+                        /// <summary>
+                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model.
+                        /// Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available
+                        /// (e.g. when the context does not override <c>ConfigureConventions</c>).
+                        /// </summary>
+                        /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
+                        [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                        [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(EfCoreCodeGenerator)}}", "{{version}}")]
+                        public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)
+                        {
+                            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+                            {
+                                foreach (var property in entityType.GetProperties())
+                                {
+                                    if (property.ClrType == typeof({{idInfo.FullyQualifiedName}}))
+                                    {
+                                        property.SetValueConverter(new {{converterName}}());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 """;
 
-            context.AddSource($"{idInfo.FullName}.EntityFrameworkCore.g.cs", converterCode);
+            context.AddSource($"{idInfo.HintName}.EntityFrameworkCore.g.cs", converterCode);
 
             registrations.Append($"\r\n\t\t{converterName}.ApplyTo(configurationBuilder);");
+            modelBuilderRegistrations.Append($"\r\n\t\t{converterName}.ApplyTo(modelBuilder);");
         }
 
         var registrationCode = $$"""
@@ -84,13 +111,25 @@ internal class EfCoreCodeGenerator : ICodeGenerator
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
-                /// Employ strongly typed IDs in Entity Framework Core.
+                /// Employ strongly typed IDs in Entity Framework Core via conventions.
                 /// </summary>
                 /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                 [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(EfCoreCodeGenerator)}}", "{{version}}")]
                 public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
                 {{{registrations}}
+                }
+
+                /// <summary>
+                /// Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from
+                /// <c>OnModelCreating(ModelBuilder)</c> when the context does not override
+                /// <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
+                /// </summary>
+                /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
+                [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("{{nameof(EfCoreCodeGenerator)}}", "{{version}}")]
+                public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)
+                {{{modelBuilderRegistrations}}
                 }
             }
             """;
@@ -114,6 +153,6 @@ internal class EfCoreCodeGenerator : ICodeGenerator
     /// </remarks>
     private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
-            ? $"{idInfo.FullName.Replace('.', '_')}Converter"
+            ? $"{idInfo.HintName.Replace('.', '_')}Converter"
             : $"{idInfo.Name}Converter";
 }

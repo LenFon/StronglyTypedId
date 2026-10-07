@@ -97,7 +97,7 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
 
             var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-            context.AddSource($"{idInfo.FullName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
+            context.AddSource($"{idInfo.HintName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
         }
     }
 
@@ -107,11 +107,15 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
     /// <remarks>
     /// 受支持的基元类型里除 <c>string</c> 外都实现了 <c>IFormattable</c>，这里以其为准取「不变文化」的文本形式：
     /// 属性名的格式不应随当前区域性漂移，否则同一份数据在不同区域设置下会写出不同的键。
+    /// 枚举例外：<c>System.Enum</c> 的 <c>ToString(string, IFormatProvider)</c> 已被标记
+    /// [Obsolete]（provider 参数被忽略），用它会触发 CS0618，故枚举直接走无参 <c>ToString()</c>。
     /// </remarks>
     private static string GetPropertyNameExpression(StronglyTypedIdInfo idInfo)
         => idInfo.IsStringPrimitive
             ? "primitiveId"
-            : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
+            : idInfo.IsEnum
+                ? "primitiveId.ToString()"
+                : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
 
     /// <summary>
     /// 生成 <c>ReadAsPropertyName</c> 成员，整体拼接在最后一个成员的同一行行尾。

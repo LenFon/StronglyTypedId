@@ -95,6 +95,8 @@ internal readonly record struct StronglyTypedIdInfo
         var containingTypes = GetContainingTypeDeclarations(type);
         ContainingTypeDeclarations = containingTypes.Declarations;
         NestingDepth = containingTypes.Depth;
+        IsInGenericContainer = containingTypes.IsInGenericContainer;
+        HintName = SanitizeHintName(FullName);
 
         var primitiveIdType = GetPrimitiveIdType(type);
 
@@ -103,8 +105,15 @@ internal readonly record struct StronglyTypedIdInfo
         // 各项能力都由基元类型的符号判定，而非按类型名硬编码分支：与 SupportedPrimitiveTypes 保持同一取向
         // —— 判据落在符号上，类型名只用于展示。
         IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
-        IsFormattable = ImplementsInterface(primitiveIdType, FormattableName);
-        IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName);
+        IsEnum = primitiveIdType.TypeKind == TypeKind.Enum;
+        // 枚举虽从 System.Enum 继承了 IFormattable，但其 ToString(string, IFormatProvider) 已被标记
+        // [Obsolete]（provider 参数被忽略），生成该成员会触发 CS0618 且毫无收益，故枚举不走 IFormattable 分支。
+        // 枚举虽从 System.Enum 继承了 IFormattable / ISpanFormattable（后者派生于前者），但其
+        // ToString(string, IFormatProvider) 已被标记 [Obsolete]（provider 参数被忽略）。若仍透出这两个接口，
+        // 生成 IFormattable.ToString 会触发 CS0618，且不生成又会因 ISpanFormattable 派生于 IFormattable 而
+        // 招来 CS0535。故枚举两者都不走 —— 枚举 Id 仍保留 IComparable / IParsable / ISpanParsable 等能力。
+        IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
+        IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName) && !IsEnum;
         IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName);
         IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
         ValidatorName = GetValidatorName(type) ?? defaultValidatorName;
@@ -165,6 +174,27 @@ internal readonly record struct StronglyTypedIdInfo
     public int NestingDepth { get; }
 
     /// <summary>
+    /// 可作为生成源 hint 名的类型显示名：派生自 <see cref="FullName"/>，但剔除尖括号、逗号与空格，
+    /// 使泛型包含类型（例如 <c>Container&lt;T&gt;.OrderId</c>）也能得到合法且稳定的 hint 名
+    /// （<c>ContainerT.OrderId</c>）。非泛型类型与 <see cref="FullName"/> 完全相同。
+    /// </summary>
+    /// <remarks>
+    /// hint 名里出现 <c>&lt;&gt;</c> 既非法又会让 <c>AddSource</c> 去重失效；而同一编译单元内至多只存在
+    /// 一个开放泛型的包含类型声明，故剥离类型参数不会造成命名冲突。
+    /// </remarks>
+    public string HintName { get; }
+
+    /// <summary>
+    /// 强类型 Id 是否声明在泛型包含类型内部。
+    /// </summary>
+    /// <remarks>
+    /// 泛型包含类型无法被生成代码从外部按全名引用（开放类型不能用作类型实参），
+    /// 因此 EF Core / Swagger / Dapper 等需要外部引用 Id 类型的集成生成器会跳过此类 Id，
+    /// 仅核心生成器仍把它们逐层嵌回包含类型。
+    /// </remarks>
+    public bool IsInGenericContainer { get; }
+
+    /// <summary>
     /// The type kind suffix appended right after the <c>record</c> keyword, e.g. <c>" struct"</c>.
     /// </summary>
     /// <remarks>
@@ -191,6 +221,16 @@ internal readonly record struct StronglyTypedIdInfo
     /// 判据取自符号的 <see cref="ITypeSymbol.SpecialType"/>，不比较 <see cref="PrimitiveIdTypeName"/> 的字面量。
     /// </remarks>
     public bool IsStringPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否为枚举。
+    /// </summary>
+    /// <remarks>
+    /// 枚举没有 <c>TryParse(string, IFormatProvider, out T)</c> 这样的静态解析入口，必须改走
+    /// <c>System.Enum.TryParse&lt;TEnum&gt;</c>；其余能力（<c>IComparable</c> / <c>IFormattable</c>）由
+    /// <see cref="System.Enum"/> 基类提供，故解析分支外的生成逻辑对其与普通基元一致。
+    /// </remarks>
+    public bool IsEnum { get; }
 
     /// <summary>
     /// 基元类型是否实现 <c>System.IFormattable</c>。
@@ -306,19 +346,25 @@ internal readonly record struct StronglyTypedIdInfo
     /// 而集合类型（如 <c>ImmutableArray&lt;T&gt;</c>）只按底层数组引用比较 —— 一旦相等性失效，同一个
     /// hint name 会被 <c>AddSource</c> 两次，生成器整个产出被丢弃，而编译器只报一条 CS8785 警告。
     /// </remarks>
-    private static (string Declarations, int Depth) GetContainingTypeDeclarations(ITypeSymbol type)
+    private static (string Declarations, int Depth, bool IsInGenericContainer) GetContainingTypeDeclarations(ITypeSymbol type)
     {
         var levels = new List<string>();
+        var isInGenericContainer = false;
 
         for (var container = type.ContainingType; container is not null; container = container.ContainingType)
         {
+            if (container.TypeParameters.Length > 0)
+            {
+                isInGenericContainer = true;
+            }
+
             levels.Add(GetContainingTypeDeclaration(container));
         }
 
         // 向上取到的是最内层在前，而生成代码要从最外层开始逐层包进去。
         levels.Reverse();
 
-        return (string.Join("\n", levels), levels.Count);
+        return (string.Join("\n", levels), levels.Count, isInGenericContainer);
     }
 
     /// <summary>
@@ -353,8 +399,25 @@ internal readonly record struct StronglyTypedIdInfo
             _ => "class",
         };
 
-        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {type.Name}";
+        // 重开的 partial 必须重复类型参数表（否则 CS0693），但约束子句只需在任一 partial 上声明一次，
+        // 故此处只写类型参数名、省略 where 子句 —— 既避开「逐类型复刻约束」的复杂度，
+        // 也保证生成的重开段必然合法（约束在用户声明段上已经写明）。
+        var typeParameterList = type.TypeParameters.Length > 0
+            ? "<" + string.Join(", ", type.TypeParameters.Select(parameter => parameter.Name)) + ">"
+            : string.Empty;
+
+        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {type.Name}{typeParameterList}";
     }
+
+    /// <summary>
+    /// 把类型显示名净化成合法的 hint 名：剔除尖括号、逗号与空格。
+    /// </summary>
+    private static string SanitizeHintName(string fullName)
+        => fullName
+            .Replace("<", string.Empty)
+            .Replace(">", string.Empty)
+            .Replace(",", string.Empty)
+            .Replace(" ", string.Empty);
 
     /// <summary>
     /// 把符号的可访问性渲染成 C# 关键字。

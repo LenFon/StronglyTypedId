@@ -9,7 +9,7 @@ namespace Len.StronglyTypedId;
 /// <typeparam name="TPrimitiveId">The underlying primitive type wrapped by the strongly typed id.</typeparam>
 public interface IStronglyTypedId<TSelf, TPrimitiveId> : IParsable<TSelf>, IEqualityOperators<TSelf, TSelf, bool>
     where TSelf : IStronglyTypedId<TSelf, TPrimitiveId>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
-    where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>
+    where TPrimitiveId : notnull, IComparable
 {
     /// <summary>
     /// Gets the underlying primitive value wrapped by the strongly typed id.
