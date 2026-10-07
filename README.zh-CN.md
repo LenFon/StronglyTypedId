@@ -53,6 +53,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **`TryCreate` 工厂** —— `Create` 的非抛异常版本：解析失败返回 `false`，`result` 为 `default`，而不是抛异常。
 - **UTF-8 接口** —— 对支持相应接口的基元类型（如 .NET 10 的 `Guid`）自动生成 `IUtf8SpanFormattable` 与
   `IUtf8SpanParsable<TSelf>`，可直接以 `ReadOnlySpan<byte>` 解析 / 格式化。
+- **字符串驻留** —— 以 `string` 为基元的 Id，相等字符串值会共享同一份底层实例（每 Id 类型一个缓存，
+  而非进程级的 `string.Intern` 池），因此重复 Id 几乎不额外占内存，且对取值无界的情况也绝不会内存泄漏。
 - **逐类型类型转换器** —— 用 `[StronglyTypedId(TypeConverter = true)]` 开启后，生成的嵌套 `TypeConverter`
   经 `TypeDescriptor` 在字符串与强类型 Id 间往返，覆盖配置绑定 / `XmlSerializer` 等场景。
 - **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
@@ -64,6 +66,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **Entity Framework Core** —— 在需要时生成 EF Core（≥ 7.0.0）值转换器。
 - **Swagger / OpenAPI** —— 在引用 Swashbuckle.AspNetCore 时生成架构映射，同时兼容 Microsoft.OpenApi 1.x 与 2.x。
 - **运行时反射助手** —— 可在运行时判断任意类型是否为强类型 Id，并取回其底层基元类型。
+- **原生 AOT 与裁剪** —— 运行时库标记为 AOT 兼容，且避免按名字加载类型或生成动态代码，因此强类型 Id
+  在 Native AOT 与经过裁剪的应用程序中同样可用。
 - **零第三方依赖** —— 包内仅包含生成器/分析器程序集，以及一个很小的运行时库，不会往你的依赖图里塞任何东西。
 
 <a id="requirements"></a>
@@ -135,21 +139,29 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 
 被包装的 `Value` 参数可以是以下类型之一：
 
-| C# 类型   | 声明示例                                   |
-| --------- | ------------------------------------------ |
-| `Guid`    | `record struct OrderId(Guid Value)`         |
-| `string`  | `record UserId(string Value)`               |
-| `byte`    | `record struct ByteId(byte Value)`          |
-| `sbyte`   | `record struct SByteId(sbyte Value)`        |
-| `short`   | `record struct ShortId(short Value)`        |
-| `ushort`  | `record struct UShortId(ushort Value)`       |
-| `int`     | `record struct ProductId(int Value)`        |
-| `uint`    | `record struct UIntId(uint Value)`           |
-| `long`    | `record struct LongId(long Value)`          |
-| `ulong`   | `record struct ULongId(ulong Value)`        |
+| C# 类型          | 声明示例                                     |
+| ---------------- | -------------------------------------------- |
+| `Guid`           | `record struct OrderId(Guid Value)`           |
+| `string`         | `record UserId(string Value)`                 |
+| `byte`           | `record struct ByteId(byte Value)`            |
+| `sbyte`          | `record struct SByteId(sbyte Value)`          |
+| `short`          | `record struct ShortId(short Value)`          |
+| `ushort`         | `record struct UShortId(ushort Value)`        |
+| `int`            | `record struct ProductId(int Value)`          |
+| `uint`           | `record struct UIntId(uint Value)`            |
+| `long`           | `record struct LongId(long Value)`            |
+| `ulong`          | `record struct ULongId(ulong Value)`          |
+| `decimal`        | `record struct Money(decimal Value)`          |
+| `DateTime`       | `record EventId(DateTime Value)`              |
+| `DateTimeOffset` | `record EventId(DateTimeOffset Value)`        |
+| `TimeSpan`       | `record DurationId(TimeSpan Value)`           |
+| 任意 `enum`      | `record StatusId(Status Value)`              |
 
 类型按名称匹配，因此写成 `System.Guid`（或使用别名/using）效果完全相同。仅识别上表中的类型——
-你自己定义的、恰好也叫 `Guid` 的类型并不受支持，会被 [STIAO008](#diagnostics) 拒绝。
+你自己定义的、恰好也叫 `Guid` 的类型并不受支持，会被 [STIAO008](#diagnostics) 拒绝。任意 `enum` 同样受支持：
+枚举 Id 通过 `Enum.TryParse<TEnum>` 解析，并保留 `IComparable<TSelf>`、`IParsable<TSelf>` 与
+`ISpanParsable<TSelf>`，但会省略 `IFormattable`/`ISpanFormattable`，因为 `Enum.ToString(string,
+IFormatProvider)` 已被标记过时。
 
 <a id="what-gets-generated"></a>
 
@@ -164,7 +176,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 | 始终                                                                                  | 核心实现 → `<命名空间>.<类型名>.g.cs`                                                |
 | 引用了 `System.Text.Json`                                                             | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`    |
 | 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`    |
-| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
 | 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
 | 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
@@ -185,7 +197,13 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。
 - 返回被包装值文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
   以及基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+- 以 `string` 为基元的 Id 会驻留相等的字符串值：相等的字符串会按 Id 类型共享同一份底层存储
+  （使用每类型的小缓存，而非进程级的 `string.Intern` 池），因此重复 Id 几乎不再额外占内存。
 - 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
+
+枚举型 Id 保留 `IComparable<TSelf>`、`IParsable<TSelf>` 与 `ISpanParsable<TSelf>`（解析走
+`Enum.TryParse<TEnum>`），但刻意省略 `IFormattable`/`ISpanFormattable`，因为 `Enum` 的
+`ToString(string, IFormatProvider)` 已被标记过时——其 `ToString()` 直接返回底层值的文本。
 
 各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
 `internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，两个 `ApplyTo`
@@ -289,15 +307,18 @@ public partial class OrderAggregate          // 容器必须 partial
 var id = OrderAggregate.OrderId.Create(value);   // 按嵌套名使用，与普通类型无异
 ```
 
-前置条件只有一条：**包含类型必须都能被生成代码原样重开**——链上每一层都必须是 `partial`、不是泛型、
+前置条件只有一条：**包含类型必须都能被生成代码原样重开**——链上每一层都必须是 `partial`、
 也不是 `file` 本地类型。不满足时由 [STIAO009](#diagnostics)（缺 `partial`，或 `file` 本地类型）
-或 [STIAO003](#diagnostics)（泛型容器）报错，前者附带补 `partial` 的代码修复。
+报错，并附带补 `partial` 的代码修复。
 
-限制：容器不能带类型参数。重开 `Outer<T>` 需要复现它的类型参数表与约束，而且 `Outer<T>.OrderId`
-这样的全名带 `<>`，无法作为生成文件的名称。
+**泛型容器。** 包含类型可以是泛型（例如 `Outer<T>`）：生成器会带着它的类型参数表把声明重开，
+因此声明在泛型容器里的 Id 能正常编译，并保留核心生成器产出的全部能力——比较与排序、格式化与 span
+解析、两种 JSON 序列化、System.Text.Json 字典键。但需要从外部按名字引用 Id 类型的集成（EF Core、
+Swagger、Dapper、MVC、OpenAPI）会跳过声明在泛型容器里的 Id，因为开放泛型类型无法在生成的
+`StronglyTypedIds` 入口里按名字引用；对于这些集成，请把 Id 声明在命名空间层级或非泛型容器里。
 
-嵌套不影响其它任何能力：比较与排序、格式化与 span 解析、两种 JSON 序列化、
-System.Text.Json 字典键、EF Core 转换器与 Swagger `MapType` 都照常工作。
+嵌套不影响核心能力：比较与排序、格式化与 span 解析、两种 JSON 序列化、System.Text.Json 字典键
+都照常工作。EF Core、Swagger、Dapper、MVC、OpenAPI 等集成会跳过声明在泛型容器里的 Id（见上）。
 
 <a id="serialization"></a>
 
@@ -360,11 +381,22 @@ protected override void ConfigureConventions(ModelConfigurationBuilder configura
     // 注册之后，常规的约定配置依旧对某个 Id 生效。
     configurationBuilder.Properties<UserId>().HaveMaxLength(100);
 }
+
+除基于约定的注册外，还一并生成了一个按模型扫描的重载，便于你从 `OnModelCreating` 而非约定注册转换器：
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    base.OnModelCreating(modelBuilder);
+
+    // 遍历每个实体的属性，凡是 CLR 类型为强类型 Id 的就挂上生成的转换器。
+    StronglyTypedIds.ApplyTo(modelBuilder);
+}
 ```
 
-> EF Core 转换器只在 `DbContext` 重写了 `ConfigureConventions` 时才会生成，因此
-> `StronglyTypedIds.ApplyTo(...)` 恰好在你能够调用它时才可用。仅仅引用
-> `Microsoft.EntityFrameworkCore` 是不够的。
+> EF Core 集成（上面两个 `ApplyTo` 重载）只在 `DbContext` 重写了 `ConfigureConventions` 且引用了
+> EF Core ≥ 7.0.0 时才会生成，因此 `StronglyTypedIds.ApplyTo(...)` 恰好在你能够调用它时才可用。
+> 仅仅引用 `Microsoft.EntityFrameworkCore` 是不够的。
 
 每个 Id 都会得到一个嵌套在生成的 `StronglyTypedIds` 类中的 `ValueConverter<{Id}, {基元类型}>`，类名
 默认为 `{类型名}Converter`。若不同命名空间下存在同名 Id，两者在该类中的类名会相互冲突（CS0102），
@@ -390,18 +422,23 @@ services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
 只要引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 就会生成该映射，且同时兼容
 Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及更高版本）。
 
-| 基元类型   | OpenAPI `type` | `format` |
-| ---------- | -------------- | -------- |
-| `Guid`     | `string`       | `uuid`   |
-| `string`   | `string`       | —        |
-| `byte`     | `integer`      | `byte`   |
-| `sbyte`    | `integer`      | `sbyte`  |
-| `short`    | `integer`      | `int16`  |
-| `ushort`   | `integer`      | `uint16` |
-| `int`      | `integer`      | `int32`  |
-| `uint`     | `integer`      | `uint32` |
-| `long`     | `integer`      | `int64`  |
-| `ulong`    | `integer`      | `uint64` |
+| 基元类型          | OpenAPI `type` | `format` |
+| ---------------- | -------------- | -------- |
+| `Guid`           | `string`       | `uuid`   |
+| `string`         | `string`       | —        |
+| `byte`           | `integer`      | `byte`   |
+| `sbyte`          | `integer`      | `sbyte`  |
+| `short`          | `integer`      | `int16`  |
+| `ushort`         | `integer`      | `uint16` |
+| `int`            | `integer`      | `int32`  |
+| `uint`           | `integer`      | `uint32` |
+| `long`           | `integer`      | `int64`  |
+| `ulong`          | `integer`      | `uint64` |
+| `decimal`        | `string`       | —        |
+| `DateTime`       | `string`       | —        |
+| `DateTimeOffset` | `string`       | —        |
+| `TimeSpan`       | `string`       | —        |
+| 任意 `enum`      | `string`       | —        |
 
 <a id="dapper"></a>
 

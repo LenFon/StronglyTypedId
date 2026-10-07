@@ -56,6 +56,9 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **UTF-8 interfaces** — for primitives that expose them (`Guid` from .NET 10, for example),
   `IUtf8SpanFormattable` and `IUtf8SpanParsable<TSelf>` are generated automatically, enabling
   `ReadOnlySpan<byte>` parsing and formatting.
+- **String interning** — for `string`-backed ids, equal values share a single underlying instance
+  per id type (via a per-type cache, not the process-wide `string.Intern` pool), so repeated ids
+  add almost no extra memory and can never leak for unbounded value sets.
 - **Per-type TypeConverter** — set `[StronglyTypedId(TypeConverter = true)]` to emit a nested `TypeConverter`
   that round-trips between string and the id through `TypeDescriptor`, covering config binding /
   `XmlSerializer` scenarios.
@@ -71,6 +74,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **Swagger / OpenAPI** — schema mappings for Swashbuckle.AspNetCore are generated when referenced,
   for both Microsoft.OpenApi 1.x and 2.x.
 - **Runtime reflection helpers** — inspect any type at runtime and get the primitive id behind it.
+- **Native AOT & trimming** — the runtime library is marked AOT-compatible and avoids loading types by
+  name or emitting dynamic code, so strongly typed ids work in Native AOT and trimmed applications.
 - **Zero third-party dependencies** — the package ships only the generator/analyzer assembly plus a
   small runtime library; nothing is added to your application's dependency graph.
 
@@ -145,22 +150,30 @@ the generator's much lower `netstandard2.0` baseline.
 
 The wrapped `Value` parameter may be one of:
 
-| C# type    | Example declaration                          |
-| ---------- | -------------------------------------------- |
-| `Guid`     | `record struct OrderId(Guid Value)`          |
-| `string`   | `record UserId(string Value)`                |
-| `byte`     | `record struct ByteId(byte Value)`           |
-| `sbyte`    | `record struct SByteId(sbyte Value)`         |
-| `short`    | `record struct ShortId(short Value)`         |
-| `ushort`   | `record struct UShortId(ushort Value)`       |
-| `int`      | `record struct ProductId(int Value)`         |
-| `uint`     | `record struct UIntId(uint Value)`           |
-| `long`     | `record struct LongId(long Value)`           |
-| `ulong`    | `record struct ULongId(ulong Value)`         |
+| C# type           | Example declaration                              |
+| ----------------- | ------------------------------------------------ |
+| `Guid`            | `record struct OrderId(Guid Value)`              |
+| `string`          | `record UserId(string Value)`                    |
+| `byte`            | `record struct ByteId(byte Value)`               |
+| `sbyte`           | `record struct SByteId(sbyte Value)`             |
+| `short`           | `record struct ShortId(short Value)`             |
+| `ushort`          | `record struct UShortId(ushort Value)`           |
+| `int`             | `record struct ProductId(int Value)`             |
+| `uint`            | `record struct UIntId(uint Value)`               |
+| `long`            | `record struct LongId(long Value)`               |
+| `ulong`           | `record struct ULongId(ulong Value)`             |
+| `decimal`         | `record struct Money(decimal Value)`             |
+| `DateTime`        | `record EventId(DateTime Value)`                 |
+| `DateTimeOffset`  | `record EventId(DateTimeOffset Value)`           |
+| `TimeSpan`        | `record DurationId(TimeSpan Value)`              |
+| any `enum`        | `record StatusId(Status Value)`                  |
 
 The type is matched by its name, so writing `System.Guid` (or an aliased using) works exactly the same.
 Only the types above are recognised — a type of your own that merely happens to be called `Guid` is not
-supported, and is rejected by [STIAO008](#diagnostics).
+supported, and is rejected by [STIAO008](#diagnostics). Any `enum` is supported as well: enum ids are
+parsed with `Enum.TryParse<TEnum>` and keep `IComparable<TSelf>`, `IParsable<TSelf>` and
+`ISpanParsable<TSelf>`, but omit `IFormattable`/`ISpanFormattable` because `Enum.ToString(string,
+IFormatProvider)` is obsolete.
 
 <a id="what-gets-generated"></a>
 
@@ -176,7 +189,7 @@ your own declaration is never modified. What is emitted depends on what the comp
 | Always                                                                                              | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                   |
 | `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`                         |
 | `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`                         |
-| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
 | `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
 | `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
@@ -198,8 +211,15 @@ The core implementation adds:
 - `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
 - `ToString()` returning the text of the wrapped value (not the record's `OrderId { Value = … }` form),
   along with `ToString(string?, IFormatProvider?)` and `TryFormat(...)` where the primitive supports them.
+- String-backed ids intern equal values: the storage for equal strings is shared per id type via a small
+  per-type cache (not the process-wide `string.Intern` pool), so repeated ids add almost no extra memory.
 - A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
   round-tripping between string and the id through `TypeDescriptor`; a `null` reference-type id resolves back to `default`.
+
+Enum-backed ids keep `IComparable<TSelf>`, `IParsable<TSelf>` and `ISpanParsable<TSelf>` (parsing uses
+`Enum.TryParse<TEnum>`), but deliberately skip `IFormattable`/`ISpanFormattable` because `Enum`'s
+`ToString(string, IFormatProvider)` is marked obsolete — their `ToString()` simply returns the
+underlying value's text.
 
 The integration entry points are emitted into a single generated class —
 `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
@@ -313,17 +333,20 @@ var id = OrderAggregate.OrderId.Create(value);   // used through its nested name
 ```
 
 The only prerequisite is that **every containing type can be reopened verbatim** by the generated code:
-each level must be `partial`, non-generic, and not a `file`-local type. Violations are reported by
-[STIAO009](#diagnostics) (missing `partial`, or `file`-local) and [STIAO003](#diagnostics) (generic
-container); the former comes with a code fix that adds `partial`.
+each level must be `partial` and not a `file`-local type. Violations are reported by
+[STIAO009](#diagnostics) (missing `partial`, or `file`-local), which comes with a code fix that adds `partial`.
 
-Limitation: containing types cannot be generic. Reopening `Outer<T>` would require reproducing its type
-parameter list and constraints, and a full name such as `Outer<T>.OrderId` contains `<>`, which is not
-a legal generated file name.
+**Generic containers.** The containing type may be generic (for example `Outer<T>`): the generator
+reopens it with its type parameter list, so an id declared inside a generic container compiles and keeps
+every capability the core generator produces — comparison and ordering, formatting and span parsing, both
+JSON serializers, and System.Text.Json dictionary keys. The external-reference integrations — EF Core,
+Swagger, Dapper, MVC and OpenAPI — skip ids declared inside generic containers, because an open generic
+type cannot be referenced by name from the generated `StronglyTypedIds` entry points; for those, declare
+the id at namespace level or in a non-generic container.
 
-Nesting does not affect any other capability: comparison and ordering, formatting and span parsing,
-both JSON serializers, System.Text.Json dictionary keys, EF Core converters and Swagger `MapType` all
-work as usual.
+Nesting does not affect the core capabilities: comparison and ordering, formatting and span parsing,
+both JSON serializers and System.Text.Json dictionary keys all work as usual. The EF Core, Swagger,
+Dapper, MVC and OpenAPI integrations skip ids declared inside generic containers (see above).
 
 <a id="serialization"></a>
 
@@ -390,11 +413,23 @@ protected override void ConfigureConventions(ModelConfigurationBuilder configura
     // Convention configuration still applies to an id after it has been registered.
     configurationBuilder.Properties<UserId>().HaveMaxLength(100);
 }
+
+A model-scanning overload is generated alongside it, in case you prefer to register converters from
+`OnModelCreating` instead of conventions:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    base.OnModelCreating(modelBuilder);
+
+    // Walks every entity's properties and assigns the generated converter wherever the CLR type is a strongly typed id.
+    StronglyTypedIds.ApplyTo(modelBuilder);
+}
 ```
 
-> The EF Core converters are generated only when a `DbContext` overrides `ConfigureConventions`, so
-> `StronglyTypedIds.ApplyTo(...)` is available exactly when you can call it. Referencing
-> `Microsoft.EntityFrameworkCore` alone is not enough.
+> The EF Core integration (both `ApplyTo` overloads above) is generated only when a `DbContext` overrides
+> `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced, so `StronglyTypedIds.ApplyTo(...)` is available
+> exactly when you can call it. Referencing `Microsoft.EntityFrameworkCore` alone is not enough.
 
 Each id gets a `ValueConverter<{Id}, {Primitive}>` nested in the generated `StronglyTypedIds` class, named
 `{TypeName}Converter`. If two ids with the same short name exist in different namespaces, the converter
@@ -424,16 +459,21 @@ with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.
 
 | Primitive  | OpenAPI `type` | `format` |
 | ---------- | -------------- | -------- |
-| `Guid`     | `string`       | `uuid`   |
-| `string`   | `string`       | —        |
-| `byte`     | `integer`      | `byte`   |
-| `sbyte`    | `integer`      | `sbyte`  |
-| `short`    | `integer`      | `int16`  |
-| `ushort`   | `integer`      | `uint16` |
-| `int`      | `integer`      | `int32`  |
-| `uint`     | `integer`      | `uint32` |
-| `long`     | `integer`      | `int64`  |
-| `ulong`    | `integer`      | `uint64` |
+| `Guid`            | `string`       | `uuid`   |
+| `string`          | `string`       | —        |
+| `byte`            | `integer`      | `byte`   |
+| `sbyte`           | `integer`      | `sbyte`  |
+| `short`           | `integer`      | `int16`  |
+| `ushort`          | `integer`      | `uint16` |
+| `int`             | `integer`      | `int32`  |
+| `uint`            | `integer`      | `uint32` |
+| `long`            | `integer`      | `int64`  |
+| `ulong`           | `integer`      | `uint64` |
+| `decimal`         | `string`       | —        |
+| `DateTime`        | `string`       | —        |
+| `DateTimeOffset`  | `string`       | —        |
+| `TimeSpan`        | `string`       | —        |
+| any `enum`        | `string`       | —        |
 
 <a id="dapper"></a>
 

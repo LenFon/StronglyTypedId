@@ -53,9 +53,9 @@ public partial record struct OrderId(Guid Value)
 All opt-in, generated only when the matching package is referenced:
 
 - **Serialization** — System.Text.Json and Newtonsoft.Json converters via a generated `[JsonConverter]`.
-- **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` in `ConfigureConventions`, or
-  `StronglyTypedIds.ApplyTo(modelBuilder)` from `OnModelCreating` when the context does not override
-  `ConfigureConventions`.
+- **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` from `ConfigureConventions`, plus a
+  model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from `OnModelCreating`. Both overloads are
+  generated together whenever a `DbContext` overrides `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced.
 - **Dapper** — `StronglyTypedIds.ApplyTo(connection)` registers `TypeHandler`s.
 - **Swashbuckle / OpenAPI** — `StronglyTypedIds.ApplyTo(options)` for `AddSwaggerGen` / `AddOpenApi`.
 - **ASP.NET Core MVC** — `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id` and `{id:OrderId}`.
