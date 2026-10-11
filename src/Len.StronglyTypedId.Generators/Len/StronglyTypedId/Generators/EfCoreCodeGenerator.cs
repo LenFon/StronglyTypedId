@@ -17,8 +17,7 @@ internal class EfCoreCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
-            .Where(idInfo => !idInfo.IsInGenericContainer)
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
             .ToList();
 
         // 不同命名空间下的同名强类型 Id 都会生成进同一个 StronglyTypedIds 类：转换器若只取短名，

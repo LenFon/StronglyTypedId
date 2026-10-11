@@ -111,7 +111,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         SourceProductionContext context,
         (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
     {
-        var generators = GetCodeGenerators(args.Modules);
+        var generators = GetCoreGenerators(args.Modules);
 
         if (generators.IsDefaultOrEmpty)
         {
@@ -138,65 +138,86 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         var (infos, modules) = args.IdsAndModules;
 
-        GetEfCoreCodeGenerator(modules)?.Generate(infos, modules, context, _version);
+        GetIntegrationGenerator(modules, "Microsoft.EntityFrameworkCore.dll")?.Generate(infos, modules, context, _version);
     }
 
     private static void GenerateSwaggerCode(
         SourceProductionContext context,
         (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
     {
-        GetSwaggerCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+        GetIntegrationGenerator(args.Modules, "Swashbuckle.AspNetCore.SwaggerGen.dll")?.Generate(args.Infos, args.Modules, context, _version);
     }
 
     private static void GenerateDapperCode(
         SourceProductionContext context,
         (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
     {
-        GetDapperCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+        GetIntegrationGenerator(args.Modules, "Dapper.dll")?.Generate(args.Infos, args.Modules, context, _version);
     }
 
     private static void GenerateAspNetCoreOpenApiCode(
         SourceProductionContext context,
         (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
     {
-        GetAspNetCoreOpenApiCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+        GetIntegrationGenerator(args.Modules, "Microsoft.AspNetCore.OpenApi.dll")?.Generate(args.Infos, args.Modules, context, _version);
     }
 
     private static void GenerateAspNetCoreMvcCode(
         SourceProductionContext context,
         (ImmutableArray<StronglyTypedIdInfo> Infos, ImmutableArray<ModuleInfo> Modules) args)
     {
-        GetAspNetCoreMvcCodeGenerator(args.Modules)?.Generate(args.Infos, args.Modules, context, _version);
+        GetIntegrationGenerator(args.Modules, "Microsoft.AspNetCore.Mvc.dll")?.Generate(args.Infos, args.Modules, context, _version);
     }
 
-    private static ImmutableArray<ICodeGenerator> GetCodeGenerators(ImmutableArray<ModuleInfo> modules)
-    {
-        var codeGenerators = modules
-            .Select(module => module switch
-            {
-                { Name: "System.Text.Json.dll" } => SystemTextJsonCodeGenerator.Instance,
-                { Name: "Len.StronglyTypedId.dll" } => StronglyTypedIdCodeGenerator.Instance,
-                { Name: "Newtonsoft.Json.dll", Version.Major: >= 13 } => NewtonsoftJsonCodeGenerator.Instance,
-                _ => null,
-            })
-            .OfType<ICodeGenerator>();
-
-        return [.. codeGenerators];
-    }
-
-    private static ICodeGenerator? GetEfCoreCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
-        modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7) ? EfCoreCodeGenerator.Instance : null;
-
-    private static ICodeGenerator? GetSwaggerCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
-        modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6) ? SwaggerCodeGenerator.Instance : null;
-
-    private static ICodeGenerator? GetDapperCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
-        modules.HasModule("Dapper.dll", 2) ? DapperCodeGenerator.Instance : null;
-
-    private static ICodeGenerator? GetAspNetCoreOpenApiCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
-        modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9) ? AspNetCoreOpenApiCodeGenerator.Instance : null;
-
-    private static ICodeGenerator? GetAspNetCoreMvcCodeGenerator(ImmutableArray<ModuleInfo> modules) =>
+    /// <summary>
+    /// 代码生成器的模块闸门登记：把「引用了哪个程序集才启用哪个生成器」集中在一处表达
+    /// （Factory + Strategy），取代原先散落在 GetCodeGenerators / GetEfCoreCodeGenerator 等处的重复判定。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 每条登记携带一个 <see cref="CodeGeneratorRegistration.IsEnabled"/> 谓词，逐字复刻原有的门控语义
+    /// （含核心生成器的大小写敏感差异），以保证重构前后生成产物字节级一致。
+    /// </para>
+    /// <para>
+    /// <see cref="CodeGeneratorRegistration.IsCore"/> 区分两类生成器：核心生成器（运行时实现 /
+    /// System.Text.Json / Newtonsoft.Json）随引用自动批量启用；集成生成器（EF Core / Swagger / Dapper /
+    /// 内置 OpenAPI / MVC）各自按引用程序集独立门控。
+    /// </para>
+    /// </remarks>
+    private static readonly ImmutableArray<CodeGeneratorRegistration> GeneratorCatalog = ImmutableArray.Create(
+        // 核心生成器：原 switch 按模块名精确匹配（区分大小写），此处用同样的 Any(m => m.Name == …) 复刻。
+        new CodeGeneratorRegistration(
+            "Len.StronglyTypedId.dll",
+            static modules => modules.Any(static module => module.Name == "Len.StronglyTypedId.dll"),
+            StronglyTypedIdCodeGenerator.Instance,
+            isCore: true),
+        new CodeGeneratorRegistration(
+            "System.Text.Json.dll",
+            static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
+            SystemTextJsonCodeGenerator.Instance,
+            isCore: true),
+        new CodeGeneratorRegistration(
+            "Newtonsoft.Json.dll",
+            static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
+            NewtonsoftJsonCodeGenerator.Instance,
+            isCore: true),
+        // 集成生成器：HasModule 本身按 OrdinalIgnoreCase 比较（模块名取自元数据读取器，大小写未必规范）。
+        new CodeGeneratorRegistration(
+            "Microsoft.EntityFrameworkCore.dll",
+            static modules => modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7),
+            EfCoreCodeGenerator.Instance),
+        new CodeGeneratorRegistration(
+            "Swashbuckle.AspNetCore.SwaggerGen.dll",
+            static modules => modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6),
+            SwaggerCodeGenerator.Instance),
+        new CodeGeneratorRegistration(
+            "Dapper.dll",
+            static modules => modules.HasModule("Dapper.dll", 2),
+            DapperCodeGenerator.Instance),
+        new CodeGeneratorRegistration(
+            "Microsoft.AspNetCore.OpenApi.dll",
+            static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
+            AspNetCoreOpenApiCodeGenerator.Instance),
         // MVC 可用性需覆盖「门面 / 实现」拆分与 .NET 版本差异：
         //   · Microsoft.AspNetCore.Mvc.dll —— 框架引用引入的门面程序集（仅做类型转发），
         //     真实消费者的编译引用里必有，是「MVC 是否可用」的规范判据。
@@ -205,10 +226,63 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         //     （如 .NET 8 落在 Abstractions、.NET 10 落在 Core）。测试画像里只加载了承载
         //     类型定义的那个，门面常因类型转发而未直接进入编译引用。
         // 三者任一出现即代表 MVC 可用，保证真实消费者与测试画像判定一致。
-        (modules.HasModule("Microsoft.AspNetCore.Mvc.dll", 2)
-            || modules.HasModule("Microsoft.AspNetCore.Mvc.Core.dll", 2)
-            || modules.HasModule("Microsoft.AspNetCore.Mvc.Abstractions.dll", 2))
-            ? AspNetCoreMvcCodeGenerator.Instance : null;
+        new CodeGeneratorRegistration(
+            "Microsoft.AspNetCore.Mvc.dll",
+            static modules => modules.HasModule("Microsoft.AspNetCore.Mvc.dll", 2)
+                || modules.HasModule("Microsoft.AspNetCore.Mvc.Core.dll", 2)
+                || modules.HasModule("Microsoft.AspNetCore.Mvc.Abstractions.dll", 2),
+            AspNetCoreMvcCodeGenerator.Instance));
+
+    /// <summary>
+    /// 单个代码生成器的模块闸门登记项（Factory 注册表的一项）。
+    /// </summary>
+    private sealed class CodeGeneratorRegistration
+    {
+        public CodeGeneratorRegistration(
+            string assemblyName,
+            Func<ImmutableArray<ModuleInfo>, bool> isEnabled,
+            ICodeGenerator generator,
+            bool isCore = false)
+        {
+            AssemblyName = assemblyName;
+            IsEnabled = isEnabled;
+            Generator = generator;
+            IsCore = isCore;
+        }
+
+        public string AssemblyName { get; }
+
+        public Func<ImmutableArray<ModuleInfo>, bool> IsEnabled { get; }
+
+        public ICodeGenerator Generator { get; }
+
+        public bool IsCore { get; }
+    }
+
+    /// <summary>
+    /// 取当前编译引用下所有已启用的核心生成器，按各自 <see cref="ICodeGenerator.Order"/> 升序排列后批量执行。
+    /// </summary>
+    private static ImmutableArray<ICodeGenerator> GetCoreGenerators(ImmutableArray<ModuleInfo> modules)
+        => [.. GeneratorCatalog
+            .Where(registration => registration.IsCore && registration.IsEnabled(modules))
+            .OrderBy(static registration => registration.Generator.Order)
+            .Select(static registration => registration.Generator)];
+
+    /// <summary>
+    /// 按登记名取当前编译引用下已启用的集成生成器；未启用时返回 <see langword="null"/>。
+    /// </summary>
+    private static ICodeGenerator? GetIntegrationGenerator(ImmutableArray<ModuleInfo> modules, string assemblyName)
+    {
+        foreach (var registration in GeneratorCatalog)
+        {
+            if (registration.AssemblyName == assemblyName && registration.IsEnabled(modules))
+            {
+                return registration.Generator;
+            }
+        }
+
+        return null;
+    }
 
     private static StronglyTypedIdInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken _)
     {

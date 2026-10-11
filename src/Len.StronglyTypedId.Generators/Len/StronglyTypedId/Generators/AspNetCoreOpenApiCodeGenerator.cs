@@ -29,8 +29,7 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
-            .Where(idInfo => !idInfo.IsInGenericContainer)
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
             .ToList();
 
         var schemaEntries = stronglyTypedIds
@@ -92,7 +91,7 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
     /// 取 OpenAPI <c>schema.Type</c> 的字面量（字符串形态，对应 Microsoft.OpenApi 1.x 的 <c>string?</c> 字段）。
     /// </summary>
     private static string GetTypeLiteral(string primitiveIdTypeName)
-        => GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
+        => StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
         {
             "Guid" or "string" => "\"string\"",
             _ => "\"integer\"",
@@ -102,7 +101,7 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
     /// 取 OpenAPI <c>schema.Format</c> 的字面量；无特定格式时为 <see langword="null"/>。
     /// </summary>
     private static string? GetFormatLiteral(string primitiveIdTypeName)
-        => GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
+        => StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
         {
             "Guid" => "\"uuid\"",
             "int" => "\"int32\"",
@@ -115,14 +114,4 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
             "ushort" => "\"uint16\"",
             _ => "null",
         };
-
-    /// <summary>
-    /// 把基元类型的显示名归一化为不含命名空间限定的短名（语义同 SwaggerCodeGenerator 的同名方法）。
-    /// </summary>
-    private static string GetPrimitiveIdTypeShortName(string primitiveIdTypeName)
-    {
-        var separatorIndex = primitiveIdTypeName.LastIndexOf('.');
-
-        return separatorIndex < 0 ? primitiveIdTypeName : primitiveIdTypeName[(separatorIndex + 1)..];
-    }
 }

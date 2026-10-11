@@ -22,8 +22,7 @@ internal class DapperCodeGenerator : ICodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
-            .Where(idInfo => !idInfo.IsInGenericContainer)
+        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
             .ToList();
 
         var ambiguousNames = stronglyTypedIds
