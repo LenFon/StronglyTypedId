@@ -281,7 +281,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         // STIAO004 只要求「在命名空间内」，具体叫什么分析器不过问。
         var namespaceName = "MyNamespace";
 
-        // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 Formatter 规范化，
+        // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 DocumentFormatting 规范化，
         // 避免手工拼 trivia 时「特性与声明之间的换行」漏缩进而拼成无缩进。
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(namespaceName))
             .WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(outermost))
@@ -290,11 +290,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
         var newRoot = root.ReplaceNode(outermost, namespaceDeclaration);
 
-        var formattedRoot = Microsoft.CodeAnalysis.Formatting.Formatter.Format(
-            newRoot,
-            context.Document.Project.Solution.Workspace);
-
-        return context.Document.WithSyntaxRoot(formattedRoot);
+        return context.Document.WithSyntaxRoot(
+            DocumentFormatting.Format(context.Document, newRoot, token));
     }
 
     /// <summary>
@@ -391,7 +388,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return await RemoveValidatorArgumentAsync(context, diagnostic, token);
         }
 
-        return GenerateValidatorStub(context.Document, root, recordDeclaration, validatorName, primitiveType);
+        return GenerateValidatorStub(context.Document, root, recordDeclaration, validatorName, primitiveType, token);
     }
 
     /// <summary>
@@ -430,18 +427,19 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：返回 <see cref="bool"/>、
     /// 恰好一个参数且类型等于基元 Id 类型（用全限定名渲染以避免与任何同名局部类型冲突）、可见性 private
     /// （生成代码与 Id 同 partial，可达）。<c>;</c> 结尾的声明会被就地转成带 body 的形式，最后交给
-    /// <see cref="Microsoft.CodeAnalysis.Formatting.Formatter"/> 统一缩进。
+    /// <see cref="DocumentFormatting"/> 按被编辑文档自身的行尾统一缩进。
     /// </remarks>
     private static Document GenerateValidatorStub(
         Document document,
         SyntaxNode root,
         TypeDeclarationSyntax typeDeclaration,
         string validatorName,
-        ITypeSymbol primitiveType)
+        ITypeSymbol primitiveType,
+        CancellationToken token)
     {
         var typeDisplay = primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var method = SyntaxFactory.ParseMemberDeclaration($"private static bool {validatorName}({typeDisplay} value) => true;")!
-            .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+            .WithLeadingTrivia(SyntaxFactory.EndOfLine(DocumentFormatting.GetEndOfLine(root)));
 
         var newDeclaration = typeDeclaration.OpenBraceToken.IsKind(SyntaxKind.None)
             ? typeDeclaration
@@ -452,11 +450,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                     .WithTrailingTrivia(typeDeclaration.SemicolonToken.TrailingTrivia))
             : typeDeclaration.AddMembers(method);
 
-        var formattedRoot = Microsoft.CodeAnalysis.Formatting.Formatter.Format(
-            root.ReplaceNode(typeDeclaration, newDeclaration),
-            document.Project.Solution.Workspace);
-
-        return document.WithSyntaxRoot(formattedRoot);
+        return document.WithSyntaxRoot(
+            DocumentFormatting.Format(document, root.ReplaceNode(typeDeclaration, newDeclaration), token));
     }
 
     /// <summary>

@@ -178,6 +178,42 @@ public class StronglyTypedIdRefactoringProviderTests
         (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
     }
 
+    /// <summary>
+    /// 正向重构插入的换行沿用文档自身的行尾：CRLF 文档得 CRLF，LF 文档得 LF。
+    /// </summary>
+    /// <remarks>
+    /// 期望值用显式 <c>\r\n</c> / <c>\n</c> 拼出，而不是原始字符串字面量 —— 后者的行尾随
+    /// <c>text=auto</c> 在 CRLF（Windows 工作区）与 LF（Linux / macOS 检出）之间变化，
+    /// 断言会隐含依赖平台。这里把「产物行尾必须等于文档行尾」这条不变式显式钉死。
+    /// </remarks>
+    [Theory]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    public async Task Refactoring_Should_PreserveEndOfLine_WhenConverting(string endOfLine)
+    {
+        var code = string.Join(
+            endOfLine,
+            "using System;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "public record OrderId(Guid Value);",
+            string.Empty);
+
+        var expected = string.Join(
+            endOfLine,
+            "using System;",
+            "using Len.StronglyTypedId;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "[StronglyTypedId]",
+            "public partial record OrderId(Guid Value);",
+            string.Empty);
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
     #endregion
 
     #region 正向：不提供的场景
@@ -402,6 +438,38 @@ public class StronglyTypedIdRefactoringProviderTests
         var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title);
 
         titles.Should().NotContain("Inline strongly typed id");
+    }
+
+    /// <summary>
+    /// 反向重构重排后的换行同样沿用文档自身的行尾（摘掉特性后留下的空行由格式化器补齐）。
+    /// </summary>
+    /// <remarks>与正向用例同理，期望值用显式行尾拼出，不依赖检出时的 <c>text=auto</c>。</remarks>
+    [Theory]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    public async Task Refactoring_Should_PreserveEndOfLine_WhenInlining(string endOfLine)
+    {
+        var code = string.Join(
+            endOfLine,
+            "using System;",
+            "using Len.StronglyTypedId;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "[StronglyTypedId]",
+            "public partial record OrderId(Guid Value);",
+            string.Empty);
+
+        var expected = string.Join(
+            endOfLine,
+            "using System;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "public record OrderId(Guid Value);",
+            string.Empty);
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
     }
 
     #endregion
