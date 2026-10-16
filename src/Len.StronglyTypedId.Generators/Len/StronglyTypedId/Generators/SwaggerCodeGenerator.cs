@@ -3,23 +3,23 @@
 /// <summary>
 /// 为强类型 Id 生成 Swashbuckle.AspNetCore 的 <c>MapType</c> 注册。
 /// </summary>
-internal class SwaggerCodeGenerator : ICodeGenerator
+internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 {
     private const string OpenApiAssemblyName = "Microsoft.OpenApi.dll";
 
-    internal static readonly ICodeGenerator Instance = new SwaggerCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new SwaggerCodeGenerator();
 
     public int Order { get; } = 4;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
         var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
 
-        var mapTypeCalls = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
+        var mapTypeCalls = discoveredIds.External
             .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo.PrimitiveIdTypeName, useOpenApiV2)});");
 
         // 生成文件必须自带 using Microsoft.Extensions.DependencyInjection：

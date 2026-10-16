@@ -17,20 +17,19 @@ namespace Len.StronglyTypedId.Generators;
 /// 的消费者编译引用里出现，缺此门控会在无关项目里生成无法解析的符号。
 /// </para>
 /// </remarks>
-internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
+internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new AspNetCoreOpenApiCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new AspNetCoreOpenApiCodeGenerator();
 
     public int Order { get; } = 6;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
-            .ToList();
+        var stronglyTypedIds = discoveredIds.External.ToList();
 
         var schemaEntries = stronglyTypedIds
             .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(idInfo.PrimitiveIdTypeName)}, {GetFormatLiteral(idInfo.PrimitiveIdTypeName)}),")

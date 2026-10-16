@@ -10,20 +10,19 @@ namespace Len.StronglyTypedId.Generators;
 /// 存进数据库，既读不通也破坏强类型语义。实现 <c>TypeHandler&lt;TId&gt;</c> 后，DbParameter 写入基元值、
 /// 读取时还原为强类型 Id，与 EF Core / JSON 的行为保持一致。
 /// </remarks>
-internal class DapperCodeGenerator : ICodeGenerator
+internal class DapperCodeGenerator : IIntegrationCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new DapperCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new DapperCodeGenerator();
 
     public int Order { get; } = 5;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
-            .ToList();
+        var stronglyTypedIds = discoveredIds.External.ToList();
 
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)

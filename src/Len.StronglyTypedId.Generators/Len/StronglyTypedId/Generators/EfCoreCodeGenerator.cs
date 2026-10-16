@@ -5,20 +5,19 @@ namespace Len.StronglyTypedId.Generators;
 /// <summary>
 /// 为强类型 Id 生成 Entity Framework Core 的 <c>ValueConverter</c> 与统一注册入口。
 /// </summary>
-internal class EfCoreCodeGenerator : ICodeGenerator
+internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new EfCoreCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new EfCoreCodeGenerator();
 
     public int Order { get; } = 3;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
-            .ToList();
+        var stronglyTypedIds = discoveredIds.External.ToList();
 
         // 不同命名空间下的同名强类型 Id 都会生成进同一个 StronglyTypedIds 类：转换器若只取短名，
         // 二者就相互冲突（CS0102）。仅在确实出现同名时才用「命名空间_类型名」消歧，以免改动

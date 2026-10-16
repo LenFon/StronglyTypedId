@@ -5,23 +5,21 @@ namespace Len.StronglyTypedId.Generators;
 /// <summary>
 /// 为强类型 Id 生成 Newtonsoft.Json 转换器。
 /// </summary>
-internal class NewtonsoftJsonCodeGenerator : ICodeGenerator
+internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new NewtonsoftJsonCodeGenerator();
+    internal static readonly ICoreCodeGenerator Instance = new NewtonsoftJsonCodeGenerator();
 
     public int Order { get; } = 2;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        StronglyTypedIdInfo idInfo,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        foreach (var idInfo in stronglyTypedIdInfos)
-        {
-            var header = GeneratedCode.Header(idInfo.Namespace);
+        var header = GeneratedCode.Header(idInfo.Namespace);
 
-            var declaration = $$"""
+        var declaration = $$"""
                 [global::Newtonsoft.Json.JsonConverter(typeof(NewtonsoftJsonConverter))]
                 partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
                 {
@@ -51,13 +49,12 @@ internal class NewtonsoftJsonCodeGenerator : ICodeGenerator
                 }
                 """;
 
-            var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
+        var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-            // 与另外两个内嵌式生成器一致地统一行尾：嵌套包装是按 \n 逐行拼出来的，
-            // 与原始字符串字面量（跟随源文件行尾）相接会得到混排行尾。非嵌套时本调用是空操作，
-            // 因为整段文本来自同一个字面量、行尾本就一致。
-            context.AddSource($"{idInfo.HintName}.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
-        }
+        // 与另外两个内嵌式生成器一致地统一行尾：嵌套包装是按 \n 逐行拼出来的，
+        // 与原始字符串字面量（跟随源文件行尾）相接会得到混排行尾。非嵌套时本调用是空操作，
+        // 因为整段文本来自同一个字面量、行尾本就一致。
+        context.AddSource($"{idInfo.HintName}.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>

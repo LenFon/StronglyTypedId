@@ -12,23 +12,21 @@ namespace Len.StronglyTypedId.Generators;
 /// 也就是说，重写之前 <c>Dictionary&lt;OrderId, TValue&gt;</c> —— DDD 里「按 Id 索引的子集合」这种常见
 /// 结构 —— 序列化与反序列化都完全不可用。
 /// </remarks>
-internal class SystemTextJsonCodeGenerator : ICodeGenerator
+internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new SystemTextJsonCodeGenerator();
+    internal static readonly ICoreCodeGenerator Instance = new SystemTextJsonCodeGenerator();
 
     public int Order { get; } = 1;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        StronglyTypedIdInfo idInfo,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        foreach (var idInfo in stronglyTypedIdInfos)
-        {
-            var header = GeneratedCode.Header(idInfo.Namespace);
+        var header = GeneratedCode.Header(idInfo.Namespace);
 
-            var declaration = $$"""
+        var declaration = $$"""
                 [global::System.Text.Json.Serialization.JsonConverter(typeof(SystemTextJsonConverter))]
                 partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
                 {
@@ -74,10 +72,9 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                 }
                 """;
 
-            var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
+        var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-            context.AddSource($"{idInfo.HintName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
-        }
+        context.AddSource($"{idInfo.HintName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>
