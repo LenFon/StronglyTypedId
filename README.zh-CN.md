@@ -29,6 +29,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [Swashbuckle](#swashbuckle)
 - [Dapper](#dapper)
 - [ASP.NET Core MVC](#aspnet-core-mvc)
+- [Minimal API](#minimal-api)
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [用接口约束泛型](#using-the-interface)
 - [运行时反射](#reflection-helpers)
@@ -60,6 +61,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
 - **Dapper 集成** —— 引用 `Dapper` ≥ 2.0.0 时生成 `TypeHandler` 与 `ApplyTo(IDbConnection)`。
 - **ASP.NET Core MVC 集成** —— 引用 `Microsoft.AspNetCore.Mvc`（或其 `Microsoft.AspNetCore.Mvc.Core` 门面）≥ 2.0.0 时，生成模型绑定提供者与逐 Id 路由约束，使 `[FromRoute]`/`[FromQuery]` 与 `{id:OrderId}` 开箱即用。
+- **Minimal API 支持** —— 无需额外生成：路由 / 查询参数经 `IParsable<T>` 自动绑定，`{id:OrderId}` 路由约束复用 MVC 集成注册的 `RouteOptions`。
 - **ASP.NET Core OpenAPI 集成** —— 引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时生成 `ApplyTo(OpenApiOptions)` 架构映射。
 - **序列化** —— 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，
   其中 `System.Text.Json` 还支持字典键；两者另提供显式注册入口（`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` 与
@@ -180,7 +182,7 @@ IFormatProvider)` 已被标记过时。
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
 | 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
-| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
+| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束） |
 | 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                          | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 核心实现会补上：
@@ -534,6 +536,34 @@ public class OrdersController : ControllerBase
 
 > 绑定器只对实现了 `IStronglyTypedId<TSelf, TPrimitiveId>` 的类型接管；其余类型回退到 MVC 默认绑定链路。
 > 绑定本身复用每个 Id 已有的 `IParsable<TSelf>` 成员，因此除注册时的一次性类型判定外没有逐请求反射开销。
+
+<a id="minimal-api"></a>
+
+## Minimal API <a href="#top" style="float:right">↑ 返回目录</a>
+
+Minimal API **无需任何额外生成**。它的参数绑定约定接受「具备静态 `TryParse(string?, IFormatProvider?, out TSelf)`
+的类型」，而每个 Id 都经 `IParsable<TSelf>` 天然具备该成员，因此路由与查询参数开箱即用：
+
+```csharp
+// 路由里的 "ABC123" 经 IParsable<OrderId>.TryParse 绑定为 OrderId；
+// 非法文本在进入处理器前即返回 400。
+app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value));
+
+// [AsParameters] 会把每个 Id 属性按同名的路由 / 查询值逐个绑定。
+app.MapGet("/orders", ([AsParameters] OrderQuery query) => Results.Ok(query.Id.Value));
+
+public record OrderQuery(OrderId Id);
+```
+
+路由约束与 MVC 共用：生成的 `ApplyTo(RouteOptions)` 会为每个 Id 注册一条约束，因此 `{id:OrderId}`
+在 Minimal API 模板里同样可用（`Microsoft.AspNetCore.Mvc.*` 程序集随 ASP.NET Core 共享框架分发，
+Minimal API 工程也满足门控）：
+
+```csharp
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+
+app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value));
+```
 
 <a id="aspnetcore-openapi"></a>
 

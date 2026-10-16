@@ -1,10 +1,12 @@
-// G2：集成运行时验证——在真实包引用下直接调用生成产物 StronglyTypedIds.ApplyTo，
+﻿// G2：集成运行时验证——在真实包引用下直接调用生成产物 StronglyTypedIds.ApplyTo，
 // 断言各集成（EF Core / Dapper / Swagger / 内置 OpenApi / MVC）的产物可执行且行为正确，
 // 而非仅靠文本契约（CodeGeneratorModuleGateTests 已锁定文本形态，本文件补运行时语义）。
 using System.Data;
 using System.Reflection;
 using FluentAssertions;
 using Len.StronglyTypedId;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Len.StronglyTypedId.Generators;
 
@@ -224,6 +226,79 @@ public class IntegrationRuntimeTests
         json.Should().Be($"\"{id.Value:D}\"");
 
         Newtonsoft.Json.JsonConvert.DeserializeObject<IntegrationGuidId>(json, settings).Should().Be(id);
+    }
+
+    #endregion
+
+    #region Minimal API：路由 / 查询参数经 IParsable<T> 绑定
+
+    /// <summary>
+    /// Minimal API 的参数绑定约定会为「具备静态 <c>TryParse(string, IFormatProvider, out T)</c> 的类型」
+    /// 自动生成绑定逻辑；强类型 Id 经 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 间接实现了
+    /// <see cref="IParsable{TSelf}"/>，因此无需任何额外生成即可作为路由 / 查询参数。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 本用例直接驱动 <c>RequestDelegateFactory</c>（Minimal API 的绑定引擎本体），不经 HTTP 服务器：
+    /// 构造一个以强类型 Id 为参数的委托，交给工厂生成 <c>RequestDelegate</c>，再喂入带路由值的
+    /// <c>HttpContext</c>，断言绑定结果。这比「起一个 WebApplication 再发请求」更快也更稳定。
+    /// </para>
+    /// <para>
+    /// 路由值与查询串同时提供，覆盖绑定源推断的两种可能（Path / Query），不依赖框架内部的推断细节。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task MinimalApi_BindsStronglyTypedIdFromRouteAndQuery()
+    {
+        var guid = Guid.NewGuid();
+        var text = guid.ToString("D");
+
+        Func<IntegrationGuidId, Microsoft.AspNetCore.Http.IResult> handler =
+            id => Microsoft.AspNetCore.Http.Results.Ok(id.Value);
+        var factoryResult = Microsoft.AspNetCore.Http.RequestDelegateFactory.Create(handler);
+        var requestDelegate = factoryResult.RequestDelegate;
+
+        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        // Ok<T> 结果写出时会向容器索取 ILoggerFactory，故必须注册日志服务，否则裸容器会抛
+        // 「No service for type 'ILoggerFactory'」——这是测试宿主的最小依赖，与被测绑定逻辑无关。
+        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        httpContext.Request.RouteValues["id"] = text;
+        httpContext.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?id=" + text);
+
+        var body = new MemoryStream();
+        httpContext.Response.Body = body;
+
+        await requestDelegate(httpContext);
+
+        httpContext.Response.StatusCode.Should().Be(200, "合法的 Guid 文本必须被 Minimal API 绑定为强类型 Id");
+
+        body.Position = 0;
+        var payload = new StreamReader(body).ReadToEnd();
+
+        payload.Should().Contain(text, "绑定后的 Id 值必须与路由值一致");
+    }
+
+    /// <summary>
+    /// 非法文本必须被 Minimal API 绑定拒绝：<c>TryParse</c> 返回 <see langword="false"/>，
+    /// 框架据此产生 400 而非把垃圾值塞进处理器。
+    /// </summary>
+    [Fact]
+    public async Task MinimalApi_RejectsInvalidText()
+    {
+        Func<IntegrationGuidId, Microsoft.AspNetCore.Http.IResult> handler =
+            id => Microsoft.AspNetCore.Http.Results.Ok(id.Value);
+        var factoryResult = Microsoft.AspNetCore.Http.RequestDelegateFactory.Create(handler);
+        var requestDelegate = factoryResult.RequestDelegate;
+
+        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        httpContext.Request.RouteValues["id"] = "not-a-guid";
+        httpContext.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?id=not-a-guid");
+        httpContext.Response.Body = new MemoryStream();
+
+        await requestDelegate(httpContext);
+
+        httpContext.Response.StatusCode.Should().Be(400, "非法文本必须被 Minimal API 绑定拒绝");
     }
 
     #endregion

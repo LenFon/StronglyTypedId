@@ -30,6 +30,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Swashbuckle](#swashbuckle)
 - [Dapper](#dapper)
 - [ASP.NET Core MVC](#aspnet-core-mvc)
+- [Minimal API](#minimal-api)
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [Using the interface](#using-the-interface)
 - [Reflection helpers](#reflection-helpers)
@@ -66,6 +67,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   validator for the whole assembly.
 - **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and `ApplyTo(IDbConnection)` are generated.
 - **ASP.NET Core MVC integration** — when `Microsoft.AspNetCore.Mvc` (or its `Microsoft.AspNetCore.Mvc.Core` facade) ≥ 2.0.0 is referenced, a model-binder provider and per-id route constraints are generated so `[FromRoute]`/`[FromQuery]` and `{id:OrderId}` bind correctly.
+- **Minimal API support** — nothing extra to generate: route/query parameters bind through `IParsable<T>`, and `{id:OrderId}` route constraints reuse the `RouteOptions` registration emitted by the MVC integration.
 - **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
   `ApplyTo(OpenApiOptions)` schema mappings are generated.
 - **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
@@ -194,7 +196,7 @@ your own declaration is never modified. What is emitted depends on what the comp
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
 | `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
-| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
+| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints) |
 | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                             | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 The core implementation adds:
@@ -580,6 +582,35 @@ public class OrdersController : ControllerBase
 > The binder only takes over for types that implement `IStronglyTypedId<TSelf, TPrimitiveId>`; every other
 > type falls through to MVC's default binding chain. The bind itself reuses the `IParsable<TSelf>` member that
 > every id already has, so there is no per-request reflection beyond a one-time type check at registration.
+
+<a id="minimal-api"></a>
+
+## Minimal API <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+Minimal API needs **no extra generation**. Its parameter-binding convention accepts any type with a static
+`TryParse(string?, IFormatProvider?, out TSelf)` — which every id already has through `IParsable<TSelf>` — so
+route and query parameters bind out of the box:
+
+```csharp
+// "ABC123" from the route is bound into OrderId via IParsable<OrderId>.TryParse;
+// malformed text yields 400 before the handler runs.
+app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value));
+
+// [AsParameters] binds each id property from the matching route / query value.
+app.MapGet("/orders", ([AsParameters] OrderQuery query) => Results.Ok(query.Id.Value));
+
+public record OrderQuery(OrderId Id);
+```
+
+Route constraints are shared with MVC: the generated `ApplyTo(RouteOptions)` registers one constraint per id,
+so `{id:OrderId}` works in Minimal API templates too (the `Microsoft.AspNetCore.Mvc.*` assemblies ship in the
+ASP.NET Core shared framework, so the gate is satisfied in a Minimal API project):
+
+```csharp
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+
+app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value));
+```
 
 <a id="aspnetcore-openapi"></a>
 
