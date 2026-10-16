@@ -45,7 +45,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                 {
                     private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, (string Type, string? Format)> _schemas = new()
                     {
-            {{string.Join("\r\n", schemaEntries)}}
+            {{string.Join("\n", schemaEntries)}}
                     };
 
                     /// <inheritdoc/>
@@ -77,7 +77,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.AspNetCoreOpenApi.g.cs", code);
+        context.AddSource("StronglyTypedIds.AspNetCoreOpenApi.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>

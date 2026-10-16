@@ -50,11 +50,11 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonRegistrationCodeGenerator), version)}}
                 public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)
                 {
-            {{string.Join("\r\n", registrations)}}
+            {{string.Join("\n", registrations)}}
                 }
             }
             """;
 
-        context.AddSource("StronglyTypedIds.NewtonsoftJson.g.cs", code);
+        context.AddSource("StronglyTypedIds.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 }

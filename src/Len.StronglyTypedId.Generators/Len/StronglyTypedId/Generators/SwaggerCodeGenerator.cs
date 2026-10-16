@@ -29,7 +29,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
         // 类库 / 控制台等非 Web SDK 消费者的隐式 using 不含它，缺此 using 会得到 CS1061。
         // 该命名空间必然可解析：它由 Swashbuckle.AspNetCore.SwaggerGen 的传递依赖
         // Microsoft.Extensions.DependencyInjection.Abstractions 提供，而本文件只在引用前者时才生成。
-        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\r\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
+        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
@@ -39,12 +39,12 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SwaggerCodeGenerator), version)}}
                 public static void ApplyTo(global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions options)
-                { {{$"\r\n\t\t{string.Join("\r\n\t\t", mapTypeCalls)}"}}
+                { {{$"\n\t\t{string.Join("\n\t\t", mapTypeCalls)}"}}
                 }
             }
             """;
 
-        context.AddSource("StronglyTypedIds.Swagger.g.cs", code);
+        context.AddSource("StronglyTypedIds.Swagger.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>

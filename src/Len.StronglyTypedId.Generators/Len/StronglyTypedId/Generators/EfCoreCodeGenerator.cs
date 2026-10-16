@@ -87,10 +87,10 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-            context.AddSource($"{idInfo.HintName}.EntityFrameworkCore.g.cs", converterCode);
+            context.AddSource($"{idInfo.HintName}.EntityFrameworkCore.g.cs", GeneratedCode.NormalizeLineEndings(converterCode));
 
-            registrations.Append($"\r\n\t\t{converterName}.ApplyTo(configurationBuilder);");
-            modelBuilderRegistrations.Append($"\r\n\t\t{converterName}.ApplyTo(modelBuilder);");
+            registrations.Append($"\n\t\t{converterName}.ApplyTo(configurationBuilder);");
+            modelBuilderRegistrations.Append($"\n\t\t{converterName}.ApplyTo(modelBuilder);");
         }
 
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -120,7 +120,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.EntityFrameworkCore.g.cs", registrationCode);
+        context.AddSource("StronglyTypedIds.EntityFrameworkCore.g.cs", GeneratedCode.NormalizeLineEndings(registrationCode));
     }
 
     /// <summary>

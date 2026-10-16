@@ -58,7 +58,7 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 public static void ApplyTo(global::Microsoft.AspNetCore.Routing.RouteOptions options)
                 {
-            {{string.Join("\r\n", constraintRegistrations)}}
+            {{string.Join("\n", constraintRegistrations)}}
                 }
 
                 /// <summary>
@@ -166,6 +166,6 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.AspNetCoreMvc.g.cs", code);
+        context.AddSource("StronglyTypedIds.AspNetCoreMvc.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 }

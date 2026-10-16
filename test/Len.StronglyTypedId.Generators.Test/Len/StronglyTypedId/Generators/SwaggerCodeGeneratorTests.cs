@@ -158,7 +158,8 @@ public class SwaggerCodeGeneratorTests
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.ProductId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" });");
         // 两个调用之间应有换行 + 缩进分隔（string.Join 的分隔符）。
-        generated.Should().Contain("\r\n\t\t");
+        // 断言写 \n 而非 \r\n：产物行尾随检出（CRLF / LF）而定，而 \n 在两种检出的产物里都成立。
+        generated.Should().Contain("\n\t\t");
     }
 
     /// <summary>

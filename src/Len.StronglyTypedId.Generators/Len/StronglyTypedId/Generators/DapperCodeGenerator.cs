@@ -90,9 +90,9 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-            context.AddSource($"{idInfo.HintName}.Dapper.g.cs", handlerCode);
+            context.AddSource($"{idInfo.HintName}.Dapper.g.cs", GeneratedCode.NormalizeLineEndings(handlerCode));
 
-            registrations.Append($"\r\n\t\tglobal::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
+            registrations.Append($"\n\t\tglobal::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
         }
 
             var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -110,7 +110,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-        context.AddSource("StronglyTypedIds.Dapper.g.cs", registrationCode);
+        context.AddSource("StronglyTypedIds.Dapper.g.cs", GeneratedCode.NormalizeLineEndings(registrationCode));
     }
 
     /// <summary>
