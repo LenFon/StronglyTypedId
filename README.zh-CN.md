@@ -42,7 +42,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 12 条规则里有 6 条附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，12 条规则全都附带代码修复，
   可一键修好声明（见[诊断与代码修复](#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并为具备相应接口的基元类型（除 `string` 外的全部）
@@ -624,20 +624,24 @@ if (typeof(OrderId).IsStronglyTypedId())
 分析器会强制以下规则。每一条都会作为**编译错误**报告，因此不合法的声明无法通过编译。诊断文案
 会按编译器区域设置输出英文或中文。
 
-| 规则 ID  | 说明                                                       | 代码修复             |
-| -------- | ---------------------------------------------------------- | -------------------- |
-| STIAO000 | 类型必须是 `record`（或 `record struct`）。                | —                    |
-| STIAO001 | 类型必须是 `partial`。                                     | 补上 `partial`       |
-| STIAO002 | 类型不能是 `abstract`。                                    | 去掉 `abstract`      |
-| STIAO003 | 类型不能是 `generic`（泛型）。                             | 移除类型参数表       |
-| STIAO004 | 类型必须声明在命名空间内。                                 | —                    |
-| STIAO005 | 类型必须拥有单参数的主构造函数。                           | —                    |
-| STIAO006 | 主构造函数参数不能为可空类型。                             | 去掉 `?` 后缀        |
-| STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数           |
-| STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | —                    |
-| STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补上 `partial` |
-| STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | — |
-| STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | — |
+| 规则 ID  | 说明                                                       | 代码修复               |
+| -------- | ---------------------------------------------------------- | ------------------------ |
+| STIAO000 | 类型必须是 `record`（或 `record struct`）。                | 转为 `record`          |
+| STIAO001 | 类型必须是 `partial`。                                     | 补上 `partial`         |
+| STIAO002 | 类型不能是 `abstract`。                                    | 去掉 `abstract`        |
+| STIAO003 | 类型不能是 `generic`（泛型）。                             | 移除类型参数表         |
+| STIAO004 | 类型必须声明在命名空间内。                                 | 包进命名空间           |
+| STIAO005 | 类型必须拥有单参数的主构造函数。                           | 补主构造函数           |
+| STIAO006 | 主构造函数参数不能为可空类型。                             | 去掉 `?` 后缀          |
+| STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数             |
+| STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | 改为 `Guid`            |
+| STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补 `partial` |
+| STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | 删掉 `Validator` 实参  |
+| STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | 改用 `Create(...)`     |
+
+每条规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIAO003` 仅在 Id 自身是泛型时提供
+（删掉*包含类型*的类型参数会改变你的设计），`STIAO005` 仅在类型没有显式构造函数时提供（在已有构造函数旁
+再加主构造函数会撞 `CS0111`），`STIAO009` 仅在包含类型确实缺 `partial` 时提供（否则会插进第二个 `partial`）。
 
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以
 拆成多个 `partial` 声明段：类型级规则按整个类型判定一次，参数级规则只在声明主构造函数的那一段上判定，

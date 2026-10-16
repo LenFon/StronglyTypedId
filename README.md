@@ -43,8 +43,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
-- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and six of the
-  twelve rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and every one of
+  the twelve rules comes with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` for every primitive that has them (all but `string`).
@@ -677,18 +677,24 @@ compiler culture.
 
 | Rule ID  | Description                                                                | Code fix                       |
 | -------- | -------------------------------------------------------------------------- | ------------------------------ |
-| STIAO000 | The type must be a `record` (or `record struct`).                           | —                              |
+| STIAO000 | The type must be a `record` (or `record struct`).                           | Convert to `record`            |
 | STIAO001 | The type must be `partial`.                                                 | Add `partial`                  |
 | STIAO002 | The type cannot be `abstract`.                                              | Remove `abstract`              |
 | STIAO003 | The type cannot be `generic`.                                               | Remove the type parameter list |
-| STIAO004 | The type must declare a namespace.                                          | —                              |
-| STIAO005 | The type must have a single-parameter primary constructor.                  | —                              |
+| STIAO004 | The type must declare a namespace.                                          | Wrap in a namespace            |
+| STIAO005 | The type must have a single-parameter primary constructor.                  | Add a primary constructor      |
 | STIAO006 | The primary constructor parameter cannot be nullable.                       | Remove the `?` suffix          |
 | STIAO007 | The primary constructor parameter must be named `Value`.                    | Rename the parameter           |
-| STIAO008 | The primary constructor parameter type must be a supported primitive type.  | —                              |
-| STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the containing type |
-| STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | — |
-| STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | — |
+| STIAO008 | The primary constructor parameter type must be a supported primitive type.  | Change the type to `Guid`      |
+| STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the container |
+| STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | Remove the `Validator` argument|
+| STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | Replace with `Create(...)`     |
+
+Every rule offers a fix, but a few only when the repair is unambiguous — `STIAO003` is offered only when
+the id itself is generic (removing the *containing* type's type parameters would change your design),
+`STIAO005` only when the type declares no explicit constructor (adding a primary constructor next to an
+existing one would collide with `CS0111`), and `STIAO009` only when the containing type is actually missing
+`partial` (otherwise the fix would insert a second `partial`).
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are
