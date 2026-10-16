@@ -14,3 +14,4 @@ STIAO008 | StronglyTypedIdAnalyzer | Error |
 STIAO009 | StronglyTypedIdAnalyzer | Error |
 STIAO010 | StronglyTypedIdAnalyzer | Error |
 STIAO011 | StronglyTypedIdAnalyzer | Info |
+STIAO012 | StronglyTypedIdGenerator | Error | Reported by the source generator itself when code generation throws.

@@ -169,11 +169,11 @@ public class CodeGeneratorModuleGateTests
 
         generated["Len.StronglyTypedId.OrderId.Dapper.g.cs"]
             .Should().Contain("class OrderIdTypeHandler : global::Dapper.SqlMapper.TypeHandler<global::Len.StronglyTypedId.OrderId>")
-            .And.Contain("public override void SetValue(")
-            .And.Contain("public override global::Len.StronglyTypedId.OrderId? Parse(object value)");
+            .And.Contain("public override void SetValue(global::System.Data.IDbDataParameter parameter, global::Len.StronglyTypedId.OrderId value)")
+            .And.Contain("public override global::Len.StronglyTypedId.OrderId Parse(object? value)");
 
         generated["StronglyTypedIds.Dapper.g.cs"]
-            .Should().Contain("public static void ApplyTo(global::Dapper.IDbConnection connection)")
+            .Should().Contain("public static void ApplyTo(global::System.Data.IDbConnection connection)")
             .And.Contain("global::Dapper.SqlMapper.AddTypeHandler");
     }
 
@@ -258,6 +258,71 @@ public class CodeGeneratorModuleGateTests
 
     #endregion
 
+    #region System.Text.Json / Newtonsoft.Json 全局注册入口
+
+    /// <summary>
+    /// STJ 侧此前只有逐 Id 的 <c>[JsonConverter]</c>，没有与 EF / Swagger / Dapper / MVC / 内置 OpenAPI
+    /// 对称的 <c>ApplyTo</c>。本用例锁住聚合入口的存在与内容：注册的必须是各 Id 内嵌的转换器实例。
+    /// </summary>
+    [Fact]
+    public void SystemTextJsonRegistration_Should_GenerateApplyTo()
+    {
+        var generated = RunGenerator(IdSource);
+
+        generated.Should().ContainKey("StronglyTypedIds.SystemTextJson.g.cs");
+
+        generated["StronglyTypedIds.SystemTextJson.g.cs"]
+            .Should().Contain("internal static partial class StronglyTypedIds")
+            .And.Contain("public static void ApplyTo(global::System.Text.Json.JsonSerializerOptions options)")
+            .And.Contain("options.Converters.Add(new global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter());");
+    }
+
+    /// <summary>
+    /// Newtonsoft 侧的入口沿用 <c>sample1</c> 里曾被注释掉的 <c>AddStronglyTypedId()</c> 形态：
+    /// <c>JsonSerializerSettings</c> 上的扩展方法。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJsonRegistration_Should_GenerateExtensionMethod()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Newtonsoft.Json", "13.0.0.0"));
+
+        generated.Should().ContainKey("StronglyTypedIds.NewtonsoftJson.g.cs");
+
+        generated["StronglyTypedIds.NewtonsoftJson.g.cs"]
+            .Should().Contain("internal static partial class StronglyTypedIds")
+            .And.Contain("public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)")
+            .And.Contain("settings.Converters.Add(new global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter());");
+    }
+
+    /// <summary>
+    /// 注册入口与核心生成器共用同一程序集门控：Newtonsoft 12.x 既不产出转换器，也不产出注册入口。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJsonRegistration_Should_NotGenerate_WhenMajorVersionIsTwelve()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Newtonsoft.Json", "12.0.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.NewtonsoftJson.g.cs");
+    }
+
+    /// <summary>
+    /// 一个 Id 都没有时不产出空壳注册类：否则会平白多出一个没有任何成员的 <c>StronglyTypedIds</c>。
+    /// </summary>
+    [Fact]
+    public void Registrations_Should_NotGenerate_WhenNoIds()
+    {
+        var generated = RunGenerator(NoIdSource);
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.SystemTextJson.g.cs");
+        generated.Keys.Should().NotContain("StronglyTypedIds.NewtonsoftJson.g.cs");
+    }
+
+    #endregion
+
     #region 辅助
 
     private const string IdSource = """
@@ -267,6 +332,17 @@ public class CodeGeneratorModuleGateTests
 
         [StronglyTypedId]
         public partial record struct OrderId(Guid Value);
+        """;
+
+    /// <summary>
+    /// 一个强类型 Id 都没有的源码：用来验证「无 Id 时不产出空壳注册类」。
+    /// </summary>
+    private const string NoIdSource = """
+        namespace Len.StronglyTypedId;
+
+        public class NotAnId
+        {
+        }
         """;
 
     /// <summary>

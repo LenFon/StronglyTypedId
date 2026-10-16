@@ -4,7 +4,7 @@ ParameterCannotBeNullableMessage = 参数‘{0}’不能为可空类型。
 ParameterCannotBeNullableTitle = 	参数不能为可空类型	
 ParameterNameMustBeValueMessage = 	参数名‘{0}’应该是‘Value’。	
 ParameterNameMustBeValueTitle = 	参数名应该是‘Value’	
-ParameterTypeIsInvalidMessage = 	参数类型‘{0}’必须是以下之一：Guid、String、byte、short、int、long、sbyte、ushort、uint或ulong。	
+ParameterTypeIsInvalidMessage = 	参数类型‘{0}’必须是受支持的基元类型：Guid、string、BigInteger、decimal、整型（byte、sbyte、short、ushort、int、uint、long、ulong、Int128、UInt128）、浮点型（Half、float、double）、日期时间型（DateTime、DateTimeOffset、TimeSpan、DateOnly、TimeOnly），或枚举。	
 ParameterTypeIsInvalidTitle = 	参数类型无效	
 TypeCannotBeAbstractMessage = 	类型‘{0}’不能被声明为抽象的。	
 TypeCannotBeAbstractTitle = 	类型不能被声明为抽象的	
@@ -22,3 +22,5 @@ ValidatorReferenceInvalidTitle = 验证器方法必须是合法的静态 bool �
 ValidatorReferenceInvalidMessage = [StronglyTypedId(Validator = ...)] 引用的验证器方法“{0}”必须是签名为“static bool {0}({1} value)”的静态方法。
 BypassCreateTitle = 强类型 Id 被直接构造
 BypassCreateMessage = 直接构造“{0}”会绕过 Create 与 TryParse 强制的验证。请改用 {0}.Create(...)。
+GeneratorFailureTitle = 强类型 Id 代码生成失败
+GeneratorFailureMessage = 代码生成器 {0} 因 {1} 失败：{2}。该生成器本次产出的全部源码已被丢弃，请修复根因后重新生成。

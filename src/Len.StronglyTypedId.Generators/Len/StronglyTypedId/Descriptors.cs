@@ -7,6 +7,11 @@ internal static class Descriptors
 {
     private const string Category = "StronglyTypedIdAnalyzer";
 
+    /// <summary>
+    /// 生成器侧诊断的类别。与 <see cref="Category"/> 分开，便于使用者按类别整体调级。
+    /// </summary>
+    private const string GeneratorCategory = "StronglyTypedIdGenerator";
+
     public const string ContainingTypeMustBePartialId = "STIAO009";
     public const string ParameterCannotBeNullableId = "STIAO006";
     public const string ParameterNameMustBeValueId = "STIAO007";
@@ -19,6 +24,7 @@ internal static class Descriptors
     public const string TypeMustBePartialId = "STIAO001";
     public const string TypeMustBeRecordId = "STIAO000";
     public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIAO005";
+    public const string GeneratorFailureId = "STIAO012";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -144,8 +150,35 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// 全部诊断描述符，顺序与规则 ID 的语义分组一致。
+    /// 代码生成阶段抛出了未预期的异常。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 生成器内部一旦抛异常，Roslyn 会丢弃该生成器本次的<b>全部</b>产出，使用者只看到一条 CS8785 警告 ——
+    /// 没有位置、没有原因、没有堆栈，表现为「生成的代码凭空消失」。生成器侧的注释反复提到这条风险链
+    /// （<c>StronglyTypedIdInfo</c> 的基元类型解析与 hint name 去重），却一直没有兜底。
+    /// </para>
+    /// <para>
+    /// 这里把异常就地兜住并报成一条带原因的诊断：<c>{0}</c> 为生成器名，<c>{1}</c> 为异常类型，
+    /// <c>{2}</c> 为异常消息。定位取 <see cref="Location.None"/> —— 故障可能发生在与任何单个 Id 无关的
+    /// 阶段（例如模块枚举），强行挂到某个 Id 上反而误导。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor GeneratorFailure
+        = new(GeneratorFailureId,
+            new LocalizedString("GeneratorFailureTitle"),
+            new LocalizedString("GeneratorFailureMessage"),
+            GeneratorCategory,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
+    /// </summary>
+    /// <remarks>
+    /// 这里只收分析器（<see cref="Analyzers.StronglyTypedIdAnalyzer"/>）会报出的规则，并直接充当其
+    /// <c>SupportedDiagnostics</c>；生成器侧规则另见 <see cref="GeneratorDiagnostics"/>。
+    /// </remarks>
     public static readonly DiagnosticDescriptor[] All =
     [
         TypeMustBeRecord,
@@ -160,5 +193,17 @@ internal static class Descriptors
         ContainingTypeMustBePartial,
         ValidatorReferenceInvalid,
         BypassCreate,
+    ];
+
+    /// <summary>
+    /// 全部生成器诊断描述符。
+    /// </summary>
+    /// <remarks>
+    /// 生成器没有 <c>SupportedDiagnostics</c> 这样的声明入口，规则是否「存在」只由是否被报出体现，
+    /// 因此这里单独成组，不与 <see cref="All"/> 混在一起 —— 后者是分析器的对外承诺清单。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor[] GeneratorDiagnostics =
+    [
+        GeneratorFailure,
     ];
 }

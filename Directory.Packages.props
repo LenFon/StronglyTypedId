@@ -19,6 +19,7 @@
 
 	<!-- test：测试框架与 Roslyn 测试框架 -->
 	<ItemGroup>
+		<PackageVersion Include="Dapper" Version="2.1.35" />
 		<PackageVersion Include="FluentAssertions" Version="8.10.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />

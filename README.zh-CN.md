@@ -62,7 +62,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **ASP.NET Core MVC 集成** —— 引用 `Microsoft.AspNetCore.Mvc`（或其 `Microsoft.AspNetCore.Mvc.Core` 门面）≥ 2.0.0 时，生成模型绑定提供者与逐 Id 路由约束，使 `[FromRoute]`/`[FromQuery]` 与 `{id:OrderId}` 开箱即用。
 - **ASP.NET Core OpenAPI 集成** —— 引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时生成 `ApplyTo(OpenApiOptions)` 架构映射。
 - **序列化** —— 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，
-  其中 `System.Text.Json` 还支持字典键。
+  其中 `System.Text.Json` 还支持字典键；两者另提供显式注册入口（`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` 与
+  `settings.AddStronglyTypedId()`），并可按 Id 选择基元形态或对象形态（见 [JSON 形态](#serialization)）。
 - **Entity Framework Core** —— 在需要时生成 EF Core（≥ 7.0.0）值转换器。
 - **Swagger / OpenAPI** —— 在引用 Swashbuckle.AspNetCore 时生成架构映射，同时兼容 Microsoft.OpenApi 1.x 与 2.x。
 - **运行时反射助手** —— 可在运行时判断任意类型是否为强类型 Id，并取回其底层基元类型。
@@ -174,8 +175,8 @@ IFormatProvider)` 已被标记过时。
 | 编译中的条件                                                                          | 生成的代码                                                                          |
 | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | 始终                                                                                  | 核心实现 → `<命名空间>.<类型名>.g.cs`                                                |
-| 引用了 `System.Text.Json`                                                             | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`    |
-| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`    |
+| 引用了 `System.Text.Json`                                                             | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs` |
+| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs` |
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
 | 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
@@ -195,8 +196,9 @@ IFormatProvider)` 已被标记过时。
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。对于以 `string` 为基元的
   Id，`TryParse` 不接受 `null` 与空字符串。
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。
-- 返回被包装值文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
-  以及基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+- 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
+  与序列化写出的文本一致，`Parse(id.ToString(), CultureInfo.InvariantCulture)` 可往返；需要按特定文化
+  格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
 - 以 `string` 为基元的 Id 会驻留相等的字符串值：相等的字符串会按 Id 类型共享同一份底层存储
   （使用每类型的小缓存，而非进程级的 `string.Intern` 池），因此重复 Id 几乎不再额外占内存。
 - 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
@@ -270,7 +272,8 @@ public partial record struct ConvertibleGuidId(Guid Value);
 
 生成的嵌套 `XxxTypeConverter` 会带上 `[TypeConverter(typeof(XxxTypeConverter))]` 特性，因此
 `TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` 即可在字符串与 Id 间转换，引用类型 Id 的
-`null` 会解析回 `default`。
+`null` 会解析回 `default`。两个方向都按**不变文化**读写，与生成的 `ToString()` 一致，因此在某个
+区域设置下写出的值，换个区域也能读回。
 
 > 该转换器仅覆盖「字符串 ↔ Id」这一路径；它不替代 JSON 转换器，二者各自独立生效。
 
@@ -358,11 +361,48 @@ var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
 基元的 Id 直接使用该字符串，故空串也能往返；无法解析的键会抛 `JsonException`。
 
 Newtonsoft.Json 的字典键走的是 `TypeConverter` / `ToString()`，并不经过 `JsonConverter`，因此生成的
-转换器接管不到它。键仍可往返——生成的 `ToString()` 返回的正是基元值文本——但该文本跟随当前区域性。
-若需要控制键的格式，请自行给 Id 标注 `[TypeConverter]`。
+转换器接管不到它。请在 Id 上开启 `TypeConverter = true`，Newtonsoft 才能在读路径还原键。键文本与转换器
+写出的一致，都是**不变文化**文本——生成的 `ToString()` 与生成的 `TypeConverter` 两个方向都按不变文化读写——
+因此在任何区域设置下键都保持稳定。
 
 两种转换器都把 Id 序列化为其底层基元值而不是对象，因此 JSON 结构与引入强类型 Id 之前保持一致。
 引用类型 Id 为 `null` 时写出的就是 JSON `null`。
+
+### JSON 形态
+
+默认情况下，Id 与其基元**形态兼容**：以 `Guid` 为基元的 `OrderId` 序列化结果与裸 `Guid` 完全相同，
+因此引入强类型 Id 不会改变线上格式。当既有契约已经对外承诺了对象形态——典型情况是客户端发送
+`{ "value": "3f2c…" }`——可以按 Id 选择启用：
+
+```csharp
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct OrderId(Guid Value);
+
+// JsonShape.Primitive（默认）："3f2c…"
+// JsonShape.Object：           {"value":"3f2c…"}
+```
+
+该设置对 `System.Text.Json` 与 `Newtonsoft.Json` 同时生效，字典键亦然。`JsonShape.Object` 读写单个
+`value` 属性；载荷不是对象、或对象缺少 `value` 时会抛异常（`JsonException` /
+`JsonSerializationException`）。由于基元形态是默认值，除非你主动选择对象形态，既有载荷不受影响。
+
+### 显式注册
+
+`[JsonConverter]` 特性覆盖了常见情形，但当你传入自己的 `JsonSerializerOptions` / `JsonSerializerSettings`
+并希望把本库的转换器一并挂上时，该特性不会被采纳。为此，两个序列化器都在生成的 `StronglyTypedIds` 类上
+提供了注册入口，与 EF Core / Swagger / Dapper / MVC / OpenAPI 的 `ApplyTo` 家族平行：
+
+```csharp
+// System.Text.Json
+var options = new JsonSerializerOptions();
+StronglyTypedIds.ApplyTo(options);          // 把每个 Id 的转换器加入 options.Converters
+
+// Newtonsoft.Json
+var settings = new JsonSerializerSettings();
+settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 settings.Converters
+```
+
+每个入口只在引用了对应序列化器、且编译中至少声明了一个 Id 时才生成。
 
 <a id="entity-framework-core"></a>
 
@@ -591,7 +631,9 @@ if (typeof(OrderId).IsStronglyTypedId())
 
 答：每个 `ApplyTo` 重载都是随对应集成一起生成的，两者都位于 `Len.StronglyTypedId` 命名空间。请确认：
 （1）已 `using Len.StronglyTypedId;`；（2）使用 EF Core 时确实有 `DbContext` 重写了 `ConfigureConventions`；
-（3）使用 Swagger 时项目引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0。
+（3）使用 Swagger 时项目引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0。JSON 两个入口遵循同一规则：
+`ApplyTo(JsonSerializerOptions)` 需要引用 `System.Text.Json`，`AddStronglyTypedId()` 需要引用
+`Newtonsoft.Json` ≥ 13.0.0。
 
 **问：明明引用了 EF Core，为什么没有生成值转换器 / 列映射？**
 

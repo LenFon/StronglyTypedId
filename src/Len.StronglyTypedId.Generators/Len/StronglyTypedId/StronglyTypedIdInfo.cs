@@ -36,6 +36,20 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string TypeConverterArgumentName = "TypeConverter";
 
     /// <summary>
+    /// attribute 中用于指定 JSON 序列化形态的命名实参名。
+    /// </summary>
+    internal const string JsonShapeArgumentName = "JsonShape";
+
+    /// <summary>
+    /// <c>Len.StronglyTypedId.JsonShape.Object</c> 的底层常量值。
+    /// </summary>
+    /// <remarks>
+    /// 生成器项目不引用运行时程序集，无法直接书写 <c>JsonShape.Object</c>。命名实参在元数据里保存的是
+    /// 枚举的<b>底层值</b>而非成员名，故此处以常量镜像它；与运行时 <c>JsonShape</c> 的取值必须保持一致。
+    /// </remarks>
+    private const int ObjectJsonShapeValue = 1;
+
+    /// <summary>
     /// BCL 接口所属命名空间的显示名（含 <c>global::</c> 前缀）。
     /// </summary>
     private const string SystemNamespace = "global::System";
@@ -114,10 +128,16 @@ internal readonly record struct StronglyTypedIdInfo
         // 招来 CS0535。故枚举两者都不走 —— 枚举 Id 仍保留 IComparable / IParsable / ISpanParsable 等能力。
         IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
         IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName) && !IsEnum;
-        IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName);
+        // UTF-8 解析比 UTF-16 多一道门槛：除了基元实现 IUtf8SpanParsable<TSelf>，还必须暴露<b>公开</b>的
+        // TryParse(ReadOnlySpan<byte>, IFormatProvider, out T)。BigInteger 实现了该接口，却把它实现为显式接口
+        // 实现，生成代码按具体类型名调用会 CS1501（静态抽象接口成员又不能经接口名直接调用，CS8926），故对它
+        // 不生成 UTF-8 解析、也不透出该接口 —— 与「基元本就具备才透出」的取向一致。
+        IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName)
+            && HasPublicStaticTryParse(primitiveIdType, SpecialType.System_Byte);
         IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
         ValidatorName = GetValidatorName(type) ?? defaultValidatorName;
         HasTypeConverter = GetBooleanArgument(type, TypeConverterArgumentName);
+        IsObjectJsonShape = GetJsonShapeIsObject(type);
     }
 
     /// <summary>
@@ -244,10 +264,16 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 基元类型是否实现 <c>System.ISpanFormattable</c>。
     /// </summary>
+    /// <remarks>
+    /// 除 <c>string</c> 外全部受支持基元都实现它（含 <c>float</c> / <c>double</c> / <c>Half</c>）；
+    /// <c>string</c> 连 <c>IFormattable</c> 都不具备，故其强类型 Id 不会实现 <c>ISpanFormattable</c>、
+    /// 也不生成 <c>TryFormat</c> 重载。
+    /// </remarks>
     public bool IsSpanFormattable { get; }
 
     /// <summary>
-    /// 基元类型是否实现 <c>System.IUtf8SpanParsable&lt;TSelf&gt;</c>。
+    /// 基元类型是否实现 <c>System.IUtf8SpanParsable&lt;TSelf&gt;</c>，且暴露了公开的
+    /// <c>TryParse(ReadOnlySpan&lt;byte&gt;, IFormatProvider, out T)</c>。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -256,6 +282,10 @@ internal readonly record struct StronglyTypedIdInfo
     /// <c>Parse(ReadOnlySpan&lt;byte&gt;…)</c> 会因为 <c>IUtf8SpanParsable&lt;Guid&gt;</c> 不存在而编译失败。
     /// 因此同一份源码在 net8.0 与 net10.0 消费者下的产物本就<b>允许不同</b>，
     /// 这与模块闸门（按引用程序集决定生成什么）是同一种设计。
+    /// </para>
+    /// <para>
+    /// 第二道门槛（公开 <c>TryParse</c>）排除 <c>BigInteger</c>：它实现了 <c>IUtf8SpanParsable</c>，
+    /// 却把该重载实现为显式接口实现，生成代码按具体类型名调用会 CS1501。
     /// </para>
     /// </remarks>
     public bool IsUtf8SpanParsable { get; }
@@ -295,6 +325,21 @@ internal readonly record struct StronglyTypedIdInfo
     /// </para>
     /// </remarks>
     public bool HasTypeConverter { get; }
+
+    /// <summary>
+    /// <c>[StronglyTypedId]</c> 是否要求把 JSON 形态设为对象（<c>{ "value": … }</c>）而非基元值本身。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 默认（<see langword="false"/>）下 Id 与基元值在 JSON 里同形，引入 Id 不改变既有契约；置为
+    /// <see langword="true"/> 后 STJ 与 Newtonsoft 两个转换器都改写成对象形态，供「已对外承诺对象形态」
+    /// 的既有契约平滑迁移。
+    /// </para>
+    /// <para>
+    /// 该开关不作用于字典键：JSON 属性名本就是字符串，键在任何形态下都携带基元文本。
+    /// </para>
+    /// </remarks>
+    public bool IsObjectJsonShape { get; }
 
     /// <summary>
     /// 解析强类型 Id 所包装的基元类型符号。
@@ -466,6 +511,32 @@ internal readonly record struct StronglyTypedIdInfo
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == SystemNamespace);
 
     /// <summary>
+    /// 判断给定类型是否暴露了公开的静态
+    /// <c>TryParse(ReadOnlySpan&lt;TElement&gt;, IFormatProvider, out T)</c> 重载。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 生成代码按具体类型名调用该重载（<c>PrimitiveIdTypeName.TryParse(value, provider, out var val)</c>）。
+    /// 若基元把它实现为<b>显式接口实现</b>（如 <c>BigInteger</c> 的 UTF-8 重载），按类型名调用会 CS1501；
+    /// 而静态抽象接口成员又不能经接口名直接调用（CS8926），故只能在生成前就把这类基元筛掉。
+    /// </para>
+    /// <para>
+    /// 判据落在符号上：遍历名为 <c>TryParse</c> 的公开静态方法，要求形参恰为
+    /// <c>(ReadOnlySpan&lt;TElement&gt;, IFormatProvider, out T)</c>。第三个形参按引用类型比对即可，
+    /// 无需校验它正是 <paramref name="type"/> —— 同名同形的重载在同一类型上不可能有两个。
+    /// </para>
+    /// </remarks>
+    internal static bool HasPublicStaticTryParse(ITypeSymbol type, SpecialType spanElementType)
+        => type.GetMembers("TryParse").Any(member =>
+            member is IMethodSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 3 } method
+            && method.Parameters[0].Type is INamedTypeSymbol spanType
+            && spanType.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.ReadOnlySpan<T>"
+            && spanType.TypeArguments.Length == 1
+            && spanType.TypeArguments[0].SpecialType == spanElementType
+            && method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.IFormatProvider"
+            && method.Parameters[2].RefKind == RefKind.Out);
+
+    /// <summary>
     /// 读取 <c>[StronglyTypedId]</c> 上指定命名实参的布尔值，未指定时返回 <see langword="false"/>。
     /// </summary>
     private static bool GetBooleanArgument(ITypeSymbol type, string argumentName)
@@ -474,6 +545,20 @@ internal readonly record struct StronglyTypedIdInfo
             ?.NamedArguments
             .FirstOrDefault(argument => argument.Key == argumentName)
             .Value.Value is true;
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>JsonShape</c> 命名实参是否指向对象形态。
+    /// </summary>
+    /// <remarks>
+    /// 命名实参在元数据里保存的是枚举的底层值，故这里与 <see cref="ObjectJsonShapeValue"/> 比对；
+    /// 未指定时该实参根本不存在，返回 <see langword="false"/>（即默认的基元形态）。
+    /// </remarks>
+    private static bool GetJsonShapeIsObject(ITypeSymbol type)
+        => type.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == JsonShapeArgumentName)
+            .Value.Value is ObjectJsonShapeValue;
 
     /// <summary>
     /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参指向的方法名。

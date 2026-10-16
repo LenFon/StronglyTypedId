@@ -157,7 +157,7 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
-                    public override string ToString() => Value.ToString() ?? string.Empty;{{GetAdditionalMembers(idInfo, version)}}
+                    public override string ToString() => {{GetToStringBody(idInfo)}};{{GetAdditionalMembers(idInfo, version)}}
                 }
                 """;
 
@@ -208,6 +208,29 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
 
         return interfaces.Count == 0 ? string.Empty : ",\n    " + string.Join(",\n    ", interfaces);
     }
+
+    /// <summary>
+    /// 取 <c>ToString()</c> 的表达式体。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 强类型 Id 的字符串形式是它的<b>规范形</b>：序列化（System.Text.Json / Newtonsoft.Json / MVC /
+    /// EF Core / Dapper）、字典键、持久化与日志都按这一形式读写，而这些路径一律使用<b>不变文化</b>。
+    /// 若 <c>ToString()</c> 跟随当前文化，<c>decimal</c> / 浮点 / 日期时间基元会在德语等区域下产出
+    /// <c>1,5</c> 这类文本，与不变文化的解析与序列化结果对不上 —— 往返（<c>Parse(id.ToString())</c>）
+    /// 与跨区域持久化都不再可靠。
+    /// </para>
+    /// <para>
+    /// 因此对实现了 <see cref="System.IFormattable"/> 的基元（数值、<c>decimal</c>、<c>Guid</c>、时间型、
+    /// <c>Int128</c> / <c>BigInteger</c> 等）统一按不变文化格式化；<c>string</c> 与枚举的 <c>ToString()</c>
+    /// 本就与文化无关，保持原样。需要按特定文化显示时，用生成的
+    /// <c>ToString(string?, IFormatProvider?)</c> 显式传入 provider。
+    /// </para>
+    /// </remarks>
+    private static string GetToStringBody(StronglyTypedIdInfo idInfo)
+        => idInfo.IsFormattable
+            ? "Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty"
+            : "Value.ToString() ?? string.Empty";
 
     /// <summary>
     /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 无条件附加，
@@ -266,7 +289,7 @@ internal class StronglyTypedIdCodeGenerator : ICodeGenerator
         builder.Append("        public override bool CanConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Type sourceType) => sourceType == typeof(string);").Append('\n');
         builder.Append('\n');
         builder.Append($"        public override object? ConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object value) =>").Append('\n');
-        builder.Append($"            value is string text ? {idInfo.Name}.Parse(text, culture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
+        builder.Append($"            value is string text ? {idInfo.Name}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
         builder.Append('\n');
         builder.Append("        public override object? ConvertTo(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object? value, global::System.Type? destinationType) =>").Append('\n');
         builder.Append("            destinationType == typeof(string) ? value?.ToString() : throw new global::System.NotSupportedException($\"Cannot convert to {destinationType}.\");").Append('\n');

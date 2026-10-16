@@ -3,6 +3,33 @@
 [StronglyTypedId]
 public partial record struct GuidId(Guid Value);
 
+// C1 新增基元：扩展整型、浮点、日期/时间、大整数。各自代表一条生成器形态分支 ——
+// Int128/UInt128/DateOnly/TimeOnly/Single/Double/Half 与整型同构（全套含 UTF-16 / UTF-8 span）；
+// BigInteger 虽有 UTF-8 语义，但其 TryParse(ReadOnlySpan<byte>,…) 是显式接口实现，故不生成 UTF-8 解析。
+[StronglyTypedId]
+public partial record struct Int128Id(Int128 Value);
+
+[StronglyTypedId]
+public partial record struct UInt128Id(UInt128 Value);
+
+[StronglyTypedId]
+public partial record struct DateOnlyId(DateOnly Value);
+
+[StronglyTypedId]
+public partial record struct TimeOnlyId(TimeOnly Value);
+
+[StronglyTypedId]
+public partial record struct DoubleId(double Value);
+
+[StronglyTypedId]
+public partial record struct SingleId(float Value);
+
+[StronglyTypedId]
+public partial record struct HalfId(Half Value);
+
+[StronglyTypedId]
+public partial record struct BigIntegerId(System.Numerics.BigInteger Value);
+
 [StronglyTypedId]
 public partial record struct Int32Id(int Value);
 
@@ -16,10 +43,10 @@ public partial record struct Int64Id(long Value);
 public partial record struct UInt64Id(ulong Value);
 
 [StronglyTypedId]
-public partial record struct StringId(string Value);
+public partial record struct ByteId(byte Value);
 
 [StronglyTypedId]
-public partial record struct ByteId(byte Value);
+public partial record struct StringId(string Value);
 
 [StronglyTypedId]
 public partial record GuidIdV2(Guid Value);
@@ -95,6 +122,20 @@ public readonly partial record struct ReadonlyGuidId(Guid Value);
 // 覆盖 XmlSerializer / IConfiguration 绑定 / Newtonsoft 字典键读路径等场景。
 [StronglyTypedId(TypeConverter = true)]
 public partial record struct ConvertibleGuidId(Guid Value);
+
+// H1：文化敏感的基元 + TypeConverter，用来验证生成的转换器与 ToString() 一样按不变文化往返，
+// 不受当前区域（如 de-DE 的小数逗号）影响。
+[StronglyTypedId(TypeConverter = true)]
+public partial record struct ConvertibleDoubleId(double Value);
+
+// C4：JSON 形态可配置。默认（Primitive）下 Id 与基元值在 JSON 里同形；Object 形态读写 { "value": … }，
+// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。取 Guid 与 string 两种基元：
+// 值位置的写入路径两者相同，但字典键的写入路径不同（string 直取取值，其余经不变文化 ToString）。
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeGuidId(Guid Value);
+
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeStringId(string Value);
 
 // 嵌套类型的 Id：包含类型必须声明为 partial —— partial 的各段必须处于同一容器内，生成代码要补的
 // 成员只能逐层嵌回容器里，故容器得能被生成代码原样重开一次。

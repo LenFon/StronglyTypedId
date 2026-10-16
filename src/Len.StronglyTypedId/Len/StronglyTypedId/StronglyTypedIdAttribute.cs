@@ -69,4 +69,27 @@ public class StronglyTypedIdAttribute : Attribute
     /// </code>
     /// </remarks>
     public bool TypeConverter { get; set; }
+
+    /// <summary>
+    /// Gets or sets the shape the strongly typed id takes in JSON. The default is
+    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/> keeps the id interchangeable with its primitive
+    /// value in the payload (<c>"3f2c…"</c>), so introducing an id does not change the wire contract.
+    /// <see cref="Len.StronglyTypedId.JsonShape.Object"/> writes <c>{ "value": … }</c> instead, which is what
+    /// an existing contract that already promised the object form needs.
+    /// </para>
+    /// <para>
+    /// The setting applies to both the <c>System.Text.Json</c> and <c>Newtonsoft.Json</c> converters. It does
+    /// <em>not</em> affect dictionary keys: a JSON property name is inherently a string, so keys always carry
+    /// the primitive text regardless of this setting.
+    /// </para>
+    /// <code>
+    /// [StronglyTypedId(JsonShape = JsonShape.Object)]
+    /// public partial record struct OrderId(Guid Value);
+    /// </code>
+    /// </remarks>
+    public JsonShape JsonShape { get; set; }
 }

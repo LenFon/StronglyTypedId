@@ -69,7 +69,9 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
   `ApplyTo(OpenApiOptions)` schema mappings are generated.
 - **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
-  automatically, including `System.Text.Json` dictionary-key support.
+  automatically, including `System.Text.Json` dictionary-key support; both also expose an explicit registration
+  entry point (`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` and `settings.AddStronglyTypedId()`), and the
+  JSON shape is configurable per id (see [JSON shape](#serialization)).
 - **Entity Framework Core** — value converters for EF Core (≥ 7.0.0) are generated when needed.
 - **Swagger / OpenAPI** — schema mappings for Swashbuckle.AspNetCore are generated when referenced,
   for both Microsoft.OpenApi 1.x and 2.x.
@@ -187,8 +189,8 @@ your own declaration is never modified. What is emitted depends on what the comp
 | Condition in the compilation                                                                        | Generated code                                                                                       |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Always                                                                                              | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                   |
-| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`                         |
-| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`                         |
+| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs` |
+| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs` |
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
 | `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
@@ -209,8 +211,10 @@ The core implementation adds:
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. For
   `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
 - `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
-- `ToString()` returning the text of the wrapped value (not the record's `OrderId { Value = … }` form),
-  along with `ToString(string?, IFormatProvider?)` and `TryFormat(...)` where the primitive supports them.
+- `ToString()` returning the invariant-culture text of the wrapped value (not the record's
+  `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
+  `Parse(id.ToString(), CultureInfo.InvariantCulture)`; use `ToString(string?, IFormatProvider?)` and
+  `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
 - String-backed ids intern equal values: the storage for equal strings is shared per id type via a small
   per-type cache (not the process-wide `string.Intern` pool), so repeated ids add almost no extra memory.
 - A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
@@ -291,7 +295,8 @@ public partial record struct ConvertibleGuidId(Guid Value);
 
 The generated nested `XxxTypeConverter` carries a `[TypeConverter(typeof(XxxTypeConverter))]` attribute, so
 `TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` can convert between string and the id, and a `null`
-reference-type id resolves back to `default`.
+reference-type id resolves back to `default`. Both directions use the invariant culture — matching the generated
+`ToString()` — so a value written under one culture reads back under another.
 
 > This converter covers only the "string ↔ id" path; it does not replace the JSON converters, which remain
 > independent and active.
@@ -388,13 +393,54 @@ the same key no matter the current culture. A `string`-backed id uses the string
 string round-trips; a key that cannot be parsed throws `JsonException`.
 
 Newtonsoft.Json routes dictionary keys through `TypeConverter` / `ToString()` rather than through
-`JsonConverter`, so its keys never reach the generated converter. They still round-trip — the generated
-`ToString()` returns the text of the primitive value — but that text follows the current culture. Attach
-your own `[TypeConverter]` to the id if you need to control the key format.
+`JsonConverter`, so its keys never reach the generated converter. Enable `TypeConverter = true` on the id so
+Newtonsoft can restore keys on read. The key text is the same invariant-culture text the converter writes:
+the generated `ToString()` is invariant, and the generated `TypeConverter` reads and writes invariantly too, so
+keys stay stable across cultures.
 
 Both converters serialize the id as its underlying primitive value rather than as an object, so the JSON
 payload keeps the same shape it had before the id was introduced. A `null` reference-type id is written
 as JSON `null`.
+
+### JSON shape
+
+By default an id is **shape-compatible with its primitive**: `OrderId` backed by `Guid` serializes to the
+same JSON string a bare `Guid` would, so introducing the id does not change the wire format. When an
+existing contract has already promised the object form — typically a client that sends
+`{ "value": "3f2c…" }` — opt into it per id:
+
+```csharp
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct OrderId(Guid Value);
+
+// JsonShape.Primitive (default): "3f2c…"
+// JsonShape.Object:             {"value":"3f2c…"}
+```
+
+The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to dictionary keys as well.
+`JsonShape.Object` reads and writes a single `value` property; a payload that is not an object, or an
+object without `value`, throws (`JsonException` / `JsonSerializationException`). Because the primitive
+form is the default, existing payloads are unaffected unless you ask for the object form.
+
+### Explicit registration
+
+The `[JsonConverter]` attribute covers the common case, but it is ignored when you supply your own
+`JsonSerializerOptions` / `JsonSerializerSettings` and want this library's converters attached to them anyway.
+Both serializers therefore expose a registration entry point on the generated `StronglyTypedIds` class, in
+parallel to the EF Core / Swagger / Dapper / MVC / OpenAPI `ApplyTo` family:
+
+```csharp
+// System.Text.Json
+var options = new JsonSerializerOptions();
+StronglyTypedIds.ApplyTo(options);          // adds every id's converter to options.Converters
+
+// Newtonsoft.Json
+var settings = new JsonSerializerSettings();
+settings.AddStronglyTypedId();              // adds every id's converter to settings.Converters
+```
+
+Each entry point is generated only when the corresponding serializer is referenced, and only when the
+compilation declares at least one id.
 
 <a id="entity-framework-core"></a>
 
@@ -637,7 +683,9 @@ assembly always contains the latest generated code, so it is safe to ignore in t
 A: Each `ApplyTo` overload is generated together with its integration, and both live in the
 `Len.StronglyTypedId` namespace. Check that (1) `using Len.StronglyTypedId;` is in scope,
 (2) for EF Core a `DbContext` overrides `ConfigureConventions`, and (3) for Swagger the project
-references `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0.
+references `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0. The JSON entry points follow the same rule:
+`ApplyTo(JsonSerializerOptions)` needs `System.Text.Json` referenced, and `AddStronglyTypedId()` needs
+`Newtonsoft.Json` ≥ 13.0.0.
 
 **Q: The EF Core converter / column mapping is missing even though EF Core is referenced.**
 
@@ -663,8 +711,11 @@ A: Yes. Every id implements `IComparable<TSelf>` plus `<`, `>`, `<=` and `>=` ov
 
 **Q: What does `ToString()` print?**
 
-A: The text of the wrapped primitive value (`"42"`, `"3f2c…"`) rather than the record's default
-`OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated strings.
+A: The invariant-culture text of the wrapped primitive value (`"42"`, `"3f2c…"`, `"1.5"`) rather than
+the record's default `OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated
+strings. It is deliberately culture-independent so it matches the serialized form and round-trips through
+`Parse(id.ToString(), CultureInfo.InvariantCulture)`; pass a culture to `ToString(string?, IFormatProvider?)`
+for culture-specific output.
 
 **Q: I set `Validator`, but `new OrderId(...)` still accepts an invalid value.**
 

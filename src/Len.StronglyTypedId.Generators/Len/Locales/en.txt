@@ -4,7 +4,7 @@ ParameterCannotBeNullableMessage = The parameter '{0}' must not be nullable.
 ParameterCannotBeNullableTitle = Parameter must not be nullable	
 ParameterNameMustBeValueMessage = The parameter name ‘{0}’ should be ‘Value’.	
 ParameterNameMustBeValueTitle = Parameter name should be ‘Value’.	
-ParameterTypeIsInvalidMessage = The parameter type ‘{0}’ must be one of the following: Guid, String, byte, short, int, long, sbyte, ushort, uint, or ulong.	
+ParameterTypeIsInvalidMessage = The parameter type ‘{0}’ must be a supported primitive type: Guid, string, BigInteger, decimal, the integral types (byte, sbyte, short, ushort, int, uint, long, ulong, Int128, UInt128), the floating-point types (Half, float, double), the date/time types (DateTime, DateTimeOffset, TimeSpan, DateOnly, TimeOnly), or an enum.	
 ParameterTypeIsInvalidTitle	 = Parameter type is not valid	
 TypeCannotBeAbstractMessage	 = The type '{0}' cannot be declared abstract.	
 TypeCannotBeAbstractTitle	 = Type cannot be declared abstract	
@@ -22,3 +22,5 @@ ValidatorReferenceInvalidTitle = Validator method must be a valid static bool me
 ValidatorReferenceInvalidMessage = The validator method '{0}' referenced by [StronglyTypedId(Validator = ...)] must be a static method with the signature 'static bool {0}({1} value)'.
 BypassCreateTitle = Strongly typed id constructed directly
 BypassCreateMessage = Constructing '{0}' directly bypasses the validation enforced by Create and TryParse. Use {0}.Create(...) instead.
+GeneratorFailureTitle = Strongly typed id code generation failed
+GeneratorFailureMessage = The {0} code generator failed with {1}: {2}. Every source it produced was discarded; fix the underlying issue and rebuild.

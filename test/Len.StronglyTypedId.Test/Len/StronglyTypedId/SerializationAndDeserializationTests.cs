@@ -71,4 +71,59 @@ public class SerializationAndDeserializationTests
         id2.Should().NotBeNull();
         Assert.True(((dynamic)id2!).Value.Equals(value));
     }
+
+    /// <summary>
+    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": … }</c>，
+    /// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_SerializeAsObject_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string guidJson = """{"value":"d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Serialize(ObjectShapeGuidId.Create(guid)).Should().Be(guidJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(ObjectShapeGuidId.Create(guid)).Should().Be(guidJson);
+
+        const string stringJson = """{"value":"Len"}""";
+
+        System.Text.Json.JsonSerializer.Serialize(ObjectShapeStringId.Create("Len")).Should().Be(stringJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(ObjectShapeStringId.Create("Len")).Should().Be(stringJson);
+    }
+
+    /// <summary>
+    /// C4：对象形态的反序列化往返。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_DeserializeFromObject_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string guidJson = """{"value":"d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(guidJson).Value.Should().Be(guid);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeGuidId>(guidJson).Value.Should().Be(guid);
+
+        const string stringJson = """{"value":"Len"}""";
+
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
+        Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
+    }
+
+    /// <summary>
+    /// C4：对象形态只作用于「值」的位置 —— 字典键本就是字符串，读写键的路径不受影响。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_KeepPrimitiveDictionaryKey_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var dictionary = new Dictionary<ObjectShapeGuidId, int> { [ObjectShapeGuidId.Create(guid)] = 1 };
+
+        const string expectedJson = """{"d8ac85d4-ed76-4974-b055-8ef3508743f3":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<ObjectShapeGuidId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(ObjectShapeGuidId.Create(guid));
+    }
 }

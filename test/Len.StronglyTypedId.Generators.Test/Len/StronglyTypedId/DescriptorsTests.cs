@@ -101,4 +101,40 @@ public class DescriptorsTests
     {
         new StronglyTypedIdAnalyzer().SupportedDiagnostics.Should().BeEquivalentTo(Descriptors.All);
     }
+
+    /// <summary>
+    /// 生成器侧诊断与分析器侧诊断共用同一套规则 ID 形态与本地化契约。
+    /// </summary>
+    /// <remarks>
+    /// 生成器没有 <c>SupportedDiagnostics</c> 这样的声明入口，规则是否「存在」只由是否被报出体现，
+    /// 因此这里手工把同一份契约再过一遍：ID 形态、类别、默认启用、严重级别、本地化命中、占位符保留。
+    /// </remarks>
+    [Fact]
+    public void GeneratorDiagnostics_Should_SatisfyTheSameContract()
+    {
+        using var scope = new AssertionScope();
+
+        Descriptors.GeneratorDiagnostics.Should().NotBeEmpty();
+
+        foreach (var descriptor in Descriptors.GeneratorDiagnostics)
+        {
+            descriptor.Id.Should().MatchRegex(_ruleIdPattern, "规则 ID 是对外承诺，不能改号");
+            descriptor.Category.Should().Be("StronglyTypedIdGenerator");
+            descriptor.IsEnabledByDefault.Should().BeTrue();
+            descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);
+            descriptor.Title.ToString().Should().NotMatchRegex(_resourceKeyPattern);
+            descriptor.MessageFormat.ToString().Should().NotMatchRegex(_resourceKeyPattern);
+            descriptor.MessageFormat.ToString().Should().Contain("{0}", $"{descriptor.Id} 的消息必须保留 {0} 占位符");
+        }
+    }
+
+    /// <summary>
+    /// 两组诊断的规则 ID 不得重叠：分析器的 <c>SupportedDiagnostics</c> 不该声称支持它从不报出的规则。
+    /// </summary>
+    [Fact]
+    public void GeneratorDiagnostics_Should_NotOverlapAnalyzerDiagnostics()
+    {
+        Descriptors.GeneratorDiagnostics.Select(descriptor => descriptor.Id)
+            .Should().NotIntersectWith(Descriptors.All.Select(descriptor => descriptor.Id));
+    }
 }

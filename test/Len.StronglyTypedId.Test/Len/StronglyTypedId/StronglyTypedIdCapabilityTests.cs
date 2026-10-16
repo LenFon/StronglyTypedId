@@ -96,6 +96,34 @@ public class StronglyTypedIdCapabilityTests
         StringId.Create("Len").ToString().Should().Be("Len");
     }
 
+    /// <summary>
+    /// <c>ToString()</c> 按不变文化输出，与序列化 / 字典键 / 持久化的规范形一致，跨区域往返安全。
+    /// </summary>
+    /// <remarks>
+    /// 德语等区域的小数分隔符是逗号：若 <c>ToString()</c> 跟随当前文化，<c>1.5</c> 会被写成 <c>1,5</c>，
+    /// 与不变文化的解析 / 序列化结果对不上。用例临时切到 de-DE，验证输出仍是 <c>1.5</c>，
+    /// 且 <c>Parse(id.ToString(), InvariantCulture)</c> 能往返。需要按特定文化显示时用
+    /// <c>ToString(string?, IFormatProvider?)</c> 显式传 provider。
+    /// </remarks>
+    [Fact]
+    public void ToString_Should_UseInvariantCulture_RegardlessOfCurrentCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            var id = DoubleId.Create(1.5);
+
+            id.ToString().Should().Be("1.5");
+            DoubleId.Parse(id.ToString(), CultureInfo.InvariantCulture).Should().Be(id);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
     [Fact]
     public void IFormattable_Should_ForwardFormatAndProvider()
     {
@@ -463,6 +491,34 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
+    /// 生成的 <c>TypeConverter</c> 与 <c>ToString()</c> 一样按不变文化双向往返，不受当前文化影响。
+    /// </summary>
+    /// <remarks>
+    /// Newtonsoft.Json 的字典键、<c>XmlSerializer</c> 与 <c>IConfiguration</c> 绑定都经由此转换器读写。
+    /// 用例在 de-DE 下调用<b>跟随当前文化</b>的重载（<c>ConvertToString</c> / <c>ConvertFromString</c>），
+    /// 断言输出仍是 <c>1.5</c> 且能读回 —— 若两个方向的文化不一致，同一份数据在不同区域下就无法往返。
+    /// </remarks>
+    [Fact]
+    public void TypeConverter_Should_RoundTripInvariantly_RegardlessOfCurrentCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            var converter = TypeDescriptor.GetConverter(typeof(ConvertibleDoubleId));
+            var id = ConvertibleDoubleId.Create(1.5);
+
+            converter.ConvertToString(id).Should().Be("1.5");
+            converter.ConvertFromString("1.5").Should().Be(id);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    /// <summary>
     /// 回归用例：开启 <c>TypeConverter</c> 后，Newtonsoft.Json 字典键的<b>读</b>路径也通了。
     /// </summary>
     /// <remarks>
@@ -497,6 +553,122 @@ public class StronglyTypedIdCapabilityTests
         ReadonlyGuidId.TryParse(value.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
         parsed.Should().Be(id);
         id.ToString().Should().Be(value.ToString());
+    }
+
+    #endregion
+
+    #region C1：扩展基元类型
+
+    /// <summary>
+    /// 扩展整型（<c>Int128</c> / <c>UInt128</c>）与既有整型同构：解析、格式化、比较、span 能力全套透出。
+    /// </summary>
+    [Fact]
+    public void ExtendedIntegralPrimitives_Should_RoundTripAndCompare()
+    {
+        var low = Int128Id.Create(Int128.One);
+        var high = Int128Id.Create(Int128.MaxValue);
+
+        low.Value.Should().Be(Int128.One);
+        Int128Id.TryParse(Int128.MaxValue.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, out var parsed)
+            .Should().BeTrue();
+        parsed.Should().Be(high);
+        low.CompareTo(high).Should().BeNegative();
+        (low < high).Should().BeTrue();
+
+        UInt128Id.Create(UInt128.MaxValue).ToString()
+            .Should().Be(UInt128.MaxValue.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// 浮点基元（<c>float</c> / <c>double</c> / <c>Half</c>）同样透出全套能力。
+    /// </summary>
+    /// <remarks>
+    /// 往返用二进制可精确表示的取值（1.5），避免十进制文本往返带来的舍入差异掩盖真实缺陷。
+    /// </remarks>
+    [Fact]
+    public void FloatingPointPrimitives_Should_RoundTrip()
+    {
+        DoubleId.TryParse("1.5", CultureInfo.InvariantCulture, out var d).Should().BeTrue();
+        d.Value.Should().Be(1.5);
+        d.ToString("R", CultureInfo.InvariantCulture).Should().Be("1.5");
+
+        SingleId.TryParse("1.5", CultureInfo.InvariantCulture, out var f).Should().BeTrue();
+        f.Value.Should().Be(1.5f);
+
+        HalfId.TryParse("1.5", CultureInfo.InvariantCulture, out var h).Should().BeTrue();
+        h.Value.Should().Be((Half)1.5);
+    }
+
+    /// <summary>
+    /// 日期 / 时间基元（<c>DateOnly</c> / <c>TimeOnly</c>）往返遵循不变文化。
+    /// </summary>
+    /// <remarks>
+    /// 用显式格式串（而非无参 <c>ToString(provider)</c>）：后者的短时间格式会丢掉秒，
+    /// 往返本身就不可逆，用它断言只会测出格式串的选择而非 Id 的透出行为。
+    /// </remarks>
+    [Fact]
+    public void DateTimePrimitives_Should_RoundTrip()
+    {
+        var date = new DateOnly(2026, 10, 16);
+        var dateText = date.ToString("O", CultureInfo.InvariantCulture);
+        DateOnlyId.TryParse(dateText, CultureInfo.InvariantCulture, out var parsedDate).Should().BeTrue();
+        parsedDate.Value.Should().Be(date);
+
+        var time = new TimeOnly(13, 45, 30);
+        var timeText = time.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        TimeOnlyId.TryParse(timeText, CultureInfo.InvariantCulture, out var parsedTime).Should().BeTrue();
+        parsedTime.Value.Should().Be(time);
+    }
+
+    /// <summary>
+    /// 大整数基元（<c>BigInteger</c>，引用类型）往返与比较按数值语义。
+    /// </summary>
+    [Fact]
+    public void BigIntegerPrimitive_Should_RoundTrip()
+    {
+        var value = System.Numerics.BigInteger.Parse("123456789012345678901234567890", CultureInfo.InvariantCulture);
+        var id = BigIntegerId.Create(value);
+
+        id.Value.Should().Be(value);
+        BigIntegerId.TryParse(value.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, out var parsed)
+            .Should().BeTrue();
+        parsed.Should().Be(id);
+    }
+
+    /// <summary>
+    /// UTF-8 解析按「基元是否暴露公开的 <c>TryParse(ReadOnlySpan&lt;byte&gt;,…)</c>」条件生成：
+    /// 数值型 / <c>Guid</c> 有，故生成；<c>BigInteger</c> 把它实现为显式接口实现、日期时间型根本没有，故都不生成。
+    /// </summary>
+    /// <remarks>
+    /// 负向断言走接口名反射：<c>IUtf8SpanParsable&lt;T&gt;</c> 带静态抽象成员，把不满足约束的类型当泛型实参用会 CS0315。
+    /// </remarks>
+    [Fact]
+    public void Utf8Parsing_Should_BeEmittedOnlyWhenPrimitiveExposesPublicTryParse()
+    {
+        typeof(Int128Id).Should().BeAssignableTo(typeof(IUtf8SpanParsable<Int128Id>));
+        typeof(DoubleId).Should().BeAssignableTo(typeof(IUtf8SpanParsable<DoubleId>));
+
+        static bool ImplementsUtf8SpanParsable(Type type)
+            => Array.Exists(type.GetInterfaces(), i => i.Name == "IUtf8SpanParsable`1");
+
+        ImplementsUtf8SpanParsable(typeof(BigIntegerId)).Should().BeFalse();
+        ImplementsUtf8SpanParsable(typeof(DateOnlyId)).Should().BeFalse();
+        ImplementsUtf8SpanParsable(typeof(TimeOnlyId)).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 新基元的 UTF-8 往返：有公开入口的基元（<c>Int128</c> / <c>double</c>）能经 UTF-8 解析回来。
+    /// </summary>
+    [Fact]
+    public void Utf8Parsing_Should_RoundTrip_ForPrimitivesWithPublicEntry()
+    {
+        var utf8 = System.Text.Encoding.UTF8.GetBytes("42");
+        Int128Id.TryParse(utf8.AsSpan(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be((Int128)42);
+
+        var doubleUtf8 = System.Text.Encoding.UTF8.GetBytes("1.5");
+        DoubleId.TryParse(doubleUtf8.AsSpan(), CultureInfo.InvariantCulture, out var parsedDouble).Should().BeTrue();
+        parsedDouble.Value.Should().Be(1.5);
     }
 
     #endregion

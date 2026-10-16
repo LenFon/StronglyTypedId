@@ -54,13 +54,22 @@ public class SupportedPrimitiveTypesTests
     }
 
     /// <summary>
-    /// 时间型与 decimal 基元（非 C# 的 <see cref="SpecialType"/>，走「具名类型 + 命名空间」分支）。
+    /// 时间型、decimal、扩展整型、浮点、大整数等新基元（非 C# 的 <see cref="SpecialType"/>，
+    /// 走「具名类型 + 命名空间」分支）。
     /// </summary>
     [Theory]
     [InlineData("System.DateTime")]
     [InlineData("System.DateTimeOffset")]
     [InlineData("System.TimeSpan")]
     [InlineData("System.Decimal")]
+    [InlineData("System.DateOnly")]
+    [InlineData("System.TimeOnly")]
+    [InlineData("System.Single")]
+    [InlineData("System.Double")]
+    [InlineData("System.Half")]
+    [InlineData("System.Int128")]
+    [InlineData("System.UInt128")]
+    [InlineData("System.Numerics.BigInteger")]
     public void IsSupported_Should_ReturnTrue_ForExtendedBclType(string metadataName)
     {
         var type = EmptyCompilation.GetTypeByMetadataName(metadataName);
@@ -98,13 +107,83 @@ public class SupportedPrimitiveTypesTests
 
     [Theory]
     [InlineData(SpecialType.System_Boolean)]
-    [InlineData(SpecialType.System_Char)]
     [InlineData(SpecialType.System_Object)]
     public void IsSupported_Should_ReturnFalse_ForUnsupportedBclType(SpecialType specialType)
     {
         var type = EmptyCompilation.GetSpecialType(specialType);
 
         SupportedPrimitiveTypes.IsSupported(type).Should().BeFalse();
+    }
+
+    #endregion
+
+    #region UTF-8 解析须有公开的 TryParse 重载
+
+    /// <summary>
+    /// 生成代码按具体类型名调用 <c>TryParse(ReadOnlySpan&lt;byte&gt;, IFormatProvider, out T)</c>，
+    /// 故只有暴露了该公开重载的基元才生成 UTF-8 解析。数值型 / <c>decimal</c> 都有；
+    /// 时间型没有 UTF-8 语义（连 <c>IUtf8SpanParsable</c> 都不实现），<c>BigInteger</c> 则把它实现为
+    /// 显式接口实现 —— 两者都拿不到公开重载，故都不生成。
+    /// </summary>
+    /// <remarks>
+    /// <c>Guid</c> 单列：它的 UTF-8 公开入口是 .NET 10 才加的，两个目标框架下判定结果本就不同，
+    /// 见 <see cref="HasPublicStaticTryParse_Should_DependOnTargetFramework_ForGuid"/>。
+    /// </remarks>
+    [Theory]
+    [InlineData("System.Int32", true)]
+    [InlineData("System.Decimal", true)]
+    [InlineData("System.Int128", true)]
+    [InlineData("System.Double", true)]
+    [InlineData("System.Numerics.BigInteger", false)]
+    [InlineData("System.DateTime", false)]
+    [InlineData("System.DateOnly", false)]
+    public void HasPublicStaticTryParse_Should_DetectUtf8Overload(string metadataName, bool expected)
+    {
+        var type = EmptyCompilation.GetTypeByMetadataName(metadataName);
+
+        type.Should().NotBeNull($"测试前提：{metadataName} 必须可被合成编译解析");
+        StronglyTypedIdInfo.HasPublicStaticTryParse(type!, SpecialType.System_Byte).Should().Be(expected,
+            $"{metadataName} 的公开 UTF-8 TryParse 判定应为 {expected}");
+    }
+
+    /// <summary>
+    /// <c>Guid</c> 的公开 UTF-8 <c>TryParse</c> 自 .NET 10 起才有：net8.0 消费者下判定为假，
+    /// 生成产物因此不含 UTF-8 解析 —— 同一份源码在两个目标框架下的产物本就允许不同。
+    /// </summary>
+    [Fact]
+    public void HasPublicStaticTryParse_Should_DependOnTargetFramework_ForGuid()
+    {
+        var type = EmptyCompilation.GetTypeByMetadataName("System.Guid");
+
+        type.Should().NotBeNull("测试前提：System.Guid 必须可被合成编译解析");
+#if NET10_0_OR_GREATER
+        StronglyTypedIdInfo.HasPublicStaticTryParse(type!, SpecialType.System_Byte).Should().BeTrue(
+            "net10.0 下 Guid 暴露了公开的 UTF-8 TryParse");
+#else
+        StronglyTypedIdInfo.HasPublicStaticTryParse(type!, SpecialType.System_Byte).Should().BeFalse(
+            "net8.0 下 Guid 尚无公开的 UTF-8 TryParse");
+#endif
+    }
+
+    /// <summary>
+    /// 使用者自定义的 <c>Probe.Fake.Double</c> 与 BCL <c>System.Double</c> 同名，命名空间校验必须拦截它。
+    /// </summary>
+    [Fact]
+    public void HasPublicStaticTryParse_Should_ReturnFalse_ForUserDefinedSameNameType()
+    {
+        var compilation = CreateCompilation("""
+            namespace Probe.Fake;
+
+            public struct Double
+            {
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Fake.Double");
+
+        type.Should().NotBeNull("测试前提：自定义同名类型必须可被合成编译解析");
+        StronglyTypedIdInfo.HasPublicStaticTryParse(type!, SpecialType.System_Byte).Should().BeFalse(
+            "自定义的同名 Double 不该被误判为具备公开的 UTF-8 TryParse");
     }
 
     #endregion
@@ -153,7 +232,11 @@ public class SupportedPrimitiveTypesTests
         => CSharpCompilation.Create(
             "Probe",
             [CSharpSyntaxTree.ParseText(sourceCode)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                // BigInteger 不在 CoreLib，而在 System.Runtime.Numerics；扩展基元测试需要解析它。
+                MetadataReference.CreateFromFile(typeof(System.Numerics.BigInteger).Assembly.Location),
+            ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
     #endregion

@@ -1,11 +1,17 @@
 ﻿using System.IO;
 using System.Reflection;
+using FluentAssertions;
 using Len.StronglyTypedId.Analyzers;
 using Len.StronglyTypedId.CodeFixes;
+using Len.StronglyTypedId.CodeRefactorings;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CodeActions;
+using Microsoft.CodeAnalysis.CodeRefactorings;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Len.StronglyTypedId;
 
@@ -74,6 +80,82 @@ public static class Verify
 
         test.ExpectedDiagnostics.AddRange(expected);
         return test.RunAsync();
+    }
+
+    /// <summary>
+    /// 驱动 <see cref="StronglyTypedIdRefactoringProvider"/>，收集它在光标处注册的重构。
+    /// </summary>
+    /// <param name="source">
+    /// 源码。可用 <c>$$</c> 标记光标位置；缺省时光标落在第一个 record 声明的标识符上。
+    /// </param>
+    /// <remarks>
+    /// 代码重构没有像诊断那样的「期望清单」可供测试框架比对，故直接驱动 provider：解析源码 → 在光标处调用
+    /// <c>ComputeRefactoringsAsync</c> → 收集它注册的 <see cref="CodeAction"/>。断言「不提供重构」这类场景
+    /// 也只能这样表达。
+    /// </remarks>
+    public static async Task<IReadOnlyList<CodeAction>> CollectRefactoringsAsync(string source)
+    {
+        using var workspace = new AdhocWorkspace();
+        var (document, span) = CreateRefactoringDocument(workspace, source);
+        var actions = new List<CodeAction>();
+        var context = new CodeRefactoringContext(document, span, actions.Add, CancellationToken.None);
+
+        await new StronglyTypedIdRefactoringProvider().ComputeRefactoringsAsync(context);
+
+        return actions;
+    }
+
+    /// <summary>
+    /// 驱动重构提供器并应用它注册的唯一重构，返回改写后的源码文本。
+    /// </summary>
+    /// <param name="source">源码，语义同 <see cref="CollectRefactoringsAsync"/>。</param>
+    public static async Task<string> ApplyRefactoringAsync(string source)
+    {
+        using var workspace = new AdhocWorkspace();
+        var (document, span) = CreateRefactoringDocument(workspace, source);
+        var actions = new List<CodeAction>();
+        var context = new CodeRefactoringContext(document, span, actions.Add, CancellationToken.None);
+
+        await new StronglyTypedIdRefactoringProvider().ComputeRefactoringsAsync(context);
+
+        var action = actions.Should().ContainSingle().Subject;
+        var operations = await action.GetOperationsAsync(CancellationToken.None);
+        var applied = operations.OfType<ApplyChangesOperation>().Single();
+        var updated = applied.ChangedSolution.GetDocument(document.Id)!;
+
+        return (await updated.GetTextAsync()).ToString();
+    }
+
+    /// <summary>
+    /// 把源码解析成「可跑重构的 Document」，并算出光标位置。
+    /// </summary>
+    /// <remarks>
+    /// 引用只给 <c>System.Private.CoreLib</c> 与被测程序集：重构的门禁只需要解析出基元类型符号
+    /// （<c>Guid</c> / <c>int</c> / <c>string</c> 都在 CoreLib），不需要完整的引用程序集集。
+    /// </remarks>
+    private static (Document Document, TextSpan Span) CreateRefactoringDocument(AdhocWorkspace workspace, string source)
+    {
+        const string Marker = "$$";
+        var caret = source.IndexOf(Marker, StringComparison.Ordinal);
+        var text = caret < 0 ? source : source.Remove(caret, Marker.Length);
+
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+        var root = CSharpSyntaxTree.ParseText(text, parseOptions).GetRoot();
+
+        var position = caret >= 0
+            ? caret
+            : root.DescendantNodes().OfType<RecordDeclarationSyntax>().First().Identifier.SpanStart;
+
+        var projectId = ProjectId.CreateNewId();
+        var project = workspace.CurrentSolution
+            .AddProject(projectId, "TestProject", "TestProject", LanguageNames.CSharp)
+            .GetProject(projectId)!
+            .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
+            .WithParseOptions(parseOptions)
+            .AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location))
+            .AddMetadataReference(MetadataReference.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location));
+
+        return (project.AddDocument("Test.cs", root), new TextSpan(position, 0));
     }
 
     /// <summary>
