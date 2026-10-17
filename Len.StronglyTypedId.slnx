@@ -6,6 +6,7 @@
     <File Path=".github/workflows/publish-nuget.yml" />
   </Folder>
   <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
     <File Path=".gitattributes" />
     <File Path=".gitignore" />
     <File Path="LICENSE.txt" />
@@ -15,6 +16,7 @@
     <File Path="bench.props" />
     <File Path="common.props" />
     <File Path="Directory.Packages.props" />
+    <File Path="Directory.Build.props" />
     <File Path="test.props" />
     <File Path="version.props" />
   </Folder>
@@ -36,6 +38,7 @@
   <Folder Name="/test/">
     <Project Path="test/Len.StronglyTypedId.Generators.Test/Len.StronglyTypedId.Generators.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Integration.Test/Len.StronglyTypedId.Integration.Test.csproj" />
+    <Project Path="test/Len.StronglyTypedId.Packaging.Test/Len.StronglyTypedId.Packaging.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.TestBase/Len.StronglyTypedId.TestBase.csproj" />
   </Folder>

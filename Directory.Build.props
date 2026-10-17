@@ -1,0 +1,16 @@
+<Project>
+
+	<!--
+	  IDE 风格分析器（IDE0xxx）默认只在 IDE 里跑，`dotnet build` 不报它们 —— 于是「0 警告基线」
+	  管不到代码风格，.editorconfig 里那些 `:warning` 的风格规则在构建里形同虚设。
+	  打开本开关把 IDE 分析器拉进构建，让 CI 的 0 警告基线一并覆盖风格。
+
+	  为什么放在 Directory.Build.props 而不是 common/test/bench.props：那三个 props 各管一类工程
+	  （src / test / bench），而 samples 下的 5 个工程一个都没引用，只有 Directory.Build.props
+	  能被 MSBuild 自动导入、一次覆盖全部工程。
+	-->
+	<PropertyGroup>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+	</PropertyGroup>
+
+</Project>
