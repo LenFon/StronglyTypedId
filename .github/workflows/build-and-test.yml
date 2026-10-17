@@ -109,8 +109,6 @@ jobs:
         dotnet-version: |
           8.0.x
           10.0.x
-    - name: Restore dependencies
-      run: dotnet restore
     - name: Install dotnet tool
       run: dotnet tool install -g dotnetCampus.TagToVersion
     - name: Set version from latest tag (fall back to baseline on failure)
@@ -138,9 +136,17 @@ jobs:
         ASM_VERSION="${MAJOR}.${MINOR}.0.0"
         echo "PackageVersion=${PKG_VERSION}  AssemblyVersion=${ASM_VERSION}"
         echo "ASSEMBLY_VERSION=${ASM_VERSION}" >> "$GITHUB_ENV"
-    # EnablePackageValidation 的跨版本比对需要还原基线包（1.3.0-preview.5）做 CP 校验。
-    # 基线包的还原发生在 Release 配置的 build 阶段（与 publish-nuget.yml 一致），故这里
-    # 先按 Release 完整 build 再 pack（pack 阶段不再重复 restore）。
+    # 顺序很关键：ApiCompat 的基线包由 PackageDownload 声明（Microsoft.NET.ApiCompat.targets），
+    # 而 PackageValidationBaselineVersion 只在「Version ≥ 基线」时才挂上（见 common.props）。
+    # 若在改写 version.props 之前就 restore，此刻版本还是占位号 1.0.0，基线包既不进还原图、
+    # 也不会落到全局包目录；随后 Build 挂上基线去找
+    # $(NuGetPackageRoot)/len.stronglytypedid/1.3.0-preview.5/…nupkg 会 FileNotFound，
+    # ValidatePackageTask 直接抛 MSB4018（本地因缓存里恰好留着该包，所以不复现）。
+    # 故 restore 必须排在版本改写之后，与 publish-nuget.yml 的顺序保持一致。
+    - name: Restore dependencies
+      run: dotnet restore
+    # EnablePackageValidation 的跨版本比对需要基线包（1.3.0-preview.5）做 CP 校验；
+    # 这里先按 Release 完整 build 再 pack（pack 阶段不再重复 restore）。
     # -p:AssemblyVersion 透传上面推导出的主段，使 CP0003「程序集版本 ≥ 基线 1.3.0.0」通过。
     - name: Build (Release)
       run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
@@ -151,11 +157,3 @@ jobs:
       run: |
         dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
         dotnet pack ./src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
-    - name: Upload packages
-      uses: actions/upload-artifact@v4
-      with:
-        name: packages
-        path: |
-          src/Len.StronglyTypedId.Generators/bin/Release/*.nupkg
-          src/Len.StronglyTypedId/bin/Release/*.nupkg
-          src/Len.StronglyTypedId/bin/Release/*.snupkg
