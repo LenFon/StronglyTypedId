@@ -19,6 +19,12 @@
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
 		<!-- 测试断言库。 -->
 		<PackageReference Include="FluentAssertions" />
+		<!-- 显式钉定 Roslyn 版本，与生成器/CodeFix 程序集保持一致（5.9.0）。
+		     TestBase 经 ProjectReference 传递引入 Microsoft.CodeAnalysis.CSharp.Analyzer.Testing 1.1.4，
+		     其最低依赖 Microsoft.CodeAnalysis.Common / Workspaces.Common 1.0.1 只有 net45/net452 资产，
+		     会带来 NU1701（回退到 .NETFramework 还原）、MSB3277（1.0.0.0 与 5.9.0.0 程序集冲突）
+		     以及 AD0001（旧版 FixerWithFixAllAnalyzer 类型初始化失败）。钉定后统一解析到 5.9.0。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
 		<!-- ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」
 		     的消费者画像下可被触发，并提供可编译的命名空间和类型（MvcOptions / IModelBinder /
 		     IRouteConstraint 等）。 -->

@@ -54,11 +54,11 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonRegistrationCodeGenerator), version)}}
                 public static void ApplyTo(global::System.Text.Json.JsonSerializerOptions options)
                 {
-            {{string.Join("\r\n", registrations)}}
+            {{string.Join("\n", registrations)}}
                 }
             }
             """;
 
-        context.AddSource("StronglyTypedIds.SystemTextJson.g.cs", code);
+        context.AddSource("StronglyTypedIds.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 }

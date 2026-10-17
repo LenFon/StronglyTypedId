@@ -1,6 +1,5 @@
 ﻿using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeRefactorings;
-using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Len.StronglyTypedId.CodeRefactorings;
@@ -139,6 +138,10 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 正向重构：补 <c>[StronglyTypedId]</c>、<c>partial</c> 与 <c>using Len.StronglyTypedId;</c>。
     /// </summary>
+    /// <remarks>
+    /// 插入的换行一律取自被编辑文档自身的行尾（见 <see cref="DocumentFormatting"/>）：
+    /// 写死 CRLF 会在 LF 检出的文件里留下混排行尾。
+    /// </remarks>
     private static async Task<Document> ConvertToStronglyTypedIdAsync(
         Document document,
         RecordDeclarationSyntax record,
@@ -151,6 +154,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return document;
         }
 
+        var endOfLine = DocumentFormatting.GetEndOfLine(root);
+
         // 新特性列表接管 record 原本的前导 trivia（通常是它上方那一行换行 / 空行），record 自身只留一个换行 ——
         // 否则新特性会挤在上一行末尾，或与声明之间多出一个空行。
         var attributeList = SyntaxFactory.AttributeList(
@@ -159,14 +164,13 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             .WithLeadingTrivia(record.GetLeadingTrivia());
 
         var updated = record
-            .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed)
+            .WithLeadingTrivia(SyntaxFactory.EndOfLine(endOfLine))
             .WithAttributeLists(record.AttributeLists.Insert(0, attributeList))
             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword));
 
-        var newRoot = AddUsingIfMissing(root.ReplaceNode(record, updated));
+        var newRoot = AddUsingIfMissing(root.ReplaceNode(record, updated), endOfLine);
 
-        return document.WithSyntaxRoot(
-            Formatter.Format(newRoot, document.Project.Solution.Workspace, cancellationToken: cancellationToken));
+        return document.WithSyntaxRoot(DocumentFormatting.Format(document, newRoot, cancellationToken));
     }
 
     /// <summary>
@@ -196,6 +200,9 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 摘掉 <c>[StronglyTypedId]</c>、<c>partial</c>，并在文件里再无强类型 Id 时摘掉 using。
     /// </summary>
+    /// <remarks>
+    /// 与正向重构同理，格式化按被编辑文档自身的行尾进行（见 <see cref="DocumentFormatting"/>）。
+    /// </remarks>
     private static async Task<Document> InlineToPrimitiveAsync(
         Document document,
         RecordDeclarationSyntax record,
@@ -215,8 +222,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 
         var newRoot = RemoveUsingIfUnused(root.ReplaceNode(record, updated));
 
-        return document.WithSyntaxRoot(
-            Formatter.Format(newRoot, document.Project.Solution.Workspace, cancellationToken: cancellationToken));
+        return document.WithSyntaxRoot(DocumentFormatting.Format(document, newRoot, cancellationToken));
     }
 
     /// <summary>
@@ -255,8 +261,9 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// 插入点有两处：文件里已有 using 时插在最后一个 using 之后，一个都没有时插在第一个成员之前。
     /// 两种情形都要把「插入点原本的换行 / 空行 trivia」挪到新指令上，再把插入点规整成一个换行 ——
     /// 否则要么两条 using 之间多出一个空行，要么 namespace 紧贴 using。
+    /// 新造的换行取 <paramref name="endOfLine"/>（被编辑文档自身的行尾），不写死 CRLF。
     /// </remarks>
-    private static SyntaxNode AddUsingIfMissing(SyntaxNode root)
+    private static SyntaxNode AddUsingIfMissing(SyntaxNode root, string endOfLine)
     {
         if (root is not CompilationUnitSyntax compilationUnit || HasUsingDirective(compilationUnit))
         {
@@ -271,14 +278,14 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 
             return compilationUnit.WithUsings(
                 compilationUnit.Usings
-                    .Replace(lastUsing, lastUsing.WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed))
-                    .Add(directive.WithTrailingTrivia(gap.Count > 0 ? gap : SyntaxFactory.TriviaList(SyntaxFactory.CarriageReturnLineFeed))));
+                    .Replace(lastUsing, lastUsing.WithTrailingTrivia(SyntaxFactory.EndOfLine(endOfLine)))
+                    .Add(directive.WithTrailingTrivia(gap.Count > 0 ? gap : SyntaxFactory.TriviaList(SyntaxFactory.EndOfLine(endOfLine)))));
         }
 
         if (compilationUnit.Members.FirstOrDefault() is not { } firstMember)
         {
             return compilationUnit.WithUsings(
-                SyntaxFactory.SingletonList(directive.WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed)));
+                SyntaxFactory.SingletonList(directive.WithTrailingTrivia(SyntaxFactory.EndOfLine(endOfLine))));
         }
 
         var leading = firstMember.GetLeadingTrivia();
@@ -288,11 +295,11 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
         // 首个成员本身只保留一个换行。
         var directiveTrailing = leading.Count > 0
             ? leading
-            : SyntaxFactory.TriviaList(SyntaxFactory.CarriageReturnLineFeed, SyntaxFactory.CarriageReturnLineFeed);
+            : SyntaxFactory.TriviaList(SyntaxFactory.EndOfLine(endOfLine), SyntaxFactory.EndOfLine(endOfLine));
 
         return compilationUnit
             .WithUsings(SyntaxFactory.SingletonList(directive.WithTrailingTrivia(directiveTrailing)))
-            .ReplaceNode(firstMember, firstMember.WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed));
+            .ReplaceNode(firstMember, firstMember.WithLeadingTrivia(SyntaxFactory.EndOfLine(endOfLine)));
     }
 
     /// <summary>

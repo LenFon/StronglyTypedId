@@ -17,21 +17,19 @@ namespace Len.StronglyTypedId.Generators;
 /// 缺此门控会在无关项目里生成无法编译的符号。
 /// </para>
 /// </remarks>
-internal class AspNetCoreMvcCodeGenerator : ICodeGenerator
+internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new AspNetCoreMvcCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new AspNetCoreMvcCodeGenerator();
 
     public int Order { get; } = 7;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules)
-            .Where(idInfo => !idInfo.IsInGenericContainer)
-            .ToList();
+        var stronglyTypedIds = discoveredIds.External.ToList();
 
         // 每个 Id 注册为路由约束：路由模板里写 {id:OrderId} 即可按该 Id 的解析规则校验分段格式。
         // 同名简单名（不同命名空间）会按字典覆盖，取最后注册者——属极边缘冲突，沿用门控消歧哲学不予展开。
@@ -60,7 +58,7 @@ internal class AspNetCoreMvcCodeGenerator : ICodeGenerator
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 public static void ApplyTo(global::Microsoft.AspNetCore.Routing.RouteOptions options)
                 {
-            {{string.Join("\r\n", constraintRegistrations)}}
+            {{string.Join("\n", constraintRegistrations)}}
                 }
 
                 /// <summary>
@@ -168,6 +166,6 @@ internal class AspNetCoreMvcCodeGenerator : ICodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.AspNetCoreMvc.g.cs", code);
+        context.AddSource("StronglyTypedIds.AspNetCoreMvc.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 }
