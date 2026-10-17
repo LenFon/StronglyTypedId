@@ -1,0 +1,176 @@
+# StronglyTypedId 的编辑器配置
+#
+# 本文件有三个目的：
+#   1. 固化「0 警告」基线 —— 把仓库实际遵守的严重级别显式写下来。默认严重级别不构成约束，
+#      一次 NoWarn 或 WarningsNotAsErrors 就能绕过去；写在这里的才是可评审的承诺。
+#   2. 示范 STIAO011 的严重级别提升 —— README 承诺「可用 .editorconfig 提升」，仓库自身先示范。
+#   3. 固化代码风格 —— 让新代码与既有代码同形，减少与内容无关的评审噪声。
+#
+# 本文件只声明「仓库实际已经在做的」约定，不引入新的强制项。
+# 未声明 charset：仓库现存 .cs 的 BOM 并不统一（多数有、少数无），一旦声明 charset，
+# 编辑器保存时会批量增删 BOM，产生与内容无关的巨大 diff。
+#
+# 关于行尾：.gitattributes 是 `* text=auto`（仓库内统一存 LF），本地 core.autocrlf=true
+# 使工作树为 CRLF。此处按工作树的实际形态声明 crlf；提交时仍会被规范化为 LF，
+# 因此在 Linux / macOS 上检出也不受影响。
+
+root = true
+
+[*]
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# C# 代码风格
+# ---------------------------------------------------------------------------
+
+[*.{cs,csx}]
+
+# 命名空间：全仓库一律用文件范围声明（`namespace X;`）。
+csharp_style_namespace_declarations = file_scoped:warning
+
+# using 指令：置于命名空间之外，System.* 排在前面。
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# 大括号：Allman 风格。
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+
+# 空格。
+csharp_space_around_binary_operators = before_and_after
+csharp_space_after_cast = false
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_parentheses = false
+
+# var：仓库通篇使用 var。
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+
+# 表达式体：单行时优先 `=>`（生成器模板与运行时类型大量使用）。
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_expression_bodied_accessors = when_on_single_line:suggestion
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion
+csharp_style_expression_bodied_indexers = when_on_single_line:suggestion
+csharp_style_expression_bodied_lambdas = when_on_single_line:suggestion
+
+# 其它常用偏好。
+csharp_prefer_braces = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_deconstructed_variable_declaration = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+csharp_style_prefer_extended_property_pattern = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_throw_expression = true:suggestion
+csharp_style_conditional_delegate_call = true:suggestion
+csharp_style_unused_value_assignment_preference = discard_variable:suggestion
+csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
+
+# 限定与修饰符。
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:suggestion
+dotnet_style_readonly_field = true:suggestion
+
+# 对象 / 集合初始化与空值处理。
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
+dotnet_style_explicit_tuple_names = true:suggestion
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:suggestion
+dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
+dotnet_style_prefer_conditional_expression_over_return = true:suggestion
+dotnet_style_prefer_compound_assignment = true:suggestion
+dotnet_style_prefer_simplified_interpolation = true:suggestion
+dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
+dotnet_style_prefer_inferred_tuple_names = true:suggestion
+dotnet_style_prefer_inferred_anonymous_type_member_names = true:suggestion
+
+# 命名：私有字段 `_camelCase`（如 SupportedPrimitiveTypes._typeNames），常量 PascalCase。
+dotnet_naming_rule.private_fields_underscore_camel_case.severity = suggestion
+dotnet_naming_rule.private_fields_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore_camel_case.style = underscore_camel_case
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+
+dotnet_naming_rule.const_fields_pascal_case.severity = suggestion
+dotnet_naming_rule.const_fields_pascal_case.symbols = const_fields
+dotnet_naming_rule.const_fields_pascal_case.style = pascal_case
+dotnet_naming_symbols.const_fields.applicable_kinds = field
+dotnet_naming_symbols.const_fields.applicable_accessibilities = *
+dotnet_naming_symbols.const_fields.required_modifiers = const
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# ---------------------------------------------------------------------------
+# 诊断严重级别：把「0 警告」基线写死
+# ---------------------------------------------------------------------------
+# STIAO000–STIAO010、STIAO012 默认即为 Error，这里显式重申，使其成为可评审的承诺
+# （默认值可以被一次 NoWarn 悄悄绕过，写在这里的不行）。
+dotnet_diagnostic.STIAO000.severity = error
+dotnet_diagnostic.STIAO001.severity = error
+dotnet_diagnostic.STIAO002.severity = error
+dotnet_diagnostic.STIAO003.severity = error
+dotnet_diagnostic.STIAO004.severity = error
+dotnet_diagnostic.STIAO005.severity = error
+dotnet_diagnostic.STIAO006.severity = error
+dotnet_diagnostic.STIAO007.severity = error
+dotnet_diagnostic.STIAO008.severity = error
+dotnet_diagnostic.STIAO009.severity = error
+dotnet_diagnostic.STIAO010.severity = error
+dotnet_diagnostic.STIAO012.severity = error
+
+# STIAO011 默认是 Info：`new XxxId(...)` 会绕过 Create / TryParse，验证器不运行。
+# README 承诺「可用 .editorconfig 提升」，此处提升为 warning 作为示范 —— 本仓库自身
+# 一律经 Create / TryParse 构造，不会因此产生告警。
+# 若你的项目里确有必须直接构造的场景，改成 suggestion 或 none 即可。
+dotnet_diagnostic.STIAO011.severity = warning
+
+# RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
+# src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
+
+# ---------------------------------------------------------------------------
+# 其它文件类型
+# ---------------------------------------------------------------------------
+
+# MSBuild 工程文件沿用 Tab 缩进（与现存 .csproj / .props 一致）。
+[*.{csproj,props,targets,proj,vcxproj}]
+indent_style = tab
+
+# 解决方案文件（XML）用 2 空格。
+[*.slnx]
+indent_size = 2
+
+[*.{json,yml,yaml,xml,config,xaml}]
+indent_size = 2
+
+# Markdown 的行尾双空格是有意义的硬换行，不裁剪。
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+# 生成器产物（若开启 EmitCompilerGeneratedFiles 落到磁盘）：不参与风格检查。
+[**/*.g.cs]
+generated_code = true
