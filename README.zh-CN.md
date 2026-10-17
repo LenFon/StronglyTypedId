@@ -29,6 +29,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [Swashbuckle](#swashbuckle)
 - [Dapper](#dapper)
 - [ASP.NET Core MVC](#aspnet-core-mvc)
+- [Minimal API](#minimal-api)
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [用接口约束泛型](#using-the-interface)
 - [运行时反射](#reflection-helpers)
@@ -41,7 +42,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 12 条规则里有 6 条附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，13 条规则全都附带代码修复，
   可一键修好声明（见[诊断与代码修复](#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并为具备相应接口的基元类型（除 `string` 外的全部）
@@ -60,9 +61,13 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
 - **Dapper 集成** —— 引用 `Dapper` ≥ 2.0.0 时生成 `TypeHandler` 与 `ApplyTo(IDbConnection)`。
 - **ASP.NET Core MVC 集成** —— 引用 `Microsoft.AspNetCore.Mvc`（或其 `Microsoft.AspNetCore.Mvc.Core` 门面）≥ 2.0.0 时，生成模型绑定提供者与逐 Id 路由约束，使 `[FromRoute]`/`[FromQuery]` 与 `{id:OrderId}` 开箱即用。
+- **Minimal API 支持** —— 无需额外生成：路由 / 查询参数经 `IParsable<T>` 自动绑定，`{id:OrderId}` 路由约束复用 MVC 集成注册的 `RouteOptions`。
 - **ASP.NET Core OpenAPI 集成** —— 引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时生成 `ApplyTo(OpenApiOptions)` 架构映射。
 - **序列化** —— 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，
-  其中 `System.Text.Json` 还支持字典键。
+  其中 `System.Text.Json` 还支持字典键；两者另提供显式注册入口（`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` 与
+  `settings.AddStronglyTypedId()`），并可按 Id 选择基元形态或对象形态（见 [JSON 形态](#serialization)）。
+- **文本前缀** —— 用 `[StronglyTypedId(Prefix = "ord_")]` 为 Id 指定规范文本形（`"ord_3f2c…"`），
+  该前缀会贯穿 `ToString`、`Parse`、JSON 及其余全部文本路径（见 [文本前缀](#serialization)）。
 - **Entity Framework Core** —— 在需要时生成 EF Core（≥ 7.0.0）值转换器。
 - **Swagger / OpenAPI** —— 在引用 Swashbuckle.AspNetCore 时生成架构映射，同时兼容 Microsoft.OpenApi 1.x 与 2.x。
 - **运行时反射助手** —— 可在运行时判断任意类型是否为强类型 Id，并取回其底层基元类型。
@@ -174,12 +179,12 @@ IFormatProvider)` 已被标记过时。
 | 编译中的条件                                                                          | 生成的代码                                                                          |
 | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | 始终                                                                                  | 核心实现 → `<命名空间>.<类型名>.g.cs`                                                |
-| 引用了 `System.Text.Json`                                                             | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`    |
-| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`    |
+| 引用了 `System.Text.Json`                                                             | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs` |
+| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs` |
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
 | 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
-| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
+| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束） |
 | 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                          | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 核心实现会补上：
@@ -195,8 +200,9 @@ IFormatProvider)` 已被标记过时。
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。对于以 `string` 为基元的
   Id，`TryParse` 不接受 `null` 与空字符串。
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。
-- 返回被包装值文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
-  以及基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+- 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
+  与序列化写出的文本一致，`Parse(id.ToString(), CultureInfo.InvariantCulture)` 可往返；需要按特定文化
+  格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
 - 以 `string` 为基元的 Id 会驻留相等的字符串值：相等的字符串会按 Id 类型共享同一份底层存储
   （使用每类型的小缓存，而非进程级的 `string.Intern` 池），因此重复 Id 几乎不再额外占内存。
 - 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
@@ -270,7 +276,8 @@ public partial record struct ConvertibleGuidId(Guid Value);
 
 生成的嵌套 `XxxTypeConverter` 会带上 `[TypeConverter(typeof(XxxTypeConverter))]` 特性，因此
 `TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` 即可在字符串与 Id 间转换，引用类型 Id 的
-`null` 会解析回 `default`。
+`null` 会解析回 `default`。两个方向都按**不变文化**读写，与生成的 `ToString()` 一致，因此在某个
+区域设置下写出的值，换个区域也能读回。
 
 > 该转换器仅覆盖「字符串 ↔ Id」这一路径；它不替代 JSON 转换器，二者各自独立生效。
 
@@ -358,11 +365,85 @@ var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
 基元的 Id 直接使用该字符串，故空串也能往返；无法解析的键会抛 `JsonException`。
 
 Newtonsoft.Json 的字典键走的是 `TypeConverter` / `ToString()`，并不经过 `JsonConverter`，因此生成的
-转换器接管不到它。键仍可往返——生成的 `ToString()` 返回的正是基元值文本——但该文本跟随当前区域性。
-若需要控制键的格式，请自行给 Id 标注 `[TypeConverter]`。
+转换器接管不到它。请在 Id 上开启 `TypeConverter = true`，Newtonsoft 才能在读路径还原键。键文本与转换器
+写出的一致，都是**不变文化**文本——生成的 `ToString()` 与生成的 `TypeConverter` 两个方向都按不变文化读写——
+因此在任何区域设置下键都保持稳定。
 
 两种转换器都把 Id 序列化为其底层基元值而不是对象，因此 JSON 结构与引入强类型 Id 之前保持一致。
 引用类型 Id 为 `null` 时写出的就是 JSON `null`。
+
+### JSON 形态
+
+默认情况下，Id 与其基元**形态兼容**：以 `Guid` 为基元的 `OrderId` 序列化结果与裸 `Guid` 完全相同，
+因此引入强类型 Id 不会改变线上格式。当既有契约已经对外承诺了对象形态——典型情况是客户端发送
+`{ "value": "3f2c…" }`——可以按 Id 选择启用：
+
+```csharp
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct OrderId(Guid Value);
+
+// JsonShape.Primitive（默认）："3f2c…"
+// JsonShape.Object：           {"value":"3f2c…"}
+```
+
+该设置对 `System.Text.Json` 与 `Newtonsoft.Json` 同时生效，字典键亦然。`JsonShape.Object` 读写单个
+`value` 属性；载荷不是对象、或对象缺少 `value` 时会抛异常（`JsonException` /
+`JsonSerializationException`）。由于基元形态是默认值，除非你主动选择对象形态，既有载荷不受影响。
+
+### 文本前缀
+
+可以按 Id 选择启用文本前缀。前缀进入 Id 的**规范文本形**——`ToString()` 写出、`Parse` / `TryParse`
+剥离——因此所有基于文本的路径都会自动带上它：
+
+```csharp
+[StronglyTypedId(Prefix = "ord_")]
+public partial record struct OrderId(Guid Value);
+
+var id = OrderId.Create(guid);
+
+id.ToString();                              // "ord_3f2c…"
+OrderId.Parse("ord_3f2c…");                 // OrderId
+OrderId.Parse("3f2c…");                     // OrderId（宽松读入，默认）
+JsonSerializer.Serialize(id);                // "ord_3f2c…"
+```
+
+由于前缀落在规范文本形里，走文本的集成无需额外配置：MVC 模型绑定、路由约束与生成的 `TypeConverter`
+都自动接受并输出带前缀的形态。而走基元**值**的集成——EF Core 与 Dapper——不受影响，仍存裸基元，
+既有列与数据行继续有效。
+
+读入**默认宽松**：`TryParse` 同时接受带前缀与裸值两种写法，因此既有载荷与已存文本仍可往返，而新写出的
+文本恒带前缀。需要前缀强制存在时，可按 Id 改为严格：
+
+```csharp
+[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
+public partial record struct OrderId(Guid Value);
+
+OrderId.TryParse("ord_3f2c…", null, out _);  // true
+OrderId.TryParse("3f2c…", null, out _);       // false
+```
+
+> **启用后属破坏性变更。** 对数字、枚举与日期基元，JSON 表示会由 JSON number 变为 JSON string，
+> 因为带前缀的形态是文本。数据库存储不受影响。不设置 `Prefix` 时，生成代码与之前逐字节一致。
+
+空前缀或纯空白前缀按「未设置」处理，并报 `STIAO013`。
+
+### 显式注册
+
+`[JsonConverter]` 特性覆盖了常见情形，但当你传入自己的 `JsonSerializerOptions` / `JsonSerializerSettings`
+并希望把本库的转换器一并挂上时，该特性不会被采纳。为此，两个序列化器都在生成的 `StronglyTypedIds` 类上
+提供了注册入口，与 EF Core / Swagger / Dapper / MVC / OpenAPI 的 `ApplyTo` 家族平行：
+
+```csharp
+// System.Text.Json
+var options = new JsonSerializerOptions();
+StronglyTypedIds.ApplyTo(options);          // 把每个 Id 的转换器加入 options.Converters
+
+// Newtonsoft.Json
+var settings = new JsonSerializerSettings();
+settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 settings.Converters
+```
+
+每个入口只在引用了对应序列化器、且编译中至少声明了一个 Id 时才生成。
 
 <a id="entity-framework-core"></a>
 
@@ -495,6 +576,34 @@ public class OrdersController : ControllerBase
 > 绑定器只对实现了 `IStronglyTypedId<TSelf, TPrimitiveId>` 的类型接管；其余类型回退到 MVC 默认绑定链路。
 > 绑定本身复用每个 Id 已有的 `IParsable<TSelf>` 成员，因此除注册时的一次性类型判定外没有逐请求反射开销。
 
+<a id="minimal-api"></a>
+
+## Minimal API <a href="#top" style="float:right">↑ 返回目录</a>
+
+Minimal API **无需任何额外生成**。它的参数绑定约定接受「具备静态 `TryParse(string?, IFormatProvider?, out TSelf)`
+的类型」，而每个 Id 都经 `IParsable<TSelf>` 天然具备该成员，因此路由与查询参数开箱即用：
+
+```csharp
+// 路由里的 "ABC123" 经 IParsable<OrderId>.TryParse 绑定为 OrderId；
+// 非法文本在进入处理器前即返回 400。
+app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value));
+
+// [AsParameters] 会把每个 Id 属性按同名的路由 / 查询值逐个绑定。
+app.MapGet("/orders", ([AsParameters] OrderQuery query) => Results.Ok(query.Id.Value));
+
+public record OrderQuery(OrderId Id);
+```
+
+路由约束与 MVC 共用：生成的 `ApplyTo(RouteOptions)` 会为每个 Id 注册一条约束，因此 `{id:OrderId}`
+在 Minimal API 模板里同样可用（`Microsoft.AspNetCore.Mvc.*` 程序集随 ASP.NET Core 共享框架分发，
+Minimal API 工程也满足门控）：
+
+```csharp
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+
+app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value));
+```
+
 <a id="aspnetcore-openapi"></a>
 
 ## ASP.NET Core OpenAPI <a href="#top" style="float:right">↑ 返回目录</a>
@@ -554,20 +663,25 @@ if (typeof(OrderId).IsStronglyTypedId())
 分析器会强制以下规则。每一条都会作为**编译错误**报告，因此不合法的声明无法通过编译。诊断文案
 会按编译器区域设置输出英文或中文。
 
-| 规则 ID  | 说明                                                       | 代码修复             |
-| -------- | ---------------------------------------------------------- | -------------------- |
-| STIAO000 | 类型必须是 `record`（或 `record struct`）。                | —                    |
-| STIAO001 | 类型必须是 `partial`。                                     | 补上 `partial`       |
-| STIAO002 | 类型不能是 `abstract`。                                    | 去掉 `abstract`      |
-| STIAO003 | 类型不能是 `generic`（泛型）。                             | 移除类型参数表       |
-| STIAO004 | 类型必须声明在命名空间内。                                 | —                    |
-| STIAO005 | 类型必须拥有单参数的主构造函数。                           | —                    |
-| STIAO006 | 主构造函数参数不能为可空类型。                             | 去掉 `?` 后缀        |
-| STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数           |
-| STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | —                    |
-| STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补上 `partial` |
-| STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | — |
-| STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | — |
+| 规则 ID  | 说明                                                       | 代码修复               |
+| -------- | ---------------------------------------------------------- | ------------------------ |
+| STIAO000 | 类型必须是 `record`（或 `record struct`）。                | 转为 `record`          |
+| STIAO001 | 类型必须是 `partial`。                                     | 补上 `partial`         |
+| STIAO002 | 类型不能是 `abstract`。                                    | 去掉 `abstract`        |
+| STIAO003 | 类型不能是 `generic`（泛型）。                             | 移除类型参数表         |
+| STIAO004 | 类型必须声明在命名空间内。                                 | 包进命名空间           |
+| STIAO005 | 类型必须拥有单参数的主构造函数。                           | 补主构造函数           |
+| STIAO006 | 主构造函数参数不能为可空类型。                             | 去掉 `?` 后缀          |
+| STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数             |
+| STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | 改为 `Guid`            |
+| STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补 `partial` |
+| STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | 删掉 `Validator` 实参  |
+| STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | 改用 `Create(...)`     |
+| STIAO013 | `Prefix` 被设为空串或纯空白，会按「未设置」处理。 | 删掉 `Prefix` 实参，或给它一个非空白值 |
+
+每条规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIAO003` 仅在 Id 自身是泛型时提供
+（删掉*包含类型*的类型参数会改变你的设计），`STIAO005` 仅在类型没有显式构造函数时提供（在已有构造函数旁
+再加主构造函数会撞 `CS0111`），`STIAO009` 仅在包含类型确实缺 `partial` 时提供（否则会插进第二个 `partial`）。
 
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以
 拆成多个 `partial` 声明段：类型级规则按整个类型判定一次，参数级规则只在声明主构造函数的那一段上判定，
@@ -591,7 +705,9 @@ if (typeof(OrderId).IsStronglyTypedId())
 
 答：每个 `ApplyTo` 重载都是随对应集成一起生成的，两者都位于 `Len.StronglyTypedId` 命名空间。请确认：
 （1）已 `using Len.StronglyTypedId;`；（2）使用 EF Core 时确实有 `DbContext` 重写了 `ConfigureConventions`；
-（3）使用 Swagger 时项目引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0。
+（3）使用 Swagger 时项目引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0。JSON 两个入口遵循同一规则：
+`ApplyTo(JsonSerializerOptions)` 需要引用 `System.Text.Json`，`AddStronglyTypedId()` 需要引用
+`Newtonsoft.Json` ≥ 13.0.0。
 
 **问：明明引用了 EF Core，为什么没有生成值转换器 / 列映射？**
 

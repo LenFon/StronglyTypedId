@@ -314,6 +314,98 @@ public class StronglyTypedIdInfoTests
 
     #endregion
 
+    #region 文本前缀：Prefix / PrefixReadMode 解析
+
+    /// <summary>
+    /// <c>Prefix</c> 与 <c>PrefixReadMode</c> 都是 attribute 命名实参，会被写进元数据，
+    /// 因此引用程序集里的强类型 Id 与本次编译新声明的走同一条读取路径。
+    /// </summary>
+    [Fact]
+    public void Info_Should_ReadPrefix_FromAttributeNamedArgument()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId(Prefix = "ord_")]
+                public partial record struct NewId(int Value);
+            }
+            """,
+            "Len.StronglyTypedId.NewId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.Prefix.Should().Be("ord_");
+        info.HasPrefix.Should().BeTrue();
+        // 未显式指定读入策略时默认宽松。
+        info.IsStrictPrefixRead.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Info_Should_ReadStrictPrefixReadMode_FromAttributeNamedArgument()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
+                public partial record struct NewId(int Value);
+            }
+            """,
+            "Len.StronglyTypedId.NewId");
+
+        new StronglyTypedIdInfo(type).IsStrictPrefixRead.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// 未设置前缀时 <see cref="StronglyTypedIdInfo.Prefix"/> 为 <see langword="null"/>、<c>HasPrefix</c> 为假，
+    /// 生成产物与不支持前缀时逐字节一致。
+    /// </summary>
+    [Fact]
+    public void Info_Should_LeavePrefixNull_WhenAttributeOmitsIt()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId]
+                public partial record struct NewId(int Value);
+            }
+            """,
+            "Len.StronglyTypedId.NewId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.Prefix.Should().BeNull();
+        info.HasPrefix.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 空 / 纯空白前缀按「未设置」归一为 <see langword="null"/>（分析器另行报 STIAO013 告警）。
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Info_Should_NormalizeBlankPrefix_ToNull(string prefix)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId(Prefix = "{{prefix}}")]
+                public partial record struct NewId(int Value);
+            }
+            """,
+            "Len.StronglyTypedId.NewId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.Prefix.Should().BeNull();
+        info.HasPrefix.Should().BeFalse();
+    }
+
+    #endregion
+
     #region 包含类型链：嵌套类型
 
     [Fact]
@@ -555,12 +647,11 @@ public class StronglyTypedIdInfoTests
     {
         var seed = new[] { typeof(object).Assembly, typeof(StronglyTypedIdAttribute).Assembly };
 
-        return AppDomain.CurrentDomain.GetAssemblies()
+        return [.. AppDomain.CurrentDomain.GetAssemblies()
             .Union(seed)
             .Distinct()
             .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))
-            .ToImmutableArray();
+            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))];
     }
 
     #endregion

@@ -3,6 +3,33 @@
 [StronglyTypedId]
 public partial record struct GuidId(Guid Value);
 
+// C1 新增基元：扩展整型、浮点、日期/时间、大整数。各自代表一条生成器形态分支 ——
+// Int128/UInt128/DateOnly/TimeOnly/Single/Double/Half 与整型同构（全套含 UTF-16 / UTF-8 span）；
+// BigInteger 虽有 UTF-8 语义，但其 TryParse(ReadOnlySpan<byte>,…) 是显式接口实现，故不生成 UTF-8 解析。
+[StronglyTypedId]
+public partial record struct Int128Id(Int128 Value);
+
+[StronglyTypedId]
+public partial record struct UInt128Id(UInt128 Value);
+
+[StronglyTypedId]
+public partial record struct DateOnlyId(DateOnly Value);
+
+[StronglyTypedId]
+public partial record struct TimeOnlyId(TimeOnly Value);
+
+[StronglyTypedId]
+public partial record struct DoubleId(double Value);
+
+[StronglyTypedId]
+public partial record struct SingleId(float Value);
+
+[StronglyTypedId]
+public partial record struct HalfId(Half Value);
+
+[StronglyTypedId]
+public partial record struct BigIntegerId(System.Numerics.BigInteger Value);
+
 [StronglyTypedId]
 public partial record struct Int32Id(int Value);
 
@@ -16,10 +43,10 @@ public partial record struct Int64Id(long Value);
 public partial record struct UInt64Id(ulong Value);
 
 [StronglyTypedId]
-public partial record struct StringId(string Value);
+public partial record struct ByteId(byte Value);
 
 [StronglyTypedId]
-public partial record struct ByteId(byte Value);
+public partial record struct StringId(string Value);
 
 [StronglyTypedId]
 public partial record GuidIdV2(Guid Value);
@@ -96,6 +123,20 @@ public readonly partial record struct ReadonlyGuidId(Guid Value);
 [StronglyTypedId(TypeConverter = true)]
 public partial record struct ConvertibleGuidId(Guid Value);
 
+// H1：文化敏感的基元 + TypeConverter，用来验证生成的转换器与 ToString() 一样按不变文化往返，
+// 不受当前区域（如 de-DE 的小数逗号）影响。
+[StronglyTypedId(TypeConverter = true)]
+public partial record struct ConvertibleDoubleId(double Value);
+
+// C4：JSON 形态可配置。默认（Primitive）下 Id 与基元值在 JSON 里同形；Object 形态读写 { "value": … }，
+// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。取 Guid 与 string 两种基元：
+// 值位置的写入路径两者相同，但字典键的写入路径不同（string 直取取值，其余经不变文化 ToString）。
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeGuidId(Guid Value);
+
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeStringId(string Value);
+
 // 嵌套类型的 Id：包含类型必须声明为 partial —— partial 的各段必须处于同一容器内，生成代码要补的
 // 成员只能逐层嵌回容器里，故容器得能被生成代码原样重开一次。
 // 三种容器种类各取一个，覆盖「种类关键字按符号判定」这条路径：record 与 class 的 TypeKind 同为 Class，
@@ -117,4 +158,28 @@ public partial record Inventory(Guid WarehouseId)
     [StronglyTypedId]
     public partial record struct SkuId(string Value);
 }
+
+// C10：文本前缀。前缀进入规范文本形（ToString 前置、Parse/TryParse 剥离），从而自动贯通所有文本路径
+// （STJ / Newtonsoft / MVC / 路由约束 / TypeConverter），而以基元值为媒介的 EF Core / Dapper 不受影响。
+// 取 Guid（值类型）与 string（引用基元）两种基元，覆盖「数字基元 JSON 变 string」与「字符串基元 JSON 内容变化」。
+[StronglyTypedId(Prefix = "ord_")]
+public partial record struct PrefixedGuidId(Guid Value);
+
+[StronglyTypedId(Prefix = "ord_")]
+public partial record struct PrefixedStringId(string Value);
+
+// 前缀 + 对象形态：{ "value": "ord_x" }。
+[StronglyTypedId(Prefix = "ord_", JsonShape = JsonShape.Object)]
+public partial record struct PrefixedObjectGuidId(Guid Value);
+
+// 前缀 + 验证器：验证器收到的是剥离后的基元值。
+[StronglyTypedId(Prefix = "ord_", Validator = nameof(Validate))]
+public partial record struct PrefixedValidatedGuidId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
+// 严格读入：缺前缀即解析失败（PrefixReadMode 默认宽松，此处显式改为严格）。
+[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
+public partial record struct StrictPrefixedGuidId(Guid Value);
 

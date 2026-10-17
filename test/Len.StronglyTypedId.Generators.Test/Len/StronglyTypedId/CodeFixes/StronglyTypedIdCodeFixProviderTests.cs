@@ -9,7 +9,7 @@ namespace Len.StronglyTypedId.CodeFixes;
 
 public class StronglyTypedIdCodeFixProviderTests
 {
-    private readonly static string FixedCode = """
+    private readonly static string _fixedCode = """
         using System;
         
         namespace Len.StronglyTypedId.Tests;
@@ -33,7 +33,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.TypeMustBePartial)
             .WithSpan(5, 1, 6, 42).WithArguments("OrderId");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.TypeCannotBeAbstract)
             .WithSpan(5, 1, 6, 59).WithArguments("OrderId");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.ParameterNameMustBeValue)
             .WithSpan(6, 43, 6, 49).WithArguments("Value1");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.ParameterCannotBeNullable)
             .WithSpan(6, 38, 6, 43).WithArguments("Guid?");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.TypeCannotBeGeneric)
             .WithSpan(5, 1, 6, 53).WithArguments("OrderId");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -653,6 +653,117 @@ public class StronglyTypedIdCodeFixProviderTests
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
+
+    /// <summary>
+    /// STIAO013：<c>Prefix = ""</c> 时删掉 <c>Prefix</c> 命名实参（等同「未设置」）。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_RemovePrefixArgument_WhenPrefixIsBlank()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "")]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
+            .WithSpan(5, 18, 5, 29);
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO013：attribute 有多个命名实参时，只删空的 Prefix，保留其余（JsonShape）。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_KeepOtherArguments_WhenRemovingPrefix()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object, Prefix = "")]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
+            .WithSpan(5, 48, 5, 59);
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIAO014：把对外可见的 Id 收窄为 <c>internal</c>，使主构造函数无法被外部直接调用绕过验证器。
+    /// </summary>
+    /// <remarks>
+    /// 修复只能改类型可见性 —— record 的主构造函数不允许单独指定可见性（<c>public record R private (int X)</c>
+    /// 是 CS1514），它始终跟随类型本身。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFix_Should_NarrowVisibilityToInternal_WhenValidatorCanBeBypassed()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = "Validate")]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = "Validate")]
+            internal partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ValidatorCanBeBypassed)
+            .WithArguments("OrderId")
+            .WithSpan(5, 1, 9, 2);
+
+        await Verify.VerifyCodeFixWithEditorConfigAsync(code, EnableValidatorBypassRule, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// 启用 STIAO014 所用的 <c>.editorconfig</c> 片段（该规则默认关闭）。
+    /// </summary>
+    private const string EnableValidatorBypassRule = """
+        root = true
+
+        [*.cs]
+        dotnet_diagnostic.STIAO014.severity = suggestion
+        """;
 
     /// <summary>
     /// STIAO010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的

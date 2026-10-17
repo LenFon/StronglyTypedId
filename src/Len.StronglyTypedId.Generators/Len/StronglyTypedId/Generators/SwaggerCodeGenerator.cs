@@ -3,24 +3,24 @@
 /// <summary>
 /// 为强类型 Id 生成 Swashbuckle.AspNetCore 的 <c>MapType</c> 注册。
 /// </summary>
-internal class SwaggerCodeGenerator : ICodeGenerator
+internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 {
     private const string OpenApiAssemblyName = "Microsoft.OpenApi.dll";
 
-    internal static readonly ICodeGenerator Instance = new SwaggerCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new SwaggerCodeGenerator();
 
     public int Order { get; } = 4;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
         var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
 
-        var mapTypeCalls = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
-            .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo.PrimitiveIdTypeName, useOpenApiV2)});");
+        var mapTypeCalls = discoveredIds.External
+            .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo, useOpenApiV2)});");
 
         // 生成文件必须自带 using Microsoft.Extensions.DependencyInjection：
         // SwaggerGenOptions.MapType<T> 是该命名空间下的扩展方法（容器类 SwaggerGenOptionsExtensions，
@@ -29,7 +29,7 @@ internal class SwaggerCodeGenerator : ICodeGenerator
         // 类库 / 控制台等非 Web SDK 消费者的隐式 using 不含它，缺此 using 会得到 CS1061。
         // 该命名空间必然可解析：它由 Swashbuckle.AspNetCore.SwaggerGen 的传递依赖
         // Microsoft.Extensions.DependencyInjection.Abstractions 提供，而本文件只在引用前者时才生成。
-        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\r\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
+        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
@@ -39,12 +39,12 @@ internal class SwaggerCodeGenerator : ICodeGenerator
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SwaggerCodeGenerator), version)}}
                 public static void ApplyTo(global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions options)
-                { {{$"\r\n\t\t{string.Join("\r\n\t\t", mapTypeCalls)}"}}
+                { {{$"\n\t\t{string.Join("\n\t\t", mapTypeCalls)}"}}
                 }
             }
             """;
 
-        context.AddSource("StronglyTypedIds.Swagger.g.cs", code);
+        context.AddSource("StronglyTypedIds.Swagger.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>
@@ -75,7 +75,7 @@ internal class SwaggerCodeGenerator : ICodeGenerator
     ///   2) OpenApiSchema.Type 由 string 变为 Microsoft.OpenApi.JsonSchemaType? 枚举。
     /// 这里按主版本分支生成，使同一份生成器同时兼容新旧 Swashbuckle / Microsoft.OpenApi。
     /// </remarks>
-    private static string CreateOpenApiSchema(string primitiveIdTypeName, bool useOpenApiV2)
+    private static string CreateOpenApiSchema(StronglyTypedIdInfo idInfo, bool useOpenApiV2)
     {
         var schemaTypeName = useOpenApiV2
             ? "global::Microsoft.OpenApi.OpenApiSchema"
@@ -93,18 +93,22 @@ internal class SwaggerCodeGenerator : ICodeGenerator
                 ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
                 : $$"""new {{schemaTypeName}} { Type = {{typeExpression}}, Format = "{{format}}" }""";
 
-        return StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
-        {
-            "Guid" => Schema(TypeExpression("string"), "uuid"),
-            "int" => Schema(TypeExpression("integer"), "int32"),
-            "long" => Schema(TypeExpression("integer"), "int64"),
-            "uint" => Schema(TypeExpression("integer"), "uint32"),
-            "ulong" => Schema(TypeExpression("integer"), "uint64"),
-            "byte" => Schema(TypeExpression("integer"), "byte"),
-            "sbyte" => Schema(TypeExpression("integer"), "sbyte"),
-            "short" => Schema(TypeExpression("integer"), "int16"),
-            "ushort" => Schema(TypeExpression("integer"), "uint16"),
-            _ => Schema(TypeExpression("string"), null),
-        };
+        // 有前缀时规范文本形是字符串，故 schema 一律为 string 且不带 format ——
+        // 数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
+        return idInfo.HasPrefix
+            ? Schema(TypeExpression("string"), null)
+            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
+            {
+                "Guid" => Schema(TypeExpression("string"), "uuid"),
+                "int" => Schema(TypeExpression("integer"), "int32"),
+                "long" => Schema(TypeExpression("integer"), "int64"),
+                "uint" => Schema(TypeExpression("integer"), "uint32"),
+                "ulong" => Schema(TypeExpression("integer"), "uint64"),
+                "byte" => Schema(TypeExpression("integer"), "byte"),
+                "sbyte" => Schema(TypeExpression("integer"), "sbyte"),
+                "short" => Schema(TypeExpression("integer"), "int16"),
+                "ushort" => Schema(TypeExpression("integer"), "uint16"),
+                _ => Schema(TypeExpression("string"), null),
+            };
     }
 }

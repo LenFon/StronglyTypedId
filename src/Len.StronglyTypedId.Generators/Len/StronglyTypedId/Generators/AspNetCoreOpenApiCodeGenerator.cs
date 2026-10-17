@@ -17,23 +17,22 @@ namespace Len.StronglyTypedId.Generators;
 /// 的消费者编译引用里出现，缺此门控会在无关项目里生成无法解析的符号。
 /// </para>
 /// </remarks>
-internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
+internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new AspNetCoreOpenApiCodeGenerator();
+    internal static readonly IIntegrationCodeGenerator Instance = new AspNetCoreOpenApiCodeGenerator();
 
     public int Order { get; } = 6;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = StronglyTypedIdDiscovery.Discover(stronglyTypedIdInfos, modules, includeNested: false)
-            .ToList();
+        var stronglyTypedIds = discoveredIds.External.ToList();
 
         var schemaEntries = stronglyTypedIds
-            .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(idInfo.PrimitiveIdTypeName)}, {GetFormatLiteral(idInfo.PrimitiveIdTypeName)}),")
+            .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(idInfo)}, {GetFormatLiteral(idInfo)}),")
             .ToArray();
 
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -46,7 +45,7 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
                 {
                     private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, (string Type, string? Format)> _schemas = new()
                     {
-            {{string.Join("\r\n", schemaEntries)}}
+            {{string.Join("\n", schemaEntries)}}
                     };
 
                     /// <inheritdoc/>
@@ -78,34 +77,44 @@ internal class AspNetCoreOpenApiCodeGenerator : ICodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.AspNetCoreOpenApi.g.cs", code);
+        context.AddSource("StronglyTypedIds.AspNetCoreOpenApi.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>
     /// 取 OpenAPI <c>schema.Type</c> 的字面量（字符串形态，对应 Microsoft.OpenApi 1.x 的 <c>string?</c> 字段）。
     /// </summary>
-    private static string GetTypeLiteral(string primitiveIdTypeName)
-        => StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
-        {
-            "Guid" or "string" => "\"string\"",
-            _ => "\"integer\"",
-        };
+    /// <remarks>
+    /// 有前缀时规范文本形是字符串，故类型一律为 <c>string</c> —— 数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
+    /// </remarks>
+    private static string GetTypeLiteral(StronglyTypedIdInfo idInfo)
+        => idInfo.HasPrefix
+            ? "\"string\""
+            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
+            {
+                "Guid" or "string" => "\"string\"",
+                _ => "\"integer\"",
+            };
 
     /// <summary>
     /// 取 OpenAPI <c>schema.Format</c> 的字面量；无特定格式时为 <see langword="null"/>。
     /// </summary>
-    private static string? GetFormatLiteral(string primitiveIdTypeName)
-        => StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(primitiveIdTypeName) switch
-        {
-            "Guid" => "\"uuid\"",
-            "int" => "\"int32\"",
-            "long" => "\"int64\"",
-            "uint" => "\"uint32\"",
-            "ulong" => "\"uint64\"",
-            "byte" => "\"byte\"",
-            "sbyte" => "\"sbyte\"",
-            "short" => "\"int16\"",
-            "ushort" => "\"uint16\"",
-            _ => "null",
-        };
+    /// <remarks>
+    /// 有前缀时类型已是 <c>string</c>，不再带基元特有的 format（如 <c>uuid</c> / <c>int32</c>）。
+    /// </remarks>
+    private static string? GetFormatLiteral(StronglyTypedIdInfo idInfo)
+        => idInfo.HasPrefix
+            ? "null"
+            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
+            {
+                "Guid" => "\"uuid\"",
+                "int" => "\"int32\"",
+                "long" => "\"int64\"",
+                "uint" => "\"uint32\"",
+                "ulong" => "\"uint64\"",
+                "byte" => "\"byte\"",
+                "sbyte" => "\"sbyte\"",
+                "short" => "\"int16\"",
+                "ushort" => "\"uint16\"",
+                _ => "null",
+            };
 }

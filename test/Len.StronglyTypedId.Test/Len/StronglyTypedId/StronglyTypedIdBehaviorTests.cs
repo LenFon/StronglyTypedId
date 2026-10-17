@@ -2,6 +2,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
+using System.Text;
 using FluentAssertions;
 
 namespace Len.StronglyTypedId;
@@ -244,32 +245,165 @@ public class StronglyTypedIdBehaviorTests
 
     #endregion
 
+    #region C10 文本前缀
+
+    // 前缀进入规范文本形：ToString 前置、Parse/TryParse 剥离。宽松（默认）下前缀可选，严格下必须存在。
+
+    [Fact]
+    public void Prefix_ToString_Should_PrependPrefix()
+    {
+        var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+
+        PrefixedGuidId.Create(g).ToString().Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        PrefixedStringId.Create("x").ToString().Should().Be("ord_x");
+    }
+
+    [Fact]
+    public void Prefix_Parse_Should_StripPrefix_ForLenient()
+    {
+        var g = Guid.NewGuid();
+
+        PrefixedGuidId.Parse("ord_" + g.ToString("D"), null).Value.Should().Be(g);
+        PrefixedStringId.Parse("ord_x", null).Value.Should().Be("x");
+    }
+
+    [Fact]
+    public void Prefix_Parse_Should_AcceptBareValue_ForLenient()
+    {
+        // 宽松读入：前缀可选，裸值同样可解析（迁移期友好）。
+        var g = Guid.NewGuid();
+
+        PrefixedGuidId.Parse(g.ToString("D"), null).Value.Should().Be(g);
+        PrefixedStringId.Parse("x", null).Value.Should().Be("x");
+    }
+
+    [Fact]
+    public void Prefix_Parse_Should_RequirePrefix_ForStrict()
+    {
+        var g = Guid.NewGuid();
+
+        StrictPrefixedGuidId.Parse("ord_" + g.ToString("D"), null).Value.Should().Be(g);
+
+        var act = () => StrictPrefixedGuidId.Parse(g.ToString("D"), null);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Prefix_TryParse_Should_HandleBothForms_ForLenient()
+    {
+        var g = Guid.NewGuid();
+
+        PrefixedGuidId.TryParse("ord_" + g.ToString("D"), null, out var prefixed).Should().BeTrue();
+        prefixed.Value.Should().Be(g);
+
+        PrefixedGuidId.TryParse(g.ToString("D"), null, out var bare).Should().BeTrue();
+        bare.Value.Should().Be(g);
+    }
+
+    [Fact]
+    public void Prefix_TryParse_Should_ReturnFalse_ForStrictMissingPrefix()
+    {
+        var g = Guid.NewGuid();
+
+        StrictPrefixedGuidId.TryParse(g.ToString("D"), null, out var missing).Should().BeFalse();
+        missing.Should().Be(default);
+
+        StrictPrefixedGuidId.TryParse("ord_" + g.ToString("D"), null, out var ok).Should().BeTrue();
+        ok.Value.Should().Be(g);
+    }
+
+    [Fact]
+    public void Prefix_TryParse_Should_ReturnFalse_ForWrongPrefix()
+    {
+        var g = Guid.NewGuid();
+
+        // 前缀不匹配：宽松只剥离「恰好匹配」的前缀，随后按基元解析失败；严格直接失败。
+        PrefixedGuidId.TryParse("xyz_" + g.ToString("D"), null, out _).Should().BeFalse();
+        StrictPrefixedGuidId.TryParse("xyz_" + g.ToString("D"), null, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Prefix_ToString_Should_RoundTripThroughParse()
+    {
+        var g = Guid.NewGuid();
+        var id = PrefixedGuidId.Create(g);
+
+        PrefixedGuidId.Parse(id.ToString(), null).Should().Be(id);
+    }
+
+    [Fact]
+    public void Prefix_Formattable_Should_IncludePrefix_WhenFormatIsNullOrEmpty()
+    {
+        var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var id = PrefixedGuidId.Create(g);
+
+        // format 为空：$"{id}" / string.Format / 结构化日志走 IFormattable，必须带前缀。
+        ((IFormattable)id).ToString(null, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        ((IFormattable)id).ToString(string.Empty, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+
+        // format 非空：前缀会污染 format 语义，故保持裸基元。
+        ((IFormattable)id).ToString("N", null).Should().Be(g.ToString("N", null));
+    }
+
+    [Fact]
+    public void Prefix_TryFormat_Should_WritePrefix_WhenFormatIsEmpty()
+    {
+        var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var id = PrefixedGuidId.Create(g);
+
+        Span<char> destination = stackalloc char[64];
+
+        id.TryFormat(destination, out var charsWritten, default, null).Should().BeTrue();
+        destination[..charsWritten].ToString().Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+
+        // format 非空时保持裸基元。
+        id.TryFormat(destination, out var bareWritten, "N", null).Should().BeTrue();
+        destination[..bareWritten].ToString().Should().Be(g.ToString("N", null));
+    }
+
+    [Fact]
+    public void Prefix_TryFormatUtf8_Should_WritePrefix_WhenFormatIsEmpty()
+    {
+        var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var id = PrefixedGuidId.Create(g);
+
+        Span<byte> destination = stackalloc byte[64];
+
+        id.TryFormat(destination, out var bytesWritten, default, null).Should().BeTrue();
+        Encoding.UTF8.GetString(destination[..bytesWritten]).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+    }
+
+    [Fact]
+    public void Prefix_Validated_Should_ReceiveStrippedValue()
+    {
+        // 前缀 + 验证器：验证器收到的是剥离后的基元值。
+        var g = Guid.NewGuid();
+
+        PrefixedValidatedGuidId.TryParse("ord_" + g.ToString("D"), null, out var ok).Should().BeTrue();
+        ok.Value.Should().Be(g);
+
+        // 剥离后是 Guid.Empty，验证器拒绝。
+        PrefixedValidatedGuidId.TryParse("ord_" + Guid.Empty.ToString("D"), null, out _).Should().BeFalse();
+    }
+
+    #endregion
+
     #region StronglyTypedIdExtensions 边界分支
 
+    // NotStronglyTypedId 带有 [StronglyTypedId] 但没有生成接口实现（无 Value 主键）
     [Fact]
     public void IsStronglyTypedId_Should_ReturnFalse_ForPlainRecordWithoutGeneratedInterface()
-    {
-        // NotStronglyTypedId 带有 [StronglyTypedId] 但没有生成接口实现（无 Value 主键）
-        typeof(NotStronglyTypedId).IsStronglyTypedId().Should().BeFalse();
-    }
+        => typeof(NotStronglyTypedId).IsStronglyTypedId().Should().BeFalse();
 
     [Fact]
-    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForEnum()
-    {
-        typeof(DayOfWeek).TryGetPrimitiveIdType(out _).Should().BeFalse();
-    }
+    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForEnum() => typeof(DayOfWeek).TryGetPrimitiveIdType(out _).Should().BeFalse();
 
     [Fact]
-    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForArray()
-    {
-        typeof(int[]).TryGetPrimitiveIdType(out _).Should().BeFalse();
-    }
+    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForArray() => typeof(int[]).TryGetPrimitiveIdType(out _).Should().BeFalse();
 
     [Fact]
-    public void GetPrimitiveIdType_Should_ReturnNull_ForPlainRecord()
-    {
-        typeof(NotStronglyTypedId).GetPrimitiveIdType().Should().BeNull();
-    }
+    public void GetPrimitiveIdType_Should_ReturnNull_ForPlainRecord() => typeof(NotStronglyTypedId).GetPrimitiveIdType().Should().BeNull();
 
     #endregion
 

@@ -143,6 +143,84 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         {
             ValidateValidator(context, type, validatorName, constructorParameterType, records);
         }
+
+        // 前缀校验与形状 / 验证器无关，独立于上面的早退分支，放在最后统一判定。
+        ValidatePrefix(context, type, records);
+
+        // 验证器可绕过同样独立于形状校验，但它需要「是否真的配了验证器」这一结论，故复用上面已算出的名字。
+        ValidateValidatorBypass(context, type, validatorName, records);
+    }
+
+    /// <summary>
+    /// 检测「配了验证器、但类型对外可见」的组合，提示验证器可被直接构造绕过（STIAO014）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// record 的主构造函数<b>不能</b>单独指定可见性（<c>public record R private (int X)</c> 是 CS1514），
+    /// 它始终跟随类型本身。因此只要类型对外可见，<c>new R(default)</c> 就对外可用，<c>Validator</c> 形同虚设。
+    /// </para>
+    /// <para>
+    /// 该规则默认关闭（见 <see cref="Descriptors.ValidatorCanBeBypassed"/>），此处无条件上报即可 ——
+    /// 是否呈现由 <c>IsEnabledByDefault</c> / <c>.editorconfig</c> 决定，分析器不必自行判断开关。
+    /// 定位取首个声明段（与其它类型级规则一致），便于代码修复框架接管。
+    /// </para>
+    /// </remarks>
+    private static void ValidateValidatorBypass(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        string? validatorName,
+        RecordDeclarationSyntax[] records)
+    {
+        if (validatorName is null || !IsExternallyVisible(type))
+        {
+            return;
+        }
+
+        Report(context, Descriptors.ValidatorCanBeBypassed, records[0].GetLocation(), type.Name);
+    }
+
+    /// <summary>
+    /// 判断类型（含其全部包含类型）是否对外可见。
+    /// </summary>
+    /// <remarks>
+    /// 嵌套在 <c>internal</c> 容器里的 <c>public</c> 类型实际不可跨程序集访问，不应触发 STIAO014，
+    /// 故逐层向上判定，任一层不是 <c>public</c> 即视为不可见。
+    /// </remarks>
+    private static bool IsExternallyVisible(INamedTypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.ContainingType)
+        {
+            if (current.DeclaredAccessibility != Accessibility.Public)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 校验 <c>[StronglyTypedId(Prefix = …)]</c> 的前缀是否为非空、非纯空白字符串（STIAO013）。
+    /// </summary>
+    /// <remarks>
+    /// 生成器侧把空 / 纯空白前缀静默按「未设置」处理（见 <c>StronglyTypedIdInfo.NormalizePrefix</c>），
+    /// 这里提前告警，避免使用者误以为前缀已生效。取值走<b>符号级</b>的命名实参
+    /// （<see cref="AttributeData.NamedArguments"/>），因此 <c>Prefix = "ord_"</c> 与 <c>Prefix = SomeConst</c>
+    /// 两种写法都能判定，且不触发 RS1030（诊断分析器不得调用 <c>Compilation.GetSemanticModel</c>）。
+    /// 定位仍在 attribute 的 <c>Prefix</c> 实参上（找不到时退回首个声明段）。
+    /// </remarks>
+    private static void ValidatePrefix(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
+    {
+        var prefix = type.GetAttributes()
+            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute")
+            ?.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "Prefix")
+            .Value.Value as string;
+
+        if (prefix is not null && string.IsNullOrWhiteSpace(prefix))
+        {
+            Report(context, Descriptors.InvalidPrefix, FindPrefixArgumentLocation(records) ?? records[0].GetLocation());
+        }
     }
 
     /// <summary>
@@ -185,10 +263,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             {
                 foreach (var attribute in attributeList.Attributes)
                 {
-                    var attributeName = attribute.Name.ToString();
-
-                    if (attributeName is not ("StronglyTypedId" or "StronglyTypedIdAttribute" or "Len.StronglyTypedId.StronglyTypedIdAttribute")
-                        && !attributeName.EndsWith("StronglyTypedIdAttribute", StringComparison.Ordinal))
+                    if (!IsStronglyTypedIdAttribute(attribute))
                     {
                         continue;
                     }
@@ -205,6 +280,47 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 在声明段里定位 <c>[StronglyTypedId(Prefix = …)]</c> 中 <c>Prefix</c> 实参的语法位置。
+    /// </summary>
+    private static Location? FindPrefixArgumentLocation(RecordDeclarationSyntax[] records)
+    {
+        foreach (var record in records)
+        {
+            foreach (var attributeList in record.AttributeLists)
+            {
+                foreach (var attribute in attributeList.Attributes)
+                {
+                    if (!IsStronglyTypedIdAttribute(attribute))
+                    {
+                        continue;
+                    }
+
+                    foreach (var argument in attribute.ArgumentList?.Arguments ?? default)
+                    {
+                        if (argument.NameEquals?.Name.Identifier.ValueText == "Prefix")
+                        {
+                            return argument.GetLocation();
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 判断 attribute 语法是否为 <c>[StronglyTypedId]</c>（含各种书写形态）。
+    /// </summary>
+    private static bool IsStronglyTypedIdAttribute(AttributeSyntax attribute)
+    {
+        var attributeName = attribute.Name.ToString();
+
+        return attributeName is "StronglyTypedId" or "StronglyTypedIdAttribute" or "Len.StronglyTypedId.StronglyTypedIdAttribute"
+            || attributeName.EndsWith("StronglyTypedIdAttribute", StringComparison.Ordinal);
     }
 
     /// <summary>

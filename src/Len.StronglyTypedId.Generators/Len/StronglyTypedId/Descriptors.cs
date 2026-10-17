@@ -7,6 +7,11 @@ internal static class Descriptors
 {
     private const string Category = "StronglyTypedIdAnalyzer";
 
+    /// <summary>
+    /// 生成器侧诊断的类别。与 <see cref="Category"/> 分开，便于使用者按类别整体调级。
+    /// </summary>
+    private const string GeneratorCategory = "StronglyTypedIdGenerator";
+
     public const string ContainingTypeMustBePartialId = "STIAO009";
     public const string ParameterCannotBeNullableId = "STIAO006";
     public const string ParameterNameMustBeValueId = "STIAO007";
@@ -19,6 +24,9 @@ internal static class Descriptors
     public const string TypeMustBePartialId = "STIAO001";
     public const string TypeMustBeRecordId = "STIAO000";
     public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIAO005";
+    public const string GeneratorFailureId = "STIAO012";
+    public const string InvalidPrefixId = "STIAO013";
+    public const string ValidatorCanBeBypassedId = "STIAO014";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -144,8 +152,76 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// 全部诊断描述符，顺序与规则 ID 的语义分组一致。
+    /// 代码生成阶段抛出了未预期的异常。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 生成器内部一旦抛异常，Roslyn 会丢弃该生成器本次的<b>全部</b>产出，使用者只看到一条 CS8785 警告 ——
+    /// 没有位置、没有原因、没有堆栈，表现为「生成的代码凭空消失」。生成器侧的注释反复提到这条风险链
+    /// （<c>StronglyTypedIdInfo</c> 的基元类型解析与 hint name 去重），却一直没有兜底。
+    /// </para>
+    /// <para>
+    /// 这里把异常就地兜住并报成一条带原因的诊断：<c>{0}</c> 为生成器名，<c>{1}</c> 为异常类型，
+    /// <c>{2}</c> 为异常消息。定位取 <see cref="Location.None"/> —— 故障可能发生在与任何单个 Id 无关的
+    /// 阶段（例如模块枚举），强行挂到某个 Id 上反而误导。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor GeneratorFailure
+        = new(GeneratorFailureId,
+            new LocalizedString("GeneratorFailureTitle"),
+            new LocalizedString("GeneratorFailureMessage"),
+            GeneratorCategory,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Prefix = …)]</c> 的前缀为空串或纯空白。
+    /// </summary>
+    /// <remarks>
+    /// 空前缀没有任何语义，纯空白前缀几乎必然是笔误。生成器侧把二者静默按「未设置」处理
+    /// （见 <c>StronglyTypedIdInfo.NormalizePrefix</c>），这里提前告警，避免使用者误以为前缀已生效。
+    /// 严重级别为 <see cref="DiagnosticSeverity.Warning"/>，各项目可在 <c>.editorconfig</c> 里调整。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor InvalidPrefix
+        = new(InvalidPrefixId,
+            new LocalizedString("InvalidPrefixTitle"),
+            new LocalizedString("InvalidPrefixMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
+    /// 带验证器的强类型 Id 被声明为 <c>public</c>，其主构造函数因而对外可见，验证器可被绕过。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 强类型 Id 的价值一半来自「构造即校验」：<c>Create</c> / <c>TryParse</c> 会调用 <c>Validator</c>。
+    /// 但只要类型是 <c>public</c>，主构造函数的可见性就跟随类型（record 的主构造函数<b>不能</b>单独指定
+    /// 可见性，<c>public record R private (int X)</c> 是 CS1514），于是任何引用方都能写
+    /// <c>new OrderId(default)</c> 直接造出一个未经校验的实例。
+    /// </para>
+    /// <para>
+    /// 这条规则默认<b>关闭</b>（<c>IsEnabledByDefault = false</c>）：公开 Id 类型是完全正常的用法
+    /// （API 契约、DTO、跨程序集传递都需要它），默认开启只会在绝大多数项目上制造噪声。
+    /// 需要「验证器不可绕过」这一强保证的项目可在 <c>.editorconfig</c> 里显式开启：
+    /// <c>dotnet_diagnostic.STIAO014.severity = suggestion</c>（或 warning / error）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ValidatorCanBeBypassed
+        = new(ValidatorCanBeBypassedId,
+            new LocalizedString("ValidatorCanBeBypassedTitle"),
+            new LocalizedString("ValidatorCanBeBypassedMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            false);
+
+    /// <summary>
+    /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
+    /// </summary>
+    /// <remarks>
+    /// 这里只收分析器（<see cref="Analyzers.StronglyTypedIdAnalyzer"/>）会报出的规则，并直接充当其
+    /// <c>SupportedDiagnostics</c>；生成器侧规则另见 <see cref="GeneratorDiagnostics"/>。
+    /// </remarks>
     public static readonly DiagnosticDescriptor[] All =
     [
         TypeMustBeRecord,
@@ -160,5 +236,19 @@ internal static class Descriptors
         ContainingTypeMustBePartial,
         ValidatorReferenceInvalid,
         BypassCreate,
+        InvalidPrefix,
+        ValidatorCanBeBypassed,
+    ];
+
+    /// <summary>
+    /// 全部生成器诊断描述符。
+    /// </summary>
+    /// <remarks>
+    /// 生成器没有 <c>SupportedDiagnostics</c> 这样的声明入口，规则是否「存在」只由是否被报出体现，
+    /// 因此这里单独成组，不与 <see cref="All"/> 混在一起 —— 后者是分析器的对外承诺清单。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor[] GeneratorDiagnostics =
+    [
+        GeneratorFailure,
     ];
 }

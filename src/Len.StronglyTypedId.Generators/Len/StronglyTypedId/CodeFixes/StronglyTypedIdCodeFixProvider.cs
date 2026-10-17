@@ -22,12 +22,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.TypeMustHaveNamespaceId,
             Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId,
             Descriptors.ParameterTypeIsInvalidId,
-            Descriptors.ValidatorReferenceInvalidId);
+            Descriptors.ValidatorReferenceInvalidId,
+            Descriptors.InvalidPrefixId,
+            Descriptors.ValidatorCanBeBypassedId);
 
-    public override FixAllProvider? GetFixAllProvider()
-    {
-        return WellKnownFixAllProviders.BatchFixer;
-    }
+    public override FixAllProvider? GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
 
     public override async Task RegisterCodeFixesAsync(CodeFixContext context)
     {
@@ -59,6 +58,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => EnsurePrimaryConstructorAsync(context, diagnostic, token),
                                 Descriptors.ParameterTypeIsInvalidId => ChangeParameterTypeToGuidAsync(context, diagnostic, token),
                                 Descriptors.ValidatorReferenceInvalidId => FixValidatorReferenceAsync(context, diagnostic, token),
+                                Descriptors.InvalidPrefixId => RemoveNamedArgumentAsync(context, diagnostic, token),
+                                Descriptors.ValidatorCanBeBypassedId => NarrowVisibilityToInternalAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -75,51 +76,57 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 甚至把人写坏的入口。
     /// </remarks>
     private static bool IsFixable(Diagnostic diagnostic, SyntaxNode root)
-    {
-        switch (diagnostic.Id)
+        => diagnostic.Id switch
         {
             // 泛型靶子有两种：Id 自己泛型（删掉类型参数表即可）与包含类型泛型（删掉容器的类型参数会改坏
             // 使用者的设计，不该提供修复）。只在靶子是 record 时给修复。
-            case Descriptors.TypeCannotBeGenericId:
-                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is RecordDeclarationSyntax;
+            Descriptors.TypeCannotBeGenericId =>
+                FindNode<TypeDeclarationSyntax>(root, diagnostic) is RecordDeclarationSyntax,
 
             // 触发原因有两种：容器缺 partial，或容器是 file 本地类型。只在缺 partial 时提供修复 ——
             // 否则会往已有的 partial 之后再插一个（file partial class → file partial partial class）。
-            case Descriptors.ContainingTypeMustBePartialId:
-                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } declaration
-                    && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword);
+            Descriptors.ContainingTypeMustBePartialId =>
+                FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } declaration
+                    && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword),
 
             // 类型必须 record：靶子当前是 class 或 struct（record 不会触发本规则），直接转关键字即可。
-            case Descriptors.TypeMustBeRecordId:
-                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is ClassDeclarationSyntax or StructDeclarationSyntax;
+            Descriptors.TypeMustBeRecordId =>
+                FindNode<TypeDeclarationSyntax>(root, diagnostic) is ClassDeclarationSyntax or StructDeclarationSyntax,
 
             // 类型必须在命名空间内：仅当最外层容器直接挂在编译单元下（链上没有任何命名空间）才包命名空间；
             // 嵌在类型里又不在命名空间的情形，包的是最外层那个类型，同样是这一个判定。
-            case Descriptors.TypeMustHaveNamespaceId:
-                return FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } nsCandidate
-                    && GetOutermostType(nsCandidate).Parent is CompilationUnitSyntax;
+            Descriptors.TypeMustHaveNamespaceId =>
+                FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } nsCandidate
+                    && GetOutermostType(nsCandidate).Parent is CompilationUnitSyntax,
 
             // 必须恰好一个单参数主构造函数：无主构造且没有任何 body 构造时可安全补一个（Guid Value）；
             // 已有 body 构造时再加主构造会撞 CS0111，交给用户自己处理，不提供修复。
             // 已有主构造但参数数 != 1 时，替换为单参主构造是安全的。
-            case Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId:
-                return FindNode<RecordDeclarationSyntax>(root, diagnostic) is { } recordDeclaration
+            Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId =>
+                FindNode<RecordDeclarationSyntax>(root, diagnostic) is { } recordDeclaration
                     && (recordDeclaration.ParameterList is null
                         ? !recordDeclaration.Members.OfType<ConstructorDeclarationSyntax>().Any()
-                        : recordDeclaration.ParameterList.Parameters.Count != 1);
+                        : recordDeclaration.ParameterList.Parameters.Count != 1),
 
             // 基元类型非法：把参数类型改成受支持的 Guid 即可（名称此前已被 STIAO007 校验为 Value）。
-            case Descriptors.ParameterTypeIsInvalidId:
-                return true;
+            Descriptors.ParameterTypeIsInvalidId => true,
 
             // 验证器引用无效：删掉 Validator 命名实参即可，无需判别原因。
-            case Descriptors.ValidatorReferenceInvalidId:
-                return FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null;
+            Descriptors.ValidatorReferenceInvalidId =>
+                FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
-            default:
-                return true;
-        }
-    }
+            // 空前缀：删掉 Prefix 命名实参即可，无需判别原因。
+            Descriptors.InvalidPrefixId =>
+                FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
+
+            // 验证器可绕过：只有「显式写了 public」才有得收窄。省略修饰符的类型本身就是 internal，
+            // 不会触发本规则，故此处无需考虑「无修饰符」的情形。
+            Descriptors.ValidatorCanBeBypassedId =>
+                FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } bypassCandidate
+                    && bypassCandidate.Modifiers.Any(SyntaxKind.PublicKeyword),
+
+            _ => true,
+        };
 
     private static Task<Document> AddPartialKeywordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceRecordDeclarationAsync(context, diagnostic, token,
@@ -154,12 +161,33 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     {
         var root = await context.Document.GetSyntaxRootAsync(token);
 
-        if (root is null || FindNode<TypeDeclarationSyntax>(root, diagnostic) is not { } declaration)
-        {
-            return context.Document;
-        }
+        return root is null || FindNode<TypeDeclarationSyntax>(root, diagnostic) is not { } declaration
+            ? context.Document
+            : context.Document.WithSyntaxRoot(root.ReplaceNode(declaration, replace(declaration)));
+    }
 
-        return context.Document.WithSyntaxRoot(root.ReplaceNode(declaration, replace(declaration)));
+    /// <summary>
+    /// 把诊断所在类型的 <c>public</c> 修饰符换成 <c>internal</c>，使验证器无法被外部直接构造绕过（STIAO014）。
+    /// </summary>
+    /// <remarks>
+    /// record 的主构造函数<b>不能</b>单独指定可见性（<c>public record R private (int X)</c> 是 CS1514），
+    /// 它始终跟随类型本身，所以「只收窄构造函数」这条路不存在，只能收窄类型。
+    /// 显式写成 <c>internal</c> 而不是直接删掉 <c>public</c>：两者语义等价（顶层类型默认 internal），
+    /// 但显式修饰符把意图留在代码里，也免得后来者以为是漏写。
+    /// </remarks>
+    private static Task<Document> NarrowVisibilityToInternalAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+        => ReplaceTypeDeclarationAsync(context, diagnostic, token, NarrowVisibilityToInternal);
+
+    private static TypeDeclarationSyntax NarrowVisibilityToInternal(TypeDeclarationSyntax declaration)
+    {
+        var modifiers = declaration.Modifiers;
+        var index = modifiers.IndexOf(SyntaxKind.PublicKeyword);
+
+        return index < 0
+            ? declaration
+            : declaration.WithModifiers(modifiers.Replace(
+                modifiers[index],
+                SyntaxFactory.Token(SyntaxKind.InternalKeyword).WithTriviaFrom(modifiers[index])));
     }
 
     /// <summary>
@@ -173,15 +201,12 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// </remarks>
     private static RecordDeclarationSyntax RemoveTypeParametersAndConstraints(RecordDeclarationSyntax declaration)
     {
-        if (declaration.ConstraintClauses.Count == 0)
-        {
-            return declaration.WithTypeParameterList(null);
-        }
-
-        return declaration
-            .WithTypeParameterList(null)
-            .WithConstraintClauses([])
-            .WithParameterList(declaration.ParameterList?.WithoutTrailingTrivia());
+        return declaration.ConstraintClauses.Count == 0
+            ? declaration.WithTypeParameterList(null)
+            : declaration
+                .WithTypeParameterList(null)
+                .WithConstraintClauses([])
+                .WithParameterList(declaration.ParameterList?.WithoutTrailingTrivia());
     }
 
     private static Task<Document> UpdateParameterNameToValueAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
@@ -281,7 +306,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         // STIAO004 只要求「在命名空间内」，具体叫什么分析器不过问。
         var namespaceName = "MyNamespace";
 
-        // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 Formatter 规范化，
+        // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 DocumentFormatting 规范化，
         // 避免手工拼 trivia 时「特性与声明之间的换行」漏缩进而拼成无缩进。
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(namespaceName))
             .WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(outermost))
@@ -290,11 +315,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
         var newRoot = root.ReplaceNode(outermost, namespaceDeclaration);
 
-        var formattedRoot = Microsoft.CodeAnalysis.Formatting.Formatter.Format(
-            newRoot,
-            context.Document.Project.Solution.Workspace);
-
-        return context.Document.WithSyntaxRoot(formattedRoot);
+        return context.Document.WithSyntaxRoot(
+            DocumentFormatting.Format(context.Document, newRoot, token));
     }
 
     /// <summary>
@@ -317,11 +339,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         var parameterList = SyntaxFactory.ParameterList(
             SyntaxFactory.SingletonSeparatedList(
                 SyntaxFactory.Parameter(
-                    default(SyntaxList<AttributeListSyntax>),
-                    default(SyntaxTokenList),
+                    default,
+                    default,
                     SyntaxFactory.ParseTypeName("Guid"),
                     SyntaxFactory.Identifier("Value"),
-                    default(EqualsValueClauseSyntax))));
+                    default)));
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(recordDeclaration, recordDeclaration.WithParameterList(parameterList)));
     }
@@ -357,7 +379,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     ///   <item>指向的静态方法根本不存在时，在 Id 类型里补一个符合契约的桩方法（静态、返回 <see cref="bool"/>、
     ///     恰好一个参数且类型等于基元 Id 类型）——这是比「删实参」更贴合意图的修复，保留校验语义。</item>
     ///   <item>方法已存在却签名不符时，再生成同名方法会撞 CS0101，故退化为删掉实参（见
-    ///     <see cref="RemoveValidatorArgumentAsync"/>）。</item>
+    ///     <see cref="RemoveNamedArgumentAsync"/>）。</item>
     /// </list>
     /// </remarks>
     private static async Task<Document> FixValidatorReferenceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
@@ -386,12 +408,9 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         }
 
         // 方法已存在（但签名不符）时删掉实参；只有根本不存在时才生成桩，二者不可混用。
-        if (typeSymbol.GetMembers(validatorName).OfType<IMethodSymbol>().Any(member => member.IsStatic))
-        {
-            return await RemoveValidatorArgumentAsync(context, diagnostic, token);
-        }
-
-        return GenerateValidatorStub(context.Document, root, recordDeclaration, validatorName, primitiveType);
+        return typeSymbol.GetMembers(validatorName).OfType<IMethodSymbol>().Any(member => member.IsStatic)
+            ? await RemoveNamedArgumentAsync(context, diagnostic, token)
+            : GenerateValidatorStub(context.Document, root, recordDeclaration, validatorName, primitiveType, token);
     }
 
     /// <summary>
@@ -430,18 +449,19 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：返回 <see cref="bool"/>、
     /// 恰好一个参数且类型等于基元 Id 类型（用全限定名渲染以避免与任何同名局部类型冲突）、可见性 private
     /// （生成代码与 Id 同 partial，可达）。<c>;</c> 结尾的声明会被就地转成带 body 的形式，最后交给
-    /// <see cref="Microsoft.CodeAnalysis.Formatting.Formatter"/> 统一缩进。
+    /// <see cref="DocumentFormatting"/> 按被编辑文档自身的行尾统一缩进。
     /// </remarks>
     private static Document GenerateValidatorStub(
         Document document,
         SyntaxNode root,
         TypeDeclarationSyntax typeDeclaration,
         string validatorName,
-        ITypeSymbol primitiveType)
+        ITypeSymbol primitiveType,
+        CancellationToken token)
     {
         var typeDisplay = primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var method = SyntaxFactory.ParseMemberDeclaration($"private static bool {validatorName}({typeDisplay} value) => true;")!
-            .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+            .WithLeadingTrivia(SyntaxFactory.EndOfLine(DocumentFormatting.GetEndOfLine(root)));
 
         var newDeclaration = typeDeclaration.OpenBraceToken.IsKind(SyntaxKind.None)
             ? typeDeclaration
@@ -452,22 +472,20 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                     .WithTrailingTrivia(typeDeclaration.SemicolonToken.TrailingTrivia))
             : typeDeclaration.AddMembers(method);
 
-        var formattedRoot = Microsoft.CodeAnalysis.Formatting.Formatter.Format(
-            root.ReplaceNode(typeDeclaration, newDeclaration),
-            document.Project.Solution.Workspace);
-
-        return document.WithSyntaxRoot(formattedRoot);
+        return document.WithSyntaxRoot(
+            DocumentFormatting.Format(document, root.ReplaceNode(typeDeclaration, newDeclaration), token));
     }
 
     /// <summary>
-    /// 从 <c>[StronglyTypedId]</c> 中删掉无效的 <c>Validator = …</c> 命名实参，使其通过 STIAO010。
+    /// 从 <c>[StronglyTypedId]</c> 中删掉诊断所在的命名实参，使其通过对应规则。
     /// </summary>
     /// <remarks>
-    /// 这是 STIAO010 在「方法已存在却签名不符」时的退化修复：删掉指向错误方法的实参后，验证器回退到装配级默认（或无）。
+    /// 供两条规则共用：STIAO010（<c>Validator</c> 指向的方法已存在却签名不符，删掉实参后退回装配级默认）与
+    /// STIAO013（<c>Prefix</c> 为空 / 纯空白，删掉实参即等同「未设置」）。
     /// 若该实参是 attribute 里唯一实参，则连同整对括号一起删掉；否则只移除它，
     /// <see cref="SeparatedSyntaxList{TNode}.Remove"/> 会自动收拾相邻的逗号分隔符。
     /// </remarks>
-    private static async Task<Document> RemoveValidatorArgumentAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    private static async Task<Document> RemoveNamedArgumentAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
         var root = await context.Document.GetSyntaxRootAsync(token);
 
@@ -509,12 +527,9 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     {
         var root = await context.Document.GetSyntaxRootAsync(token);
 
-        if (root is null || FindNode<RecordDeclarationSyntax>(root, diagnostic) is not { } declaration)
-        {
-            return context.Document;
-        }
-
-        return context.Document.WithSyntaxRoot(root.ReplaceNode(declaration, replace(declaration)));
+        return root is null || FindNode<RecordDeclarationSyntax>(root, diagnostic) is not { } declaration
+            ? context.Document
+            : context.Document.WithSyntaxRoot(root.ReplaceNode(declaration, replace(declaration)));
     }
 
     /// <summary>
@@ -565,7 +580,5 @@ internal static class RecordDeclarationSyntaxExtensions
     /// 返回移除了指定修饰符的 record 声明副本（沿用 Roslyn 的 <c>Without…</c> 命名惯例）。
     /// </summary>
     public static RecordDeclarationSyntax WithoutModifiers(this RecordDeclarationSyntax declaration, params SyntaxKind[] syntaxKinds)
-    {
-        return declaration.WithModifiers([.. declaration.Modifiers.Where(modifier => !syntaxKinds.Contains(modifier.Kind()))]);
-    }
+        => declaration.WithModifiers([.. declaration.Modifiers.Where(modifier => !syntaxKinds.Contains(modifier.Kind()))]);
 }

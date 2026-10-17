@@ -20,18 +20,18 @@ namespace Len.StronglyTypedId;
 /// </remarks>
 public class StronglyTypedIdCapabilityTests
 {
-    private static readonly Guid LowGuid = Guid.Parse("00000000-0000-0000-0000-000000000001");
-    private static readonly Guid HighGuid = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+    private static readonly Guid _lowGuid = Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private static readonly Guid _highGuid = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
 
     #region 排序与比较
 
     [Fact]
     public void ComparisonOperators_Should_FollowPrimitiveOrder()
     {
-        var lower = GuidId.Create(LowGuid);
-        var higher = GuidId.Create(HighGuid);
+        var lower = GuidId.Create(_lowGuid);
+        var higher = GuidId.Create(_highGuid);
         // 等值边界用另一个变量表示：直接写 lower < lower 会命中 CS1718（对同一变量比较）。
-        var equalToLower = GuidId.Create(LowGuid);
+        var equalToLower = GuidId.Create(_lowGuid);
 
         (lower < higher).Should().BeTrue();
         (higher > lower).Should().BeTrue();
@@ -46,12 +46,12 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void CompareTo_Should_AgreeWithPrimitiveComparison()
     {
-        var lower = GuidId.Create(LowGuid);
-        var higher = GuidId.Create(HighGuid);
+        var lower = GuidId.Create(_lowGuid);
+        var higher = GuidId.Create(_highGuid);
 
-        lower.CompareTo(higher).Should().Be(LowGuid.CompareTo(HighGuid));
-        higher.CompareTo(lower).Should().Be(HighGuid.CompareTo(LowGuid));
-        lower.CompareTo(GuidId.Create(LowGuid)).Should().Be(0);
+        lower.CompareTo(higher).Should().Be(_lowGuid.CompareTo(_highGuid));
+        higher.CompareTo(lower).Should().Be(_highGuid.CompareTo(_lowGuid));
+        lower.CompareTo(GuidId.Create(_lowGuid)).Should().Be(0);
     }
 
     /// <summary>
@@ -81,7 +81,7 @@ public class StronglyTypedIdCapabilityTests
     {
         GuidIdV2? nullId = null;
 
-        GuidIdV2.Create(LowGuid).CompareTo(nullId).Should().BePositive();
+        GuidIdV2.Create(_lowGuid).CompareTo(nullId).Should().BePositive();
     }
 
     #endregion
@@ -91,9 +91,37 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void ToString_Should_ReturnPrimitiveText_NotRecordPrintout()
     {
-        GuidId.Create(LowGuid).ToString().Should().Be(LowGuid.ToString());
+        GuidId.Create(_lowGuid).ToString().Should().Be(_lowGuid.ToString());
         Int32Id.Create(12).ToString().Should().Be("12");
         StringId.Create("Len").ToString().Should().Be("Len");
+    }
+
+    /// <summary>
+    /// <c>ToString()</c> 按不变文化输出，与序列化 / 字典键 / 持久化的规范形一致，跨区域往返安全。
+    /// </summary>
+    /// <remarks>
+    /// 德语等区域的小数分隔符是逗号：若 <c>ToString()</c> 跟随当前文化，<c>1.5</c> 会被写成 <c>1,5</c>，
+    /// 与不变文化的解析 / 序列化结果对不上。用例临时切到 de-DE，验证输出仍是 <c>1.5</c>，
+    /// 且 <c>Parse(id.ToString(), InvariantCulture)</c> 能往返。需要按特定文化显示时用
+    /// <c>ToString(string?, IFormatProvider?)</c> 显式传 provider。
+    /// </remarks>
+    [Fact]
+    public void ToString_Should_UseInvariantCulture_RegardlessOfCurrentCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            var id = DoubleId.Create(1.5);
+
+            id.ToString().Should().Be("1.5");
+            DoubleId.Parse(id.ToString(), CultureInfo.InvariantCulture).Should().Be(id);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]
@@ -144,7 +172,7 @@ public class StronglyTypedIdCapabilityTests
         Int32Id.TryParse("not-a-number".AsSpan(), CultureInfo.InvariantCulture, out _).Should().BeFalse();
 
         StringId.Parse("Len".AsSpan(), CultureInfo.InvariantCulture).Value.Should().Be("Len");
-        StringId.TryParse(ReadOnlySpan<char>.Empty, CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        StringId.TryParse([], CultureInfo.InvariantCulture, out _).Should().BeFalse();
     }
 
     #endregion
@@ -162,10 +190,10 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void SystemTextJson_Should_RoundTripGuidKeyedDictionary()
     {
-        var json = SerializeDictionary(GuidId.Create(LowGuid), 1);
+        var json = SerializeDictionary(GuidId.Create(_lowGuid), 1);
 
-        json.Should().Be($$"""{"{{LowGuid}}":1}""");
-        DeserializeDictionary<GuidId>(json).Should().Be(GuidId.Create(LowGuid));
+        json.Should().Be($$"""{"{{_lowGuid}}":1}""");
+        DeserializeDictionary<GuidId>(json).Should().Be(GuidId.Create(_lowGuid));
     }
 
     [Fact]
@@ -192,10 +220,10 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void SystemTextJson_Should_RoundTripReferenceTypeIdKeyedDictionary()
     {
-        var json = SerializeDictionary(GuidIdV2.Create(LowGuid), 1);
+        var json = SerializeDictionary(GuidIdV2.Create(_lowGuid), 1);
 
-        json.Should().Be($$"""{"{{LowGuid}}":1}""");
-        DeserializeDictionary<GuidIdV2>(json).Should().Be(GuidIdV2.Create(LowGuid));
+        json.Should().Be($$"""{"{{_lowGuid}}":1}""");
+        DeserializeDictionary<GuidIdV2>(json).Should().Be(GuidIdV2.Create(_lowGuid));
     }
 
     [Fact]
@@ -223,8 +251,8 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void NewtonsoftJson_Should_WritePrimitiveTextAsDictionaryKey()
     {
-        Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<GuidId, int> { [GuidId.Create(LowGuid)] = 1 })
-            .Should().Be($$"""{"{{LowGuid}}":1}""");
+        Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<GuidId, int> { [GuidId.Create(_lowGuid)] = 1 })
+            .Should().Be($$"""{"{{_lowGuid}}":1}""");
 
         Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<Int32Id, int> { [Int32Id.Create(42)] = 1 })
             .Should().Be("""{"42":1}""");
@@ -247,7 +275,7 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void Validator_Should_AcceptValidValue_OnCreate()
     {
-        NonEmptyGuidId.Create(LowGuid).Value.Should().Be(LowGuid);
+        NonEmptyGuidId.Create(_lowGuid).Value.Should().Be(_lowGuid);
         NonEmptyInt32Id.Create(1).Value.Should().Be(1);
     }
 
@@ -258,10 +286,10 @@ public class StronglyTypedIdCapabilityTests
     public void Validator_Should_MakeTryParseReturnFalse_InsteadOfThrowing()
     {
         NonEmptyGuidId.TryParse(Guid.Empty.ToString(), CultureInfo.InvariantCulture, out var result).Should().BeFalse();
-        result.Should().Be(default(NonEmptyGuidId));
+        result.Should().Be(default);
 
-        NonEmptyGuidId.TryParse(LowGuid.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
-        parsed.Value.Should().Be(LowGuid);
+        NonEmptyGuidId.TryParse(_lowGuid.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be(_lowGuid);
 
         NonEmptyInt32Id.TryParse("0", CultureInfo.InvariantCulture, out _).Should().BeFalse();
         NonEmptyInt32Id.TryParse("-1", CultureInfo.InvariantCulture, out _).Should().BeFalse();
@@ -284,7 +312,7 @@ public class StronglyTypedIdCapabilityTests
     {
         ShortStringId.TryParse("12345678".AsSpan(), CultureInfo.InvariantCulture, out _).Should().BeTrue();
         ShortStringId.TryParse("123456789".AsSpan(), CultureInfo.InvariantCulture, out _).Should().BeFalse();
-        ShortStringId.TryParse(ReadOnlySpan<char>.Empty, CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        ShortStringId.TryParse([], CultureInfo.InvariantCulture, out _).Should().BeFalse();
     }
 
     /// <summary>
@@ -300,8 +328,8 @@ public class StronglyTypedIdCapabilityTests
         systemTextJson.Should().Throw<ArgumentException>();
         newtonsoft.Should().Throw<ArgumentException>();
 
-        System.Text.Json.JsonSerializer.Deserialize<NonEmptyGuidId>($"\"{LowGuid}\"").Value.Should().Be(LowGuid);
-        Newtonsoft.Json.JsonConvert.DeserializeObject<NonEmptyGuidId>($"\"{LowGuid}\"")!.Value.Should().Be(LowGuid);
+        System.Text.Json.JsonSerializer.Deserialize<NonEmptyGuidId>($"\"{_lowGuid}\"").Value.Should().Be(_lowGuid);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<NonEmptyGuidId>($"\"{_lowGuid}\"")!.Value.Should().Be(_lowGuid);
     }
 
     #endregion
@@ -313,9 +341,9 @@ public class StronglyTypedIdCapabilityTests
     {
         // 关键判据：生成代码必须把 partial 段嵌回容器里。若它落在命名空间层级，会另起一个同名顶层类型，
         // 整份代码照样编译通过 —— 只有「从容器里取这个类型」并要求它具备生成成员，才能发现区别。
-        typeof(OrderAggregate).GetNestedType(nameof(OrderAggregate.OrderId)).Should().Be(typeof(OrderAggregate.OrderId));
-        typeof(ShipmentBatch).GetNestedType(nameof(ShipmentBatch.BatchId)).Should().Be(typeof(ShipmentBatch.BatchId));
-        typeof(Inventory).GetNestedType(nameof(Inventory.SkuId)).Should().Be(typeof(Inventory.SkuId));
+        typeof(OrderAggregate).GetNestedType(nameof(OrderAggregate.OrderId)).Should().Be<OrderAggregate.OrderId>();
+        typeof(ShipmentBatch).GetNestedType(nameof(ShipmentBatch.BatchId)).Should().Be<ShipmentBatch.BatchId>();
+        typeof(Inventory).GetNestedType(nameof(Inventory.SkuId)).Should().Be<Inventory.SkuId>();
 
         var value = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var orderId = OrderAggregate.OrderId.Create(value);
@@ -379,8 +407,8 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void TryCreate_Should_ReturnTrue_ForValidValue()
     {
-        GuidId.TryCreate(LowGuid, out var guidId).Should().BeTrue();
-        guidId.Should().Be(GuidId.Create(LowGuid));
+        GuidId.TryCreate(_lowGuid, out var guidId).Should().BeTrue();
+        guidId.Should().Be(GuidId.Create(_lowGuid));
 
         Int32Id.TryCreate(42, out var intId).Should().BeTrue();
         intId.Should().Be(Int32Id.Create(42));
@@ -394,7 +422,7 @@ public class StronglyTypedIdCapabilityTests
     {
         // 值类型 Id：TryCreate 失败时 result 为 default 值（零结构体）。
         NonEmptyGuidId.TryCreate(Guid.Empty, out var emptyId).Should().BeFalse();
-        emptyId.Should().Be(default(NonEmptyGuidId));
+        emptyId.Should().Be(default);
 
         // 引用类型 Id：TryCreate 失败时 result 为 null（default 引用）。
         NonEmptyInt32Id.TryCreate(0, out var zeroId).Should().BeFalse();
@@ -426,10 +454,10 @@ public class StronglyTypedIdCapabilityTests
     {
         typeof(IUtf8SpanParsable<GuidId>).IsAssignableFrom(typeof(GuidId)).Should().BeTrue();
 
-        var utf8 = System.Text.Encoding.UTF8.GetBytes(LowGuid.ToString());
-        GuidId.Parse(utf8.AsSpan(), CultureInfo.InvariantCulture).Should().Be(GuidId.Create(LowGuid));
+        var utf8 = System.Text.Encoding.UTF8.GetBytes(_lowGuid.ToString());
+        GuidId.Parse(utf8.AsSpan(), CultureInfo.InvariantCulture).Should().Be(GuidId.Create(_lowGuid));
         GuidId.TryParse(utf8.AsSpan(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
-        parsed.Should().Be(GuidId.Create(LowGuid));
+        parsed.Should().Be(GuidId.Create(_lowGuid));
         GuidId.TryParse(
                 System.Text.Encoding.UTF8.GetBytes("not-a-guid").AsSpan(),
                 CultureInfo.InvariantCulture,
@@ -456,10 +484,38 @@ public class StronglyTypedIdCapabilityTests
         converter.CanConvertFrom(typeof(string)).Should().BeTrue();
         converter.CanConvertTo(typeof(string)).Should().BeTrue();
 
-        var id = (ConvertibleGuidId)converter.ConvertFrom(LowGuid.ToString())!;
-        id.Should().Be(ConvertibleGuidId.Create(LowGuid));
+        var id = (ConvertibleGuidId)converter.ConvertFrom(_lowGuid.ToString())!;
+        id.Should().Be(ConvertibleGuidId.Create(_lowGuid));
 
-        converter.ConvertTo(id, typeof(string)).Should().Be(LowGuid.ToString());
+        converter.ConvertTo(id, typeof(string)).Should().Be(_lowGuid.ToString());
+    }
+
+    /// <summary>
+    /// 生成的 <c>TypeConverter</c> 与 <c>ToString()</c> 一样按不变文化双向往返，不受当前文化影响。
+    /// </summary>
+    /// <remarks>
+    /// Newtonsoft.Json 的字典键、<c>XmlSerializer</c> 与 <c>IConfiguration</c> 绑定都经由此转换器读写。
+    /// 用例在 de-DE 下调用<b>跟随当前文化</b>的重载（<c>ConvertToString</c> / <c>ConvertFromString</c>），
+    /// 断言输出仍是 <c>1.5</c> 且能读回 —— 若两个方向的文化不一致，同一份数据在不同区域下就无法往返。
+    /// </remarks>
+    [Fact]
+    public void TypeConverter_Should_RoundTripInvariantly_RegardlessOfCurrentCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            var converter = TypeDescriptor.GetConverter(typeof(ConvertibleDoubleId));
+            var id = ConvertibleDoubleId.Create(1.5);
+
+            converter.ConvertToString(id).Should().Be("1.5");
+            converter.ConvertFromString("1.5").Should().Be(id);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     /// <summary>
@@ -474,12 +530,12 @@ public class StronglyTypedIdCapabilityTests
     public void NewtonsoftJson_Should_RoundTripKeyedDictionary_WhenTypeConverterEnabled()
     {
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(
-            new Dictionary<ConvertibleGuidId, int> { [ConvertibleGuidId.Create(LowGuid)] = 1 });
+            new Dictionary<ConvertibleGuidId, int> { [ConvertibleGuidId.Create(_lowGuid)] = 1 });
 
         var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<ConvertibleGuidId, int>>(json);
 
         parsed.Should().NotBeNull();
-        parsed!.Keys.Single().Should().Be(ConvertibleGuidId.Create(LowGuid));
+        parsed!.Keys.Single().Should().Be(ConvertibleGuidId.Create(_lowGuid));
     }
 
     /// <summary>
@@ -498,6 +554,292 @@ public class StronglyTypedIdCapabilityTests
         parsed.Should().Be(id);
         id.ToString().Should().Be(value.ToString());
     }
+
+    #endregion
+
+    #region C1：扩展基元类型
+
+    /// <summary>
+    /// 扩展整型（<c>Int128</c> / <c>UInt128</c>）与既有整型同构：解析、格式化、比较、span 能力全套透出。
+    /// </summary>
+    [Fact]
+    public void ExtendedIntegralPrimitives_Should_RoundTripAndCompare()
+    {
+        var low = Int128Id.Create(Int128.One);
+        var high = Int128Id.Create(Int128.MaxValue);
+
+        low.Value.Should().Be(Int128.One);
+        Int128Id.TryParse(Int128.MaxValue.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, out var parsed)
+            .Should().BeTrue();
+        parsed.Should().Be(high);
+        low.CompareTo(high).Should().BeNegative();
+        (low < high).Should().BeTrue();
+
+        UInt128Id.Create(UInt128.MaxValue).ToString()
+            .Should().Be(UInt128.MaxValue.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// 浮点基元（<c>float</c> / <c>double</c> / <c>Half</c>）同样透出全套能力。
+    /// </summary>
+    /// <remarks>
+    /// 往返用二进制可精确表示的取值（1.5），避免十进制文本往返带来的舍入差异掩盖真实缺陷。
+    /// </remarks>
+    [Fact]
+    public void FloatingPointPrimitives_Should_RoundTrip()
+    {
+        DoubleId.TryParse("1.5", CultureInfo.InvariantCulture, out var d).Should().BeTrue();
+        d.Value.Should().Be(1.5);
+        d.ToString("R", CultureInfo.InvariantCulture).Should().Be("1.5");
+
+        SingleId.TryParse("1.5", CultureInfo.InvariantCulture, out var f).Should().BeTrue();
+        f.Value.Should().Be(1.5f);
+
+        HalfId.TryParse("1.5", CultureInfo.InvariantCulture, out var h).Should().BeTrue();
+        h.Value.Should().Be((Half)1.5);
+    }
+
+    /// <summary>
+    /// 日期 / 时间基元（<c>DateOnly</c> / <c>TimeOnly</c>）往返遵循不变文化。
+    /// </summary>
+    /// <remarks>
+    /// 用显式格式串（而非无参 <c>ToString(provider)</c>）：后者的短时间格式会丢掉秒，
+    /// 往返本身就不可逆，用它断言只会测出格式串的选择而非 Id 的透出行为。
+    /// </remarks>
+    [Fact]
+    public void DateTimePrimitives_Should_RoundTrip()
+    {
+        var date = new DateOnly(2026, 10, 16);
+        var dateText = date.ToString("O", CultureInfo.InvariantCulture);
+        DateOnlyId.TryParse(dateText, CultureInfo.InvariantCulture, out var parsedDate).Should().BeTrue();
+        parsedDate.Value.Should().Be(date);
+
+        var time = new TimeOnly(13, 45, 30);
+        var timeText = time.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        TimeOnlyId.TryParse(timeText, CultureInfo.InvariantCulture, out var parsedTime).Should().BeTrue();
+        parsedTime.Value.Should().Be(time);
+    }
+
+    /// <summary>
+    /// 大整数基元（<c>BigInteger</c>，引用类型）往返与比较按数值语义。
+    /// </summary>
+    [Fact]
+    public void BigIntegerPrimitive_Should_RoundTrip()
+    {
+        var value = System.Numerics.BigInteger.Parse("123456789012345678901234567890", CultureInfo.InvariantCulture);
+        var id = BigIntegerId.Create(value);
+
+        id.Value.Should().Be(value);
+        BigIntegerId.TryParse(value.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, out var parsed)
+            .Should().BeTrue();
+        parsed.Should().Be(id);
+    }
+
+    /// <summary>
+    /// UTF-8 解析按「基元是否暴露公开的 <c>TryParse(ReadOnlySpan&lt;byte&gt;,…)</c>」条件生成：
+    /// 数值型 / <c>Guid</c> 有，故生成；<c>BigInteger</c> 把它实现为显式接口实现、日期时间型根本没有，故都不生成。
+    /// </summary>
+    /// <remarks>
+    /// 负向断言走接口名反射：<c>IUtf8SpanParsable&lt;T&gt;</c> 带静态抽象成员，把不满足约束的类型当泛型实参用会 CS0315。
+    /// </remarks>
+    [Fact]
+    public void Utf8Parsing_Should_BeEmittedOnlyWhenPrimitiveExposesPublicTryParse()
+    {
+        typeof(Int128Id).Should().BeAssignableTo(typeof(IUtf8SpanParsable<Int128Id>));
+        typeof(DoubleId).Should().BeAssignableTo(typeof(IUtf8SpanParsable<DoubleId>));
+
+        static bool ImplementsUtf8SpanParsable(Type type)
+            => Array.Exists(type.GetInterfaces(), i => i.Name == "IUtf8SpanParsable`1");
+
+        ImplementsUtf8SpanParsable(typeof(BigIntegerId)).Should().BeFalse();
+        ImplementsUtf8SpanParsable(typeof(DateOnlyId)).Should().BeFalse();
+        ImplementsUtf8SpanParsable(typeof(TimeOnlyId)).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 新基元的 UTF-8 往返：有公开入口的基元（<c>Int128</c> / <c>double</c>）能经 UTF-8 解析回来。
+    /// </summary>
+    [Fact]
+    public void Utf8Parsing_Should_RoundTrip_ForPrimitivesWithPublicEntry()
+    {
+        var utf8 = System.Text.Encoding.UTF8.GetBytes("42");
+        Int128Id.TryParse(utf8.AsSpan(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be((Int128)42);
+
+        var doubleUtf8 = System.Text.Encoding.UTF8.GetBytes("1.5");
+        DoubleId.TryParse(doubleUtf8.AsSpan(), CultureInfo.InvariantCulture, out var parsedDouble).Should().BeTrue();
+        parsedDouble.Value.Should().Be(1.5);
+    }
+
+    #endregion
+
+    #region C10：文本前缀
+
+    /// <summary>
+    /// 前缀进入规范文本形：<c>ToString()</c> 前置前缀，<c>Parse</c> / <c>TryParse</c> 剥离。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_BePrependedByToString_AndStrippedByParse()
+    {
+        var id = PrefixedGuidId.Create(_lowGuid);
+
+        id.ToString().Should().Be($"ord_{_lowGuid}");
+        PrefixedGuidId.Parse(id.ToString(), CultureInfo.InvariantCulture).Should().Be(id);
+        PrefixedGuidId.TryParse(id.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Should().Be(id);
+    }
+
+    /// <summary>
+    /// 默认（宽松）读入策略下，带前缀与裸值两种写法都能解析。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_AcceptBothForms_UnderLenientRead()
+    {
+        PrefixedGuidId.TryParse($"ord_{_lowGuid}", CultureInfo.InvariantCulture, out var prefixed).Should().BeTrue();
+        prefixed.Value.Should().Be(_lowGuid);
+
+        PrefixedGuidId.TryParse(_lowGuid.ToString(), CultureInfo.InvariantCulture, out var bare).Should().BeTrue();
+        bare.Value.Should().Be(_lowGuid);
+    }
+
+    /// <summary>
+    /// 严格读入策略下，缺前缀即解析失败。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_RequirePrefix_UnderStrictRead()
+    {
+        StrictPrefixedGuidId.TryParse($"ord_{_lowGuid}", CultureInfo.InvariantCulture, out var prefixed).Should().BeTrue();
+        prefixed.Value.Should().Be(_lowGuid);
+
+        StrictPrefixedGuidId.TryParse(_lowGuid.ToString(), CultureInfo.InvariantCulture, out _).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 低层格式化成员在 <c>format</c> 为空时带前缀，保证 <c>$"{id}"</c> / 结构化日志与 <c>ToString()</c> 一致。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_AppearInLowLevelFormatting_WhenFormatIsEmpty()
+    {
+        var id = PrefixedGuidId.Create(_lowGuid);
+
+        ((IFormattable)id).ToString(null, CultureInfo.InvariantCulture).Should().Be($"ord_{_lowGuid}");
+
+        Span<char> destination = stackalloc char[64];
+        id.TryFormat(destination, out var charsWritten, default, CultureInfo.InvariantCulture).Should().BeTrue();
+        destination[..charsWritten].ToString().Should().Be($"ord_{_lowGuid}");
+
+        // 显式格式串仍按基元语义输出（前缀只在「无格式」这一档生效）。
+        ((IFormattable)id).ToString("N", CultureInfo.InvariantCulture).Should().Be(_lowGuid.ToString("N"));
+    }
+
+    /// <summary>
+    /// 前缀贯通 JSON 文本路径：STJ / Newtonsoft 的值与字典键都带前缀。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_FlowThroughJsonLibraries()
+    {
+        var id = PrefixedGuidId.Create(_lowGuid);
+        var expected = $"\"ord_{_lowGuid}\"";
+
+        System.Text.Json.JsonSerializer.Serialize(id).Should().Be(expected);
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedGuidId>(expected).Should().Be(id);
+        Newtonsoft.Json.JsonConvert.SerializeObject(id).Should().Be(expected);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<PrefixedGuidId>(expected).Should().Be(id);
+
+        SerializeDictionary(id, 1).Should().Be($$"""{"ord_{{_lowGuid}}":1}""");
+        DeserializeDictionary<PrefixedGuidId>($$"""{"ord_{{_lowGuid}}":1}""").Should().Be(id);
+    }
+
+    /// <summary>
+    /// 前缀 + 对象形态：<c>{ "value": "ord_x" }</c>。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_ComposeWithObjectJsonShape()
+    {
+        var id = PrefixedObjectGuidId.Create(_lowGuid);
+        var expected = $$"""{"value":"ord_{{_lowGuid}}"}""";
+
+        System.Text.Json.JsonSerializer.Serialize(id).Should().Be(expected);
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedObjectGuidId>(expected).Should().Be(id);
+    }
+
+    /// <summary>
+    /// 验证器收到的是<b>剥离后</b>的基元值，前缀不参与校验。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_BeStrippedBeforeValidatorSeesValue()
+    {
+        PrefixedValidatedGuidId.TryParse($"ord_{_lowGuid}", CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be(_lowGuid);
+
+        // 空 Guid 被验证器拒绝 —— 无论是否带前缀。
+        PrefixedValidatedGuidId.TryParse($"ord_{Guid.Empty}", CultureInfo.InvariantCulture, out _).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 字符串基元的前缀：<c>ToString()</c> 前置，解析剥离；JSON 内容随之变化。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_ApplyToStringPrimitive()
+    {
+        var id = PrefixedStringId.Create("abc");
+
+        id.ToString().Should().Be("ord_abc");
+        PrefixedStringId.Parse("ord_abc", CultureInfo.InvariantCulture).Should().Be(id);
+        System.Text.Json.JsonSerializer.Serialize(id).Should().Be("\"ord_abc\"");
+    }
+
+    #endregion
+
+    #region 单参接口
+
+    /// <summary>
+    /// 单参 <c>IStronglyTypedId&lt;TSelf&gt;</c> 让不关心基元类型的泛型代码只写一个类型参数，
+    /// 且对任意基元的 Id 都成立。
+    /// </summary>
+    [Fact]
+    public void SingleParameterInterface_Should_AcceptIdsWithDifferentPrimitives()
+    {
+        RoundTrip<GuidId>(_lowGuid.ToString()).Should().Be(GuidId.Create(_lowGuid));
+        RoundTrip<Int32Id>("42").Should().Be(Int32Id.Create(42));
+        RoundTrip<StringId>("abc").Should().Be(StringId.Create("abc"));
+        RoundTrip<DateOnlyId>("2026-10-17").Should().Be(DateOnlyId.Create(new DateOnly(2026, 10, 17)));
+    }
+
+    /// <summary>
+    /// 单参接口同时承载相等运算：约束在它上面的泛型代码可以直接用 <c>==</c>。
+    /// </summary>
+    [Fact]
+    public void SingleParameterInterface_Should_SupportEqualityThroughConstraint()
+    {
+        AreEqual<GuidId>(GuidId.Create(_lowGuid), GuidId.Create(_lowGuid)).Should().BeTrue();
+        AreEqual<GuidId>(GuidId.Create(_lowGuid), GuidId.Create(_highGuid)).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 双参接口继承单参接口，故 Id 同时实现两者，且双参形态可赋给单参形态。
+    /// </summary>
+    [Fact]
+    public void SingleParameterInterface_Should_BeImplementedAlongsidePairInterface()
+    {
+        foreach (var idType in new[] { typeof(GuidId), typeof(Int32Id), typeof(StringId), typeof(PrefixedGuidId) })
+        {
+            var single = typeof(IStronglyTypedId<>).MakeGenericType(idType);
+            var pair = typeof(IStronglyTypedId<,>).MakeGenericType(idType, idType.GetProperty(nameof(GuidId.Value))!.PropertyType);
+
+            single.IsAssignableFrom(idType).Should().BeTrue($"{idType.Name} 应实现单参接口");
+            pair.IsAssignableFrom(idType).Should().BeTrue($"{idType.Name} 应实现双参接口");
+            single.IsAssignableFrom(pair).Should().BeTrue("双参接口应可赋给单参接口");
+        }
+    }
+
+    private static TId RoundTrip<TId>(string text)
+        where TId : IStronglyTypedId<TId>
+        => TId.Parse(text, CultureInfo.InvariantCulture);
+
+    private static bool AreEqual<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left == right;
 
     #endregion
 }

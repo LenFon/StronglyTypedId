@@ -97,10 +97,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void AspNetCoreOpenApi_Should_HaveOrderSix()
-    {
-        AspNetCoreOpenApiCodeGenerator.Instance.Order.Should().Be(6);
-    }
+    public void AspNetCoreOpenApi_Should_HaveOrderSix() => AspNetCoreOpenApiCodeGenerator.Instance.Order.Should().Be(6);
 
     #endregion
 
@@ -202,6 +199,30 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\"),");
         generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (\"integer\", \"int32\"),");
+    }
+
+    #endregion
+
+    #region C10：文本前缀使 schema 变为无 format 的 string
+
+    /// <summary>
+    /// 有前缀时规范文本形是字符串，故 schema 一律为 <c>("string", null)</c>。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_Should_UsePlainStringSchema_WhenIdHasPrefix()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Prefix = "ord_")]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
+
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", null),");
     }
 
     #endregion

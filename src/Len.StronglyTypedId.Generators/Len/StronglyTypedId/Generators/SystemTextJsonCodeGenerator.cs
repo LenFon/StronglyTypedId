@@ -12,30 +12,28 @@ namespace Len.StronglyTypedId.Generators;
 /// 也就是说，重写之前 <c>Dictionary&lt;OrderId, TValue&gt;</c> —— DDD 里「按 Id 索引的子集合」这种常见
 /// 结构 —— 序列化与反序列化都完全不可用。
 /// </remarks>
-internal class SystemTextJsonCodeGenerator : ICodeGenerator
+internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 {
-    internal static readonly ICodeGenerator Instance = new SystemTextJsonCodeGenerator();
+    internal static readonly ICoreCodeGenerator Instance = new SystemTextJsonCodeGenerator();
 
     public int Order { get; } = 1;
 
     public void Generate(
-        ImmutableArray<StronglyTypedIdInfo> stronglyTypedIdInfos,
+        StronglyTypedIdInfo idInfo,
         ImmutableArray<ModuleInfo> modules,
         SourceProductionContext context,
         string version)
     {
-        foreach (var idInfo in stronglyTypedIdInfos)
-        {
-            var header = GeneratedCode.Header(idInfo.Namespace);
+        var header = GeneratedCode.Header(idInfo.Namespace);
 
-            var declaration = $$"""
+        var declaration = $$"""
                 [global::System.Text.Json.Serialization.JsonConverter(typeof(SystemTextJsonConverter))]
                 partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)}}
-                    class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<{{idInfo.Name}}>
+                    public class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<{{idInfo.Name}}>
                     {
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -43,12 +41,7 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                         public override {{idInfo.Name}} Read(
                             ref global::System.Text.Json.Utf8JsonReader reader, 
                             global::System.Type typeToConvert, 
-                            global::System.Text.Json.JsonSerializerOptions options) =>
-                            global::System.Text.Json.JsonSerializer.Deserialize<{{idInfo.PrimitiveIdTypeName}}?>(ref reader, options) switch
-                            {
-                                { } value => {{idInfo.Name}}.Create(value),
-                                _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a {{idInfo.Name}}")
-                            };
+                            global::System.Text.Json.JsonSerializerOptions options){{GetReadTail(idInfo)}}
                 
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -56,17 +49,7 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                         public override void Write(
                             global::System.Text.Json.Utf8JsonWriter writer, 
                             {{idInfo.Name}} value, 
-                            global::System.Text.Json.JsonSerializerOptions options)
-                        {
-                            if (value is { Value: var primitiveId })
-                            {
-                                global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);
-                            }
-                            else
-                            {
-                                writer.WriteNullValue();
-                            }
-                        }
+                            global::System.Text.Json.JsonSerializerOptions options){{GetWriteTail(idInfo)}}
                 
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -89,10 +72,9 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
                 }
                 """;
 
-            var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
+        var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-            context.AddSource($"{idInfo.HintName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
-        }
+        context.AddSource($"{idInfo.HintName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
     /// <summary>
@@ -105,11 +87,152 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
     /// [Obsolete]（provider 参数被忽略），用它会触发 CS0618，故枚举直接走无参 <c>ToString()</c>。
     /// </remarks>
     private static string GetPropertyNameExpression(StronglyTypedIdInfo idInfo)
-        => idInfo.IsStringPrimitive
-            ? "primitiveId"
-            : idInfo.IsEnum
-                ? "primitiveId.ToString()"
-                : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
+        => idInfo.HasPrefix
+            ? "value.ToString()"
+            : idInfo.IsStringPrimitive
+                ? "primitiveId"
+                : idInfo.IsEnum
+                    ? "primitiveId.ToString()"
+                    : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
+
+    /// <summary>
+    /// 取 <c>Read</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 基元形态（默认）把 Id 与其基元值视为同一形状，产物与引入本开关之前<b>逐字节一致</b>；
+    /// 对象形态读入 <c>{ "value": … }</c>，供「已对外承诺对象形态」的既有契约迁移。
+    /// </para>
+    /// <para>
+    /// 缩进按产物中的层级逐行写死（成员 8 空格、方法体 12 空格，依次递增），不依赖原始字符串字面量的
+    /// 裁剪规则；行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 在最后统一。
+    /// </para>
+    /// </remarks>
+    private static string GetReadTail(StronglyTypedIdInfo idInfo)
+    {
+        var builder = new StringBuilder();
+
+        if (!idInfo.IsObjectJsonShape)
+        {
+            builder.Append(" =>").Append('\n');
+
+            if (idInfo.HasPrefix)
+            {
+                // 有前缀时文本形是字符串，读回一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
+                builder.Append("            global::System.Text.Json.JsonSerializer.Deserialize<string?>(ref reader, options) is { } text").Append('\n');
+                builder.Append("                && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
+                builder.Append("                    ? id").Append('\n');
+                builder.Append("                    : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");");
+
+                return builder.ToString();
+            }
+
+            builder.Append("            global::System.Text.Json.JsonSerializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(ref reader, options) switch").Append('\n');
+            builder.Append("            {").Append('\n');
+            builder.Append("                { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
+            builder.Append("                _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
+            builder.Append("            };");
+
+            return builder.ToString();
+        }
+
+        builder.Append('\n');
+        builder.Append("        {").Append('\n');
+        builder.Append("            if (reader.TokenType != global::System.Text.Json.JsonTokenType.StartObject)").Append('\n');
+        builder.Append("            {").Append('\n');
+        builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a 'value' property was expected.\");").Append('\n');
+        builder.Append("            }").Append('\n');
+        builder.Append('\n');
+        builder.Append("            ").Append(idInfo.Name).Append("? result = null;").Append('\n');
+        builder.Append('\n');
+        builder.Append("            while (reader.Read())").Append('\n');
+        builder.Append("            {").Append('\n');
+        builder.Append("                if (reader.TokenType == global::System.Text.Json.JsonTokenType.EndObject)").Append('\n');
+        builder.Append("                {").Append('\n');
+        builder.Append("                    break;").Append('\n');
+        builder.Append("                }").Append('\n');
+        builder.Append('\n');
+        builder.Append("                if (reader.TokenType != global::System.Text.Json.JsonTokenType.PropertyName)").Append('\n');
+        builder.Append("                {").Append('\n');
+        builder.Append("                    continue;").Append('\n');
+        builder.Append("                }").Append('\n');
+        builder.Append('\n');
+        builder.Append("                if (reader.ValueTextEquals(\"value\"))").Append('\n');
+        builder.Append("                {").Append('\n');
+        builder.Append("                    reader.Read();").Append('\n');
+
+        if (idInfo.HasPrefix)
+        {
+            builder.Append("                    result = global::System.Text.Json.JsonSerializer.Deserialize<string?>(ref reader, options) is { } text").Append('\n');
+            builder.Append("                        && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
+            builder.Append("                            ? id").Append('\n');
+            builder.Append("                            : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+        }
+        else
+        {
+            builder.Append("                    result = global::System.Text.Json.JsonSerializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(ref reader, options) switch").Append('\n');
+            builder.Append("                    {").Append('\n');
+            builder.Append("                        { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
+            builder.Append("                        _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
+            builder.Append("                    };").Append('\n');
+        }
+
+        builder.Append("                }").Append('\n');
+        builder.Append("                else").Append('\n');
+        builder.Append("                {").Append('\n');
+        builder.Append("                    reader.Skip();").Append('\n');
+        builder.Append("                }").Append('\n');
+        builder.Append("            }").Append('\n');
+        builder.Append('\n');
+        builder.Append("            return result ?? throw new global::System.Text.Json.JsonException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+        builder.Append("        }");
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 取 <c>Write</c> 成员形参表之后的方法体。
+    /// </summary>
+    /// <remarks>
+    /// 基元形态写出基元值本身；对象形态写出 <c>{ "value": … }</c>。属性名固定为 <c>value</c>，不跟随
+    /// <c>JsonSerializerOptions.PropertyNamingPolicy</c> —— Id 的 JSON 形状是对外契约，不应随宿主应用的
+    /// 序列化配置漂移。
+    /// </remarks>
+    private static string GetWriteTail(StronglyTypedIdInfo idInfo)
+    {
+        var builder = new StringBuilder();
+
+        // 有前缀时写出规范文本形（字符串），无前缀时写出基元值本身。
+        var writeValue = idInfo.HasPrefix
+            ? "writer.WriteStringValue(value.ToString());"
+            : "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
+
+        builder.Append('\n');
+        builder.Append("        {").Append('\n');
+        builder.Append("            if (value is { Value: var primitiveId })").Append('\n');
+        builder.Append("            {").Append('\n');
+
+        if (idInfo.IsObjectJsonShape)
+        {
+            builder.Append("                writer.WriteStartObject();").Append('\n');
+            builder.Append("                writer.WritePropertyName(\"value\");").Append('\n');
+            builder.Append("                ").Append(writeValue).Append('\n');
+            builder.Append("                writer.WriteEndObject();").Append('\n');
+        }
+        else
+        {
+            builder.Append("                ").Append(writeValue).Append('\n');
+        }
+
+        builder.Append("            }").Append('\n');
+        builder.Append("            else").Append('\n');
+        builder.Append("            {").Append('\n');
+        builder.Append("                writer.WriteNullValue();").Append('\n');
+        builder.Append("            }").Append('\n');
+        builder.Append("        }");
+
+        return builder.ToString();
+    }
 
     /// <summary>
     /// 生成 <c>ReadAsPropertyName</c> 成员，整体拼接在最后一个成员的同一行行尾。
@@ -122,6 +245,9 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
     /// <para>
     /// <c>string</c> 基元直接取属性名构造，与 <c>Read</c> 的语义严格一致（都不过滤空串，故空串键可往返）；
     /// 其余基元按不变文化解析，失败时抛 <c>JsonException</c> —— 属性名路径上与框架一致的异常类型。
+    /// </para>
+    /// <para>
+    /// 字典键在任何 JSON 形态下都携带基元文本：属性名本就是字符串，对象形态只作用于值的位置。
     /// </para>
     /// <para>
     /// 缩进按产物中的层级逐行写死（嵌套转换器类的成员为 8 空格），不依赖原始字符串字面量的缩进裁剪规则；
@@ -142,12 +268,13 @@ internal class SystemTextJsonCodeGenerator : ICodeGenerator
         builder.Append("            global::System.Text.Json.JsonSerializerOptions options)").Append('\n');
         builder.Append("        {").Append('\n');
 
-        if (idInfo.IsStringPrimitive)
+        if (idInfo.IsStringPrimitive && !idInfo.HasPrefix)
         {
             builder.Append($"            return {idInfo.Name}.Create(reader.GetString()!);").Append('\n');
         }
         else
         {
+            // 有前缀时键文本也带前缀，故一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
             builder.Append($"            if ({idInfo.Name}.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))").Append('\n');
             builder.Append("            {").Append('\n');

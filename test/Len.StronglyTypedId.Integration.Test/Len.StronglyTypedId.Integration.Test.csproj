@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<Import Project="..\..\test.props" />
+	<PropertyGroup>
+		<!-- G2 集成运行时测试：net8.0 / net10.0 双目标，与主库一致，
+		     验证生成产物在两个目标框架下都真实可执行。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 集成包引用：使 DapperCodeGenerator / AspNetCoreOpenApiCodeGenerator /
+		     EfCoreCodeGenerator / SwaggerCodeGenerator / AspNetCoreMvcCodeGenerator
+		     在本工程编译里被门控触发，生成 StronglyTypedIds 的集成 ApplyTo 产物。 -->
+		<PackageReference Include="Dapper" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" />
+		<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+		<!-- 测试断言库。 -->
+		<PackageReference Include="FluentAssertions" />
+		<!-- ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」
+		     的消费者画像下可被触发，并提供可编译的命名空间和类型（MvcOptions / IModelBinder /
+		     IRouteConstraint 等）。 -->
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<!-- 把 Generators 作为 Analyzer 引入，使 [Generator] 在本工程编译里被 Roslyn 加载。
+		     同时保留编译期引用（ReferenceOutputAssembly 默认 true）供测试代码引用生成器类型。 -->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" />
+		<!-- 主库：提供 IStronglyTypedId / StronglyTypedIdAttribute 等运行时类型。 -->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+		<!-- TestBase：提供 [StronglyTypedId] 标注的 Id 声明，生成器据此产出核心与集成产物。
+		     恢复引用，扩回 10+ 个 Id 全量验证。 -->
+		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
+	</ItemGroup>
+
+</Project>

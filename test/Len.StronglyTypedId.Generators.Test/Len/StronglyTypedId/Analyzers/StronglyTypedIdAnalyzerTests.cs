@@ -577,6 +577,227 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
+    #region 空前缀（STIAO013）
+
+    /// <summary>
+    /// <c>Prefix = ""</c> 没有任何语义，应报告 STIAO013。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixIsEmpty()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
+            .WithSpan(5, 18, 5, 29);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>Prefix = "   "</c>（纯空白）几乎必然是笔误，应报告 STIAO013。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixIsWhitespace()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "   ")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
+            .WithSpan(5, 18, 5, 32);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 常量引用的空前缀同样能判定：取值走符号级命名实参，而非只看字符串字面量。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixConstantIsEmpty()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = Empty)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private const string Empty = "";
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
+            .WithSpan(5, 18, 5, 32);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 非空前缀不报告 STIAO013。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenPrefixIsValid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "ord_")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 未设置前缀不报告 STIAO013。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenPrefixIsNotSet()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    #endregion
+
+    #region 验证器可被绕过（STIAO014）
+
+    /// <summary>
+    /// 规则默认关闭：即便「public + Validator」这种可被绕过的组合，未在 <c>.editorconfig</c> 调级时也不上报。
+    /// </summary>
+    /// <remarks>
+    /// 这是该规则的设计前提 —— 绝大多数公开 Id 都会配验证器，默认开启只会制造噪音。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorBypassRuleIsNotEnabled()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = "Validate")]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 经 <c>.editorconfig</c> 启用后，对外可见且配了验证器的 Id 上报 STIAO014。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorBypassRuleIsEnabled()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = "Validate")]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorCanBeBypassed)
+            .WithArguments("OrderId")
+            .WithSpan(5, 1, 9, 2);
+        await Verify.VerifyAnalyzerWithEditorConfigAsync(code, EnableValidatorBypassRule, expected);
+    }
+
+    /// <summary>
+    /// 类型不可跨程序集访问时，主构造函数同样不可用，验证器无法被绕过，不上报。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorOwnerIsInternal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = "Validate")]
+            internal partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """";
+        await Verify.VerifyAnalyzerWithEditorConfigAsync(code, EnableValidatorBypassRule);
+    }
+
+    /// <summary>
+    /// 未配置验证器时不存在「绕过」问题，即便类型对外可见也不上报。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNoValidatorIsConfigured()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerWithEditorConfigAsync(code, EnableValidatorBypassRule);
+    }
+
+    /// <summary>
+    /// 嵌套在 <c>internal</c> 容器里的 <c>public</c> 类型实际不可跨程序集访问，不应上报。
+    /// </summary>
+    /// <remarks>
+    /// 可见性必须逐层向上判定：只看类型自身的 <c>public</c> 会产生误报。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorOwnerIsNestedInInternalContainer()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            internal static partial class Container
+            {
+                [StronglyTypedId(Validator = "Validate")]
+                public partial record struct OrderId(Guid Value)
+                {
+                    private static bool Validate(Guid value) => value != Guid.Empty;
+                }
+            }
+            """";
+        await Verify.VerifyAnalyzerWithEditorConfigAsync(code, EnableValidatorBypassRule);
+    }
+
+    /// <summary>
+    /// 启用 STIAO014 所用的 <c>.editorconfig</c> 片段。
+    /// </summary>
+    private const string EnableValidatorBypassRule = """
+        root = true
+
+        [*.cs]
+        dotnet_diagnostic.STIAO014.severity = suggestion
+        """;
+
+    #endregion
+
     #region 装配级默认验证器（STIAO010 的装配级形态）
 
     /// <summary>
@@ -626,10 +847,19 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    public static TheoryData<DiagnosticDescriptor, string> ParameterDiagnostics => new()
+    /// <summary>
+    /// STIAO007 / STIAO008 的规则 ID 与对应的实参样例。
+    /// </summary>
+    /// <remarks>
+    /// 数据里放规则 ID（<see cref="string"/>）而不是 <see cref="DiagnosticDescriptor"/> 本身：
+    /// xUnit1044 要求 <c>TheoryData</c> 的类型实参可序列化，否则 Test Explorer 无法逐行枚举
+    /// 数据（每行会塌成一个用例）；<see cref="DiagnosticDescriptor"/> 不可序列化，规则 ID 可以。
+    /// 描述符在用例内按 ID 从 <see cref="Descriptors.All"/> 取回。
+    /// </remarks>
+    public static TheoryData<string, string> ParameterDiagnostics => new()
     {
-        { Descriptors.ParameterNameMustBeValue, "Value1" },
-        { Descriptors.ParameterTypeIsInvalid, "bool" },
+        { Descriptors.ParameterNameMustBeValueId, "Value1" },
+        { Descriptors.ParameterTypeIsInvalidId, "bool" },
     };
 
     /// <summary>
@@ -642,8 +872,10 @@ public class StronglyTypedIdAnalyzerTests
     /// </remarks>
     [Theory]
     [MemberData(nameof(ParameterDiagnostics))]
-    public void Diagnostic_MessageFormat_Should_ContainArgument(DiagnosticDescriptor descriptor, string argument)
+    public void Diagnostic_MessageFormat_Should_ContainArgument(string diagnosticId, string argument)
     {
+        var descriptor = Descriptors.All.Single(candidate => candidate.Id == diagnosticId);
+
         var message = string.Format(
             CultureInfo.InvariantCulture,
             descriptor.MessageFormat.ToString(),

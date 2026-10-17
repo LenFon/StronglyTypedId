@@ -69,4 +69,76 @@ public class StronglyTypedIdAttribute : Attribute
     /// </code>
     /// </remarks>
     public bool TypeConverter { get; set; }
+
+    /// <summary>
+    /// Gets or sets the shape the strongly typed id takes in JSON. The default is
+    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/> keeps the id interchangeable with its primitive
+    /// value in the payload (<c>"3f2c…"</c>), so introducing an id does not change the wire contract.
+    /// <see cref="Len.StronglyTypedId.JsonShape.Object"/> writes <c>{ "value": … }</c> instead, which is what
+    /// an existing contract that already promised the object form needs.
+    /// </para>
+    /// <para>
+    /// The setting applies to both the <c>System.Text.Json</c> and <c>Newtonsoft.Json</c> converters. It does
+    /// <em>not</em> affect dictionary keys: a JSON property name is inherently a string, so keys always carry
+    /// the primitive text regardless of this setting.
+    /// </para>
+    /// <code>
+    /// [StronglyTypedId(JsonShape = JsonShape.Object)]
+    /// public partial record struct OrderId(Guid Value);
+    /// </code>
+    /// </remarks>
+    public JsonShape JsonShape { get; set; }
+
+    /// <summary>
+    /// Gets or sets a literal prefix carried by the canonical text form of the strongly typed id.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The prefix is prepended by <c>ToString()</c> and stripped by <c>Parse</c> / <c>TryParse</c>, so the
+    /// canonical text form becomes <c>"ord_3f2c…"</c> rather than <c>"3f2c…"</c>. Every text-based integration —
+    /// <c>System.Text.Json</c>, <c>Newtonsoft.Json</c>, MVC model binding, route constraints and the generated
+    /// <c>TypeConverter</c> — routes through those two members, so all of them carry the prefix as well.
+    /// </para>
+    /// <para>
+    /// It does <em>not</em> affect the Entity Framework Core value converter or the Dapper type handler: those
+    /// exchange the <em>primitive value</em> with the database, not its text, so a prefixed id keeps storing the
+    /// bare primitive and existing columns are untouched.
+    /// </para>
+    /// <para>
+    /// How the prefix is read back is governed by <see cref="PrefixReadMode"/>: by default reading is lenient
+    /// (<c>TryParse</c> accepts both the prefixed and the bare form), so existing payloads and stored text keep
+    /// round-tripping while new text is always written with the prefix. Set
+    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Strict"/> to require the prefix instead.
+    /// </para>
+    /// <code>
+    /// [StronglyTypedId(Prefix = "ord_")]
+    /// public partial record struct OrderId(Guid Value);
+    /// </code>
+    /// </remarks>
+    public string? Prefix { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the canonical text form is read back when <see cref="Prefix"/> is configured. The default is
+    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/> accepts both the prefixed and the bare form, so existing
+    /// payloads and stored text keep round-tripping while new text is always written with the prefix.
+    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Strict"/> requires the prefix and fails on text that lacks it, which
+    /// makes <c>ToString</c> and <c>Parse</c> a bijection.
+    /// </para>
+    /// <para>
+    /// The setting has no effect when <see cref="Prefix"/> is unset.
+    /// </para>
+    /// <code>
+    /// [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
+    /// public partial record struct OrderId(Guid Value);
+    /// </code>
+    /// </remarks>
+    public PrefixReadMode PrefixReadMode { get; set; }
 }

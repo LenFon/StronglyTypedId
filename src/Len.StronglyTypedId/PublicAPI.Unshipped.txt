@@ -1,9 +1,22 @@
 #nullable enable
-Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute
-Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.StronglyTypedIdDefaultsAttribute() -> void
-Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.get -> string?
-Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.set -> void
+Len.StronglyTypedId.IStronglyTypedId<TSelf>
+Len.StronglyTypedId.JsonShape
+Len.StronglyTypedId.JsonShape.Object = 1 -> Len.StronglyTypedId.JsonShape
+Len.StronglyTypedId.JsonShape.Primitive = 0 -> Len.StronglyTypedId.JsonShape
+Len.StronglyTypedId.PrefixReadMode
+Len.StronglyTypedId.PrefixReadMode.Lenient = 0 -> Len.StronglyTypedId.PrefixReadMode
+Len.StronglyTypedId.PrefixReadMode.Strict = 1 -> Len.StronglyTypedId.PrefixReadMode
+Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShape.get -> Len.StronglyTypedId.JsonShape
+Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShape.set -> void
+Len.StronglyTypedId.StronglyTypedIdAttribute.Prefix.get -> string?
+Len.StronglyTypedId.StronglyTypedIdAttribute.Prefix.set -> void
+Len.StronglyTypedId.StronglyTypedIdAttribute.PrefixReadMode.get -> Len.StronglyTypedId.PrefixReadMode
+Len.StronglyTypedId.StronglyTypedIdAttribute.PrefixReadMode.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.TypeConverter.get -> bool
 Len.StronglyTypedId.StronglyTypedIdAttribute.TypeConverter.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.get -> string?
 Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.set -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.StronglyTypedIdDefaultsAttribute() -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.get -> string?
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.set -> void

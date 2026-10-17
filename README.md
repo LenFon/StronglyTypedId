@@ -30,6 +30,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Swashbuckle](#swashbuckle)
 - [Dapper](#dapper)
 - [ASP.NET Core MVC](#aspnet-core-mvc)
+- [Minimal API](#minimal-api)
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [Using the interface](#using-the-interface)
 - [Reflection helpers](#reflection-helpers)
@@ -42,8 +43,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
-- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and six of the
-  twelve rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and every one of
+  the thirteen rules comes with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` for every primitive that has them (all but `string`).
@@ -66,10 +67,16 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   validator for the whole assembly.
 - **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and `ApplyTo(IDbConnection)` are generated.
 - **ASP.NET Core MVC integration** — when `Microsoft.AspNetCore.Mvc` (or its `Microsoft.AspNetCore.Mvc.Core` facade) ≥ 2.0.0 is referenced, a model-binder provider and per-id route constraints are generated so `[FromRoute]`/`[FromQuery]` and `{id:OrderId}` bind correctly.
+- **Minimal API support** — nothing extra to generate: route/query parameters bind through `IParsable<T>`, and `{id:OrderId}` route constraints reuse the `RouteOptions` registration emitted by the MVC integration.
 - **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
   `ApplyTo(OpenApiOptions)` schema mappings are generated.
 - **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
-  automatically, including `System.Text.Json` dictionary-key support.
+  automatically, including `System.Text.Json` dictionary-key support; both also expose an explicit registration
+  entry point (`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` and `settings.AddStronglyTypedId()`), and the
+  JSON shape is configurable per id (see [JSON shape](#serialization)).
+- **Text prefix** — set `[StronglyTypedId(Prefix = "ord_")]` to give an id a canonical textual form
+  (`"ord_3f2c…"`) that flows through `ToString`, `Parse`, JSON and every other text path
+  (see [Text prefix](#serialization)).
 - **Entity Framework Core** — value converters for EF Core (≥ 7.0.0) are generated when needed.
 - **Swagger / OpenAPI** — schema mappings for Swashbuckle.AspNetCore are generated when referenced,
   for both Microsoft.OpenApi 1.x and 2.x.
@@ -187,12 +194,12 @@ your own declaration is never modified. What is emitted depends on what the comp
 | Condition in the compilation                                                                        | Generated code                                                                                       |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Always                                                                                              | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                   |
-| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`                         |
-| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`                         |
+| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs` |
+| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs` |
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
 | `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
-| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` |
+| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints) |
 | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                             | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
 
 The core implementation adds:
@@ -209,8 +216,10 @@ The core implementation adds:
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. For
   `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
 - `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
-- `ToString()` returning the text of the wrapped value (not the record's `OrderId { Value = … }` form),
-  along with `ToString(string?, IFormatProvider?)` and `TryFormat(...)` where the primitive supports them.
+- `ToString()` returning the invariant-culture text of the wrapped value (not the record's
+  `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
+  `Parse(id.ToString(), CultureInfo.InvariantCulture)`; use `ToString(string?, IFormatProvider?)` and
+  `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
 - String-backed ids intern equal values: the storage for equal strings is shared per id type via a small
   per-type cache (not the process-wide `string.Intern` pool), so repeated ids add almost no extra memory.
 - A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
@@ -291,7 +300,8 @@ public partial record struct ConvertibleGuidId(Guid Value);
 
 The generated nested `XxxTypeConverter` carries a `[TypeConverter(typeof(XxxTypeConverter))]` attribute, so
 `TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` can convert between string and the id, and a `null`
-reference-type id resolves back to `default`.
+reference-type id resolves back to `default`. Both directions use the invariant culture — matching the generated
+`ToString()` — so a value written under one culture reads back under another.
 
 > This converter covers only the "string ↔ id" path; it does not replace the JSON converters, which remain
 > independent and active.
@@ -388,13 +398,95 @@ the same key no matter the current culture. A `string`-backed id uses the string
 string round-trips; a key that cannot be parsed throws `JsonException`.
 
 Newtonsoft.Json routes dictionary keys through `TypeConverter` / `ToString()` rather than through
-`JsonConverter`, so its keys never reach the generated converter. They still round-trip — the generated
-`ToString()` returns the text of the primitive value — but that text follows the current culture. Attach
-your own `[TypeConverter]` to the id if you need to control the key format.
+`JsonConverter`, so its keys never reach the generated converter. Enable `TypeConverter = true` on the id so
+Newtonsoft can restore keys on read. The key text is the same invariant-culture text the converter writes:
+the generated `ToString()` is invariant, and the generated `TypeConverter` reads and writes invariantly too, so
+keys stay stable across cultures.
 
 Both converters serialize the id as its underlying primitive value rather than as an object, so the JSON
 payload keeps the same shape it had before the id was introduced. A `null` reference-type id is written
 as JSON `null`.
+
+### JSON shape
+
+By default an id is **shape-compatible with its primitive**: `OrderId` backed by `Guid` serializes to the
+same JSON string a bare `Guid` would, so introducing the id does not change the wire format. When an
+existing contract has already promised the object form — typically a client that sends
+`{ "value": "3f2c…" }` — opt into it per id:
+
+```csharp
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct OrderId(Guid Value);
+
+// JsonShape.Primitive (default): "3f2c…"
+// JsonShape.Object:             {"value":"3f2c…"}
+```
+
+The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to dictionary keys as well.
+`JsonShape.Object` reads and writes a single `value` property; a payload that is not an object, or an
+object without `value`, throws (`JsonException` / `JsonSerializationException`). Because the primitive
+form is the default, existing payloads are unaffected unless you ask for the object form.
+
+### Text prefix
+
+Opt into a textual prefix per id. The prefix becomes part of the id's **canonical text form** —
+`ToString()` writes it, `Parse` / `TryParse` strip it — so every text-based path picks it up
+automatically:
+
+```csharp
+[StronglyTypedId(Prefix = "ord_")]
+public partial record struct OrderId(Guid Value);
+
+var id = OrderId.Create(guid);
+
+id.ToString();                              // "ord_3f2c…"
+OrderId.Parse("ord_3f2c…");                 // OrderId
+OrderId.Parse("3f2c…");                     // OrderId  (lenient read, the default)
+JsonSerializer.Serialize(id);                // "ord_3f2c…"
+```
+
+Because the prefix lives in the canonical text form, integrations that go through text need no extra
+configuration: MVC model binding, route constraints and the generated `TypeConverter` all accept and emit
+the prefixed form. Integrations that go through the primitive **value** — EF Core and Dapper — are
+unaffected and keep storing the bare primitive, so existing columns and rows stay valid.
+
+Reading is **lenient by default**: `TryParse` accepts both the prefixed and the bare form, so existing
+payloads and stored text keep round-tripping while new text is always written with the prefix. Switch to
+strict per id when you want the prefix to be mandatory:
+
+```csharp
+[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
+public partial record struct OrderId(Guid Value);
+
+OrderId.TryParse("ord_3f2c…", null, out _);  // true
+OrderId.TryParse("3f2c…", null, out _);       // false
+```
+
+> **Breaking change when opted in.** For numeric, enum and date primitives the JSON representation changes
+> from a JSON number to a JSON string, because the prefixed form is text. Database storage is unaffected.
+> Leave `Prefix` unset and the generated code is byte-for-byte identical to before.
+
+An empty or whitespace-only prefix is treated as "no prefix" and reported as `STIAO013`.
+
+### Explicit registration
+
+The `[JsonConverter]` attribute covers the common case, but it is ignored when you supply your own
+`JsonSerializerOptions` / `JsonSerializerSettings` and want this library's converters attached to them anyway.
+Both serializers therefore expose a registration entry point on the generated `StronglyTypedIds` class, in
+parallel to the EF Core / Swagger / Dapper / MVC / OpenAPI `ApplyTo` family:
+
+```csharp
+// System.Text.Json
+var options = new JsonSerializerOptions();
+StronglyTypedIds.ApplyTo(options);          // adds every id's converter to options.Converters
+
+// Newtonsoft.Json
+var settings = new JsonSerializerSettings();
+settings.AddStronglyTypedId();              // adds every id's converter to settings.Converters
+```
+
+Each entry point is generated only when the corresponding serializer is referenced, and only when the
+compilation declares at least one id.
 
 <a id="entity-framework-core"></a>
 
@@ -535,6 +627,35 @@ public class OrdersController : ControllerBase
 > type falls through to MVC's default binding chain. The bind itself reuses the `IParsable<TSelf>` member that
 > every id already has, so there is no per-request reflection beyond a one-time type check at registration.
 
+<a id="minimal-api"></a>
+
+## Minimal API <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+Minimal API needs **no extra generation**. Its parameter-binding convention accepts any type with a static
+`TryParse(string?, IFormatProvider?, out TSelf)` — which every id already has through `IParsable<TSelf>` — so
+route and query parameters bind out of the box:
+
+```csharp
+// "ABC123" from the route is bound into OrderId via IParsable<OrderId>.TryParse;
+// malformed text yields 400 before the handler runs.
+app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value));
+
+// [AsParameters] binds each id property from the matching route / query value.
+app.MapGet("/orders", ([AsParameters] OrderQuery query) => Results.Ok(query.Id.Value));
+
+public record OrderQuery(OrderId Id);
+```
+
+Route constraints are shared with MVC: the generated `ApplyTo(RouteOptions)` registers one constraint per id,
+so `{id:OrderId}` works in Minimal API templates too (the `Microsoft.AspNetCore.Mvc.*` assemblies ship in the
+ASP.NET Core shared framework, so the gate is satisfied in a Minimal API project):
+
+```csharp
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+
+app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value));
+```
+
 <a id="aspnetcore-openapi"></a>
 
 ## ASP.NET Core OpenAPI <a href="#table-of-contents" style="float:right">↑ Back to top</a>
@@ -600,18 +721,25 @@ compiler culture.
 
 | Rule ID  | Description                                                                | Code fix                       |
 | -------- | -------------------------------------------------------------------------- | ------------------------------ |
-| STIAO000 | The type must be a `record` (or `record struct`).                           | —                              |
+| STIAO000 | The type must be a `record` (or `record struct`).                           | Convert to `record`            |
 | STIAO001 | The type must be `partial`.                                                 | Add `partial`                  |
 | STIAO002 | The type cannot be `abstract`.                                              | Remove `abstract`              |
 | STIAO003 | The type cannot be `generic`.                                               | Remove the type parameter list |
-| STIAO004 | The type must declare a namespace.                                          | —                              |
-| STIAO005 | The type must have a single-parameter primary constructor.                  | —                              |
+| STIAO004 | The type must declare a namespace.                                          | Wrap in a namespace            |
+| STIAO005 | The type must have a single-parameter primary constructor.                  | Add a primary constructor      |
 | STIAO006 | The primary constructor parameter cannot be nullable.                       | Remove the `?` suffix          |
 | STIAO007 | The primary constructor parameter must be named `Value`.                    | Rename the parameter           |
-| STIAO008 | The primary constructor parameter type must be a supported primitive type.  | —                              |
-| STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the containing type |
-| STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | — |
-| STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | — |
+| STIAO008 | The primary constructor parameter type must be a supported primitive type.  | Change the type to `Guid`      |
+| STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the container |
+| STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | Remove the `Validator` argument|
+| STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | Replace with `Create(...)`     |
+| STIAO013 | `Prefix` is set to an empty or whitespace-only string, which is treated as "no prefix". | Remove the `Prefix` argument or give it a non-blank value |
+
+Every rule offers a fix, but a few only when the repair is unambiguous — `STIAO003` is offered only when
+the id itself is generic (removing the *containing* type's type parameters would change your design),
+`STIAO005` only when the type declares no explicit constructor (adding a primary constructor next to an
+existing one would collide with `CS0111`), and `STIAO009` only when the containing type is actually missing
+`partial` (otherwise the fix would insert a second `partial`).
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are
@@ -637,7 +765,9 @@ assembly always contains the latest generated code, so it is safe to ignore in t
 A: Each `ApplyTo` overload is generated together with its integration, and both live in the
 `Len.StronglyTypedId` namespace. Check that (1) `using Len.StronglyTypedId;` is in scope,
 (2) for EF Core a `DbContext` overrides `ConfigureConventions`, and (3) for Swagger the project
-references `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0.
+references `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0. The JSON entry points follow the same rule:
+`ApplyTo(JsonSerializerOptions)` needs `System.Text.Json` referenced, and `AddStronglyTypedId()` needs
+`Newtonsoft.Json` ≥ 13.0.0.
 
 **Q: The EF Core converter / column mapping is missing even though EF Core is referenced.**
 
@@ -663,8 +793,11 @@ A: Yes. Every id implements `IComparable<TSelf>` plus `<`, `>`, `<=` and `>=` ov
 
 **Q: What does `ToString()` print?**
 
-A: The text of the wrapped primitive value (`"42"`, `"3f2c…"`) rather than the record's default
-`OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated strings.
+A: The invariant-culture text of the wrapped primitive value (`"42"`, `"3f2c…"`, `"1.5"`) rather than
+the record's default `OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated
+strings. It is deliberately culture-independent so it matches the serialized form and round-trips through
+`Parse(id.ToString(), CultureInfo.InvariantCulture)`; pass a culture to `ToString(string?, IFormatProvider?)`
+for culture-specific output.
 
 **Q: I set `Validator`, but `new OrderId(...)` still accepts an invalid value.**
 
