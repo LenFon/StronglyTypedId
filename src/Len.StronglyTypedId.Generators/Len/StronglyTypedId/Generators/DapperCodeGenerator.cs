@@ -37,14 +37,22 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             var handlerName = GetHandlerName(idInfo, ambiguousNames.Contains(idInfo.Name));
 
             // Dapper 2.x 的 SqlMapper.TypeHandler<T> 基类签名为：
-            //   abstract void SetValue(System.Data.IDbDataParameter, T)   ← 形参非可空 T
+            //   abstract void SetValue(System.Data.IDbDataParameter, T?)   ← 形参是可空 T?
             //   abstract T Parse(System.Object)                            ← 返回非可空 T
-            // 可空标注（T?）只对引用类型合法，值类型 T? 即 Nullable<T>，与基类 T 不匹配（CS0115/CS0508）。
-            // 故形参/返回一律用非可空 T，方法体里再做 null → DBNull 映射，使数据库 NULL 与「无 Id」语义对应。
+            // 对值类型 T，T? 的可空标注会被擦除、即 T 本身，形参写 T 即可；
+            // 对引用类型 T，T? 才是真正的可空标注，必须照抄，否则与基类不匹配（CS8765）。
+            // Parse 的返回是非可空 T：引用类型 Id 遇数据库 NULL 时语义上就该返回 null，
+            // 故用 default! 显式表态；值类型 Id 的 default 本就是合法取值，无需 !。
             // 值类型 Id 取 .Value 还原基元；引用类型 Id 直接取 value（运行时为 null 即对应数据库 NULL）。
+        var setValueParameter = idInfo.TypeKindSuffix is null
+            ? $"{idInfo.FullyQualifiedName}? value"
+            : $"{idInfo.FullyQualifiedName} value";
+
         var setValueBody = idInfo.TypeKindSuffix is null
             ? "parameter.Value = value is null ? (object)global::System.DBNull.Value : value;"
             : "parameter.Value = value.Value;";
+
+        var parseDefaultValue = idInfo.TypeKindSuffix is null ? "default!" : "default";
 
         // Parse 体（基类签名 Parse(System.Object)）：
         //   DBNull → default（值类型 0 / 引用类型 null，对应数据库 NULL 与「无 Id」语义）；
@@ -60,7 +68,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         {
             if (value is global::System.DBNull)
             {
-                return default;
+                return {{parseDefaultValue}};
             }
 
             return {{idInfo.FullyQualifiedName}}.Create(({{idInfo.PrimitiveIdTypeName}})value!);
@@ -78,7 +86,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(DapperCodeGenerator), version)}}
-                    public override void SetValue(global::System.Data.IDbDataParameter parameter, {{idInfo.FullyQualifiedName}} value) =>
+                    public override void SetValue(global::System.Data.IDbDataParameter parameter, {{setValueParameter}}) =>
                         {{setValueBody}}
 
                     /// <inheritdoc/>

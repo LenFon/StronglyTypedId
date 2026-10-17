@@ -2,6 +2,7 @@
 // 断言各集成（EF Core / Dapper / Swagger / 内置 OpenApi / MVC）的产物可执行且行为正确，
 // 而非仅靠文本契约（CodeGeneratorModuleGateTests 已锁定文本形态，本文件补运行时语义）。
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using FluentAssertions;
 using Len.StronglyTypedId;
@@ -321,10 +322,14 @@ public class IntegrationRuntimeTests
 
         public int Size { get; set; }
 
+        // SourceColumn / ParameterName 的 setter 在 IDataParameter 上带 [AllowNull]（ADO.NET 允许
+        // 置 null），实现侧照抄该标注才能与接口签名一致；getter 仍承诺非 null。
+        [AllowNull]
         public string SourceColumn { get; set; } = string.Empty;
 
         public bool SourceColumnNullMapping { get; set; }
 
+        [AllowNull]
         public string ParameterName { get; set; } = string.Empty;
 
         public object? Value { get; set; }
