@@ -20,18 +20,20 @@ namespace Len.StronglyTypedId;
 /// 使用者看到的是一串驼峰标识符而不是人话。这类"静默降级"没有编译期信号，只能靠用例把守。
 /// </para>
 /// </remarks>
-public class DescriptorsTests
+public partial class DescriptorsTests
 {
     /// <summary>
     /// 资源键的形态：<c>&lt;描述符属性名&gt;Title</c> 或 <c>&lt;描述符属性名&gt;Message</c>。
     /// 渲染结果命中该形态即说明本地化未命中、回退到了键本身。
     /// </summary>
-    private static readonly Regex _resourceKeyPattern = new("^[A-Za-z]+(Title|Message)$", RegexOptions.Compiled);
+    [GeneratedRegex("^[A-Za-z]+(Title|Message)$")]
+    private static partial Regex ResourceKeyPattern();
 
     /// <summary>
     /// 规则 ID 的形态：<c>STIAO</c> + 三位数字。
     /// </summary>
-    private static readonly Regex _ruleIdPattern = new(@"^STIAO\d{3}$", RegexOptions.Compiled);
+    [GeneratedRegex(@"^STIAO\d{3}$")]
+    private static partial Regex RuleIdPattern();
 
     [Fact]
     public void Descriptors_Should_FollowRuleIdAndSeverityConvention()
@@ -40,7 +42,7 @@ public class DescriptorsTests
 
         foreach (var descriptor in Descriptors.All)
         {
-            descriptor.Id.Should().MatchRegex(_ruleIdPattern, "规则 ID 是对外承诺，不能改号");
+            descriptor.Id.Should().MatchRegex(RuleIdPattern(), "规则 ID 是对外承诺，不能改号");
             descriptor.Category.Should().Be("StronglyTypedIdAnalyzer");
             descriptor.IsEnabledByDefault.Should().BeTrue();
 
@@ -58,10 +60,7 @@ public class DescriptorsTests
     }
 
     [Fact]
-    public void Descriptors_Should_HaveUniqueRuleIds()
-    {
-        Descriptors.All.Select(descriptor => descriptor.Id).Should().OnlyHaveUniqueItems();
-    }
+    public void Descriptors_Should_HaveUniqueRuleIds() => Descriptors.All.Select(descriptor => descriptor.Id).Should().OnlyHaveUniqueItems();
 
     /// <summary>
     /// 标题与消息都必须命中内嵌的本地化资源，而不是回退成资源键。
@@ -73,8 +72,8 @@ public class DescriptorsTests
 
         foreach (var descriptor in Descriptors.All)
         {
-            descriptor.Title.ToString().Should().NotMatchRegex(_resourceKeyPattern);
-            descriptor.MessageFormat.ToString().Should().NotMatchRegex(_resourceKeyPattern);
+            descriptor.Title.ToString().Should().NotMatchRegex(ResourceKeyPattern());
+            descriptor.MessageFormat.ToString().Should().NotMatchRegex(ResourceKeyPattern());
         }
     }
 
@@ -97,10 +96,7 @@ public class DescriptorsTests
     }
 
     [Fact]
-    public void SupportedDiagnostics_Should_ExposeEveryDescriptor()
-    {
-        new StronglyTypedIdAnalyzer().SupportedDiagnostics.Should().BeEquivalentTo(Descriptors.All);
-    }
+    public void SupportedDiagnostics_Should_ExposeEveryDescriptor() => new StronglyTypedIdAnalyzer().SupportedDiagnostics.Should().BeEquivalentTo(Descriptors.All);
 
     /// <summary>
     /// 生成器侧诊断与分析器侧诊断共用同一套规则 ID 形态与本地化契约。
@@ -118,12 +114,12 @@ public class DescriptorsTests
 
         foreach (var descriptor in Descriptors.GeneratorDiagnostics)
         {
-            descriptor.Id.Should().MatchRegex(_ruleIdPattern, "规则 ID 是对外承诺，不能改号");
+            descriptor.Id.Should().MatchRegex(RuleIdPattern(), "规则 ID 是对外承诺，不能改号");
             descriptor.Category.Should().Be("StronglyTypedIdGenerator");
             descriptor.IsEnabledByDefault.Should().BeTrue();
             descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);
-            descriptor.Title.ToString().Should().NotMatchRegex(_resourceKeyPattern);
-            descriptor.MessageFormat.ToString().Should().NotMatchRegex(_resourceKeyPattern);
+            descriptor.Title.ToString().Should().NotMatchRegex(ResourceKeyPattern());
+            descriptor.MessageFormat.ToString().Should().NotMatchRegex(ResourceKeyPattern());
             descriptor.MessageFormat.ToString().Should().Contain("{0}", $"{descriptor.Id} 的消息必须保留 {0} 占位符");
         }
     }

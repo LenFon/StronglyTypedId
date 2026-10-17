@@ -9,7 +9,7 @@ namespace Len.StronglyTypedId.CodeFixes;
 
 public class StronglyTypedIdCodeFixProviderTests
 {
-    private readonly static string FixedCode = """
+    private readonly static string _fixedCode = """
         using System;
         
         namespace Len.StronglyTypedId.Tests;
@@ -33,7 +33,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.TypeMustBePartial)
             .WithSpan(5, 1, 6, 42).WithArguments("OrderId");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.TypeCannotBeAbstract)
             .WithSpan(5, 1, 6, 59).WithArguments("OrderId");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.ParameterNameMustBeValue)
             .WithSpan(6, 43, 6, 49).WithArguments("Value1");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.ParameterCannotBeNullable)
             .WithSpan(6, 38, 6, 43).WithArguments("Guid?");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class StronglyTypedIdCodeFixProviderTests
         var expected = Verify.Diagnostic(Descriptors.TypeCannotBeGeneric)
             .WithSpan(5, 1, 6, 53).WithArguments("OrderId");
 
-        await Verify.VerifyCodeFixAsync(code, expected, FixedCode);
+        await Verify.VerifyCodeFixAsync(code, expected, _fixedCode);
     }
 
     [Fact]

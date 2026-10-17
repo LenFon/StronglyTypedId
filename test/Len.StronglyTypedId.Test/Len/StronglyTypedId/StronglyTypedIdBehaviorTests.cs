@@ -246,30 +246,19 @@ public class StronglyTypedIdBehaviorTests
 
     #region StronglyTypedIdExtensions 边界分支
 
+    // NotStronglyTypedId 带有 [StronglyTypedId] 但没有生成接口实现（无 Value 主键）
     [Fact]
     public void IsStronglyTypedId_Should_ReturnFalse_ForPlainRecordWithoutGeneratedInterface()
-    {
-        // NotStronglyTypedId 带有 [StronglyTypedId] 但没有生成接口实现（无 Value 主键）
-        typeof(NotStronglyTypedId).IsStronglyTypedId().Should().BeFalse();
-    }
+        => typeof(NotStronglyTypedId).IsStronglyTypedId().Should().BeFalse();
 
     [Fact]
-    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForEnum()
-    {
-        typeof(DayOfWeek).TryGetPrimitiveIdType(out _).Should().BeFalse();
-    }
+    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForEnum() => typeof(DayOfWeek).TryGetPrimitiveIdType(out _).Should().BeFalse();
 
     [Fact]
-    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForArray()
-    {
-        typeof(int[]).TryGetPrimitiveIdType(out _).Should().BeFalse();
-    }
+    public void TryGetPrimitiveIdType_Should_ReturnFalse_ForArray() => typeof(int[]).TryGetPrimitiveIdType(out _).Should().BeFalse();
 
     [Fact]
-    public void GetPrimitiveIdType_Should_ReturnNull_ForPlainRecord()
-    {
-        typeof(NotStronglyTypedId).GetPrimitiveIdType().Should().BeNull();
-    }
+    public void GetPrimitiveIdType_Should_ReturnNull_ForPlainRecord() => typeof(NotStronglyTypedId).GetPrimitiveIdType().Should().BeNull();
 
     #endregion
 

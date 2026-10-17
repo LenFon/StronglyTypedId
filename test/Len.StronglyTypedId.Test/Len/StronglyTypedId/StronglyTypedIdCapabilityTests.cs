@@ -20,18 +20,18 @@ namespace Len.StronglyTypedId;
 /// </remarks>
 public class StronglyTypedIdCapabilityTests
 {
-    private static readonly Guid LowGuid = Guid.Parse("00000000-0000-0000-0000-000000000001");
-    private static readonly Guid HighGuid = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+    private static readonly Guid _lowGuid = Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private static readonly Guid _highGuid = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
 
     #region 排序与比较
 
     [Fact]
     public void ComparisonOperators_Should_FollowPrimitiveOrder()
     {
-        var lower = GuidId.Create(LowGuid);
-        var higher = GuidId.Create(HighGuid);
+        var lower = GuidId.Create(_lowGuid);
+        var higher = GuidId.Create(_highGuid);
         // 等值边界用另一个变量表示：直接写 lower < lower 会命中 CS1718（对同一变量比较）。
-        var equalToLower = GuidId.Create(LowGuid);
+        var equalToLower = GuidId.Create(_lowGuid);
 
         (lower < higher).Should().BeTrue();
         (higher > lower).Should().BeTrue();
@@ -46,12 +46,12 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void CompareTo_Should_AgreeWithPrimitiveComparison()
     {
-        var lower = GuidId.Create(LowGuid);
-        var higher = GuidId.Create(HighGuid);
+        var lower = GuidId.Create(_lowGuid);
+        var higher = GuidId.Create(_highGuid);
 
-        lower.CompareTo(higher).Should().Be(LowGuid.CompareTo(HighGuid));
-        higher.CompareTo(lower).Should().Be(HighGuid.CompareTo(LowGuid));
-        lower.CompareTo(GuidId.Create(LowGuid)).Should().Be(0);
+        lower.CompareTo(higher).Should().Be(_lowGuid.CompareTo(_highGuid));
+        higher.CompareTo(lower).Should().Be(_highGuid.CompareTo(_lowGuid));
+        lower.CompareTo(GuidId.Create(_lowGuid)).Should().Be(0);
     }
 
     /// <summary>
@@ -81,7 +81,7 @@ public class StronglyTypedIdCapabilityTests
     {
         GuidIdV2? nullId = null;
 
-        GuidIdV2.Create(LowGuid).CompareTo(nullId).Should().BePositive();
+        GuidIdV2.Create(_lowGuid).CompareTo(nullId).Should().BePositive();
     }
 
     #endregion
@@ -91,7 +91,7 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void ToString_Should_ReturnPrimitiveText_NotRecordPrintout()
     {
-        GuidId.Create(LowGuid).ToString().Should().Be(LowGuid.ToString());
+        GuidId.Create(_lowGuid).ToString().Should().Be(_lowGuid.ToString());
         Int32Id.Create(12).ToString().Should().Be("12");
         StringId.Create("Len").ToString().Should().Be("Len");
     }
@@ -172,7 +172,7 @@ public class StronglyTypedIdCapabilityTests
         Int32Id.TryParse("not-a-number".AsSpan(), CultureInfo.InvariantCulture, out _).Should().BeFalse();
 
         StringId.Parse("Len".AsSpan(), CultureInfo.InvariantCulture).Value.Should().Be("Len");
-        StringId.TryParse(ReadOnlySpan<char>.Empty, CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        StringId.TryParse([], CultureInfo.InvariantCulture, out _).Should().BeFalse();
     }
 
     #endregion
@@ -190,10 +190,10 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void SystemTextJson_Should_RoundTripGuidKeyedDictionary()
     {
-        var json = SerializeDictionary(GuidId.Create(LowGuid), 1);
+        var json = SerializeDictionary(GuidId.Create(_lowGuid), 1);
 
-        json.Should().Be($$"""{"{{LowGuid}}":1}""");
-        DeserializeDictionary<GuidId>(json).Should().Be(GuidId.Create(LowGuid));
+        json.Should().Be($$"""{"{{_lowGuid}}":1}""");
+        DeserializeDictionary<GuidId>(json).Should().Be(GuidId.Create(_lowGuid));
     }
 
     [Fact]
@@ -220,10 +220,10 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void SystemTextJson_Should_RoundTripReferenceTypeIdKeyedDictionary()
     {
-        var json = SerializeDictionary(GuidIdV2.Create(LowGuid), 1);
+        var json = SerializeDictionary(GuidIdV2.Create(_lowGuid), 1);
 
-        json.Should().Be($$"""{"{{LowGuid}}":1}""");
-        DeserializeDictionary<GuidIdV2>(json).Should().Be(GuidIdV2.Create(LowGuid));
+        json.Should().Be($$"""{"{{_lowGuid}}":1}""");
+        DeserializeDictionary<GuidIdV2>(json).Should().Be(GuidIdV2.Create(_lowGuid));
     }
 
     [Fact]
@@ -251,8 +251,8 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void NewtonsoftJson_Should_WritePrimitiveTextAsDictionaryKey()
     {
-        Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<GuidId, int> { [GuidId.Create(LowGuid)] = 1 })
-            .Should().Be($$"""{"{{LowGuid}}":1}""");
+        Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<GuidId, int> { [GuidId.Create(_lowGuid)] = 1 })
+            .Should().Be($$"""{"{{_lowGuid}}":1}""");
 
         Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<Int32Id, int> { [Int32Id.Create(42)] = 1 })
             .Should().Be("""{"42":1}""");
@@ -275,7 +275,7 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void Validator_Should_AcceptValidValue_OnCreate()
     {
-        NonEmptyGuidId.Create(LowGuid).Value.Should().Be(LowGuid);
+        NonEmptyGuidId.Create(_lowGuid).Value.Should().Be(_lowGuid);
         NonEmptyInt32Id.Create(1).Value.Should().Be(1);
     }
 
@@ -286,10 +286,10 @@ public class StronglyTypedIdCapabilityTests
     public void Validator_Should_MakeTryParseReturnFalse_InsteadOfThrowing()
     {
         NonEmptyGuidId.TryParse(Guid.Empty.ToString(), CultureInfo.InvariantCulture, out var result).Should().BeFalse();
-        result.Should().Be(default(NonEmptyGuidId));
+        result.Should().Be(default);
 
-        NonEmptyGuidId.TryParse(LowGuid.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
-        parsed.Value.Should().Be(LowGuid);
+        NonEmptyGuidId.TryParse(_lowGuid.ToString(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be(_lowGuid);
 
         NonEmptyInt32Id.TryParse("0", CultureInfo.InvariantCulture, out _).Should().BeFalse();
         NonEmptyInt32Id.TryParse("-1", CultureInfo.InvariantCulture, out _).Should().BeFalse();
@@ -312,7 +312,7 @@ public class StronglyTypedIdCapabilityTests
     {
         ShortStringId.TryParse("12345678".AsSpan(), CultureInfo.InvariantCulture, out _).Should().BeTrue();
         ShortStringId.TryParse("123456789".AsSpan(), CultureInfo.InvariantCulture, out _).Should().BeFalse();
-        ShortStringId.TryParse(ReadOnlySpan<char>.Empty, CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        ShortStringId.TryParse([], CultureInfo.InvariantCulture, out _).Should().BeFalse();
     }
 
     /// <summary>
@@ -328,8 +328,8 @@ public class StronglyTypedIdCapabilityTests
         systemTextJson.Should().Throw<ArgumentException>();
         newtonsoft.Should().Throw<ArgumentException>();
 
-        System.Text.Json.JsonSerializer.Deserialize<NonEmptyGuidId>($"\"{LowGuid}\"").Value.Should().Be(LowGuid);
-        Newtonsoft.Json.JsonConvert.DeserializeObject<NonEmptyGuidId>($"\"{LowGuid}\"")!.Value.Should().Be(LowGuid);
+        System.Text.Json.JsonSerializer.Deserialize<NonEmptyGuidId>($"\"{_lowGuid}\"").Value.Should().Be(_lowGuid);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<NonEmptyGuidId>($"\"{_lowGuid}\"")!.Value.Should().Be(_lowGuid);
     }
 
     #endregion
@@ -341,9 +341,9 @@ public class StronglyTypedIdCapabilityTests
     {
         // 关键判据：生成代码必须把 partial 段嵌回容器里。若它落在命名空间层级，会另起一个同名顶层类型，
         // 整份代码照样编译通过 —— 只有「从容器里取这个类型」并要求它具备生成成员，才能发现区别。
-        typeof(OrderAggregate).GetNestedType(nameof(OrderAggregate.OrderId)).Should().Be(typeof(OrderAggregate.OrderId));
-        typeof(ShipmentBatch).GetNestedType(nameof(ShipmentBatch.BatchId)).Should().Be(typeof(ShipmentBatch.BatchId));
-        typeof(Inventory).GetNestedType(nameof(Inventory.SkuId)).Should().Be(typeof(Inventory.SkuId));
+        typeof(OrderAggregate).GetNestedType(nameof(OrderAggregate.OrderId)).Should().Be<OrderAggregate.OrderId>();
+        typeof(ShipmentBatch).GetNestedType(nameof(ShipmentBatch.BatchId)).Should().Be<ShipmentBatch.BatchId>();
+        typeof(Inventory).GetNestedType(nameof(Inventory.SkuId)).Should().Be<Inventory.SkuId>();
 
         var value = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var orderId = OrderAggregate.OrderId.Create(value);
@@ -407,8 +407,8 @@ public class StronglyTypedIdCapabilityTests
     [Fact]
     public void TryCreate_Should_ReturnTrue_ForValidValue()
     {
-        GuidId.TryCreate(LowGuid, out var guidId).Should().BeTrue();
-        guidId.Should().Be(GuidId.Create(LowGuid));
+        GuidId.TryCreate(_lowGuid, out var guidId).Should().BeTrue();
+        guidId.Should().Be(GuidId.Create(_lowGuid));
 
         Int32Id.TryCreate(42, out var intId).Should().BeTrue();
         intId.Should().Be(Int32Id.Create(42));
@@ -422,7 +422,7 @@ public class StronglyTypedIdCapabilityTests
     {
         // 值类型 Id：TryCreate 失败时 result 为 default 值（零结构体）。
         NonEmptyGuidId.TryCreate(Guid.Empty, out var emptyId).Should().BeFalse();
-        emptyId.Should().Be(default(NonEmptyGuidId));
+        emptyId.Should().Be(default);
 
         // 引用类型 Id：TryCreate 失败时 result 为 null（default 引用）。
         NonEmptyInt32Id.TryCreate(0, out var zeroId).Should().BeFalse();
@@ -454,10 +454,10 @@ public class StronglyTypedIdCapabilityTests
     {
         typeof(IUtf8SpanParsable<GuidId>).IsAssignableFrom(typeof(GuidId)).Should().BeTrue();
 
-        var utf8 = System.Text.Encoding.UTF8.GetBytes(LowGuid.ToString());
-        GuidId.Parse(utf8.AsSpan(), CultureInfo.InvariantCulture).Should().Be(GuidId.Create(LowGuid));
+        var utf8 = System.Text.Encoding.UTF8.GetBytes(_lowGuid.ToString());
+        GuidId.Parse(utf8.AsSpan(), CultureInfo.InvariantCulture).Should().Be(GuidId.Create(_lowGuid));
         GuidId.TryParse(utf8.AsSpan(), CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
-        parsed.Should().Be(GuidId.Create(LowGuid));
+        parsed.Should().Be(GuidId.Create(_lowGuid));
         GuidId.TryParse(
                 System.Text.Encoding.UTF8.GetBytes("not-a-guid").AsSpan(),
                 CultureInfo.InvariantCulture,
@@ -484,10 +484,10 @@ public class StronglyTypedIdCapabilityTests
         converter.CanConvertFrom(typeof(string)).Should().BeTrue();
         converter.CanConvertTo(typeof(string)).Should().BeTrue();
 
-        var id = (ConvertibleGuidId)converter.ConvertFrom(LowGuid.ToString())!;
-        id.Should().Be(ConvertibleGuidId.Create(LowGuid));
+        var id = (ConvertibleGuidId)converter.ConvertFrom(_lowGuid.ToString())!;
+        id.Should().Be(ConvertibleGuidId.Create(_lowGuid));
 
-        converter.ConvertTo(id, typeof(string)).Should().Be(LowGuid.ToString());
+        converter.ConvertTo(id, typeof(string)).Should().Be(_lowGuid.ToString());
     }
 
     /// <summary>
@@ -530,12 +530,12 @@ public class StronglyTypedIdCapabilityTests
     public void NewtonsoftJson_Should_RoundTripKeyedDictionary_WhenTypeConverterEnabled()
     {
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(
-            new Dictionary<ConvertibleGuidId, int> { [ConvertibleGuidId.Create(LowGuid)] = 1 });
+            new Dictionary<ConvertibleGuidId, int> { [ConvertibleGuidId.Create(_lowGuid)] = 1 });
 
         var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<ConvertibleGuidId, int>>(json);
 
         parsed.Should().NotBeNull();
-        parsed!.Keys.Single().Should().Be(ConvertibleGuidId.Create(LowGuid));
+        parsed!.Keys.Single().Should().Be(ConvertibleGuidId.Create(_lowGuid));
     }
 
     /// <summary>

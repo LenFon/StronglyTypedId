@@ -70,10 +70,7 @@ public class JsonConverterBoundaryTests
     #region System.Text.Json：写侧空值
 
     [Fact]
-    public void SystemTextJson_Should_WriteNull_WhenReferenceTypeIdIsNull()
-    {
-        System.Text.Json.JsonSerializer.Serialize(default(GuidIdV2)).Should().Be("null");
-    }
+    public void SystemTextJson_Should_WriteNull_WhenReferenceTypeIdIsNull() => System.Text.Json.JsonSerializer.Serialize(default(GuidIdV2)).Should().Be("null");
 
     [Fact]
     public void SystemTextJson_Should_WritePrimitiveValue_WhenValueIsDefaultStruct()
@@ -130,10 +127,7 @@ public class JsonConverterBoundaryTests
     #region Newtonsoft.Json：写侧空值
 
     [Fact]
-    public void NewtonsoftJson_Should_WriteNull_WhenReferenceTypeIdIsNull()
-    {
-        Newtonsoft.Json.JsonConvert.SerializeObject(default(GuidIdV2)).Should().Be("null");
-    }
+    public void NewtonsoftJson_Should_WriteNull_WhenReferenceTypeIdIsNull() => Newtonsoft.Json.JsonConvert.SerializeObject(default(GuidIdV2)).Should().Be("null");
 
     [Fact]
     public void NewtonsoftJson_Should_WritePrimitiveValue_WhenValueIsDefaultStruct()

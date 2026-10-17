@@ -91,10 +91,7 @@ public class SwaggerCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void Swagger_Should_HaveOrderFour()
-    {
-        SwaggerCodeGenerator.Instance.Order.Should().Be(4);
-    }
+    public void Swagger_Should_HaveOrderFour() => SwaggerCodeGenerator.Instance.Order.Should().Be(4);
 
     #endregion
 

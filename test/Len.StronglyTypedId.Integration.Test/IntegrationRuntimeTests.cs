@@ -19,7 +19,7 @@ namespace Len.StronglyTypedId.Generators;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 门控判据（见 <see cref="StronglyTypedIdGenerator"/> 的 <c>GeneratorCatalog</c>）：
+/// 门控判据（见 <see cref="StronglyTypedIdGenerator"/> 的 <c>_generatorCatalog</c>）：
 /// EF Core ≥ 7、Dapper ≥ 2、Swashbuckle ≥ 6、内置 OpenApi ≥ 9（FrameworkReference 在
 /// net10.0 下主版本 10 满足）、MVC 门面/实现任一 ≥ 2（FrameworkReference 下 .NET 10 满足）。
 /// 因此 net8.0 与 net10.0 双目标下，本文件的运行时验证都成立。
@@ -57,7 +57,7 @@ public class IntegrationRuntimeTests
 
         // Parse：DBNull → default；Guid → 还原强类型 Id。
         var parsed = handler.Parse(DBNull.Value);
-        parsed.Should().Be(default(IntegrationGuidId), "DBNull 必须映射到 default 值类型 Id");
+        parsed.Should().Be(default, "DBNull 必须映射到 default 值类型 Id");
         var guid = Guid.NewGuid();
         handler.Parse(guid).Should().Be(IntegrationGuidId.Create(guid));
     }
@@ -78,8 +78,7 @@ public class IntegrationRuntimeTests
         var expectedType = typeof(Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<IntegrationGuidId, Guid>);
 
         expectedType.Should().NotBeNull("EF Core 的 ValueConverter 泛型类型必须可在真实包引用下解析");
-        expectedType.Should().BeAssignableTo(
-            typeof(Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter),
+        expectedType.Should().BeAssignableTo<Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter>(
             "生成的转换器必须继承 EF Core 的 ValueConverter 基类");
     }
 
@@ -259,10 +258,12 @@ public class IntegrationRuntimeTests
         var factoryResult = Microsoft.AspNetCore.Http.RequestDelegateFactory.Create(handler);
         var requestDelegate = factoryResult.RequestDelegate;
 
-        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext();
         // Ok<T> 结果写出时会向容器索取 ILoggerFactory，故必须注册日志服务，否则裸容器会抛
         // 「No service for type 'ILoggerFactory'」——这是测试宿主的最小依赖，与被测绑定逻辑无关。
-        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider()
+        };
         httpContext.Request.RouteValues["id"] = text;
         httpContext.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?id=" + text);
 
@@ -291,8 +292,10 @@ public class IntegrationRuntimeTests
         var factoryResult = Microsoft.AspNetCore.Http.RequestDelegateFactory.Create(handler);
         var requestDelegate = factoryResult.RequestDelegate;
 
-        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext();
-        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider()
+        };
         httpContext.Request.RouteValues["id"] = "not-a-guid";
         httpContext.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?id=not-a-guid");
         httpContext.Response.Body = new MemoryStream();

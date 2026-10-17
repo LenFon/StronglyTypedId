@@ -97,10 +97,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void AspNetCoreOpenApi_Should_HaveOrderSix()
-    {
-        AspNetCoreOpenApiCodeGenerator.Instance.Order.Should().Be(6);
-    }
+    public void AspNetCoreOpenApi_Should_HaveOrderSix() => AspNetCoreOpenApiCodeGenerator.Instance.Order.Should().Be(6);
 
     #endregion
 

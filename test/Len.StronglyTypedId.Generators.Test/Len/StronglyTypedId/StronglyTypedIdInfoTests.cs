@@ -555,12 +555,11 @@ public class StronglyTypedIdInfoTests
     {
         var seed = new[] { typeof(object).Assembly, typeof(StronglyTypedIdAttribute).Assembly };
 
-        return AppDomain.CurrentDomain.GetAssemblies()
+        return [.. AppDomain.CurrentDomain.GetAssemblies()
             .Union(seed)
             .Distinct()
             .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))
-            .ToImmutableArray();
+            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))];
     }
 
     #endregion

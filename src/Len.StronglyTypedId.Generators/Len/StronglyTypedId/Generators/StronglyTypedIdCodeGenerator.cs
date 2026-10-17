@@ -408,7 +408,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsStringPrimitive)
         {
-            AppendStringInternMembers(members, idInfo, version);
+            AppendStringInternMembers(members, version);
         }
 
         AppendDeconstructMember(members, idInfo, version);
@@ -535,7 +535,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 因此无论走哪条入口，同一字符串值最终都落在同一引用上。
     /// </para>
     /// </remarks>
-    private static void AppendStringInternMembers(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
+    private static void AppendStringInternMembers(StringBuilder builder, string version)
     {
         AppendMember(
             builder,

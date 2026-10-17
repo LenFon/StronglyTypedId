@@ -66,7 +66,7 @@ public class NewtonsoftJsonCodeGeneratorTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
-    private static IReadOnlyDictionary<string, string> GetGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
+    private static Dictionary<string, string> GetGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
     {
         var compilation = CreateCompilation(sourceCode, extraReferences);
 
@@ -120,10 +120,7 @@ public class NewtonsoftJsonCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void NewtonsoftJson_Should_HaveOrderTwo()
-    {
-        NewtonsoftJsonCodeGenerator.Instance.Order.Should().Be(2);
-    }
+    public void NewtonsoftJson_Should_HaveOrderTwo() => NewtonsoftJsonCodeGenerator.Instance.Order.Should().Be(2);
 
     #endregion
 

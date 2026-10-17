@@ -103,7 +103,7 @@ public class EfCoreCodeGeneratorTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
-    private static IReadOnlyDictionary<string, string> GetGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
+    private static Dictionary<string, string> GetGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
     {
         var compilation = CreateCompilation(sourceCode, extraReferences);
 
@@ -163,10 +163,7 @@ public class EfCoreCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void EfCore_Should_HaveOrderThree()
-    {
-        EfCoreCodeGenerator.Instance.Order.Should().Be(3);
-    }
+    public void EfCore_Should_HaveOrderThree() => EfCoreCodeGenerator.Instance.Order.Should().Be(3);
 
     #endregion
 

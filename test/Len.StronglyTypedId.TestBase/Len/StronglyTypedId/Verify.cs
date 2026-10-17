@@ -196,8 +196,8 @@ public static class Verify
         }
     }
 
-    private static ParseOptions CreateDefaultParseOptions()
-        => new CSharpParseOptions(LanguageVersion.Latest, DocumentationMode.Diagnose);
+    private static CSharpParseOptions CreateDefaultParseOptions()
+        => new(LanguageVersion.Latest, DocumentationMode.Diagnose);
 
     private class TestAnalyzer : CSharpAnalyzerTest<StronglyTypedIdAnalyzer, DefaultVerifier>
     {

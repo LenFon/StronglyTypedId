@@ -19,17 +19,13 @@ namespace Len.StronglyTypedId;
 /// </para>
 /// </remarks>
 [Collection(PackedPackagesCollection.Name)]
-public class PackageContentsTests
+public class PackageContentsTests(PackedPackagesFixture fixture)
 {
     private const string GeneratorsAssemblyEntry = "analyzers/dotnet/cs/Len.StronglyTypedId.Generators.dll";
     private const string GeneratorsPackageId = "Len.StronglyTypedId.Generators";
     private const string MainPackageId = "Len.StronglyTypedId";
     private const string PackageVersion = "1.0.0";
     private const string ReadmeEntry = "PACKAGE.md";
-
-    private readonly PackedPackagesFixture _fixture;
-
-    public PackageContentsTests(PackedPackagesFixture fixture) => _fixture = fixture;
 
     #region 生成器包：使用者能拿到生成器
 
@@ -40,7 +36,7 @@ public class PackageContentsTests
     [Fact]
     public void GeneratorsPackage_Should_PlaceAssemblyUnderAnalyzersDirectory()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.GeneratorsPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
 
         entries.Should().Contain(GeneratorsAssemblyEntry,
             "生成器程序集必须落在 analyzers/dotnet/cs/ 下才会被 Roslyn 加载");
@@ -53,7 +49,7 @@ public class PackageContentsTests
     [Fact]
     public void GeneratorsPackage_Should_Not_ContainLibraryOrSymbols()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.GeneratorsPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
 
         entries.Should().NotContain(entry => entry.StartsWith("lib/", StringComparison.Ordinal),
             "分析器包不应有 lib/ 条目（IncludeBuildOutput=false）");
@@ -67,7 +63,7 @@ public class PackageContentsTests
     [Fact]
     public void GeneratorsPackage_Should_IncludeAnalyzerReleaseTrackingFiles()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.GeneratorsPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
 
         entries.Should().Contain("AnalyzerReleases.Shipped.md");
         entries.Should().Contain("AnalyzerReleases.Unshipped.md");
@@ -80,7 +76,7 @@ public class PackageContentsTests
     [Fact]
     public void GeneratorsPackage_Should_HaveNoDependencies()
     {
-        var nuspec = PackedPackagesFixture.ReadNuspec(_fixture.GeneratorsPackagePath);
+        var nuspec = PackedPackagesFixture.ReadNuspec(fixture.GeneratorsPackagePath);
 
         var dependencies = Metadata(nuspec).Elements()
             .Where(element => element.Name.LocalName == "dependencies")
@@ -101,7 +97,7 @@ public class PackageContentsTests
     [Fact]
     public void MainPackage_Should_IncludeBothTargetFrameworks()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.MainPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.MainPackagePath);
 
         entries.Should().Contain("lib/net8.0/Len.StronglyTypedId.dll");
         entries.Should().Contain("lib/net10.0/Len.StronglyTypedId.dll");
@@ -115,7 +111,7 @@ public class PackageContentsTests
     [Fact]
     public void MainPackage_Should_Not_ContainSymbols()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.MainPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.MainPackagePath);
 
         entries.Should().NotContain(entry => entry.EndsWith(".pdb", StringComparison.Ordinal),
             "调试符号应单独成 .snupkg，主包 lib/ 下不应有 pdb");
@@ -127,7 +123,7 @@ public class PackageContentsTests
     [Fact]
     public void MainPackage_Should_Not_ContainAnalyzers()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.MainPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.MainPackagePath);
 
         entries.Should().NotContain(entry => entry.StartsWith("analyzers/", StringComparison.Ordinal),
             "生成器应单独成包，主包不应内嵌分析器");
@@ -143,7 +139,7 @@ public class PackageContentsTests
     [Fact]
     public void MainPackage_Should_DependOnGeneratorsPackage_ForEveryTargetFramework()
     {
-        var nuspec = PackedPackagesFixture.ReadNuspec(_fixture.MainPackagePath);
+        var nuspec = PackedPackagesFixture.ReadNuspec(fixture.MainPackagePath);
 
         var groups = Metadata(nuspec).Elements()
             .Where(element => element.Name.LocalName == "dependencies")
@@ -180,7 +176,7 @@ public class PackageContentsTests
     [Fact]
     public void SymbolsPackage_Should_ContainPdbForBothTargetFrameworks()
     {
-        var entries = PackedPackagesFixture.ReadEntries(_fixture.SymbolsPackagePath);
+        var entries = PackedPackagesFixture.ReadEntries(fixture.SymbolsPackagePath);
 
         entries.Should().Contain("lib/net8.0/Len.StronglyTypedId.pdb");
         entries.Should().Contain("lib/net10.0/Len.StronglyTypedId.pdb");
@@ -196,7 +192,7 @@ public class PackageContentsTests
     [InlineData(false)]
     public void Package_Should_IncludeReadme(bool generators)
     {
-        var packagePath = generators ? _fixture.GeneratorsPackagePath : _fixture.MainPackagePath;
+        var packagePath = generators ? fixture.GeneratorsPackagePath : fixture.MainPackagePath;
         var entries = PackedPackagesFixture.ReadEntries(packagePath);
         var nuspec = PackedPackagesFixture.ReadNuspec(packagePath);
 
@@ -216,7 +212,7 @@ public class PackageContentsTests
     [InlineData(false, MainPackageId)]
     public void Package_Should_CarryExpectedId(bool generators, string expectedId)
     {
-        var packagePath = generators ? _fixture.GeneratorsPackagePath : _fixture.MainPackagePath;
+        var packagePath = generators ? fixture.GeneratorsPackagePath : fixture.MainPackagePath;
         var nuspec = PackedPackagesFixture.ReadNuspec(packagePath);
 
         var id = Metadata(nuspec).Elements()

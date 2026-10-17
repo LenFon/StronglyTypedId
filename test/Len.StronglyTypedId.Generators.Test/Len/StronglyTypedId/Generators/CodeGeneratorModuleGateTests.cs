@@ -382,7 +382,7 @@ public class CodeGeneratorModuleGateTests
         "Microsoft.AspNetCore.Routing",
     ];
 
-    private static IReadOnlyDictionary<string, string> RunGenerator(string sourceCode, params MetadataReference[] extraReferences)
+    private static Dictionary<string, string> RunGenerator(string sourceCode, params MetadataReference[] extraReferences)
     {
         var compilation = CreateCompilation(sourceCode, extraReferences);
 

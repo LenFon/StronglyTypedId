@@ -55,20 +55,15 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     }
 
     private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
-    {
-        if (syntaxNode is not MethodDeclarationSyntax
+        => syntaxNode is MethodDeclarationSyntax
             {
                 Identifier.ValueText: "ConfigureConventions",
                 Modifiers: var modifiers and not [],
                 Parent: ClassDeclarationSyntax,
                 ParameterList.Parameters.Count: 1,
-            })
-        {
-            return false;
-        }
-
-        return modifiers.Any(SyntaxKind.OverrideKeyword) && modifiers.Any(SyntaxKind.ProtectedKeyword);
-    }
+            }
+            && modifiers.Any(SyntaxKind.OverrideKeyword)
+            && modifiers.Any(SyntaxKind.ProtectedKeyword);
 
     private static bool CouldBeStronglyTypedId(SyntaxNode syntaxNode, CancellationToken _)
     {
@@ -275,7 +270,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 内置 OpenAPI / MVC）各自按引用程序集独立门控。
     /// </para>
     /// </remarks>
-    private static readonly ImmutableArray<CodeGeneratorRegistration> GeneratorCatalog = ImmutableArray.Create(
+    private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog = ImmutableArray.Create(
         // 核心生成器：原 switch 按模块名精确匹配（区分大小写），此处用同样的 Any(m => m.Name == …) 复刻。
         new CodeGeneratorRegistration(
             "Len.StronglyTypedId.dll",
@@ -374,7 +369,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 取当前编译引用下所有已启用的核心生成器，按各自 <see cref="ICoreCodeGenerator.Order"/> 升序排列后批量执行。
     /// </summary>
     private static ImmutableArray<ICoreCodeGenerator> GetCoreGenerators(ImmutableArray<ModuleInfo> modules)
-        => [.. GeneratorCatalog
+        => [.. _generatorCatalog
             .Where(registration => registration.IsCore && registration.IsEnabled(modules))
             .OrderBy(static registration => registration.CoreGenerator!.Order)
             .Select(static registration => registration.CoreGenerator!)];
@@ -389,7 +384,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// </remarks>
     private static IIntegrationCodeGenerator? GetIntegrationGenerator(ImmutableArray<ModuleInfo> modules, string assemblyName)
     {
-        foreach (var registration in GeneratorCatalog)
+        foreach (var registration in _generatorCatalog)
         {
             if (registration.AssemblyName == assemblyName && !registration.IsCore && registration.IsEnabled(modules))
             {

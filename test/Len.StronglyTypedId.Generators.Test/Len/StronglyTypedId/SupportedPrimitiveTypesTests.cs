@@ -36,7 +36,7 @@ public class SupportedPrimitiveTypesTests
     [InlineData(SpecialType.System_UInt64)]
     public void IsSupported_Should_ReturnTrue_ForBclSpecialType(SpecialType specialType)
     {
-        var type = EmptyCompilation.GetSpecialType(specialType);
+        var type = _emptyCompilation.GetSpecialType(specialType);
 
         SupportedPrimitiveTypes.IsSupported(type).Should().BeTrue();
     }
@@ -47,7 +47,7 @@ public class SupportedPrimitiveTypesTests
     [Fact]
     public void IsSupported_Should_ReturnTrue_ForGuid()
     {
-        var type = EmptyCompilation.GetTypeByMetadataName("System.Guid");
+        var type = _emptyCompilation.GetTypeByMetadataName("System.Guid");
 
         type.Should().NotBeNull();
         SupportedPrimitiveTypes.IsSupported(type!).Should().BeTrue();
@@ -72,7 +72,7 @@ public class SupportedPrimitiveTypesTests
     [InlineData("System.Numerics.BigInteger")]
     public void IsSupported_Should_ReturnTrue_ForExtendedBclType(string metadataName)
     {
-        var type = EmptyCompilation.GetTypeByMetadataName(metadataName);
+        var type = _emptyCompilation.GetTypeByMetadataName(metadataName);
 
         type.Should().NotBeNull($"测试前提：{metadataName} 必须可被合成编译解析");
         SupportedPrimitiveTypes.IsSupported(type!).Should().BeTrue();
@@ -110,7 +110,7 @@ public class SupportedPrimitiveTypesTests
     [InlineData(SpecialType.System_Object)]
     public void IsSupported_Should_ReturnFalse_ForUnsupportedBclType(SpecialType specialType)
     {
-        var type = EmptyCompilation.GetSpecialType(specialType);
+        var type = _emptyCompilation.GetSpecialType(specialType);
 
         SupportedPrimitiveTypes.IsSupported(type).Should().BeFalse();
     }
@@ -139,7 +139,7 @@ public class SupportedPrimitiveTypesTests
     [InlineData("System.DateOnly", false)]
     public void HasPublicStaticTryParse_Should_DetectUtf8Overload(string metadataName, bool expected)
     {
-        var type = EmptyCompilation.GetTypeByMetadataName(metadataName);
+        var type = _emptyCompilation.GetTypeByMetadataName(metadataName);
 
         type.Should().NotBeNull($"测试前提：{metadataName} 必须可被合成编译解析");
         StronglyTypedIdInfo.HasPublicStaticTryParse(type!, SpecialType.System_Byte).Should().Be(expected,
@@ -153,7 +153,7 @@ public class SupportedPrimitiveTypesTests
     [Fact]
     public void HasPublicStaticTryParse_Should_DependOnTargetFramework_ForGuid()
     {
-        var type = EmptyCompilation.GetTypeByMetadataName("System.Guid");
+        var type = _emptyCompilation.GetTypeByMetadataName("System.Guid");
 
         type.Should().NotBeNull("测试前提：System.Guid 必须可被合成编译解析");
 #if NET10_0_OR_GREATER
@@ -217,7 +217,7 @@ public class SupportedPrimitiveTypesTests
     [Fact]
     public void IsSupported_Should_ReturnFalse_ForArrayType()
     {
-        var type = EmptyCompilation.CreateArrayTypeSymbol(EmptyCompilation.GetSpecialType(SpecialType.System_Int32));
+        var type = _emptyCompilation.CreateArrayTypeSymbol(_emptyCompilation.GetSpecialType(SpecialType.System_Int32));
 
         SupportedPrimitiveTypes.IsSupported(type).Should().BeFalse();
     }
@@ -226,7 +226,7 @@ public class SupportedPrimitiveTypesTests
 
     #region 辅助
 
-    private static readonly CSharpCompilation EmptyCompilation = CreateCompilation("namespace Probe { public class Marker { } }");
+    private static readonly CSharpCompilation _emptyCompilation = CreateCompilation("namespace Probe { public class Marker { } }");
 
     private static CSharpCompilation CreateCompilation(string sourceCode)
         => CSharpCompilation.Create(

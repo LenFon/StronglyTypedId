@@ -626,10 +626,19 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    public static TheoryData<DiagnosticDescriptor, string> ParameterDiagnostics => new()
+    /// <summary>
+    /// STIAO007 / STIAO008 的规则 ID 与对应的实参样例。
+    /// </summary>
+    /// <remarks>
+    /// 数据里放规则 ID（<see cref="string"/>）而不是 <see cref="DiagnosticDescriptor"/> 本身：
+    /// xUnit1044 要求 <c>TheoryData</c> 的类型实参可序列化，否则 Test Explorer 无法逐行枚举
+    /// 数据（每行会塌成一个用例）；<see cref="DiagnosticDescriptor"/> 不可序列化，规则 ID 可以。
+    /// 描述符在用例内按 ID 从 <see cref="Descriptors.All"/> 取回。
+    /// </remarks>
+    public static TheoryData<string, string> ParameterDiagnostics => new()
     {
-        { Descriptors.ParameterNameMustBeValue, "Value1" },
-        { Descriptors.ParameterTypeIsInvalid, "bool" },
+        { Descriptors.ParameterNameMustBeValueId, "Value1" },
+        { Descriptors.ParameterTypeIsInvalidId, "bool" },
     };
 
     /// <summary>
@@ -642,8 +651,10 @@ public class StronglyTypedIdAnalyzerTests
     /// </remarks>
     [Theory]
     [MemberData(nameof(ParameterDiagnostics))]
-    public void Diagnostic_MessageFormat_Should_ContainArgument(DiagnosticDescriptor descriptor, string argument)
+    public void Diagnostic_MessageFormat_Should_ContainArgument(string diagnosticId, string argument)
     {
+        var descriptor = Descriptors.All.Single(candidate => candidate.Id == diagnosticId);
+
         var message = string.Format(
             CultureInfo.InvariantCulture,
             descriptor.MessageFormat.ToString(),

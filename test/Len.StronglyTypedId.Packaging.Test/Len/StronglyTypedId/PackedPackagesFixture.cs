@@ -69,7 +69,7 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     {
         using var archive = ZipFile.OpenRead(packagePath);
 
-        return archive.Entries.Select(entry => entry.FullName).ToArray();
+        return [.. archive.Entries.Select(entry => entry.FullName)];
     }
 
     /// <summary>

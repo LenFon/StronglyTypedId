@@ -71,6 +71,8 @@ csharp_style_expression_bodied_lambdas = when_on_single_line:suggestion
 
 # 其它常用偏好。
 csharp_prefer_braces = true:suggestion
+csharp_prefer_simple_default_expression = true:suggestion
+csharp_style_implicit_object_creation_when_type_is_apparent = true:suggestion
 csharp_prefer_simple_using_statement = true:suggestion
 csharp_style_deconstructed_variable_declaration = true:suggestion
 csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
@@ -95,6 +97,7 @@ dotnet_style_readonly_field = true:suggestion
 # 对象 / 集合初始化与空值处理。
 dotnet_style_object_initializer = true:suggestion
 dotnet_style_collection_initializer = true:suggestion
+dotnet_style_prefer_collection_expression = true:suggestion
 dotnet_style_coalesce_expression = true:suggestion
 dotnet_style_null_propagation = true:suggestion
 dotnet_style_explicit_tuple_names = true:suggestion
@@ -160,6 +163,89 @@ dotnet_diagnostic.STIAO011.severity = warning
 # 注意：IDE 分析器不参与 dotnet build，除非显式开 -p:EnforceCodeStyleInBuild=true。
 dotnet_diagnostic.IDE1006.severity = warning
 
+# IDE0022（方法体）：`csharp_style_expression_bodied_methods` 只给了 suggestion，
+# 单行方法写成块体在 VS 里仅是灰色建议。提升为 warning，让「单行方法该用 `=>`」这条
+# 仓库既有的书写习惯在错误列表里可见、可评审。
+# 与上面的风格声明是同一条规则的两种表达：`dotnet_diagnostic.*` 只管严重级别，
+# 不改变偏好方向（仍是 when_on_single_line）。
+# 提升后暴露 23 处块体单行方法（src 2 / samples 3 / test 18），已全部改写为表达式体，
+# 故不产生告警。
+dotnet_diagnostic.IDE0022.severity = warning
+
+# 下面这批 IDE 规则同样默认是 suggestion（VS 里灰色建议、不进错误列表）。
+# 它们各自对应的风格选项在上面的「C# 代码风格」段里已声明为 suggestion，
+# 此处只提升严重级别，不改变偏好方向。
+#
+# IDE0007（用 var 代替显式类型）：对应 csharp_style_var_*。
+dotnet_diagnostic.IDE0007.severity = warning
+
+# IDE0305（集合初始化可简化为集合表达式）：对应 dotnet_style_prefer_collection_expression。
+dotnet_diagnostic.IDE0305.severity = warning
+
+# IDE0301（空集合可简化为集合表达式）：同属 dotnet_style_prefer_collection_expression。
+# `Array.Empty<T>()` / `Enumerable.Empty<T>()` / `ImmutableArray<T>.Empty` 等可写成 `[]`。
+dotnet_diagnostic.IDE0301.severity = warning
+
+# IDE0053（lambda 用表达式体）：对应 csharp_style_expression_bodied_lambdas。
+dotnet_diagnostic.IDE0053.severity = warning
+
+# IDE0034（简化 default 表达式）：对应 csharp_prefer_simple_default_expression。
+dotnet_diagnostic.IDE0034.severity = warning
+
+# IDE0032（用自动属性代替带后备字段的属性）：对应 dotnet_style_prefer_auto_properties。
+dotnet_diagnostic.IDE0032.severity = warning
+
+# IDE0290（用主构造函数）：对应 csharp_style_prefer_primary_constructors。
+dotnet_diagnostic.IDE0290.severity = warning
+
+# IDE0017（简化对象初始化）：对应 dotnet_style_object_initializer。
+dotnet_diagnostic.IDE0017.severity = warning
+
+# IDE0090（简化 new 表达式）：对应 csharp_style_implicit_object_creation_when_type_is_apparent。
+# 目标类型已知时 `new Foo(...)` 可写成 `new(...)`，省掉重复的类型名。
+dotnet_diagnostic.IDE0090.severity = warning
+
+# IDE0046（用条件表达式简化 return）：对应 dotnet_style_prefer_conditional_expression_over_return。
+# `if (c) { return a; } else { return b; }` 可写成 `return c ? a : b;`。
+dotnet_diagnostic.IDE0046.severity = warning
+
+# IDE0066（用 switch 表达式）：对应 csharp_style_prefer_switch_expression。
+# `switch (x) { case A: return 1; default: return 2; }` 可写成 `x switch { A => 1, _ => 2 };`。
+dotnet_diagnostic.IDE0066.severity = warning
+
+# IDE0060（删除未使用的参数）：对应 dotnet_code_quality_unused_parameters（默认 all）。
+# 该规则只对「签名可自由更改」的成员生效 —— 接口实现、override、虚/抽象成员、
+# partial 定义、事件处理器等一律豁免，故提升后不会波及必须保留的形参。
+dotnet_diagnostic.IDE0060.severity = warning
+
+# ---------------------------------------------------------------------------
+# 编译器 / 分析器诊断（非 IDE 风格规则，参与 dotnet build，不受 EnforceCodeStyleInBuild 影响）
+# ---------------------------------------------------------------------------
+
+# SYSLIB1045（用 GeneratedRegex 生成正则实现）：由 System.Text.RegularExpressions.Generator
+# 报出，默认只是 Info。`new Regex("常量模式", …)` 在 net7.0+ 上可改为
+# `[GeneratedRegex("常量模式")] private static partial Regex X();`，编译期生成匹配代码，
+# 省掉运行时的解析与 RegexOptions.Compiled 的反射发射。
+dotnet_diagnostic.SYSLIB1045.severity = warning
+
+# CA1822（成员可标记为 static）：.NET 分析器的性能规则，默认只是 Info。
+# 不触碰实例状态、也不被当作虚方法覆写的成员应改 static —— 省掉每个实例上的
+# 隐式 this 传递，也让「这个方法不依赖实例」这件事在签名上就看得出来。
+dotnet_diagnostic.CA1822.severity = warning
+
+# CA2263（能用泛型重载就别传 Type）：.NET 分析器的用法规则，默认只是 Info。
+# `Enum.Parse(typeof(T), …)` / `Activator.CreateInstance(typeof(T))` /
+# `JsonSerializer.Deserialize(json, typeof(T))` 这类「把类型当参数传」的旧式重载，
+# 在类型可由上下文推断时应改用泛型重载 —— 泛型版本省掉装箱与运行时类型校验，
+# 返回值也是强类型的，不必再强转。
+dotnet_diagnostic.CA2263.severity = warning
+
+# CA1859（尽可能用具体类型以提升性能）：.NET 分析器的性能规则，默认只是 Info。
+# 形参 / 字段 / 返回类型声明成接口（IEnumerable<T>、IList<T>…）而实际只会拿到某一种
+# 具体类型时，改用该具体类型 —— 接口调用要走接口分发、且装箱后取值要多一次间接寻址。
+# 只在「类型完全由本程序集掌控」时才会报，故不会波及对外暴露的公开契约。
+dotnet_diagnostic.CA1859.severity = warning
+
 # RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
 # src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
 
@@ -169,6 +255,22 @@ dotnet_diagnostic.IDE1006.severity = warning
 #   - StringBuilder 的 `builder.Append(…).Append(…);`（生成器拼代码）与 EF / DI 的副作用调用
 # 逐处补 `_ = ` 只是噪声，故不改代码，直接关闭该规则。
 dotnet_diagnostic.IDE0058.severity = none
+
+# ---------------------------------------------------------------------------
+# xUnit 分析器诊断（非 IDE 风格规则，参与 dotnet build，不受 EnforceCodeStyleInBuild 影响）
+# ---------------------------------------------------------------------------
+
+# xUnit1044（TheoryData 的类型实参不可序列化）：由 xunit.analyzers 报出。
+# 类型实参不可序列化时 Test Explorer 无法逐行枚举理论数据 —— 每行数据会塌成
+# 一个用例，跑挂了也看不出是哪一行。把数据换成可序列化的类型即可（如把
+# DiagnosticDescriptor 换成其规则 ID 字符串，在用例内按 ID 取回描述符）。
+dotnet_diagnostic.xUnit1044.severity = warning
+
+# IDE0042（解构变量声明）：本仓库整体忽略。
+# 对应 csharp_style_deconstructed_variable_declaration。该偏好仍保留为 suggestion，
+# 但不希望「把 `var a = t.Item1; var b = t.Item2;` 改写成 `var (a, b) = t;`」这类建议
+# 进入错误列表，故关闭该规则。
+dotnet_diagnostic.IDE0042.severity = none
 
 # ---------------------------------------------------------------------------
 # 其它文件类型
