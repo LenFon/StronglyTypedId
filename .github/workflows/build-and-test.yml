@@ -67,7 +67,15 @@ jobs:
     - name: Build
       run: dotnet build --no-restore
     - name: Test (net8.0 行为校验)
-      run: dotnet test --framework net8.0 --no-build --verbosity normal
+      # Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），
+      # 而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的
+      # 工程会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1 让整步失败
+      # （--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。故与 pack 步骤同理，逐工程调用，
+      # 只跑真正双目标的三个测试工程。
+      run: |
+        dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal
+        dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal
+        dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal
     - name: Restore coverage tool
       run: dotnet tool restore
     - name: Test + coverage (net10.0)
