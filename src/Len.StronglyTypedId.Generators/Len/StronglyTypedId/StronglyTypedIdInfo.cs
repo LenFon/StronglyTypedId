@@ -154,6 +154,8 @@ internal readonly record struct StronglyTypedIdInfo
         IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName)
             && HasPublicStaticTryParse(primitiveIdType, SpecialType.System_Byte);
         IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
+        CharTryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Char);
+        Utf8TryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Byte);
         ValidatorName = GetStringArgument(type, ValidatorArgumentName) ?? defaultValidatorName;
         HasTypeConverter = GetBooleanArgument(type, TypeConverterArgumentName);
         IsObjectJsonShape = GetJsonShapeIsObject(type);
@@ -319,6 +321,22 @@ internal readonly record struct StronglyTypedIdInfo
     /// <see langword="false"/>（<c>string</c> 连 <c>ISpanFormattable</c> 都不具备）。
     /// </remarks>
     public bool IsUtf8SpanFormattable { get; }
+
+    /// <summary>
+    /// 基元 UTF-16 <c>TryFormat</c> 的直呼形态，决定生成代码是否经接口调用（即是否装箱）。
+    /// </summary>
+    /// <remarks>
+    /// 仅在 <see cref="IsSpanFormattable"/> 为 <see langword="true"/> 时有意义。
+    /// </remarks>
+    public TryFormatKind CharTryFormatKind { get; }
+
+    /// <summary>
+    /// 基元 UTF-8 <c>TryFormat</c> 的直呼形态，决定生成代码是否经接口调用（即是否装箱）。
+    /// </summary>
+    /// <remarks>
+    /// 仅在 <see cref="IsUtf8SpanFormattable"/> 为 <see langword="true"/> 时有意义。
+    /// </remarks>
+    public TryFormatKind Utf8TryFormatKind { get; }
 
     /// <summary>
     /// <c>[StronglyTypedId]</c> 上 <c>Validator</c> 指定的验证器方法名；未指定时为 <see langword="null"/>。
@@ -587,6 +605,64 @@ internal readonly record struct StronglyTypedIdInfo
             && spanType.TypeArguments[0].SpecialType == spanElementType
             && method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.IFormatProvider"
             && method.Parameters[2].RefKind == RefKind.Out);
+
+    /// <summary>
+    /// 判定基元 <c>TryFormat</c> 的直呼形态，用于避免值类型基元在格式化时装箱。
+    /// </summary>
+    /// <param name="type">基元类型。</param>
+    /// <param name="spanElementType">目标缓冲区元素类型：UTF-16 为 <c>char</c>，UTF-8 为 <c>byte</c>。</param>
+    /// <remarks>
+    /// <para>
+    /// 优先认带 <c>IFormatProvider</c> 的 4 参重载；没有则退到 3 参重载。<c>Guid</c> 属于后者：它把带 provider
+    /// 的重载实现为<b>显式接口实现</b>，按具体类型名调用 4 参重载会 CS1501，只能调公开的 3 参重载。
+    /// <c>Guid</c> 的格式化本就与文化无关，省略 provider 语义不变。
+    /// </para>
+    /// <para>
+    /// 两种重载都不存在时返回 <see cref="TryFormatKind.Interface"/>，生成代码仍走接口调用 ——
+    /// 宁可保留一次装箱，也不能漏掉基元本就具备的能力。
+    /// </para>
+    /// <para>
+    /// 判据与 <see cref="HasPublicStaticTryParse"/> 同构：遍历名为 <c>TryFormat</c> 的公开实例方法，
+    /// 要求形参形如 <c>(Span&lt;TElement&gt;, out int, ReadOnlySpan&lt;char&gt;[, IFormatProvider])</c>。
+    /// </para>
+    /// </remarks>
+    internal static TryFormatKind GetTryFormatKind(ITypeSymbol type, SpecialType spanElementType)
+    {
+        var hasProviderOverload = false;
+        var hasPlainOverload = false;
+
+        foreach (var member in type.GetMembers("TryFormat"))
+        {
+            if (member is not IMethodSymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 3 or 4 } method
+                || method.Parameters[0].Type is not INamedTypeSymbol spanType
+                || spanType.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != "global::System.Span<T>"
+                || spanType.TypeArguments.Length != 1
+                || spanType.TypeArguments[0].SpecialType != spanElementType
+                || method.Parameters[1].RefKind != RefKind.Out
+                || method.Parameters[2].Type is not INamedTypeSymbol formatType
+                || formatType.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != "global::System.ReadOnlySpan<T>"
+                || formatType.TypeArguments.Length != 1
+                || formatType.TypeArguments[0].SpecialType != SpecialType.System_Char)
+            {
+                continue;
+            }
+
+            if (method.Parameters.Length == 4)
+            {
+                hasProviderOverload = true;
+            }
+            else
+            {
+                hasPlainOverload = true;
+            }
+        }
+
+        return hasProviderOverload
+            ? TryFormatKind.Direct
+            : hasPlainOverload
+                ? TryFormatKind.DirectWithoutProvider
+                : TryFormatKind.Interface;
+    }
 
     /// <summary>
     /// 读取 <c>[StronglyTypedId]</c> 上指定命名实参的布尔值，未指定时返回 <see langword="false"/>。

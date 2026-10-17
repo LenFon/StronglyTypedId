@@ -244,6 +244,33 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     }
 
     /// <summary>
+    /// 生成基元 <c>TryFormat</c> 的调用表达式。
+    /// </summary>
+    /// <param name="kind">基元的直呼形态，见 <see cref="TryFormatKind"/>。</param>
+    /// <param name="isUtf8">目标是 UTF-8 缓冲区（<see cref="TryFormatKind.Interface"/> 时决定强转哪个接口）。</param>
+    /// <param name="destination">目标缓冲区表达式，可含 <c>.Slice(n)</c>。</param>
+    /// <param name="writtenArgument"><c>out</c> 实参写法：<c>charsWritten</c> / <c>bytesWritten</c> / <c>var written</c>。</param>
+    /// <remarks>
+    /// <para>
+    /// 值类型基元经接口调用会把 <c>Value</c> 装箱一次。基元只要暴露公开的实例 <c>TryFormat</c> 重载，
+    /// 就能按具体类型直呼（<c>Value.TryFormat(...)</c>），彻底省掉这次装箱 —— 这是热路径上唯一剩余的分配。
+    /// </para>
+    /// <para>
+    /// <c>Guid</c> 把带 <see cref="System.IFormatProvider"/> 的重载实现为显式接口实现，只能调公开的 3 参重载；
+    /// 其格式化本就与文化无关，省略 provider 语义不变。
+    /// </para>
+    /// </remarks>
+    private static string GetTryFormatCall(TryFormatKind kind, bool isUtf8, string destination, string writtenArgument)
+        => kind switch
+        {
+            TryFormatKind.Direct => $"Value.TryFormat({destination}, out {writtenArgument}, format, provider)",
+            TryFormatKind.DirectWithoutProvider => $"Value.TryFormat({destination}, out {writtenArgument}, format)",
+            _ => isUtf8
+                ? $"((global::System.IUtf8SpanFormattable)Value).TryFormat({destination}, out {writtenArgument}, format, provider)"
+                : $"((global::System.ISpanFormattable)Value).TryFormat({destination}, out {writtenArgument}, format, provider)",
+        };
+
+    /// <summary>
     /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 无条件附加，
     /// <see cref="System.ComponentModel.TypeConverterAttribute"/> 仅在 <see cref="StronglyTypedIdInfo.HasTypeConverter"/>
     /// 开启时附加。
@@ -558,9 +585,8 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsSpanFormattable)
         {
-            // 经接口调用而非具体类型成员：基元类型里 Guid 的「带 IFormatProvider 的 TryFormat」是显式接口实现，
-            // 按具体类型名调用会 CS1501；只有按接口调用才能对所有受支持基元一致成立。代价是值类型装箱一次，
-            // 但仍省去 IFormattable 路径上必然产生的中间字符串。
+            // 基元若暴露公开的实例 TryFormat 重载就按具体类型直呼，省掉值类型装箱；
+            // 否则（理论上不该出现）退回接口调用，宁可保留一次装箱也不丢能力。
             if (idInfo.HasPrefix)
             {
                 var prefix = idInfo.Prefix!;
@@ -578,7 +604,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "{",
                     "    if (!format.IsEmpty)",
                     "    {",
-                    "        return ((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);",
+                    $"        return {GetTryFormatCall(idInfo.CharTryFormatKind, isUtf8: false, "destination", "charsWritten")};",
                     "    }",
                     string.Empty,
                     $"    if (!{Literal(prefix)}.AsSpan().TryCopyTo(destination))",
@@ -587,7 +613,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "        return false;",
                     "    }",
                     string.Empty,
-                    $"    if (((global::System.ISpanFormattable)Value).TryFormat(destination.Slice({charCount}), out var written, format, provider))",
+                    $"    if ({GetTryFormatCall(idInfo.CharTryFormatKind, isUtf8: false, $"destination.Slice({charCount})", "var written")})",
                     "    {",
                     $"        charsWritten = {charCount} + written;",
                     "        return true;",
@@ -608,7 +634,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "    out int charsWritten,",
                     "    global::System.ReadOnlySpan<char> format,",
                     "    global::System.IFormatProvider? provider) =>",
-                    "    ((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);");
+                    $"    {GetTryFormatCall(idInfo.CharTryFormatKind, isUtf8: false, "destination", "charsWritten")};");
             }
         }
 
@@ -619,7 +645,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsUtf8SpanFormattable)
         {
-            // 与 UTF-16 的 TryFormat 同构：同样经接口调用，理由见上；同样在 format 为空时带前缀。
+            // 与 UTF-16 的 TryFormat 同构：同样按基元能力直呼具体类型，同样在 format 为空时带前缀。
             if (idInfo.HasPrefix)
             {
                 var prefix = idInfo.Prefix!;
@@ -637,7 +663,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "{",
                     "    if (!format.IsEmpty)",
                     "    {",
-                    "        return ((global::System.IUtf8SpanFormattable)Value).TryFormat(utf8Destination, out bytesWritten, format, provider);",
+                    $"        return {GetTryFormatCall(idInfo.Utf8TryFormatKind, isUtf8: true, "utf8Destination", "bytesWritten")};",
                     "    }",
                     string.Empty,
                     $"    if (!{Literal(prefix)}u8.TryCopyTo(utf8Destination))",
@@ -646,7 +672,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "        return false;",
                     "    }",
                     string.Empty,
-                    $"    if (((global::System.IUtf8SpanFormattable)Value).TryFormat(utf8Destination.Slice({byteCount}), out var written, format, provider))",
+                    $"    if ({GetTryFormatCall(idInfo.Utf8TryFormatKind, isUtf8: true, $"utf8Destination.Slice({byteCount})", "var written")})",
                     "    {",
                     $"        bytesWritten = {byteCount} + written;",
                     "        return true;",
@@ -667,7 +693,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "    out int bytesWritten,",
                     "    global::System.ReadOnlySpan<char> format,",
                     "    global::System.IFormatProvider? provider) =>",
-                    "    ((global::System.IUtf8SpanFormattable)Value).TryFormat(utf8Destination, out bytesWritten, format, provider);");
+                    $"    {GetTryFormatCall(idInfo.Utf8TryFormatKind, isUtf8: true, "utf8Destination", "bytesWritten")};");
             }
         }
 

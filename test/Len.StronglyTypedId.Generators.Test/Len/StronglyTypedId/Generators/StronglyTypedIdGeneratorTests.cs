@@ -19,7 +19,7 @@ public class StronglyTypedIdGeneratorTests
     /// 而该版本由根 <c>version.props</c> 决定。因此期望快照必须按同一来源取值 ——
     /// 写死字面量会让整套快照在每次改版本号（也就是每次发版）时集体失效。
     /// </remarks>
-    private static readonly string GeneratorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
+    private static readonly string _generatorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
 
     [Theory]
     [InlineData("record")]
@@ -34,7 +34,7 @@ public class StronglyTypedIdGeneratorTests
             [StronglyTypedId]
             public partial {record} OrderId(Guid Value);
             """";
-        List<string> expectedCodes = GetExpectedCodes(record);
+        var expectedCodes = GetExpectedCodes(record);
 
         // Act
         var actualCodes = GetGeneratedCode(code).ToList()!;
@@ -166,12 +166,12 @@ public class StronglyTypedIdGeneratorTests
             {
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Create(global::System.Guid value) => new OrderId(value);
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Parse(string value, global::System.IFormatProvider? provider)
                 {
                     if (!TryParse(value, provider, out var id))
@@ -184,7 +184,7 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryParse(
                     [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value,
                     global::System.IFormatProvider? provider,
@@ -202,7 +202,7 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
                 {
                     if (!TryParse(value, provider, out var id))
@@ -215,7 +215,7 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryParse(
                     global::System.ReadOnlySpan<char> value,
                     global::System.IFormatProvider? provider,
@@ -233,32 +233,32 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public int CompareTo({{compareToParameter}}) => {{compareToBody}};
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool operator <(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) < 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool operator >(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) > 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool operator <=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) <= 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool operator >=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) >= 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
 
                 /// <summary>Attempts to create a new strongly typed id that wraps the specified primitive value.</summary>
@@ -266,7 +266,7 @@ public class StronglyTypedIdGeneratorTests
                 /// <param name="result">The created id when this method returns <see langword="true"/>.</param>
                 /// <returns><see langword="true"/> when <paramref name="value"/> is acceptable; otherwise, <see langword="false"/>.</returns>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
                     result = new OrderId(value);
@@ -275,23 +275,23 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>
                     Value.ToString(format, formatProvider);
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public bool TryFormat(
                     global::System.Span<char> destination,
                     out int charsWritten,
                     global::System.ReadOnlySpan<char> format,
                     global::System.IFormatProvider? provider) =>
-                    ((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);
+                    Value.TryFormat(destination, out charsWritten, format);
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Parse(global::System.ReadOnlySpan<byte> utf8Text, global::System.IFormatProvider? provider)
                 {
                     if (!TryParse(utf8Text, provider, out var id))
@@ -304,7 +304,7 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryParse(
                     global::System.ReadOnlySpan<byte> utf8Text,
                     global::System.IFormatProvider? provider,
@@ -322,13 +322,13 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public bool TryFormat(
                     global::System.Span<byte> utf8Destination,
                     out int bytesWritten,
                     global::System.ReadOnlySpan<char> format,
                     global::System.IFormatProvider? provider) =>
-                    ((global::System.IUtf8SpanFormattable)Value).TryFormat(utf8Destination, out bytesWritten, format, provider);
+                    Value.TryFormat(utf8Destination, out bytesWritten, format);
             }
             """,
             $$"""
@@ -343,12 +343,12 @@ public class StronglyTypedIdGeneratorTests
             {
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                 public class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<OrderId>
                 {
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override OrderId Read(
                         ref global::System.Text.Json.Utf8JsonReader reader, 
                         global::System.Type typeToConvert, 
@@ -361,7 +361,7 @@ public class StronglyTypedIdGeneratorTests
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override void Write(
                         global::System.Text.Json.Utf8JsonWriter writer, 
                         OrderId value, 
@@ -379,7 +379,7 @@ public class StronglyTypedIdGeneratorTests
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override void WriteAsPropertyName(
                         global::System.Text.Json.Utf8JsonWriter writer,
                         OrderId value,
@@ -397,7 +397,7 @@ public class StronglyTypedIdGeneratorTests
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override OrderId ReadAsPropertyName(
                         ref global::System.Text.Json.Utf8JsonReader reader,
                         global::System.Type typeToConvert,
@@ -427,12 +427,12 @@ public class StronglyTypedIdGeneratorTests
             {
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{_generatorVersion}}")]
                 public class NewtonsoftJsonConverter : global::Newtonsoft.Json.JsonConverter<OrderId?>
                 {
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override OrderId? ReadJson(
                         global::Newtonsoft.Json.JsonReader reader,
                         global::System.Type objectType,
@@ -448,7 +448,7 @@ public class StronglyTypedIdGeneratorTests
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override void WriteJson(
                         global::Newtonsoft.Json.JsonWriter writer,
                         OrderId? value,
@@ -800,13 +800,13 @@ public class StronglyTypedIdGeneratorTests
     /// 额外程序集（EF Core / Swashbuckle 等）通过 <paramref name="extraAssemblyTypes"/> 显式引入，
     /// 避免被 AppDomain 中已加载的其它测试程序集污染，导致 EF Core / Swagger 生成器意外触发。
     /// </summary>
-    private static IReadOnlyDictionary<string, string> GetGeneratedCodeByHint(string sourceCode, params Type[] extraAssemblyTypes)
+    private static Dictionary<string, string> GetGeneratedCodeByHint(string sourceCode, params Type[] extraAssemblyTypes)
         => GetGeneratedCodeByHint(sourceCode, extraAssemblyTypes, []);
 
     /// <summary>
     /// 同 <see cref="GetGeneratedCodeByHint(string, Type[])"/>，但额外接受任意 <see cref="MetadataReference"/>。
     /// </summary>
-    private static IReadOnlyDictionary<string, string> GetGeneratedCodeByHint(
+    private static Dictionary<string, string> GetGeneratedCodeByHint(
         string sourceCode,
         Type[] extraAssemblyTypes,
         MetadataReference[] extraReferences)
@@ -1468,7 +1468,9 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("global::System.IFormattable")
             .And.Contain("global::System.ISpanFormattable")
             .And.Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;")
-            .And.Contain("((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);");
+            // 直呼基元的 TryFormat（Guid 走 3 参公开重载、其余走 4 参），不再经 ISpanFormattable 接口装箱。
+            .And.Contain("Value.TryFormat(destination, out charsWritten, format")
+            .And.NotContain("(global::System.ISpanFormattable)Value");
     }
 
     /// <summary>
@@ -1715,7 +1717,7 @@ public class StronglyTypedIdGeneratorTests
             }
             """;
 
-        var compilation = CreateCompilation(code, [], [], StrictCompilationOptions);
+        var compilation = CreateCompilation(code, [], [], _strictCompilationOptions);
 
         var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -1751,7 +1753,7 @@ public class StronglyTypedIdGeneratorTests
     /// <c>generalDiagnosticOption: ReportDiagnostic.Error</c> 把所有警告提升为错误，正是
     /// <c>TreatWarningsAsErrors</c> 的语义；断言仍按 <c>Severity &gt;= Warning</c> 过滤，两种档位下都能拦住。
     /// </remarks>
-    private static readonly CSharpCompilationOptions StrictCompilationOptions = new(
+    private static readonly CSharpCompilationOptions _strictCompilationOptions = new(
         OutputKind.DynamicallyLinkedLibrary,
         nullableContextOptions: NullableContextOptions.Enable,
         generalDiagnosticOption: ReportDiagnostic.Error,
@@ -2143,7 +2145,7 @@ public class StronglyTypedIdGeneratorTests
     /// 用它替代真实运行时程序集引用后，强类型 Id 仍会被生成器按属性全名发现，但模块名是
     /// <c>FakeSti.dll</c> 而非 <c>Len.StronglyTypedId.dll</c>，于是核心生成器集合为空。
     /// </remarks>
-    private static MetadataReference EmitFakeStronglyTypedIdAttributeAssembly()
+    private static PortableExecutableReference EmitFakeStronglyTypedIdAttributeAssembly()
     {
         var source = """
             namespace Len.StronglyTypedId
@@ -2232,7 +2234,7 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 把 <see cref="ReferencedDomainSource"/> 编译成一个项目引用（<c>CompilationReference</c>）。
     /// </summary>
-    private static MetadataReference CreateReferencedDomainReference()
+    private static CompilationReference CreateReferencedDomainReference()
     {
         var compilation = CSharpCompilation.Create(
             "ReferencedDomain",

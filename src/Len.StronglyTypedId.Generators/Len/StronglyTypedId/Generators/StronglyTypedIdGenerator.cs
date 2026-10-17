@@ -19,9 +19,18 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
            .Where(static info => info is not null)
            .Select(static (info, _) => info!.Value);
 
-        var modules = context.MetadataReferencesProvider
+        // 模块枚举拆成两级，把 Compilation 依赖下沉到确实需要它的那一步：
+        //   第一级只依赖引用列表（编辑期间不变），元数据解码不会在每次按键后重跑；
+        //   第二级才 Combine(CompilationProvider)，只做「引用 → 程序集符号」的查表。
+        // 两级都按「名 + 版本」比较，故下游（发现、各集成生成器）仍保持稳定。
+        var moduleIdentities = context.MetadataReferencesProvider
+            .SelectMany(static (references, _) => CollectModuleIdentities(references))
+            .WithComparer(new ModuleIdentity.Comparer())
+            .Collect();
+
+        var modules = moduleIdentities
             .Combine(context.CompilationProvider)
-            .SelectMany(static (source, _) => source.Left.GetModules(source.Right))
+            .SelectMany(static (source, _) => ResolveModuleAssemblies(source.Left, source.Right))
             .WithComparer(new ModuleInfo.Comparer())
             .Collect();
 
@@ -55,20 +64,15 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     }
 
     private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
-    {
-        if (syntaxNode is not MethodDeclarationSyntax
+        => syntaxNode is MethodDeclarationSyntax
             {
                 Identifier.ValueText: "ConfigureConventions",
                 Modifiers: var modifiers and not [],
                 Parent: ClassDeclarationSyntax,
                 ParameterList.Parameters.Count: 1,
-            })
-        {
-            return false;
-        }
-
-        return modifiers.Any(SyntaxKind.OverrideKeyword) && modifiers.Any(SyntaxKind.ProtectedKeyword);
-    }
+            }
+            && modifiers.Any(SyntaxKind.OverrideKeyword)
+            && modifiers.Any(SyntaxKind.ProtectedKeyword);
 
     private static bool CouldBeStronglyTypedId(SyntaxNode syntaxNode, CancellationToken _)
     {
@@ -117,6 +121,22 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         return container is BaseNamespaceDeclarationSyntax;
     }
+
+    /// <summary>
+    /// 取单个引用所代表的全部模块身份（不解析程序集符号，故不依赖 <see cref="Compilation"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 单独抽成方法而非内联 lambda：<c>SelectMany</c> 对 <c>IncrementalValueProvider&lt;ImmutableArray&lt;TSource&gt;&gt;</c>
+    /// 有专门的展平重载，其选择器逐元素调用、必须返回 <see cref="ImmutableArray{T}"/>。显式返回类型可让推断稳定。
+    /// </remarks>
+    private static ImmutableArray<ModuleIdentity> CollectModuleIdentities(MetadataReference reference)
+        => [.. reference.GetModuleIdentities()];
+
+    /// <summary>
+    /// 把模块身份集合解析成完整的 <see cref="ModuleInfo"/> 集合（这一步才需要 <see cref="Compilation"/>）。
+    /// </summary>
+    private static ImmutableArray<ModuleInfo> ResolveModuleAssemblies(ImmutableArray<ModuleIdentity> identities, Compilation compilation)
+        => [.. identities.Select(identity => identity.ResolveAssembly(compilation))];
 
     private static void GenerateCoreCode(
         SourceProductionContext context,
@@ -275,7 +295,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 内置 OpenAPI / MVC）各自按引用程序集独立门控。
     /// </para>
     /// </remarks>
-    private static readonly ImmutableArray<CodeGeneratorRegistration> GeneratorCatalog = ImmutableArray.Create(
+    private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog = ImmutableArray.Create(
         // 核心生成器：原 switch 按模块名精确匹配（区分大小写），此处用同样的 Any(m => m.Name == …) 复刻。
         new CodeGeneratorRegistration(
             "Len.StronglyTypedId.dll",
@@ -374,7 +394,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 取当前编译引用下所有已启用的核心生成器，按各自 <see cref="ICoreCodeGenerator.Order"/> 升序排列后批量执行。
     /// </summary>
     private static ImmutableArray<ICoreCodeGenerator> GetCoreGenerators(ImmutableArray<ModuleInfo> modules)
-        => [.. GeneratorCatalog
+        => [.. _generatorCatalog
             .Where(registration => registration.IsCore && registration.IsEnabled(modules))
             .OrderBy(static registration => registration.CoreGenerator!.Order)
             .Select(static registration => registration.CoreGenerator!)];
@@ -389,7 +409,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// </remarks>
     private static IIntegrationCodeGenerator? GetIntegrationGenerator(ImmutableArray<ModuleInfo> modules, string assemblyName)
     {
-        foreach (var registration in GeneratorCatalog)
+        foreach (var registration in _generatorCatalog)
         {
             if (registration.AssemblyName == assemblyName && !registration.IsCore && registration.IsEnabled(modules))
             {
