@@ -20,8 +20,10 @@ public class GetTypesBenchmarks
     /// <remarks>
     /// 用参数源而不是 <c>[Params(...)]</c> 硬编码程序集名：程序集名随目标框架版本变化，
     /// 写死会在换代时静默失配；这里直接由引用集自身排名决定。
+    /// 标 static 是因为它只读静态字段 <c>_assemblies</c>，不依赖实例 —— BenchmarkDotNet 的参数源
+    /// 允许静态成员（见 <c>BenchmarkConverter.GetValidValuesForParamsSourceAsync</c> 对 <c>IsStatic</c> 的分支）。
     /// </remarks>
-    public IEnumerable<string> Assemblies => _assemblies.Value;
+    public static IEnumerable<string> Assemblies => _assemblies.Value;
 
     [ParamsSource(nameof(Assemblies))]
     public string AssemblyName { get; set; } = "";

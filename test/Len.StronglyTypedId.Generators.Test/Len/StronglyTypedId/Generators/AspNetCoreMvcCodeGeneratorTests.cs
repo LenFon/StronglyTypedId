@@ -95,10 +95,7 @@ public class AspNetCoreMvcCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void AspNetCoreMvc_Should_HaveOrderSeven()
-    {
-        AspNetCoreMvcCodeGenerator.Instance.Order.Should().Be(7);
-    }
+    public void AspNetCoreMvc_Should_HaveOrderSeven() => AspNetCoreMvcCodeGenerator.Instance.Order.Should().Be(7);
 
     #endregion
 

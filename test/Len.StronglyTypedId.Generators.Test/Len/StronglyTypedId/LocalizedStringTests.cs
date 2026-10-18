@@ -56,10 +56,7 @@ public class LocalizedStringTests
     /// 资源键不存在时必须回退显示键本身，而不是抛异常 —— 漏配一条文案不应让整个诊断崩溃。
     /// </summary>
     [Fact]
-    public void ToString_Should_FallBackToKey_WhenResourceIsMissing()
-    {
-        new LocalizedString("NoSuchResourceKey").ToString().Should().Be("NoSuchResourceKey");
-    }
+    public void ToString_Should_FallBackToKey_WhenResourceIsMissing() => new LocalizedString("NoSuchResourceKey").ToString().Should().Be("NoSuchResourceKey");
 
     [Fact]
     public void ToString_Should_ReturnLocalizedText_WhenResourceExists()

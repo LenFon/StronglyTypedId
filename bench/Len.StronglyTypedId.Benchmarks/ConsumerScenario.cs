@@ -75,9 +75,8 @@ internal static class ConsumerScenario
         "StronglyTypedIds.Swagger.g.cs",
     ];
 
-    private static readonly ImmutableArray<MetadataReference> _references = CreateReferences();
-
-    public static ImmutableArray<MetadataReference> References => _references;
+    /// <summary>本次编译的引用集，由 <see cref="ConsumerProfile"/> 给出的路径清单一次性解析而来。</summary>
+    public static ImmutableArray<MetadataReference> References { get; } = CreateReferences();
 
     public static ImmutableArray<SyntaxTree> CreateSyntaxTrees() => [CSharpSyntaxTree.ParseText(Source)];
 
