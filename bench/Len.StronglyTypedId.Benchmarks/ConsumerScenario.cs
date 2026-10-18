@@ -167,8 +167,9 @@ internal static class ConsumerScenario
 
         if (errors.Length > 0)
         {
+            // 列出前几条而不是只报第一条：多个集成同时失效时，只看第一条会让人以为只有一个问题。
             throw new InvalidOperationException(
-                $"基准场景已失效：生成后的编译有 {errors.Length} 个错误，例如 {errors[0]}。");
+                $"基准场景已失效：生成后的编译有 {errors.Length} 个错误：\n{string.Join("\n", errors.Take(5).Select(error => "  " + error))}");
         }
     }
 

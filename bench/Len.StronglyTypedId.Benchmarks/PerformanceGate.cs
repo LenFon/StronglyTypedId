@@ -1,0 +1,252 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Text.Json;
+using Len.StronglyTypedId.Generators;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+
+namespace Len.StronglyTypedId.Benchmarks;
+
+/// <summary>
+/// 生成器性能回归门槛：跑固定工作量，把「每次完整生成器运行的分配字节数」与「耗时」同入库基线比对。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 为什么不用 BenchmarkDotNet 做 CI 门槛：BDN 的价值在统计严谨（多轮迭代 + 离群剔除），代价是单次跑几分钟；
+/// 而 CI 跑在共享 runner 上，短作业的墙钟抖动本身就常常超过 ±20%，拿它做阻断式门槛只会制造假红。
+/// 这里换成「固定轮次的确定性指标」：
+/// </para>
+/// <para>
+/// <b>分配字节数是主判据</b> —— 同一份代码走同一条路径时分配量逐字节可复现，与机器快慢无关；
+/// 而 Roslyn 侧绝大多数性能退化（多枚举一遍符号、多拼一次字符串、多接一层 LINQ）都会体现在分配量上。
+/// <b>耗时只作数量级兜底</b>（容忍 4 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
+/// </para>
+/// <para>
+/// 用法：<c>dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate</c>；
+/// 有意改变性能特征后，用 <c>--update-baseline</c> 重写基线并连同改动一起提交。
+/// </para>
+/// </remarks>
+internal static class PerformanceGate
+{
+    private const int WarmupRuns = 3;
+    private const int MeasuredRuns = 10;
+
+    /// <summary>
+    /// 分配量的容忍比例：超出基线 10% 即判为退化。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这个数是量出来的，不是拍的。同一台机器连续跑，分配量逐次相差约 <b>0.005%</b>（5,553,704 / 5,553,536 /
+    /// 5,553,424 B），所以 10% 已经是观测噪声的两千倍，留足了跨机器余量。
+    /// </para>
+    /// <para>
+    /// 上限不能再放宽到 20%：把「一次枚举」故意改回「五次枚举」（本仓库历史上真实存在过的退化），
+    /// 分配量只涨 <b>16.3%</b> —— 20% 的门槛会放过它。原因是 Roslyn 的符号在同一个编译内是缓存的，
+    /// 重复遍历只付迭代器与包装对象的钱，不付符号解析的钱。10% 正好卡在噪声与最小可感退化之间。
+    /// </para>
+    /// </remarks>
+    private const double AllocatedBytesTolerance = 0.10;
+
+    /// <summary>耗时的容忍比例：只在数量级退化时报警（跨机器、跨 runner 的墙钟不可比）。</summary>
+    private const double ElapsedTolerance = 3.0;
+
+    private const string BaselineFileName = "generator-run.baseline.json";
+
+    /// <summary>
+    /// 执行门槛检查。<paramref name="args"/> 里出现 <c>--update-baseline</c> 时改为重写基线。
+    /// </summary>
+    /// <returns>0 通过（或基线已更新），1 检出退化。</returns>
+    public static int Run(string[] args)
+    {
+        var updateBaseline = args.Contains("--update-baseline", StringComparer.Ordinal);
+        var baselinePath = Path.Combine(
+            FindRepositoryRoot(),
+            "bench",
+            "Len.StronglyTypedId.Benchmarks",
+            "baselines",
+            BaselineFileName);
+
+        var measurement = Measure();
+
+        if (updateBaseline)
+        {
+            PrintReport(measurement, baseline: null);
+            WriteBaseline(baselinePath, measurement);
+            Console.WriteLine($"基线已写入 {baselinePath}");
+            return 0;
+        }
+
+        var baseline = ReadBaseline(baselinePath);
+        PrintReport(measurement, baseline);
+
+        return Evaluate(measurement, baseline);
+    }
+
+    private static Measurement Measure()
+    {
+        var references = ConsumerScenario.References;
+        var syntaxTrees = ConsumerScenario.CreateSyntaxTrees();
+
+        // 场景自检：产出齐全（EfCore / Swagger 都被触发）且生成后编译零错误，否则量到的不是一次真实构建。
+        ConsumerScenario.VerifyScenario(references, syntaxTrees);
+
+        // 首轮兼作「产出数量的期望值」：不硬编码数字，避免生成器增减产物时门槛跟着失准。
+        var expectedSourceCount = RunOnce(references, syntaxTrees);
+
+        for (var run = 0; run < WarmupRuns; run++)
+        {
+            RunOnce(references, syntaxTrees);
+        }
+
+        var allocations = new long[MeasuredRuns];
+        var elapsed = new double[MeasuredRuns];
+
+        for (var run = 0; run < MeasuredRuns; run++)
+        {
+            // 编译与驱动器每轮重建：增量驱动器的状态随驱动器保存，复用一次就会命中缓存，
+            // 量到的就不再是「一次构建」的成本。
+            var compilation = ConsumerScenario.CreateCompilation(references, syntaxTrees);
+            var driver = CSharpGeneratorDriver.Create(new StronglyTypedIdGenerator());
+
+            var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+            var stopwatch = Stopwatch.StartNew();
+
+            var generated = driver
+                .RunGenerators(compilation)
+                .GetRunResult()
+                .Results
+                .Sum(result => result.GeneratedSources.Length);
+
+            stopwatch.Stop();
+            allocations[run] = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+            elapsed[run] = stopwatch.Elapsed.TotalMilliseconds;
+
+            if (generated != expectedSourceCount)
+            {
+                throw new InvalidOperationException(
+                    $"第 {run} 轮产出 {generated} 个文件，与首轮 {expectedSourceCount} 个不一致 —— 门槛不可比。");
+            }
+        }
+
+        return new Measurement(Median(allocations), Median(elapsed), expectedSourceCount);
+    }
+
+    private static int RunOnce(ImmutableArray<MetadataReference> references, ImmutableArray<SyntaxTree> syntaxTrees)
+    {
+        var compilation = ConsumerScenario.CreateCompilation(references, syntaxTrees);
+        var driver = CSharpGeneratorDriver.Create(new StronglyTypedIdGenerator());
+
+        return driver
+            .RunGenerators(compilation)
+            .GetRunResult()
+            .Results
+            .Sum(result => result.GeneratedSources.Length);
+    }
+
+    private static int Evaluate(Measurement measurement, Baseline baseline)
+    {
+        var problems = new List<string>();
+
+        var allocatedLimit = baseline.AllocatedBytesPerRun * (1 + baseline.AllocatedBytesTolerance);
+        if (measurement.AllocatedBytesPerRun > allocatedLimit)
+        {
+            problems.Add(
+                $"分配量退化：{measurement.AllocatedBytesPerRun:N0} B/次 > 上限 {allocatedLimit:N0} B/次"
+                + $"（基线 {baseline.AllocatedBytesPerRun:N0} B，容忍 +{baseline.AllocatedBytesTolerance:P0}）。");
+        }
+
+        var elapsedLimit = baseline.ElapsedMillisecondsPerRun * (1 + baseline.ElapsedTolerance);
+        if (measurement.ElapsedMillisecondsPerRun > elapsedLimit)
+        {
+            problems.Add(
+                $"耗时退化：{measurement.ElapsedMillisecondsPerRun:F2} ms/次 > 上限 {elapsedLimit:F2} ms/次"
+                + $"（基线 {baseline.ElapsedMillisecondsPerRun:F2} ms，容忍 +{baseline.ElapsedTolerance:P0}）。");
+        }
+
+        if (problems.Count == 0)
+        {
+            Console.WriteLine("性能门槛：通过。");
+            return 0;
+        }
+
+        foreach (var problem in problems)
+        {
+            Console.Error.WriteLine(problem);
+        }
+
+        Console.Error.WriteLine("若退化是有意为之，用 --update-baseline 重写基线并连同改动一起提交。");
+        return 1;
+    }
+
+    private static void PrintReport(Measurement measurement, Baseline? baseline)
+    {
+        Console.WriteLine($"生成器性能门槛 · {MeasuredRuns} 轮中位数（预热 {WarmupRuns} 轮）");
+        Console.WriteLine($"  生成文件数/次 : {measurement.GeneratedSourceCount}");
+        Console.WriteLine($"  分配量/次     : {measurement.AllocatedBytesPerRun:N0} B");
+        Console.WriteLine($"  耗时/次       : {measurement.ElapsedMillisecondsPerRun:F2} ms");
+
+        if (baseline is null)
+        {
+            return;
+        }
+
+        Console.WriteLine($"  基线分配量/次 : {baseline.AllocatedBytesPerRun:N0} B（运行时 {baseline.RuntimeVersion}）");
+        Console.WriteLine($"  基线耗时/次   : {baseline.ElapsedMillisecondsPerRun:F2} ms");
+    }
+
+    private static Baseline ReadBaseline(string path)
+    {
+        var baseline = File.Exists(path)
+            ? JsonSerializer.Deserialize<Baseline>(File.ReadAllText(path))
+            : throw new FileNotFoundException(
+                $"未找到性能基线 {path}：先跑一次 --update-baseline 生成并提交。",
+                path);
+
+        return baseline ?? throw new InvalidOperationException($"性能基线 {path} 反序列化失败。");
+    }
+
+    private static void WriteBaseline(string path, Measurement measurement)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(directory);
+
+        var baseline = new Baseline(
+            Scenario: "GeneratorRunBenchmarks.FullRun",
+            RuntimeVersion: Environment.Version.ToString(),
+            MeasuredRuns: MeasuredRuns,
+            AllocatedBytesPerRun: measurement.AllocatedBytesPerRun,
+            ElapsedMillisecondsPerRun: Math.Round(measurement.ElapsedMillisecondsPerRun, 3),
+            AllocatedBytesTolerance: AllocatedBytesTolerance,
+            ElapsedTolerance: ElapsedTolerance);
+
+        File.WriteAllText(path, JsonSerializer.Serialize(baseline, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Len.StronglyTypedId.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("未能从输出目录向上找到 Len.StronglyTypedId.slnx。");
+    }
+
+    private static long Median(long[] values) => values.Order().ElementAt(values.Length / 2);
+
+    private static double Median(double[] values) => values.Order().ElementAt(values.Length / 2);
+
+    private sealed record Measurement(long AllocatedBytesPerRun, double ElapsedMillisecondsPerRun, int GeneratedSourceCount);
+
+    private sealed record Baseline(
+        string Scenario,
+        string RuntimeVersion,
+        int MeasuredRuns,
+        long AllocatedBytesPerRun,
+        double ElapsedMillisecondsPerRun,
+        double AllocatedBytesTolerance,
+        double ElapsedTolerance);
+}

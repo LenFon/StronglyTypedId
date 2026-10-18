@@ -15,6 +15,7 @@ on:
       - "test/**/*.csproj"
       - "bench/**/*.cs"
       - "bench/**/*.csproj"
+      - "bench/**/baselines/*.json"
       - "bench.props"
       # pack 校验由本流水线的 pack job 承担，触发面需覆盖其依赖的工程 / 配置 / 工作流变更
       - "common.props"
@@ -36,6 +37,7 @@ on:
       - "test/**/*.csproj"
       - "bench/**/*.cs"
       - "bench/**/*.csproj"
+      - "bench/**/baselines/*.json"
       - "bench.props"
       - "common.props"
       - "version.props"
@@ -184,3 +186,29 @@ jobs:
       run: |
         dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
         dotnet pack ./src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+
+  # 生成器性能回归门槛。
+  #
+  # 为什么不用 BenchmarkDotNet 做 CI 门槛：BDN 的价值在统计严谨（多轮迭代 + 离群剔除），代价是单次跑几分钟；
+  # 而 CI 跑在共享 runner 上，短作业的墙钟抖动本身就常常超过 ±20%，拿它做阻断式门槛只会制造假红。
+  # 门槛改用「固定轮次的确定性指标」：分配字节数为主判据（同一份代码走同一条路径时逐字节可复现，
+  # 且 Roslyn 侧绝大多数性能退化 —— 多枚举一遍符号、多拼一次字符串、多接一层 LINQ —— 都会体现在分配量上），
+  # 耗时只作数量级兜底（容忍 4 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
+  #
+  # 为什么钉在 windows-latest：基线是在 Windows 上生成的。引用程序集集合（尤其 Microsoft.AspNetCore.App
+  # 的引用程序集）与运行时补丁在不同 OS 上并不逐字节相同，分配量因此不可跨 OS 比对。
+  # 有意改变性能特征时，本地跑 `--gate --update-baseline` 重写基线并连同改动一起提交。
+  perf:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          10.0.x
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Generator performance gate
+      run: dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate
