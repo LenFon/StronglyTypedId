@@ -28,3 +28,7 @@ InvalidPrefixTitle = 前缀值为空
 InvalidPrefixMessage = 'Prefix' 的值为空或纯空白，该强类型 Id 将不带前缀。
 ValidatorCanBeBypassedTitle = 验证器可被绕过
 ValidatorCanBeBypassedMessage = “{0}”对外可见，其主构造函数同样对外可见，“new {0}(...)”会跳过验证器。可将类型收窄为 internal，或接受验证器仅为建议性约束。
+TypeNameShouldEndWithIdTitle = 类型名应以‘Id’结尾
+TypeNameShouldEndWithIdMessage = 类型名‘{0}’不以‘Id’结尾。建议改名为‘{1}’，让类型名一眼看出是标识符。
+DuplicatePrimitiveTypeTitle = 多个强类型 Id 使用相同的基元类型
+DuplicatePrimitiveTypeMessage = ‘{0}’以‘{1}’为基元，同一命名空间‘{3}’下另有 {2} 个强类型 Id 使用相同基元。它们在存储与传输层面完全同形，互相混用不会有任何提示。

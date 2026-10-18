@@ -63,6 +63,8 @@ public partial class DescriptorsTests
             // STIAO013（InvalidPrefix）是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误，
             // 默认 Warning —— 不阻断构建，但在错误列表里提示（各项目可在 .editorconfig 里调级）。
             // STIAO014（ValidatorCanBeBypassed）同为建议性诊断，默认 Info。
+            // STIAO015 / STIAO016 是纯命名风格提示（名字不以 Id 结尾、同命名空间共用基元），
+            // 与「声明是否合法」无关，默认 Info。
             // 其余规则一律 Error。
             switch (descriptor.Id)
             {
@@ -74,6 +76,12 @@ public partial class DescriptorsTests
                     break;
                 case Descriptors.ValidatorCanBeBypassedId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO014 是建议性诊断");
+                    break;
+                case Descriptors.TypeNameShouldEndWithIdId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO015 是命名风格提示");
+                    break;
+                case Descriptors.DuplicatePrimitiveTypeId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO016 是命名风格提示");
                     break;
                 default:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);

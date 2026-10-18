@@ -276,6 +276,19 @@ dotnet_diagnostic.IDE0042.severity = none
 # 其它文件类型
 # ---------------------------------------------------------------------------
 
+# 测试夹具与示例刻意违反两条风格提示（均为 Info 级，不影响构建）：
+#   - test/.../Ids.cs 用 `GuidIdV2` 这类带版本后缀的名字，为的是在同一命名空间里
+#     造出多个同基元 Id 来覆盖生成器的分支；
+#   - samples 的领域模型本来就有多个 string 基元的 Id（UserId / SellerId）。
+# 这两处都不是「命名失误」，留着只会给仓库自身的错误列表添噪，故按目录关闭。
+[test/**/*.cs]
+dotnet_diagnostic.STIAO015.severity = none
+dotnet_diagnostic.STIAO016.severity = none
+
+[samples/**/*.cs]
+dotnet_diagnostic.STIAO015.severity = none
+dotnet_diagnostic.STIAO016.severity = none
+
 # MSBuild 工程文件沿用 Tab 缩进（与现存 .csproj / .props 一致）。
 [*.{csproj,props,targets,proj,vcxproj}]
 indent_style = tab

@@ -847,6 +847,197 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
+    #region 命名约定（STIAO015）
+
+    /// <summary>
+    /// 类型名不以 <c>Id</c> 结尾时提示改名，并给出建议名。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNameDoesNotEndWithId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct Order(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.TypeNameShouldEndWithId)
+            .WithArguments("Order", "OrderId")
+            .WithSpan(6, 30, 6, 35);
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 后缀按序数比较：<c>OrderID</c> 不合规（.NET 命名约定是 <c>Id</c>），建议名须替换而非追加。
+    /// </summary>
+    /// <remarks>
+    /// 若建议名简单地取「原名 + Id」，这里会得到 <c>OrderIDId</c> —— 一条没法照着改的建议。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNameEndsWithUppercaseId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderID(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.TypeNameShouldEndWithId)
+            .WithArguments("OrderID", "OrderId")
+            .WithSpan(6, 30, 6, 37);
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 名字本身就是 <c>Id</c> 时合规，不报告。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNameIsExactlyId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct Id(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
+    }
+
+    #endregion
+
+    #region 同命名空间共用基元（STIAO016）
+
+    /// <summary>
+    /// 同一命名空间下两个 Id 共用同一基元时，只在组内名字序最小的那个上报告一次。
+    /// </summary>
+    /// <remarks>
+    /// 每个成员各报一次会让 n 个同基元 Id 产出 n 条重复提示，而这条规则只是「回头看一眼」的提醒。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenTwoIdsSharePrimitive()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct InvoiceId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.DuplicatePrimitiveType)
+            .WithArguments("InvoiceId", "System.Guid", 1, "Len.StronglyTypedId.Tests")
+            .WithSpan(5, 1, 6, 52);
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 三个同基元 Id 仍然只报一条，实参给出「另外还有几个」。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenThreeIdsSharePrimitive()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct AlphaId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct BetaId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct GammaId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.DuplicatePrimitiveType)
+            .WithArguments("AlphaId", "System.Guid", 2, "Len.StronglyTypedId.Tests")
+            .WithSpan(5, 1, 6, 50);
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 基元类型不同时不存在「同形」问题，不报告。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenIdsUseDifferentPrimitives()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct CustomerId(int Value);
+            """";
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
+    }
+
+    /// <summary>
+    /// 分处不同命名空间时各自独立，不报告。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenSamePrimitiveLivesInDifferentNamespaces()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests.Sales
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+
+            namespace Len.StronglyTypedId.Tests.Billing
+            {
+                [StronglyTypedId]
+                public partial record struct InvoiceId(Guid Value);
+            }
+            """";
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
+    }
+
+    /// <summary>
+    /// 嵌套 Id 的作用域由包含类型界定，不属于命名空间级重复，不参与分组。
+    /// </summary>
+    /// <remarks>
+    /// <c>GetTypeMembers</c> 只返回命名空间的直接成员，嵌套类型天然不在其中 —— 这里把该行为固化成用例，
+    /// 免得日后换成别的枚举方式时悄悄把嵌套类型也拉进来。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNestedIdSharesPrimitiveWithTopLevelId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            public partial class Aggregate
+            {
+                [StronglyTypedId]
+                public partial record struct AggregateId(Guid Value);
+            }
+            """";
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
+    }
+
+    #endregion
+
     /// <summary>
     /// STIAO007 / STIAO008 的规则 ID 与对应的实参样例。
     /// </summary>

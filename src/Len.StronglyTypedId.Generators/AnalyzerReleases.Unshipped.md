@@ -17,3 +17,5 @@ STIAO011 | StronglyTypedIdAnalyzer | Info |
 STIAO012 | StronglyTypedIdGenerator | Error | Reported by the source generator itself when code generation throws.
 STIAO013 | StronglyTypedIdAnalyzer | Warning | Reported when [StronglyTypedId(Prefix = ...)] is set to an empty or whitespace-only string.
 STIAO014 | StronglyTypedIdAnalyzer | Disabled | Reported when an externally visible id declares a Validator, so its primary constructor can bypass it. Enable via .editorconfig.
+STIAO015 | StronglyTypedIdAnalyzer | Info | Reported when the id type name does not end with 'Id'.
+STIAO016 | StronglyTypedIdAnalyzer | Info | Reported once per namespace/primitive group when several ids in the same namespace wrap the same primitive type.

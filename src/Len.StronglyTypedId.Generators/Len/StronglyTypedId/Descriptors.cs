@@ -27,6 +27,8 @@ internal static class Descriptors
     public const string GeneratorFailureId = "STIAO012";
     public const string InvalidPrefixId = "STIAO013";
     public const string ValidatorCanBeBypassedId = "STIAO014";
+    public const string TypeNameShouldEndWithIdId = "STIAO015";
+    public const string DuplicatePrimitiveTypeId = "STIAO016";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -216,6 +218,50 @@ internal static class Descriptors
             false);
 
     /// <summary>
+    /// 强类型 Id 的类型名不以 <c>Id</c> 结尾。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 纯命名风格规则，默认 <see cref="DiagnosticSeverity.Info"/>，可在 <c>.editorconfig</c> 里
+    /// 调级或关闭（<c>dotnet_diagnostic.STIAO015.severity = none</c>）。
+    /// </para>
+    /// <para>
+    /// 后缀按<b>序数</b>比较（区分大小写）：<c>OrderID</c> 会被提示，而 <c>Grid</c> / <c>Solid</c> /
+    /// <c>Valid</c> 这些以 "id" 收尾的普通词不会被误判为合规 —— 不区分大小写地比 "id" 会把它们全部放过。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor TypeNameShouldEndWithId
+        = new(TypeNameShouldEndWithIdId,
+            new LocalizedString("TypeNameShouldEndWithIdTitle"),
+            new LocalizedString("TypeNameShouldEndWithIdMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
+    /// 同一命名空间下多个强类型 Id 共用同一基元类型。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 同基元的 Id 在<b>存储与传输层面完全同形</b>：EF 列类型、Dapper 参数、JSON 值、路由片段都一样。
+    /// 编译器能拦住把 <c>OrderId</c> 赋给 <c>InvoiceId</c> 的直接误用，却拦不住映射配置、序列化契约、
+    /// 手写 SQL 里接错的那一处 —— 这条规则就是把「它们其实是同一种东西」提前说出来。
+    /// </para>
+    /// <para>
+    /// 每组只报一次，落在组内名字序最小的类型上：n 个同基元 Id 各报一次就是 n 条重复提示，
+    /// 而这条规则本身只是「回头看一眼」的提醒。默认 <see cref="DiagnosticSeverity.Info"/>，
+    /// 可在 <c>.editorconfig</c> 里调级或关闭。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicatePrimitiveType
+        = new(DuplicatePrimitiveTypeId,
+            new LocalizedString("DuplicatePrimitiveTypeTitle"),
+            new LocalizedString("DuplicatePrimitiveTypeMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     /// <remarks>
@@ -238,6 +284,8 @@ internal static class Descriptors
         BypassCreate,
         InvalidPrefix,
         ValidatorCanBeBypassed,
+        TypeNameShouldEndWithId,
+        DuplicatePrimitiveType,
     ];
 
     /// <summary>

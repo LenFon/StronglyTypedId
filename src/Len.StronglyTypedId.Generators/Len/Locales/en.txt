@@ -28,3 +28,7 @@ InvalidPrefixTitle = Prefix value is empty
 InvalidPrefixMessage = The 'Prefix' value is empty or whitespace; the strongly typed id will have no prefix.
 ValidatorCanBeBypassedTitle = Validator can be bypassed
 ValidatorCanBeBypassedMessage = '{0}' is externally visible, so its primary constructor is too and 'new {0}(...)' skips the validator. Narrow the type to internal, or accept that the validator is advisory only.
+TypeNameShouldEndWithIdTitle = Type name should end with 'Id'
+TypeNameShouldEndWithIdMessage = The type name '{0}' does not end with 'Id'. Consider renaming it to '{1}' so the type reads as an identifier.
+DuplicatePrimitiveTypeTitle = Several strongly typed ids share the same primitive type
+DuplicatePrimitiveTypeMessage = '{0}' wraps '{1}', and {2} other strongly typed id(s) in namespace '{3}' wrap the same primitive. They are indistinguishable at the storage and wire level, so mixing them up is silent.

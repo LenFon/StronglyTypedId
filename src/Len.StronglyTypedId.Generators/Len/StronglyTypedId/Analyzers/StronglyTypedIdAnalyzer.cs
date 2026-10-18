@@ -149,6 +149,111 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         // 验证器可绕过同样独立于形状校验，但它需要「是否真的配了验证器」这一结论，故复用上面已算出的名字。
         ValidateValidatorBypass(context, type, validatorName, records);
+
+        // 以下两条是「形状合法之后」的风格提示：放在全部硬性校验之后，避免一个连 record 都不是的类型
+        // 同时冒出改名建议。命名约定与基元类型无关；重复基元则需要上面已确定的基元类型。
+        ValidateNameConvention(context, type, records);
+        ValidateDuplicatePrimitiveType(context, type, constructorParameterType, records);
+    }
+
+    /// <summary>
+    /// 类型名不以 <c>Id</c> 结尾时给出改名建议（STIAO015）。
+    /// </summary>
+    /// <remarks>
+    /// 定位取标识符本身而非整个声明：这是一条关于「这个名字」的建议，指向名字才说得通。
+    /// 该规则没有代码修复，因此不受「诊断须落在整个声明上」那条代码修复测试约束的限制。
+    /// </remarks>
+    private static void ValidateNameConvention(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
+    {
+        if (type.Name.EndsWith("Id", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // 以 "ID" 收尾时把这两个字符替换成 "Id"，而不是直接追加 —— 否则建议名会变成 "OrderIDId"。
+        var suggestion = type.Name.EndsWith("ID", StringComparison.Ordinal)
+            ? type.Name[..^2] + "Id"
+            : type.Name + "Id";
+
+        Report(context, Descriptors.TypeNameShouldEndWithId, records[0].Identifier.GetLocation(), type.Name, suggestion);
+    }
+
+    /// <summary>
+    /// 同一命名空间下多个强类型 Id 共用同一基元类型时提示（STIAO016）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 每组只报一次，落在组内名字序最小的类型上 —— n 个同基元 Id 各报一次就是 n 条重复提示。
+    /// 嵌套类型不在 <c>INamespaceSymbol.GetTypeMembers</c> 的返回范围内，因而天然排除：
+    /// 它们的作用域由包含类型界定，不属于命名空间级的重复。
+    /// </para>
+    /// <para>
+    /// 复杂度是「每个 Id 扫一遍所在命名空间的类型」，即 O(k²)。k 是同一命名空间里的类型总数，
+    /// 现实中是几十的量级，相对一次编译的整体开销可以忽略；换成编译级聚合（
+    /// <c>RegisterCompilationStartAction</c> + 结束时统一分组）能降到 O(k)，但会把现有的
+    /// 「一个符号动作搞定全部校验」结构拆散，收益不抵复杂度。
+    /// </para>
+    /// </remarks>
+    private static void ValidateDuplicatePrimitiveType(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        ITypeSymbol primitiveType,
+        RecordDeclarationSyntax[] records)
+    {
+        var namespaceSymbol = type.ContainingNamespace;
+
+        if (namespaceSymbol is null || namespaceSymbol.IsGlobalNamespace)
+        {
+            return;
+        }
+
+        // 分组键必须与兄弟类型的取值方式一致，否则当前类型可能落不进自己的组里（见 GetSingleParameterType）。
+        var primitiveName = (GetSingleParameterType(type) ?? primitiveType).ToDisplayString();
+
+        var group = namespaceSymbol.GetTypeMembers()
+            .Where(HasStronglyTypedIdAttribute)
+            .Select(member => (Member: member, Primitive: GetSingleParameterType(member)))
+            .Where(pair => pair.Primitive?.ToDisplayString() == primitiveName)
+            .Select(pair => pair.Member)
+            .OrderBy(member => member.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        // 组内第一个成员负责上报，且必须确认「第一个」就是当前类型，否则同一组会被每个成员各报一次。
+        if (group.Length < 2 || !SymbolEqualityComparer.Default.Equals(group[0], type))
+        {
+            return;
+        }
+
+        Report(
+            context,
+            Descriptors.DuplicatePrimitiveType,
+            records[0].GetLocation(),
+            type.Name,
+            primitiveName,
+            group.Length - 1,
+            namespaceSymbol.ToDisplayString());
+    }
+
+    /// <summary>
+    /// 取强类型 Id 的基元类型，即唯一一个「单参数、且参数类型不是自身」的实例构造函数所带的参数类型。
+    /// </summary>
+    /// <remarks>
+    /// 必须排除「参数类型等于自身」的那个构造函数：<c>record class</c> 会合成拷贝构造函数
+    /// <c>X(X original)</c>，它同样是单参数的，不排除就会把基元类型误判成 Id 自身。
+    /// 形状不合法的类型（无单参数构造函数）返回 <see langword="null"/>，由调用方跳过。
+    /// </remarks>
+    private static ITypeSymbol? GetSingleParameterType(INamedTypeSymbol type)
+    {
+        foreach (var constructor in type.InstanceConstructors)
+        {
+            if (constructor.Parameters is [var parameter]
+                && !SymbolEqualityComparer.Default.Equals(parameter.Type, type))
+            {
+                return parameter.Type;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -33,6 +33,22 @@ public static class Verify
     }
 
     /// <summary>
+    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但会启用默认被测试基建屏蔽的两条命名风格提示
+    /// （STIAO015 / STIAO016）。
+    /// </summary>
+    /// <remarks>
+    /// 这两条是 Info 级、无代码修复的风格提示，与「声明是否合法」无关（见 <see cref="ApplyDefaults"/>）。
+    /// 专门验证它们的用例必须走这里，否则诊断会被基建过滤掉，断言「应当有诊断」永远失败。
+    /// </remarks>
+    public static Task VerifyAnalyzerWithStyleHintsAsync(string source, params DiagnosticResult[] expected)
+    {
+        var test = new TestAnalyzer { TestCode = source };
+        EnableStyleHintDiagnostics(test);
+        test.ExpectedDiagnostics.AddRange(expected);
+        return test.RunAsync();
+    }
+
+    /// <summary>
     /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但额外挂一份 <c>.editorconfig</c>。
     /// </summary>
     /// <remarks>
@@ -235,6 +251,13 @@ public static class Verify
         // 需要验证该规则的用例走 VerifyAnalyzerWithEditorConfigAsync / VerifyCodeFixWithEditorConfigAsync，
         // 那里会用 EnableOptInDiagnostics 把它从禁用清单里摘掉。
         test.DisabledDiagnostics.Add(Descriptors.ValidatorCanBeBypassedId);
+
+        // STIAO015 / STIAO016 是命名风格提示（Info 级、无代码修复），与「声明是否合法」无关。
+        // 代码修复用例的源码里经常出现多个同基元 Id（例如同时声明 OrderId 与 InvoiceId），
+        // 修复完成后这些提示依然存在，会让「修复后应无诊断」的断言失败 —— 与修复本身是否正确无关。
+        // 需要验证这两条规则的用例走 VerifyAnalyzerWithStyleHintsAsync。
+        test.DisabledDiagnostics.Add(Descriptors.TypeNameShouldEndWithIdId);
+        test.DisabledDiagnostics.Add(Descriptors.DuplicatePrimitiveTypeId);
     }
 
     /// <summary>
@@ -242,6 +265,15 @@ public static class Verify
     /// </summary>
     private static void EnableOptInDiagnostics(AnalyzerTest<DefaultVerifier> test)
         => test.DisabledDiagnostics.Remove(Descriptors.ValidatorCanBeBypassedId);
+
+    /// <summary>
+    /// 解除两条命名风格提示的屏蔽，让专门验证 STIAO015 / STIAO016 的用例能看到它们。
+    /// </summary>
+    private static void EnableStyleHintDiagnostics(AnalyzerTest<DefaultVerifier> test)
+    {
+        test.DisabledDiagnostics.Remove(Descriptors.TypeNameShouldEndWithIdId);
+        test.DisabledDiagnostics.Remove(Descriptors.DuplicatePrimitiveTypeId);
+    }
 
     private static CSharpParseOptions CreateDefaultParseOptions()
         => new(LanguageVersion.Latest, DocumentationMode.Diagnose);
