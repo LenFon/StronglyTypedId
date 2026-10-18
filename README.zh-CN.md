@@ -194,8 +194,10 @@ IFormatProvider)` 已被标记过时。
 - `IStronglyTypedId<TSelf, TPrimitiveId>`、`IParsable<TSelf>`、`ISpanParsable<TSelf>`、
   `IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
   `IComparisonOperators<TSelf, TSelf, bool>` 的实现。
-- 基元类型具备时的 `IFormattable` 与 `ISpanFormattable` —— 以 `string` 为基元的 Id 例外，
-  因为 `string` 并未实现这两者。
+- 基元类型具备时的 `IFormattableStronglyTypedId<TSelf>`（继承 `IFormattable`）与 `ISpanFormattable` ——
+  以 `string` 为基元的 Id 例外，因为 `string` 并未实现这两者。该标记接口让泛型代码在不知道基元类型的
+  前提下统一格式化：`static string Render<TId>(TId id) where TId : IFormattableStronglyTypedId<TId>`。
+  `IStronglyTypedId<TSelf>` 刻意不约束 `IFormattable`，因此仍能接受所有 Id。
 - 基元类型具备时的 `IUtf8SpanFormattable`（net8.0+ 即可用）与 `IUtf8SpanParsable<TSelf>`（`Guid` 自 .NET 10 起才实现，故按基元类型条件生成）—— 提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
 - 静态的 `Create(TPrimitiveId value)` 工厂。
 - 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂——解析失败返回 `false`，`result` 为 `default`。

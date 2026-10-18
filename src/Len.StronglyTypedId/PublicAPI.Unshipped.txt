@@ -1,4 +1,5 @@
 #nullable enable
+Len.StronglyTypedId.IFormattableStronglyTypedId<TSelf>
 Len.StronglyTypedId.IStronglyTypedId<TSelf>
 Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.JsonShape.Object = 1 -> Len.StronglyTypedId.JsonShape

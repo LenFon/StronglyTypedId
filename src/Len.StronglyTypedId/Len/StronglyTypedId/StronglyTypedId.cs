@@ -48,3 +48,29 @@ public interface IStronglyTypedId<TSelf, TPrimitiveId> : IStronglyTypedId<TSelf>
     /// <returns>A new strongly typed id wrapping <paramref name="value"/>.</returns>
     abstract static TSelf Create(TPrimitiveId value);
 }
+
+/// <summary>
+/// Defines a strongly typed id whose wrapped primitive supports culture-aware formatting.
+/// </summary>
+/// <typeparam name="TSelf">The strongly typed id type that implements this interface.</typeparam>
+/// <remarks>
+/// <para>
+/// <see cref="IStronglyTypedId{TSelf}"/> deliberately does not require <see cref="IFormattable"/>: ids backed
+/// by <c>string</c> have no culture-aware formatting to forward, and ids backed by an <c>enum</c> cannot expose
+/// it either (<c>Enum.ToString(string, IFormatProvider)</c> is marked obsolete). This interface is the opt-in
+/// marker for the rest, so generic code can format an id without knowing its primitive type:
+/// </para>
+/// <code>
+/// static string Render&lt;TId&gt;(TId id) where TId : IFormattableStronglyTypedId&lt;TId&gt;
+///     => id.ToString("D", CultureInfo.InvariantCulture);
+/// </code>
+/// <para>
+/// Generated ids implement it exactly when the wrapped primitive implements <see cref="IFormattable"/>.
+/// Constrain on this interface only when the caller is known to pass such an id; constrain on
+/// <see cref="IStronglyTypedId{TSelf}"/> when any id must be accepted.
+/// </para>
+/// </remarks>
+public interface IFormattableStronglyTypedId<TSelf> : IStronglyTypedId<TSelf>, IFormattable
+    where TSelf : IFormattableStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
+{
+}

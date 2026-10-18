@@ -169,6 +169,33 @@ public class StronglyTypedIdCapabilityTests
         }
     }
 
+    /// <summary>
+    /// 基元具备 <c>IFormattable</c> 时，Id 实现 <see cref="IFormattableStronglyTypedId{TSelf}"/>，
+    /// 泛型代码因此能在不知道基元类型的前提下统一格式化。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IStronglyTypedId{TSelf}"/> 刻意不约束 <c>IFormattable</c>：<c>string</c> 基元的 Id
+    /// 没有可转发的格式化能力（枚举基元同理，其 <c>ToString(string, IFormatProvider)</c> 已过时）。
+    /// 新接口是 opt-in 标记，只在这些能力真实存在时才由生成器附加。
+    /// </remarks>
+    [Fact]
+    public void IFormattableStronglyTypedId_Should_BeEmitted_WhenPrimitiveIsFormattable()
+    {
+        // 该接口经 IStronglyTypedId 继承了 IParsable 的静态抽象成员，不能直接作泛型类型实参（CS8920），
+        // 故按接口列表断言。
+        typeof(Int32Id).GetInterfaces().Should().Contain(typeof(IFormattableStronglyTypedId<Int32Id>));
+        typeof(GuidId).GetInterfaces().Should().Contain(typeof(IFormattableStronglyTypedId<GuidId>));
+
+        // string 基元不实现 IFormattable，因而也不实现该标记接口。
+        typeof(StringId).Should().NotBeAssignableTo<IFormattable>();
+
+        Render(Int32Id.Create(255)).Should().Be("00000255");
+    }
+
+    private static string Render<TId>(TId id)
+        where TId : IFormattableStronglyTypedId<TId>
+        => id.ToString("D8", CultureInfo.InvariantCulture);
+
     [Fact]
     public void IFormattable_Should_ForwardFormatAndProvider()
     {

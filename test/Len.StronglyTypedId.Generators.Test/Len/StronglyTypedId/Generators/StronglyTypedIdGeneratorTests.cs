@@ -169,7 +169,7 @@ public class StronglyTypedIdGeneratorTests
                 global::System.IComparable<OrderId>,
                 global::System.Numerics.IEqualityOperators<OrderId, OrderId, bool>,
                 global::System.Numerics.IComparisonOperators<OrderId, OrderId, bool>,
-                global::System.IFormattable,
+                global::Len.StronglyTypedId.IFormattableStronglyTypedId<OrderId>,
                 global::System.ISpanFormattable,
                 global::System.IUtf8SpanParsable<OrderId>,
                 global::System.IUtf8SpanFormattable
@@ -1482,7 +1482,7 @@ public class StronglyTypedIdGeneratorTests
             .Contain("global::System.IComparable<OrderId>")
             .And.Contain("global::System.Numerics.IComparisonOperators<OrderId, OrderId, bool>")
             .And.Contain("global::System.ISpanParsable<OrderId>")
-            .And.Contain("global::System.IFormattable")
+            .And.Contain("global::Len.StronglyTypedId.IFormattableStronglyTypedId<OrderId>")
             .And.Contain("global::System.ISpanFormattable")
             .And.Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;")
             // 直呼基元的 TryFormat（Guid 走 3 参公开重载、其余走 4 参），不再经 ISpanFormattable 接口装箱。

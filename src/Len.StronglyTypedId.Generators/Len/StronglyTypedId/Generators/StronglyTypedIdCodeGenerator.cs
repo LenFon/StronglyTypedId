@@ -213,7 +213,10 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsFormattable)
         {
-            interfaces.Add("global::System.IFormattable");
+            // 用 IFormattableStronglyTypedId<TSelf> 取代裸 IFormattable：前者继承 IFormattable，
+            // 因而格式化能力不变，同时让泛型代码能以 where TId : IFormattableStronglyTypedId<TId>
+            // 约束到「可格式化的 Id」，不必知道基元类型。
+            interfaces.Add($"global::Len.StronglyTypedId.IFormattableStronglyTypedId<{idInfo.Name}>");
         }
 
         if (idInfo.IsSpanFormattable)

@@ -211,8 +211,11 @@ The core implementation adds:
 - Implementation of `IStronglyTypedId<TSelf, TPrimitiveId>`, `IParsable<TSelf>`, `ISpanParsable<TSelf>`,
   `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
   `IComparisonOperators<TSelf, TSelf, bool>`.
-- `IFormattable` and `ISpanFormattable` as well — except for `string`-backed ids, since `string`
-  implements neither, so those members are emitted only for primitives that have them.
+- `IFormattableStronglyTypedId<TSelf>` (which extends `IFormattable`) and `ISpanFormattable` as well —
+  except for `string`-backed ids, since `string` implements neither, so those members are emitted only for
+  primitives that have them. The marker interface exists so generic code can format an id without naming
+  its primitive: `static string Render<TId>(TId id) where TId : IFormattableStronglyTypedId<TId>`.
+  `IStronglyTypedId<TSelf>` deliberately stays free of `IFormattable`, so it still accepts every id.
 - `IUtf8SpanFormattable` (available since net8.0) and `IUtf8SpanParsable<TSelf>` (`Guid` implements it only
   from .NET 10, so it is emitted per primitive) — providing `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
 - A static `Create(TPrimitiveId value)` factory.
