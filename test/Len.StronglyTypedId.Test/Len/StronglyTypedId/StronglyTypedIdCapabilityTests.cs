@@ -124,6 +124,51 @@ public class StronglyTypedIdCapabilityTests
         }
     }
 
+    /// <summary>
+    /// <c>Parse</c> / <c>TryParse</c> 在 <c>provider</c> 为 <see langword="null"/> 时按不变文化解析，
+    /// 与 <c>ToString()</c> 的规范形对称，保证 <c>Parse(id.ToString())</c> 恒为往返。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>IParsable&lt;TSelf&gt;</c> 的约定是「<c>provider</c> 为 <see langword="null"/> 即用当前文化」，
+    /// 但强类型 Id 的文本形式是规范形，由 <c>ToString()</c> 按不变文化写出。若读入跟随当前文化，
+    /// 往返就断了：de-DE 下 <c>decimal</c> 的 <c>"1.5"</c> 会被当成千位分隔而<b>静默</b>解析成 <c>15</c>，
+    /// <c>double</c> 与 <c>DateTime</c> 则直接解析失败。用例临时切到 de-DE 验证这一点。
+    /// </para>
+    /// <para>
+    /// 显式传入 <c>provider</c> 时仍按调用方的文化解析 —— 只有「未表态」的 <see langword="null"/>
+    /// 被解释为不变文化，与 <c>ToString(string?, IFormatProvider?)</c> 的显式文化入口互补。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Parse_Should_FallBackToInvariantCulture_WhenProviderIsNull()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            var money = DecimalId.Create(1.5m);
+            money.ToString().Should().Be("1.5");
+
+            DecimalId.Parse(money.ToString(), null).Should().Be(money);
+            DecimalId.Parse(money.ToString().AsSpan(), null).Should().Be(money);
+            DecimalId.TryParse(money.ToString(), null, out var parsedMoney).Should().BeTrue();
+            parsedMoney.Value.Should().Be(1.5m);
+
+            var ratio = DoubleId.Create(1.5);
+            DoubleId.Parse(ratio.ToString(), null).Should().Be(ratio);
+
+            // 显式传 provider 时按该文化解析：de-DE 的 "1,5" 仍是 1.5。
+            DecimalId.TryParse("1,5", new CultureInfo("de-DE"), out var german).Should().BeTrue();
+            german.Value.Should().Be(1.5m);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
     [Fact]
     public void IFormattable_Should_ForwardFormatAndProvider()
     {

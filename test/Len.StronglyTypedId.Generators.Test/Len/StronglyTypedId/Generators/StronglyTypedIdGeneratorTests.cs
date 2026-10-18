@@ -200,7 +200,7 @@ public class StronglyTypedIdGeneratorTests
                     global::System.IFormatProvider? provider,
                     [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
-                    if (global::System.Guid.TryParse(value, provider, out var val))
+                    if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val))
                     {
                         result = new OrderId(val);
                         return true;
@@ -231,7 +231,7 @@ public class StronglyTypedIdGeneratorTests
                     global::System.IFormatProvider? provider,
                     [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
-                    if (global::System.Guid.TryParse(value, provider, out var val))
+                    if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val))
                     {
                         result = new OrderId(val);
                         return true;
@@ -320,7 +320,7 @@ public class StronglyTypedIdGeneratorTests
                     global::System.IFormatProvider? provider,
                     [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
-                    if (global::System.Guid.TryParse(utf8Text, provider, out var val))
+                    if (global::System.Guid.TryParse(utf8Text, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val))
                     {
                         result = new OrderId(val);
                         return true;
@@ -1330,7 +1330,7 @@ public class StronglyTypedIdGeneratorTests
 
         generated["Len.StronglyTypedId.OrderId.g.cs"]
             .Should().Contain("public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::System.ArgumentException($\"The value '{value}' is not a valid OrderId.\", nameof(value));")
-            .And.Contain("if (global::System.Guid.TryParse(value, provider, out var val) && Validate(val))");
+            .And.Contain("if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val) && Validate(val))");
     }
 
     /// <summary>
@@ -1584,7 +1584,7 @@ public class StronglyTypedIdGeneratorTests
 
         generated.Should()
             .Contain("public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::System.ArgumentException($\"The value '{value}' is not a valid OrderId.\", nameof(value));")
-            .And.Contain("if (global::System.Guid.TryParse(value, provider, out var val) && Validate(val))");
+            .And.Contain("if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val) && Validate(val))");
     }
 
     /// <summary>

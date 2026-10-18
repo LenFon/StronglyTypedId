@@ -26,6 +26,16 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string AttributeName = "global::Len.StronglyTypedId.StronglyTypedIdAttribute";
 
     /// <summary>
+    /// System.Text.Json 转换器的内嵌类型名，由 <c>SystemTextJsonCodeGenerator</c> 产出。
+    /// </summary>
+    private const string SystemTextJsonConverterTypeName = "SystemTextJsonConverter";
+
+    /// <summary>
+    /// Newtonsoft.Json 转换器的内嵌类型名，由 <c>NewtonsoftJsonCodeGenerator</c> 产出。
+    /// </summary>
+    private const string NewtonsoftJsonConverterTypeName = "NewtonsoftJsonConverter";
+
+    /// <summary>
     /// attribute 中用于指定验证器方法的命名实参名。
     /// </summary>
     internal const string ValidatorArgumentName = "Validator";
@@ -161,6 +171,8 @@ internal readonly record struct StronglyTypedIdInfo
         IsObjectJsonShape = GetJsonShapeIsObject(type);
         Prefix = NormalizePrefix(GetStringArgument(type, PrefixArgumentName));
         IsStrictPrefixRead = GetPrefixReadModeIsStrict(type);
+        HasSystemTextJsonConverter = WillHaveNestedType(type, SystemTextJsonConverterTypeName);
+        HasNewtonsoftJsonConverter = WillHaveNestedType(type, NewtonsoftJsonConverterTypeName);
     }
 
     /// <summary>
@@ -236,6 +248,26 @@ internal readonly record struct StronglyTypedIdInfo
     /// 仅核心生成器仍把它们逐层嵌回包含类型。
     /// </remarks>
     public bool IsInGenericContainer { get; }
+
+    /// <summary>
+    /// 该 Id 是否带有（或本次生成即将产出）内嵌的 <c>SystemTextJsonConverter</c>。
+    /// </summary>
+    /// <remarks>
+    /// 注册入口按 <c>External</c> 取全集，其中可能混入「声明它的程序集并未引用 System.Text.Json」的 Id
+    /// （例如面向 netstandard2.0 的领域库）。那种 Id 没有内嵌转换器，生成
+    /// <c>new X.SystemTextJsonConverter()</c> 会 CS0426，让消费者的编译直接失败 ——
+    /// 而漏注册并无损失：<c>[JsonConverter]</c> 特性路径仍然生效。
+    /// </remarks>
+    public bool HasSystemTextJsonConverter { get; }
+
+    /// <summary>
+    /// 该 Id 是否带有（或本次生成即将产出）内嵌的 <c>NewtonsoftJsonConverter</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="HasSystemTextJsonConverter"/> 同理：领域库不引用 Newtonsoft.Json 时其 Id 没有内嵌转换器，
+    /// 注册入口必须跳过，否则 <c>settings.AddStronglyTypedId()</c> 所在编译报 CS0426。
+    /// </remarks>
+    public bool HasNewtonsoftJsonConverter { get; }
 
     /// <summary>
     /// The type kind suffix appended right after the <c>record</c> keyword, e.g. <c>" struct"</c>.
@@ -525,6 +557,26 @@ internal readonly record struct StronglyTypedIdInfo
     }
 
     /// <summary>
+    /// 判断该 Id 是否带有（或本次生成即将产出）指定的内嵌转换器类型。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 判据分两支：<b>已实现 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c></b> 的类型来自已编译的程序集，
+    /// 其代码早已生成完毕 —— 内嵌类型存在就存在，不存在就永远不会出现；<b>未实现</b>该接口的类型是本次编译
+    /// 新声明的，转换器由本轮生成器补上，故一律视为「将有」。
+    /// </para>
+    /// <para>
+    /// 不能改用 <see cref="ISymbol.DeclaringSyntaxReferences"/> 判断来源：项目引用（<c>CompilationReference</c>）
+    /// 与测试里内存编译出来的程序集，其符号同样带语法引用，判据会失效。而「是否实现接口」正是
+    /// <see cref="GetPrimitiveIdType"/> 已经在用的同一条分界线。
+    /// </para>
+    /// </remarks>
+    private static bool WillHaveNestedType(ITypeSymbol type, string nestedTypeName)
+        => type is INamedTypeSymbol namedType
+            && (namedType.GetTypeMembers(nestedTypeName).Length > 0
+                || !namedType.Interfaces.Any(IsStronglyTypedIdInterface));
+
+    /// <summary>
     /// 把基元类型的显示名归一化为不含命名空间限定的短名。
     /// </summary>
     /// <remarks>
@@ -586,7 +638,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 生成代码按具体类型名调用该重载（<c>PrimitiveIdTypeName.TryParse(value, provider, out var val)</c>）。
+    /// 生成代码按具体类型名调用该重载（<c>PrimitiveIdTypeName.TryParse(value, provider ?? InvariantCulture, out var val)</c>）。
     /// 若基元把它实现为<b>显式接口实现</b>（如 <c>BigInteger</c> 的 UTF-8 重载），按类型名调用会 CS1501；
     /// 而静态抽象接口成员又不能经接口名直接调用（CS8926），故只能在生成前就把这类基元筛掉。
     /// </para>

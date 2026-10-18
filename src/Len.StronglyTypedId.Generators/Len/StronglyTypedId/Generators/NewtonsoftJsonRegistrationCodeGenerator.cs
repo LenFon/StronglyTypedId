@@ -14,6 +14,12 @@ namespace Len.StronglyTypedId.Generators;
 /// 含来自被引用程序集的 Id，跨程序集实例化要求它对外可见）。
 /// </para>
 /// <para>
+/// 取全集后还要按 <see cref="StronglyTypedIdInfo.HasNewtonsoftJsonConverter"/> 过滤：声明在某程序集里的 Id
+/// 只有该程序集自己也引用了 Newtonsoft.Json 才带内嵌转换器。领域库不引 Newtonsoft、宿主应用引，是完全正常的
+/// 分层，此时若照样生成 <c>new X.NewtonsoftJsonConverter()</c> 就是 CS0426，宿主编译直接失败。
+/// 漏注册没有损失：这些 Id 仍带 <c>[JsonConverter]</c> 特性，Newtonsoft 默认就会用上它。
+/// </para>
+/// <para>
 /// 生成文件只在引用了 <c>Newtonsoft.Json.dll</c>（主版本 ≥ 13）时才产出，与核心 Newtonsoft 生成器同一门控。
 /// </para>
 /// </remarks>
@@ -29,7 +35,9 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External.ToList();
+        var stronglyTypedIds = discoveredIds.External
+            .Where(static idInfo => idInfo.HasNewtonsoftJsonConverter)
+            .ToList();
 
         if (stronglyTypedIds.Count == 0)
         {

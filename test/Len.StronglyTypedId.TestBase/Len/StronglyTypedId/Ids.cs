@@ -21,6 +21,11 @@ public partial record struct TimeOnlyId(TimeOnly Value);
 [StronglyTypedId]
 public partial record struct DoubleId(double Value);
 
+// H2：decimal 是「静默错值」最危险的场景 —— de-DE 下小数分隔符是逗号、千位分隔符是句点，
+// 规范形的 "1.5" 会被读成 15。用它验证 Parse / TryParse 在 provider 为 null 时按不变文化解析。
+[StronglyTypedId]
+public partial record struct DecimalId(decimal Value);
+
 [StronglyTypedId]
 public partial record struct SingleId(float Value);
 

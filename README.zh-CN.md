@@ -199,11 +199,12 @@ IFormatProvider)` 已被标记过时。
 - 基元类型具备时的 `IUtf8SpanFormattable`（net8.0+ 即可用）与 `IUtf8SpanParsable<TSelf>`（`Guid` 自 .NET 10 起才实现，故按基元类型条件生成）—— 提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
 - 静态的 `Create(TPrimitiveId value)` 工厂。
 - 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂——解析失败返回 `false`，`result` 为 `default`。
-- `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。对于以 `string` 为基元的
-  Id，`TryParse` 不接受 `null` 与空字符串。
+- `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。`provider` 传 `null` 时按
+  **不变文化**解析（而非当前文化），因此 `Parse(id.ToString())` 在任何区域设置下都能往返；需要按特定文化
+  解析时显式传 provider。对于以 `string` 为基元的 Id，`TryParse` 不接受 `null` 与空字符串。
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。
 - 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
-  与序列化写出的文本一致，`Parse(id.ToString(), CultureInfo.InvariantCulture)` 可往返；需要按特定文化
+  与序列化写出的文本一致，`Parse(id.ToString())` 可往返；需要按特定文化
   格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
 - 以 `string` 为基元的 Id 会驻留相等的字符串值：相等的字符串会按 Id 类型共享同一份底层存储
   （使用每类型的小缓存，而非进程级的 `string.Intern` 池），因此重复 Id 几乎不再额外占内存。

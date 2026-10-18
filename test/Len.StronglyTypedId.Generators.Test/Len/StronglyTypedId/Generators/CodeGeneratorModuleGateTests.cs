@@ -297,6 +297,41 @@ public class CodeGeneratorModuleGateTests
     }
 
     /// <summary>
+    /// 引用程序集里的 Id 若没有内嵌 <c>SystemTextJsonConverter</c>（声明它的程序集没引用 System.Text.Json），
+    /// 注册入口必须跳过它。否则生成 <c>new X.SystemTextJsonConverter()</c> 会 CS0426 —— 而这条编译错误
+    /// 出现在<b>消费者</b>的编译里，库作者完全看不到。
+    /// </summary>
+    [Fact]
+    public void SystemTextJsonRegistration_Should_Skip_WhenReferencedIdHasNoConverter()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            CreateReferencedAssembly("AlreadyGenerated", ReferencedIdWithoutConvertersSource));
+
+        var code = generated["StronglyTypedIds.SystemTextJson.g.cs"];
+
+        code.Should().Contain("new global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter()")
+            .And.NotContain("LegacyOrderId");
+    }
+
+    /// <summary>
+    /// Newtonsoft 侧的同一判据：领域库不引 Newtonsoft、宿主应用引，是完全正常的分层。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJsonRegistration_Should_Skip_WhenReferencedIdHasNoConverter()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Newtonsoft.Json", "13.0.0.0"),
+            CreateReferencedAssembly("AlreadyGenerated", ReferencedIdWithoutConvertersSource));
+
+        var code = generated["StronglyTypedIds.NewtonsoftJson.g.cs"];
+
+        code.Should().Contain("new global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter()")
+            .And.NotContain("LegacyOrderId");
+    }
+
+    /// <summary>
     /// 注册入口与核心生成器共用同一程序集门控：Newtonsoft 12.x 既不产出转换器，也不产出注册入口。
     /// </summary>
     [Fact]
@@ -342,6 +377,38 @@ public class CodeGeneratorModuleGateTests
 
         public class NotAnId
         {
+        }
+        """;
+
+    /// <summary>
+    /// 一个「已由生成器补齐接口实现、但没有内嵌任何 JSON 转换器」的强类型 Id，
+    /// 等价于「声明它的程序集既没引用 System.Text.Json 也没引用 Newtonsoft.Json」的产物。
+    /// </summary>
+    private const string ReferencedIdWithoutConvertersSource = """
+        namespace Already.Generated;
+
+        public readonly record struct LegacyOrderId(global::System.Guid Value)
+            : global::Len.StronglyTypedId.IStronglyTypedId<LegacyOrderId, global::System.Guid>
+        {
+            public static LegacyOrderId Create(global::System.Guid value) => new(value);
+
+            public static LegacyOrderId Parse(string value, global::System.IFormatProvider? provider)
+                => new(global::System.Guid.Parse(value, provider));
+
+            public static bool TryParse(
+                string? value,
+                global::System.IFormatProvider? provider,
+                out LegacyOrderId result)
+            {
+                if (global::System.Guid.TryParse(value, provider, out var primitiveId))
+                {
+                    result = new LegacyOrderId(primitiveId);
+                    return true;
+                }
+
+                result = default;
+                return false;
+            }
         }
         """;
 
@@ -398,6 +465,23 @@ public class CodeGeneratorModuleGateTests
     }
 
     private static CSharpCompilation CreateCompilation(string sourceCode, params MetadataReference[] extraReferences)
+        => CreateCompilation("Len.StronglyTypedId.ModuleGate.Test", sourceCode, extraReferences);
+
+    /// <summary>
+    /// 把一个源码片段编译成「被引用程序集」的引用（<see cref="CompilationReference"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 程序集名必须与被测编译不同，否则两份同名程序集同时出现在引用集里会 CS1704。
+    /// 走 <see cref="CompilationReference"/> 而非 emit 到磁盘，是为了让其中的类型符号带着
+    /// 完整的接口实现信息 —— 生成器要靠「是否实现 <c>IStronglyTypedId</c>」区分「已生成」与「本次新声明」。
+    /// </remarks>
+    private static CompilationReference CreateReferencedAssembly(string assemblyName, string sourceCode)
+        => (CompilationReference)CreateCompilation(assemblyName, sourceCode, []).ToMetadataReference();
+
+    private static CSharpCompilation CreateCompilation(
+        string assemblyName,
+        string sourceCode,
+        MetadataReference[] extraReferences)
     {
         // AppDomain.GetAssemblies() 只返回「已加载」的程序集，而 System.Text.Json 是延迟加载的：
         // 必须像下面这样显式引用一次，它才会出现在编译引用里，SystemTextJsonCodeGenerator 也才会被选入。
@@ -418,7 +502,7 @@ public class CodeGeneratorModuleGateTests
             .ToArray();
 
         return CSharpCompilation.Create(
-            "Len.StronglyTypedId.ModuleGate.Test",
+            assemblyName,
             [CSharpSyntaxTree.ParseText(sourceCode)],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

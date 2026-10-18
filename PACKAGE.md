@@ -26,7 +26,7 @@ is referenced.
 public partial record struct OrderId(Guid Value);
 
 var id = OrderId.Create(Guid.NewGuid());           // static factory
-var parsed = OrderId.Parse("...", null);           // IParsable<TSelf>
+var parsed = OrderId.Parse("...", null);           // IParsable<TSelf>; a null provider means the invariant culture
 OrderId.TryParse("...", null, out var alsoParsed); // false instead of throwing
 ```
 

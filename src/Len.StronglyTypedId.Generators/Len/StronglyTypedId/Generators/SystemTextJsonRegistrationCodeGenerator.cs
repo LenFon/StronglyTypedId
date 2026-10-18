@@ -16,6 +16,12 @@ namespace Len.StronglyTypedId.Generators;
 /// （<c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>）随之一并生效。
 /// </para>
 /// <para>
+/// 取全集后还要按 <see cref="StronglyTypedIdInfo.HasSystemTextJsonConverter"/> 过滤：声明在某程序集里的 Id
+/// 只有该程序集自己也引用了 System.Text.Json 才带内嵌转换器（netstandard2.0 领域库就可能没有）。
+/// 此时若照样生成 <c>new X.SystemTextJsonConverter()</c> 就是 CS0426，宿主编译直接失败；
+/// 而漏注册没有损失 —— 这些 Id 仍带 <c>[JsonConverter]</c> 特性，STJ 默认就会用上它。
+/// </para>
+/// <para>
 /// 生成文件只在引用了 <c>System.Text.Json.dll</c> 时才产出，与核心 STJ 生成器同一门控。
 /// </para>
 /// </remarks>
@@ -31,7 +37,9 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External.ToList();
+        var stronglyTypedIds = discoveredIds.External
+            .Where(static idInfo => idInfo.HasSystemTextJsonConverter)
+            .ToList();
 
         // 一个 Id 都没有时不产出空壳类：既有行为是「无集成则不生成 StronglyTypedIds」，
         // 空注册入口只会平白多出一个成员。

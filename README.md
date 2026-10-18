@@ -217,12 +217,14 @@ The core implementation adds:
   from .NET 10, so it is emitted per primitive) — providing `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
 - A static `Create(TPrimitiveId value)` factory.
 - A static `TryCreate(TPrimitiveId value, out TSelf result)` factory — on a failed parse it returns `false` and sets `result` to `default`.
-- `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. For
-  `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
+- `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
+  `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
+  round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
+  For `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
 - `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
 - `ToString()` returning the invariant-culture text of the wrapped value (not the record's
   `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
-  `Parse(id.ToString(), CultureInfo.InvariantCulture)`; use `ToString(string?, IFormatProvider?)` and
+  `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and
   `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
 - String-backed ids intern equal values: the storage for equal strings is shared per id type via a small
   per-type cache (not the process-wide `string.Intern` pool), so repeated ids add almost no extra memory.
@@ -806,8 +808,8 @@ A: Yes. Every id implements `IComparable<TSelf>` plus `<`, `>`, `<=` and `>=` ov
 A: The invariant-culture text of the wrapped primitive value (`"42"`, `"3f2c…"`, `"1.5"`) rather than
 the record's default `OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated
 strings. It is deliberately culture-independent so it matches the serialized form and round-trips through
-`Parse(id.ToString(), CultureInfo.InvariantCulture)`; pass a culture to `ToString(string?, IFormatProvider?)`
-for culture-specific output.
+`Parse(id.ToString())` — `Parse` / `TryParse` treat a `null` provider as the invariant culture for exactly
+this reason. Pass a culture to `ToString(string?, IFormatProvider?)` for culture-specific output.
 
 **Q: I set `Validator`, but `new OrderId(...)` still accepts an invalid value.**
 

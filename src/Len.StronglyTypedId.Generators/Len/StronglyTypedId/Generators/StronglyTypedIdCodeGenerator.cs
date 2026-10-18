@@ -49,6 +49,25 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </remarks>
     private static readonly string _tryParseBodyIndent = new(' ', 8);
 
+    /// <summary>
+    /// 解析时传给基元的 <c>IFormatProvider</c> 实参：调用方未指定时回退到不变文化。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>IParsable&lt;TSelf&gt;</c> 的约定是「<c>provider</c> 为 <see langword="null"/> 即用当前文化」，
+    /// 这里有意偏离：强类型 Id 的文本形式是<b>规范形</b>，由 <c>ToString()</c> 按不变文化写出
+    /// （见 <see cref="GetToStringBody"/>），而序列化、路由绑定、持久化也一律按不变文化读写。
+    /// 若读入跟随当前文化，<c>Parse(id.ToString())</c> 就不再是恒等变换 —— 在 <c>de-DE</c> 下
+    /// <c>decimal</c> 的 <c>"1.5"</c> 会被当成千位分隔而解析成 <c>15</c>（静默错值），
+    /// <c>DateTime</c> 与浮点则直接解析失败。
+    /// </para>
+    /// <para>
+    /// 需要按特定文化解析时，显式传入 <c>provider</c> 即可（与 <c>ToString(string?, IFormatProvider?)</c>
+    /// 的显式文化入口对称）；只有 <see langword="null"/> 这一种「未表态」的情形被解释为不变文化。
+    /// </para>
+    /// </remarks>
+    private const string ProviderOrDefault = "provider ?? global::System.Globalization.CultureInfo.InvariantCulture";
+
     public int Order { get; } = 0;
 
     public void Generate(
@@ -387,7 +406,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             return $"global::System.Enum.TryParse<{idInfo.PrimitiveIdTypeName}>({parseArgument}, out var val)";
         }
 
-        return $"{idInfo.PrimitiveIdTypeName}.TryParse(value, provider, out var val)";
+        return $"{idInfo.PrimitiveIdTypeName}.TryParse(value, {ProviderOrDefault}, out var val)";
     }
 
     /// <summary>
@@ -827,7 +846,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         // 的具体基元类型」调用是合法的（与 UTF-16 路径的解析条件 GetTryParseConditionCore 同构）。这里直接写
         // PrimitiveIdTypeName.TryParse：基元类型下该重载（ReadOnlySpan<byte> + IFormatProvider）唯一，
         // 重载解析不会歧义；且 T 是具体非可空类型，不会产生经泛型辅助方法转调时的 CS8601 可空告警。
-        var condition = $"{idInfo.PrimitiveIdTypeName}.TryParse(utf8Text, provider, out var val)";
+        var condition = $"{idInfo.PrimitiveIdTypeName}.TryParse(utf8Text, {ProviderOrDefault}, out var val)";
 
         if (idInfo.ValidatorName is not null)
         {
