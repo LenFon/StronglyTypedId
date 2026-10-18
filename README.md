@@ -44,7 +44,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
 - **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and every one of
-  the thirteen rules comes with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+  the fourteen rules comes with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` for every primitive that has them (all but `string`).
@@ -719,9 +719,10 @@ Interfaces, abstract types, enums and arrays are never reported as strongly type
 
 ## Diagnostics <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
-The analyzer enforces the following rules. Each one is reported as a **compile error**, so an invalid
-declaration will not compile. Diagnostics are localized for English and Chinese according to the
-compiler culture.
+The analyzer enforces the following rules. Most are reported as a **compile error**, so an invalid
+declaration will not compile; the advisory ones (`STIAO011`, `STIAO013`, `STIAO014`) are reported at a
+lower severity and can be tuned per project in `.editorconfig`. Diagnostics are localized for English and
+Chinese according to the compiler culture.
 
 | Rule ID  | Description                                                                | Code fix                       |
 | -------- | -------------------------------------------------------------------------- | ------------------------------ |
@@ -738,6 +739,7 @@ compiler culture.
 | STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | Remove the `Validator` argument|
 | STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | Replace with `Create(...)`     |
 | STIAO013 | `Prefix` is set to an empty or whitespace-only string, which is treated as "no prefix". | Remove the `Prefix` argument or give it a non-blank value |
+| STIAO014 | An externally visible id declares a `Validator`, so its primary constructor can bypass validation. **Off by default**; enable it with `dotnet_diagnostic.STIAO014.severity = suggestion` in `.editorconfig`. | Narrow the type to `internal` |
 
 Every rule offers a fix, but a few only when the repair is unambiguous — `STIAO003` is offered only when
 the id itself is generic (removing the *containing* type's type parameters would change your design),

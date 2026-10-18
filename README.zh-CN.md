@@ -42,7 +42,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，13 条规则全都附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，14 条规则全都附带代码修复，
   可一键修好声明（见[诊断与代码修复](#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并为具备相应接口的基元类型（除 `string` 外的全部）
@@ -662,8 +662,9 @@ if (typeof(OrderId).IsStronglyTypedId())
 
 ## 诊断与代码修复 <a href="#top" style="float:right">↑ 返回目录</a>
 
-分析器会强制以下规则。每一条都会作为**编译错误**报告，因此不合法的声明无法通过编译。诊断文案
-会按编译器区域设置输出英文或中文。
+分析器会强制以下规则。大多数规则作为**编译错误**报告，因此不合法的声明无法通过编译；建议性规则
+（`STIAO011`、`STIAO013`、`STIAO014`）级别较低，可按项目在 `.editorconfig` 中调整。诊断文案会按
+编译器区域设置输出英文或中文。
 
 | 规则 ID  | 说明                                                       | 代码修复               |
 | -------- | ---------------------------------------------------------- | ------------------------ |
@@ -680,6 +681,7 @@ if (typeof(OrderId).IsStronglyTypedId())
 | STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | 删掉 `Validator` 实参  |
 | STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | 改用 `Create(...)`     |
 | STIAO013 | `Prefix` 被设为空串或纯空白，会按「未设置」处理。 | 删掉 `Prefix` 实参，或给它一个非空白值 |
+| STIAO014 | 对外可见的 Id 声明了 `Validator`，其主构造函数可绕过校验。**默认关闭**，可在 `.editorconfig` 中用 `dotnet_diagnostic.STIAO014.severity = suggestion` 启用。 | 收窄为 `internal` |
 
 每条规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIAO003` 仅在 Id 自身是泛型时提供
 （删掉*包含类型*的类型参数会改变你的设计），`STIAO005` 仅在类型没有显式构造函数时提供（在已有构造函数旁
