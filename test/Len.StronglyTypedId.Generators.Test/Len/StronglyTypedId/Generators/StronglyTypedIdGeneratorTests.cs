@@ -21,6 +21,16 @@ public class StronglyTypedIdGeneratorTests
     /// </remarks>
     private static readonly string _generatorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
 
+    /// <summary>
+    /// 生成代码里 <c>UnconditionalSuppressMessage</c> 的 <c>Justification</c> 文案。
+    /// </summary>
+    /// <remarks>
+    /// 与 <c>SystemTextJsonCodeGenerator.AotSuppressionJustification</c> 保持一致；
+    /// 该常量是私有的，故此处按字面量镜像一份，改文案时两处需同步。
+    /// </remarks>
+    private const string AotJustification =
+        "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
+
     [Theory]
     [InlineData("record")]
     [InlineData("record struct")]
@@ -349,19 +359,26 @@ public class StronglyTypedIdGeneratorTests
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotJustification}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotJustification}}")]
                     public override OrderId Read(
                         ref global::System.Text.Json.Utf8JsonReader reader, 
                         global::System.Type typeToConvert, 
-                        global::System.Text.Json.JsonSerializerOptions options) =>
-                        global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid?>(ref reader, options) switch
+                        global::System.Text.Json.JsonSerializerOptions options)
+                    {
+                        if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)
                         {
-                            { } value => OrderId.Create(value),
-                            _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
-                        };
-            
+                            throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId");
+                        }
+
+                        return OrderId.Create(global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options));
+                    }
+
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotJustification}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotJustification}}")]
                     public override void Write(
                         global::System.Text.Json.Utf8JsonWriter writer, 
                         OrderId value, 

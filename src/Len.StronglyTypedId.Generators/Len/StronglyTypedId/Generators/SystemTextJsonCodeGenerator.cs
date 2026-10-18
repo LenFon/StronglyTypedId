@@ -16,6 +16,29 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 {
     internal static readonly ICoreCodeGenerator Instance = new SystemTextJsonCodeGenerator();
 
+    /// <summary>
+    /// 抑制 IL2026 / IL3050 时给出的理由。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>JsonSerializer.Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c> 的泛型重载被标注了
+    /// <c>RequiresUnreferencedCode</c> 与 <c>RequiresDynamicCode</c>，因此在 <c>PublishAot</c> /
+    /// <c>PublishTrimmed</c> 的宿主工程里，生成的转换器会带出一串 IL2026 / IL3050 警告。
+    /// </para>
+    /// <para>
+    /// 但这里的 <c>T</c> 永远是<b>生成期就已确定的受支持基元</b>（<c>Guid</c> / <c>int</c> / <c>string</c> / 枚举 …），
+    /// STJ 对它们有内建转换器，解析 <c>JsonTypeInfo</c> 时不需要反射、也不需要运行时代码生成。
+    /// 换言之警告是保守的静态推断，而非真实的裁剪风险，故按惯例精确抑制这两条规则。
+    /// </para>
+    /// <para>
+    /// 之所以不改成直接调用 <c>writer.WriteStringValue</c> 之类的底层 API：那会绕过宿主在
+    /// <c>JsonSerializerOptions</c> 上配置的转换器（典型如 <c>JsonStringEnumConverter</c> 让枚举按字符串读写），
+    /// 属于可观察的行为变更。抑制标注则是零行为变更。
+    /// </para>
+    /// </remarks>
+    private const string AotSuppressionJustification =
+        "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
+
     public int Order { get; } = 1;
 
     public void Generate(
@@ -38,6 +61,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)}}
+                        [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotSuppressionJustification}}")]
+                        [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotSuppressionJustification}}")]
                         public override {{idInfo.Name}} Read(
                             ref global::System.Text.Json.Utf8JsonReader reader, 
                             global::System.Type typeToConvert, 
@@ -46,6 +71,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)}}
+                        [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotSuppressionJustification}}")]
+                        [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotSuppressionJustification}}")]
                         public override void Write(
                             global::System.Text.Json.Utf8JsonWriter writer, 
                             {{idInfo.Name}} value, 
@@ -96,6 +123,25 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                     : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
 
     /// <summary>
+    /// 取读入基元值时用的表达式。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 刻意读<b>非可空</b>的基元类型。写成 <c>Deserialize&lt;int?&gt;</c> 会让 AOT 宿主的
+    /// <c>JsonSerializerContext</c> 不得不额外注册 <c>Nullable&lt;T&gt;</c> —— 用户只为用一个 Id 就得
+    /// 记住这条冷知识，代价与收益完全不成比例。
+    /// </para>
+    /// <para>
+    /// 之所以敢去掉可空形态：JSON 里的 <c>null</c> 已在调用前由 <c>reader.TokenType</c> 判定拦下，
+    /// 此处不可能读到 null。引用类型（<c>string</c>）补 <c>!</c> 抑制 CS8600 —— 同一判定保证了它非空。
+    /// </para>
+    /// </remarks>
+    private static string GetDeserializeExpression(StronglyTypedIdInfo idInfo)
+        => idInfo.IsStringPrimitive
+            ? "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!"
+            : $"global::System.Text.Json.JsonSerializer.Deserialize<{idInfo.PrimitiveIdTypeName}>(ref reader, options)";
+
+    /// <summary>
     /// 取 <c>Read</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
     /// </summary>
     /// <remarks>
@@ -114,24 +160,29 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 
         if (!idInfo.IsObjectJsonShape)
         {
-            builder.Append(" =>").Append('\n');
+            builder.Append('\n');
+            builder.Append("        {").Append('\n');
+            builder.Append("            if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
+            builder.Append("            {").Append('\n');
+            builder.Append("                throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\");").Append('\n');
+            builder.Append("            }").Append('\n');
+            builder.Append('\n');
 
             if (idInfo.HasPrefix)
             {
                 // 有前缀时文本形是字符串，读回一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
-                builder.Append("            global::System.Text.Json.JsonSerializer.Deserialize<string?>(ref reader, options) is { } text").Append('\n');
-                builder.Append("                && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
-                builder.Append("                    ? id").Append('\n');
-                builder.Append("                    : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");");
+                builder.Append("            var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
+                builder.Append('\n');
+                builder.Append("            return text is not null && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
+                builder.Append("                ? id").Append('\n');
+                builder.Append("                : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+                builder.Append("        }");
 
                 return builder.ToString();
             }
 
-            builder.Append("            global::System.Text.Json.JsonSerializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(ref reader, options) switch").Append('\n');
-            builder.Append("            {").Append('\n');
-            builder.Append("                { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
-            builder.Append("                _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
-            builder.Append("            };");
+            builder.Append("            return ").Append(idInfo.Name).Append(".Create(").Append(GetDeserializeExpression(idInfo)).Append(");").Append('\n');
+            builder.Append("        }");
 
             return builder.ToString();
         }
@@ -163,18 +214,21 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.HasPrefix)
         {
-            builder.Append("                    result = global::System.Text.Json.JsonSerializer.Deserialize<string?>(ref reader, options) is { } text").Append('\n');
-            builder.Append("                        && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
-            builder.Append("                            ? id").Append('\n');
-            builder.Append("                            : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+            builder.Append("                    var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
+            builder.Append('\n');
+            builder.Append("                    result = text is not null && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
+            builder.Append("                        ? id").Append('\n');
+            builder.Append("                        : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
         }
         else
         {
-            builder.Append("                    result = global::System.Text.Json.JsonSerializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(ref reader, options) switch").Append('\n');
+            // 与基元形态同理：null 在这里显式拦下，故下面可以读非可空基元。
+            builder.Append("                    if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
             builder.Append("                    {").Append('\n');
-            builder.Append("                        { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
-            builder.Append("                        _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
-            builder.Append("                    };").Append('\n');
+            builder.Append("                        throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\");").Append('\n');
+            builder.Append("                    }").Append('\n');
+            builder.Append('\n');
+            builder.Append("                    result = ").Append(idInfo.Name).Append(".Create(").Append(GetDeserializeExpression(idInfo)).Append(");").Append('\n');
         }
 
         builder.Append("                }").Append('\n');

@@ -83,6 +83,10 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **Runtime reflection helpers** — inspect any type at runtime and get the primitive id behind it.
 - **Native AOT & trimming** — the runtime library is marked AOT-compatible and avoids loading types by
   name or emitting dynamic code, so strongly typed ids work in Native AOT and trimmed applications.
+  Note that `System.Text.Json` disables reflection-based serialization under AOT, so an AOT app must
+  supply a source-generated `JsonSerializerContext`; that is a `System.Text.Json` requirement rather
+  than something specific to this library (see `test/Len.StronglyTypedId.Aot.SmokeTest` for a minimal,
+  CI-verified example).
 - **Zero third-party dependencies** — the package ships only the generator/analyzer assembly plus a
   small runtime library; nothing is added to your application's dependency graph.
 

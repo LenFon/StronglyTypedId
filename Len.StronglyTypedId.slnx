@@ -36,6 +36,7 @@
     <Project Path="src/Len.StronglyTypedId/Len.StronglyTypedId.csproj" />
   </Folder>
   <Folder Name="/test/">
+    <Project Path="test/Len.StronglyTypedId.Aot.SmokeTest/Len.StronglyTypedId.Aot.SmokeTest.csproj" />
     <Project Path="test/Len.StronglyTypedId.Generators.Test/Len.StronglyTypedId.Generators.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Integration.Test/Len.StronglyTypedId.Integration.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Packaging.Test/Len.StronglyTypedId.Packaging.Test.csproj" />

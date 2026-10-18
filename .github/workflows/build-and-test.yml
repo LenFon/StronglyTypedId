@@ -16,6 +16,15 @@ on:
       - "bench/**/*.cs"
       - "bench/**/*.csproj"
       - "bench.props"
+      # pack 校验由本流水线的 pack job 承担，触发面需覆盖其依赖的工程 / 配置 / 工作流变更
+      - "common.props"
+      - "version.props"
+      - "Directory.Packages.props"
+      - "src/Len.StronglyTypedId/CompatibilitySuppressions.xml"
+      - "src/Len.StronglyTypedId/PublicAPI.Shipped.txt"
+      - "src/Len.StronglyTypedId/PublicAPI.Unshipped.txt"
+      - ".github/workflows/build-and-test.yml"
+      - ".github/workflows/publish-nuget.yml"
   pull_request:
     branches:
       - dev
@@ -28,6 +37,14 @@ on:
       - "bench/**/*.cs"
       - "bench/**/*.csproj"
       - "bench.props"
+      - "common.props"
+      - "version.props"
+      - "Directory.Packages.props"
+      - "src/Len.StronglyTypedId/CompatibilitySuppressions.xml"
+      - "src/Len.StronglyTypedId/PublicAPI.Shipped.txt"
+      - "src/Len.StronglyTypedId/PublicAPI.Unshipped.txt"
+      - ".github/workflows/build-and-test.yml"
+      - ".github/workflows/publish-nuget.yml"
   workflow_dispatch:
 
 jobs:
@@ -50,7 +67,15 @@ jobs:
     - name: Build
       run: dotnet build --no-restore
     - name: Test (net8.0 行为校验)
-      run: dotnet test --framework net8.0 --no-build --verbosity normal
+      # Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），
+      # 而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的
+      # 工程会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1 让整步失败
+      # （--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。故与 pack 步骤同理，逐工程调用，
+      # 只跑真正双目标的三个测试工程。
+      run: |
+        dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal
+        dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal
+        dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal
     - name: Restore coverage tool
       run: dotnet tool restore
     - name: Test + coverage (net10.0)
@@ -62,3 +87,100 @@ jobs:
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: "TestResults/coverage.net10.cobertura.xml"
+
+  # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作。本 job 把这个宣称变成可验证的
+  # 证据：真做一次 Native AOT 发布，再运行产物里的冒烟断言（创建 / 解析 / 格式化 / 前缀 / STJ 值
+  # 与属性名）。
+  #
+  # 注意生成的 STJ 转换器内部仍走 JsonSerializer，而 AOT 下反射序列化被禁用 —— 因此宿主必须提供
+  # 源生成的 JsonSerializerContext。这是 STJ 在 AOT 下的标准要求，不是本库的特例；冒烟工程里的
+  # SmokeTestJsonContext 就是最小示例，同时也充当「AOT 用户该怎么配」的活文档。
+  aot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          10.0.x
+    - name: Install AOT toolchain
+      # Native AOT 在 Linux 上需要 clang 与 zlib 开发包
+      run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+    # 不传 --no-restore：ILCompiler 包由 PublishAot 的 targets 在还原阶段引入，
+    # 让它自己按 RID 还原最稳妥。
+    - name: Publish (Native AOT)
+      run: dotnet publish test/Len.StronglyTypedId.Aot.SmokeTest/Len.StronglyTypedId.Aot.SmokeTest.csproj -c Release -r linux-x64 -o artifacts/aot-smoke
+    - name: Run smoke test
+      run: ./artifacts/aot-smoke/Len.StronglyTypedId.Aot.SmokeTest
+
+  # EnablePackageValidation 只在 dotnet pack 阶段真正生效：任何「删成员 / 改签名 / 去掉目标框架 /
+  # 降低程序集版本」都会在此直接报错，而不是等使用者升级后才发现。
+  #
+  # 版本号推导：version.props 里的占位号（1.0.0）必然低于 ApiCompat 基线（1.3.0-preview.5），
+  # 此时 common.props 的跨版本基线不会挂上，pack 退化为包内一致性校验。下面复用发布流水线的
+  # TagToVersion 机制——从最近 tag 推导出下一个版本号写回 version.props（≥ 基线 → 自动挂上基线，
+  # 跨版本比对在 PR 上就能拦截破坏性变更），推导失败则保留占位号、只跑一致性校验。
+  pack:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        # 需要 tag 才能让 TagToVersion 推导出正确的下一个版本号
+        fetch-depth: 0
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
+    - name: Install dotnet tool
+      run: dotnet tool install -g dotnetCampus.TagToVersion
+    - name: Set version from latest tag (fall back to baseline on failure)
+      # CP0021 是「基线抑制」，只有当前 Version ≥ 基线（1.3.0-preview.5）时才会挂上 ApiCompat 基线
+      # 做跨版本比对；占位号 1.0.0 低于基线，抑制会被判为「不必要」而直接 error。
+      # 因此优先用 TagToVersion 从最近 tag 推导下一个版本号（≥ 基线 → 跨版本比对生效）；
+      # 推导失败（无 tag / 分支落后）时兜底为基线号本身（Version == 基线 → 仍挂上基线），
+      # 保证 pack 在任何分支上都能跑跨版本校验，而不是静默退化为包内一致性校验。
+      # 同时把 Assembly 版本号主段（major.minor.0.0）写入环境变量，供 build/pack 透传，
+      # 让 CP0003「程序集版本应等于或高于基线」通过（基线 AssemblyVersion 是 1.3.0.0）。
+      run: |
+        set +e
+        TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+        if [ -n "$TAG" ]; then
+          dotnet TagToVersion -t "$TAG" -f version.props
+        else
+          echo "no tag reachable; using baseline version 1.3.0-preview.5"
+          sed -i 's#<Version>.*</Version>#<Version>1.3.0-preview.5</Version>#' version.props
+        fi
+        # 取 version.props 里的 Version（NuGet 号，如 1.3.0-preview.5 或 1.3.1），
+        # 拆出 major.minor 作为 Assembly 版本号主段。
+        PKG_VERSION=$(grep -oP '(?<=<Version>)[^<]+' version.props | head -n1)
+        MAJOR=$(echo "$PKG_VERSION" | cut -d'.' -f1)
+        MINOR=$(echo "$PKG_VERSION" | cut -d'.' -f2 | cut -d'-' -f1)
+        ASM_VERSION="${MAJOR}.${MINOR}.0.0"
+        echo "PackageVersion=${PKG_VERSION}  AssemblyVersion=${ASM_VERSION}"
+        echo "ASSEMBLY_VERSION=${ASM_VERSION}" >> "$GITHUB_ENV"
+    # 顺序很关键：ApiCompat 的基线包由 PackageDownload 声明（Microsoft.NET.ApiCompat.targets），
+    # 而 PackageValidationBaselineVersion 只在「Version ≥ 基线」时才挂上（见 common.props）。
+    # 若在改写 version.props 之前就 restore，此刻版本还是占位号 1.0.0，基线包既不进还原图、
+    # 也不会落到全局包目录；随后 Build 挂上基线去找
+    # $(NuGetPackageRoot)/len.stronglytypedid/1.3.0-preview.5/…nupkg 会 FileNotFound，
+    # ValidatePackageTask 直接抛 MSB4018（本地因缓存里恰好留着该包，所以不复现）。
+    # 故 restore 必须排在版本改写之后，与 publish-nuget.yml 的顺序保持一致。
+    - name: Restore dependencies
+      run: dotnet restore
+    # EnablePackageValidation 的跨版本比对需要基线包（1.3.0-preview.5）做 CP 校验；
+    # 这里先按 Release 完整 build 再 pack（pack 阶段不再重复 restore）。
+    # -p:AssemblyVersion 透传上面推导出的主段，使 CP0003「程序集版本 ≥ 基线 1.3.0.0」通过。
+    - name: Build (Release)
+      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+    # 只打两个可发布项目：dotnet pack 解决方案会对所有项目跑 pack，test/sample 项目会生成
+    # 垃圾包，且主包多 TFM 的 dll 收集在统一 OutputPath 下会撞 NU5026。逐项目 pack 用各自默认
+    # 输出路径，主包两个 TFM 的 dll 各归其位，可正常成包。pack 同样透传 AssemblyVersion。
+    - name: Pack (Release, with package validation)
+      run: |
+        dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+        dotnet pack ./src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}

@@ -72,7 +72,9 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **Swagger / OpenAPI** —— 在引用 Swashbuckle.AspNetCore 时生成架构映射，同时兼容 Microsoft.OpenApi 1.x 与 2.x。
 - **运行时反射助手** —— 可在运行时判断任意类型是否为强类型 Id，并取回其底层基元类型。
 - **原生 AOT 与裁剪** —— 运行时库标记为 AOT 兼容，且避免按名字加载类型或生成动态代码，因此强类型 Id
-  在 Native AOT 与经过裁剪的应用程序中同样可用。
+  在 Native AOT 与经过裁剪的应用程序中同样可用。需注意：AOT 下 `System.Text.Json` 会禁用反射式序列化，
+  因此 AOT 应用必须提供源生成的 `JsonSerializerContext` —— 这是 `System.Text.Json` 的要求，而非本库的
+  特例（最小示例见 `test/Len.StronglyTypedId.Aot.SmokeTest`，已在 CI 中实际发布并运行）。
 - **零第三方依赖** —— 包内仅包含生成器/分析器程序集，以及一个很小的运行时库，不会往你的依赖图里塞任何东西。
 
 <a id="requirements"></a>
