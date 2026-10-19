@@ -33,13 +33,8 @@ public static class Verify
     }
 
     /// <summary>
-    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但会启用默认被测试基建屏蔽的两条命名风格提示
-    /// （STIA0015 / STIA0016）。
+    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但会启用默认被测试基建屏蔽的两条命名风格提示（STIA0015 / STIA0016）。
     /// </summary>
-    /// <remarks>
-    /// 这两条是 Info 级、无代码修复的风格提示，与「声明是否合法」无关（见 <see cref="ApplyDefaults"/>）。
-    /// 专门验证它们的用例必须走这里，否则诊断会被基建过滤掉，断言「应当有诊断」永远失败。
-    /// </remarks>
     public static Task VerifyAnalyzerWithStyleHintsAsync(string source, params DiagnosticResult[] expected)
     {
         var test = new TestAnalyzer { TestCode = source };
@@ -51,10 +46,6 @@ public static class Verify
     /// <summary>
     /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但额外挂一份 <c>.editorconfig</c>。
     /// </summary>
-    /// <remarks>
-    /// 用于验证默认关闭（<c>IsEnabledByDefault = false</c>）的规则：Roslyn 测试框架会按
-    /// <c>IsEnabledByDefault</c> 过滤诊断，只有 <c>.editorconfig</c> 显式调级后才会产出。
-    /// </remarks>
     public static Task VerifyAnalyzerWithEditorConfigAsync(string source, string editorConfig, params DiagnosticResult[] expected)
     {
         var test = new TestAnalyzer { TestCode = source };
@@ -67,7 +58,6 @@ public static class Verify
     /// <summary>
     /// 与 <see cref="VerifyCodeFixAsync(string, DiagnosticResult, string)"/> 相同，但额外挂一份 <c>.editorconfig</c>。
     /// </summary>
-    /// <remarks>默认关闭的规则必须先经 <c>.editorconfig</c> 启用，代码修复才有诊断可修。</remarks>
     public static Task VerifyCodeFixWithEditorConfigAsync(string source, string editorConfig, DiagnosticResult expected, string fixedSource)
     {
         var test = new TestCodeFix
@@ -106,17 +96,6 @@ public static class Verify
     /// <param name="source">原始源码。</param>
     /// <param name="expected">期望的分析器诊断，顺序需与 Roslyn 的报告顺序一致。</param>
     /// <param name="fixedSource">批处理修复后的源码。</param>
-    /// <remarks>
-    /// <para>
-    /// 逐条修复的期望（<c>FixedCode</c>）与批处理的期望（<c>BatchFixedCode</c>）都设为
-    /// <paramref name="fixedSource"/>：当 <c>FixedCode</c> 缺省时，测试框架会把它当作「与源码相同」，
-    /// 于是逐条修复阶段必然失败。
-    /// </para>
-    /// <para>
-    /// 迭代次数显式给出，不去依赖框架的自动推断：逐条修复每轮只处理一条诊断，因而轮数等于诊断条数；
-    /// 批处理一轮即可收敛。
-    /// </para>
-    /// </remarks>
     public static Task VerifyCodeFixAllAsync(string source, DiagnosticResult[] expected, string fixedSource)
     {
         var test = new TestCodeFix
@@ -138,11 +117,6 @@ public static class Verify
     /// <param name="source">
     /// 源码。可用 <c>$$</c> 标记光标位置；缺省时光标落在第一个 record 声明的标识符上。
     /// </param>
-    /// <remarks>
-    /// 代码重构没有像诊断那样的「期望清单」可供测试框架比对，故直接驱动 provider：解析源码 → 在光标处调用
-    /// <c>ComputeRefactoringsAsync</c> → 收集它注册的 <see cref="CodeAction"/>。断言「不提供重构」这类场景
-    /// 也只能这样表达。
-    /// </remarks>
     public static async Task<IReadOnlyList<CodeAction>> CollectRefactoringsAsync(string source)
     {
         using var workspace = new AdhocWorkspace();
@@ -179,10 +153,6 @@ public static class Verify
     /// <summary>
     /// 把源码解析成「可跑重构的 Document」，并算出光标位置。
     /// </summary>
-    /// <remarks>
-    /// 引用只给 <c>System.Private.CoreLib</c> 与被测程序集：重构的门禁只需要解析出基元类型符号
-    /// （<c>Guid</c> / <c>int</c> / <c>string</c> 都在 CoreLib），不需要完整的引用程序集集。
-    /// </remarks>
     private static (Document Document, TextSpan Span) CreateRefactoringDocument(AdhocWorkspace workspace, string source)
     {
         const string Marker = "$$";
@@ -209,15 +179,8 @@ public static class Verify
     }
 
     /// <summary>
-    /// 分析器测试与 CodeFix 测试共用的默认配置：
-    /// 关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
+    /// 分析器测试与 CodeFix 测试共用的默认配置：关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
     /// </summary>
-    /// <remarks>
-    /// 这里必须保持 <see cref="CompilerDiagnostics.None"/>：分析器用例的源码片段普遍不含
-    /// <c>using System;</c>（<c>Guid</c> 是错误类型符号）；而 CodeFix 用例在 net10.0 目标下还会因为
-    /// 被测程序集是 net10 构建、引用程序集却固定在 net8.0 而报 CS1705。修复产物的正确性由
-    /// <c>FixedCode</c> 的精确文本比对把守。
-    /// </remarks>
     private static void ApplyDefaults(AnalyzerTest<DefaultVerifier> test)
     {
         test.CompilerDiagnostics = CompilerDiagnostics.None;

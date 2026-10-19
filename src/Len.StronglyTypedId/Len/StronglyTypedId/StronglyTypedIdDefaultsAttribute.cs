@@ -1,13 +1,8 @@
-namespace Len.StronglyTypedId;
+﻿namespace Len.StronglyTypedId;
 
 /// <summary>
 /// 在程序集级别为 <see cref="StronglyTypedIdAttribute"/> 提供默认值，消掉逐类型的重复声明。
 /// </summary>
-/// <remarks>
-/// <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> applies to every strongly typed id declared
-/// in this assembly, unless a type overrides it explicitly. <see cref="Normalizer"/> behaves the same way and is
-/// resolved independently of <see cref="Validator"/>.
-/// </remarks>
 [AttributeUsage(AttributeTargets.Assembly, Inherited = false, AllowMultiple = false)]
 public class StronglyTypedIdDefaultsAttribute : Attribute
 {

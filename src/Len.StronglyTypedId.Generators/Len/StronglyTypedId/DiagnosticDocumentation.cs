@@ -3,17 +3,11 @@
 /// <summary>
 /// 诊断的文档补充信息：README 诊断表里「代码修复」一列。
 /// </summary>
-/// <remarks>
-/// 规则 ID、级别与文案都能从 <see cref="Descriptors"/> 读出，唯独「代码修复」一列无法反射 ——
-/// 修复动作写在 <c>StronglyTypedIdCodeFixProvider</c> 的 switch 里。故单独成表，并由
-/// <c>ReadmeDocumentationTests</c> 断言与描述符一一对应。
-/// </remarks>
 internal static class DiagnosticDocumentation
 {
     /// <summary>
     /// 全部诊断的文档条目，按规则 ID 升序。
     /// </summary>
-    /// <remarks><see cref="DocText.Empty"/> 表示无代码修复（README 渲染为 <c>—</c>）；有修复的集合须与 <c>FixableDiagnosticIds</c> 相等。</remarks>
     internal static readonly ImmutableArray<DiagnosticDocEntry> Entries = ImmutableArray.Create(
         new DiagnosticDocEntry(Descriptors.TypeMustBeRecordId, new DocText("Convert to `record`", "转为 `record`")),
         new DiagnosticDocEntry(Descriptors.TypeMustBePartialId, new DocText("Add `partial`", "补上 `partial`")),
@@ -41,10 +35,14 @@ internal static class DiagnosticDocumentation
     /// </summary>
     internal sealed class DiagnosticDocEntry(string ruleId, DocText fix)
     {
-        /// <summary>规则 ID（<c>STIA0000</c> 形式）。</summary>
+        /// <summary>
+        /// 规则 ID（<c>STIA0000</c> 形式）。
+        /// </summary>
         public string RuleId { get; } = ruleId;
 
-        /// <summary>「代码修复」列的文案；<see cref="DocText.Empty"/> 表示无修复。</summary>
+        /// <summary>
+        /// 「代码修复」列的文案；<see cref="DocText.Empty"/> 表示无修复。
+        /// </summary>
         public DocText Fix { get; } = fix;
     }
 }

@@ -5,7 +5,6 @@ internal static class MetadataReferenceExtensions
     /// <summary>
     /// 枚举引用所代表的全部模块「身份」（名称 + 版本 + 元数据引用），不解析程序集符号。
     /// </summary>
-    /// <remarks>不接触 <see cref="Compilation"/>，可脱离编译求值并被增量管道缓存；符号解析见 <see cref="ModuleIdentity.ResolveAssembly"/>。</remarks>
     public static IEnumerable<ModuleIdentity> GetModuleIdentities(this MetadataReference metadataReference)
     {
         // 项目引用（CompilationReference）：模块名与版本取自被引用编译的程序集标识。
@@ -53,7 +52,6 @@ internal static class MetadataReferenceExtensions
     /// <summary>
     /// 枚举引用所代表的全部模块，并解析出各自的程序集符号。
     /// </summary>
-    /// <remarks>由 <see cref="GetModuleIdentities"/> 与 <see cref="ModuleIdentity.ResolveAssembly"/> 组合而成，省去调用方两步拼接。</remarks>
     public static IEnumerable<ModuleInfo> GetModules(this MetadataReference metadataReference, Compilation compilation)
         => metadataReference.GetModuleIdentities().Select(identity => identity.ResolveAssembly(compilation));
 }

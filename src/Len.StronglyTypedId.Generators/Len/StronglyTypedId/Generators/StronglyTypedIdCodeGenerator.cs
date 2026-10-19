@@ -3,22 +3,18 @@
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// 生成强类型 Id 的核心实现：<c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>、解析与格式化接口、
-/// 比较接口以及比较运算符。
+/// 生成强类型 Id 的核心实现：<c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>、解析与格式化接口、比较接口以及比较运算符。
 /// </summary>
-/// <remarks>基元已有的能力（排序、格式化、零分配 span 解析）透出到 Id 上；格式化接口按基元的符号能力条件生成。</remarks>
 internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 {
     /// <summary>
     /// <c>TryCreate</c> 的 <c>out</c> 形参前缀：失败时允许为 <see langword="null"/>。
     /// </summary>
-    /// <remarks>值类型上无作用；引用类型上让调用方在返回 <see langword="false"/> 时免于可空性告警。</remarks>
     private const string MaybeNullOutAttribute = "[global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out ";
 
     /// <summary>
     /// <c>TryCreate</c> 的 XML 文档注释。
     /// </summary>
-    /// <remarks><c>TryCreate</c> 不对应任何接口成员，写 <c>inheritdoc</c> 只会得到空注释。</remarks>
     private static readonly string[] _tryCreateDocLines =
     [
         "<summary>Attempts to create a new strongly typed id that wraps the specified primitive value.</summary>",
@@ -32,31 +28,21 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// <c>TryParse</c> 方法体内语句的缩进（产物中为 8 空格）。
     /// </summary>
-    /// <remarks>原始字符串字面量的裁剪规则不会重新缩进洞值内部的换行，故缩进只能写死。</remarks>
     private static readonly string _tryParseBodyIndent = new(' ', 8);
 
     /// <summary>
     /// 类型成员体的缩进（产物中为 4 空格）。
     /// </summary>
-    /// <remarks>仅用于 <c>Create</c>：它是模板里唯一需要按条件切换「表达式体 / 块体」的成员。</remarks>
     private static readonly string _memberBodyIndent = new(' ', 4);
 
     /// <summary>
     /// 归一化结果的局部变量名。
     /// </summary>
-    /// <remarks>
-    /// 归一化后的值要同时喂给校验与构造，重复调用归一化方法既浪费又可能不幂等，故先落到局部变量。
-    /// 名字取小写，避免与使用者的方法名（PascalCase 惯例）相撞。
-    /// </remarks>
     private const string NormalizedLocal = "normalized";
 
     /// <summary>
     /// 解析时传给基元的 <c>IFormatProvider</c> 实参：调用方未指定时回退到不变文化。
     /// </summary>
-    /// <remarks>
-    /// 有意偏离 <c>IParsable</c>「null 即当前文化」的约定：Id 的文本是规范形，恒按不变文化读写，
-    /// 否则 de-DE 下 <c>Parse(id.ToString())</c> 会把 <c>"1.5"</c> 读成 <c>15</c>。显式传 provider 仍按调用方文化。
-    /// </remarks>
     private const string ProviderOrDefault = "provider ?? global::System.Globalization.CultureInfo.InvariantCulture";
 
     public int Order { get; } = 0;
@@ -180,10 +166,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 追加到基类型列表末尾的「可选接口」，一项都不具备时返回空串。
     /// </summary>
-    /// <remarks>
-    /// 片段拼在最后一个必选接口的行尾，两种形态都不破坏模板排版。可选接口一律「基元本就具备才透出」：
-    /// <c>Guid</c> 的 <c>IUtf8SpanParsable</c> 是 .NET 10 才有的，net8.0 消费者下透出会直接编译失败。
-    /// </remarks>
     private static string GetOptionalInterfaces(StronglyTypedIdInfo idInfo)
     {
         var interfaces = new List<string>(4);
@@ -215,10 +197,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>ToString()</c> 的表达式体。
     /// </summary>
-    /// <remarks>
-    /// 字符串形式是 Id 的规范形，序列化、字典键、持久化与日志都按不变文化读写；跟随当前文化会让
-    /// <c>Parse(id.ToString())</c> 在德语等区域下往返失真。需要特定文化时用生成的 <c>ToString(string?, IFormatProvider?)</c>。
-    /// </remarks>
     private static string GetToStringBody(StronglyTypedIdInfo idInfo)
     {
         // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现（CS1501），
@@ -239,11 +217,9 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <param name="kind">基元的直呼形态，见 <see cref="TryFormatKind"/>。</param>
     /// <param name="isUtf8">目标是 UTF-8 缓冲区（<see cref="TryFormatKind.Interface"/> 时决定强转哪个接口）。</param>
     /// <param name="destination">目标缓冲区表达式，可含 <c>.Slice(n)</c>。</param>
-    /// <param name="writtenArgument"><c>out</c> 实参写法：<c>charsWritten</c> / <c>bytesWritten</c> / <c>var written</c>。</param>
-    /// <remarks>
-    /// 值类型基元经接口调用会装箱一次；基元只要暴露公开的实例 <c>TryFormat</c> 重载就按具体类型直呼。
-    /// <c>Guid</c> 只公开 3 参重载（带 provider 的是显式接口实现），其格式化本就与文化无关。
-    /// </remarks>
+    /// <param name="writtenArgument">
+    /// <c>out</c> 实参写法：<c>charsWritten</c> / <c>bytesWritten</c> / <c>var written</c>。
+    /// </param>
     private static string GetTryFormatCall(TryFormatKind kind, bool isUtf8, string destination, string writtenArgument)
         => kind switch
         {
@@ -256,13 +232,9 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
     /// <summary>
     /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 无条件附加，
-    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> 仅在 <see cref="StronglyTypedIdInfo.HasTypeConverter"/>
-    /// 开启时附加。
+    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> 仅在 
+    /// <see cref="StronglyTypedIdInfo.HasTypeConverter"/> 开启时附加。
     /// </summary>
-    /// <remarks>
-    /// <c>DebuggerDisplay</c> 零成本且有价值，无条件附加；<c>TypeConverter</c> 指向生成的嵌套转换器，
-    /// 而 <see cref="StronglyTypedIdInfo.FullyQualifiedNamespace"/> 已带 <c>global::</c>，不能再重复添加。
-    /// </remarks>
     private static string GetTypeAttributes(StronglyTypedIdInfo idInfo)
     {
         var builder = new StringBuilder();
@@ -278,13 +250,9 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     }
 
     /// <summary>
-    /// 追加嵌套的 <see cref="System.ComponentModel.TypeConverter"/> 实现，供 <c>TypeDescriptor</c> 体系
-    /// （<c>XmlSerializer</c>、<c>IConfiguration</c> 绑定、XAML / DataGrid）在字符串与强类型 Id 间往返。
+    /// 追加嵌套的 <see cref="System.ComponentModel.TypeConverter"/> 实现，供 <c>TypeDescriptor</c>
+    /// 体系（<c>XmlSerializer</c>、<c>IConfiguration</c> 绑定、XAML / DataGrid）在字符串与强类型 Id 间往返。
     /// </summary>
-    /// <remarks>
-    /// 只重写字符串往返所需的最小成员：<c>CanConvertFrom(string)</c>、<c>ConvertFrom</c>、<c>ConvertTo(string)</c>。
-    /// 转换器嵌套在类型内部，便于 <c>[TypeConverter(typeof(…))]</c> 用简单名引用，也对 <c>Activator.CreateInstance</c> 可达。
-    /// </remarks>
     private static void AppendTypeConverter(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
         builder.Append('\n').Append('\n');
@@ -306,15 +274,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取完整的 <c>Create</c> 成员（含签名）。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 未配置归一化时保持表达式体，产物与加入该能力之前逐字符一致。
-    /// </para>
-    /// <para>
-    /// 配置了归一化就必须改成块体：归一化后的值要同时喂给校验与构造，表达式体只能靠重复调用归一化方法来表达，
-    /// 而归一化方法并不保证幂等（例如「截断到 8 个字符」重复执行虽无害，「追加前缀」就会翻倍）。
-    /// </para>
-    /// </remarks>
     private static string GetCreateMember(StronglyTypedIdInfo idInfo)
     {
         var signature = $"public static {idInfo.Name} Create({idInfo.PrimitiveIdTypeName} value)";
@@ -350,7 +309,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>Create</c> 的表达式体。
     /// </summary>
-    /// <remarks>有验证器时用条件表达式内联校验，两种形态共用同一模板，无验证器时产物逐字符不变。</remarks>
     private static string GetCreateExpression(StronglyTypedIdInfo idInfo)
     {
         var wrappedValue = WrapWithIntern(idInfo, "value");
@@ -369,11 +327,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>TryParse</c> 的解析条件。
     /// </summary>
-    /// <remarks>
-    /// 有验证器时把校验并入条件：<c>TryParse</c> 的契约是「非法即返回 false」，不能借抛异常实现。
-    /// 但配置了归一化时校验不能并入 —— 校验必须看到归一化之后的值，只能挪进函数体（见
-    /// <see cref="GetTryParseSuccessBlock"/>）。
-    /// </remarks>
     private static string GetTryParseCondition(StronglyTypedIdInfo idInfo, bool isSpan)
     {
         var condition = GetTryParseConditionCore(idInfo, isSpan);
@@ -386,15 +339,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>TryParse</c> 体内「解析成功」分支的完整文本（含两侧大括号）。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 未配置归一化时产物与加入该能力之前逐字符一致。
-    /// </para>
-    /// <para>
-    /// 配置归一化后顺序固定为「归一化 → 校验 → 构造」。校验失败用「赋默认值 + 返回 false」提前退出，
-    /// 而不是再套一层 <c>if</c>：后者要把 <c>return true;</c> 之后的大括号也纳入拼接，模板洞会碎成两段。
-    /// </para>
-    /// </remarks>
     private static string GetTryParseSuccessBlock(StronglyTypedIdInfo idInfo, bool isSpan)
     {
         var value = idInfo.NormalizerName is null
@@ -454,7 +398,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取传给构造函数的基元值表达式。
     /// </summary>
-    /// <remarks>其余基元的解析结果落在 <c>out var val</c> 上；字符串基元直接取参数本身；char 取下标的唯一字符。</remarks>
     private static string GetTryParseValue(StronglyTypedIdInfo idInfo, bool isSpan)
         => idInfo.IsCharPrimitive
             ? "value[0]"
@@ -465,7 +408,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>TryParse</c> 体中「前缀处理」之后那一行 <c>if</c> 之前的完整文本（含该 <c>if</c> 行）。
     /// </summary>
-    /// <remarks>连 <c>if</c> 行一起返回：洞值内的换行不会被重新缩进，单独放一行会在无前缀时留下空行。</remarks>
     private static string GetTryParseHead(StronglyTypedIdInfo idInfo, string condition, PrefixTextKind kind)
     {
         var ifStatement = _tryParseBodyIndent + $"if ({condition})";
@@ -484,7 +426,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取前缀处理语句的行（不含缩进）；无前缀时返回空数组。
     /// </summary>
-    /// <remarks>宽松读入下前缀可选，严格读入下必须存在；两种形态都直接对 <c>value</c> / <c>utf8Text</c> 重新赋值。</remarks>
     private static string[] GetPrefixGuardLines(StronglyTypedIdInfo idInfo, PrefixTextKind kind)
     {
         if (!idInfo.HasPrefix)
@@ -533,7 +474,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 把字符串渲染成 C# 字符串字面量（含两侧引号并按需转义）。
     /// </summary>
-    /// <remarks>用 Roslyn 的字面量格式化而非手工加引号，前缀含引号 / 反斜杠时同样合法；两个 <c>SymbolDisplay</c> 类型有歧义，故全限定。</remarks>
     private static string Literal(string value)
         => Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(value, quote: true);
 
@@ -542,37 +482,39 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </summary>
     private enum PrefixTextKind
     {
-        /// <summary><c>string?</c> 形参。</summary>
+        /// <summary>
+        /// <c>string?</c> 形参。
+        /// </summary>
         String,
 
-        /// <summary><c>ReadOnlySpan&lt;char&gt;</c> 形参。</summary>
+        /// <summary>
+        /// <c>ReadOnlySpan&lt;char&gt;</c> 形参。
+        /// </summary>
         Span,
 
-        /// <summary><c>ReadOnlySpan&lt;byte&gt;</c> 形参。</summary>
+        /// <summary>
+        /// <c>ReadOnlySpan&lt;byte&gt;</c> 形参。
+        /// </summary>
         Utf8,
     }
 
     /// <summary>
     /// 取 <c>CompareTo</c> 的形参。
     /// </summary>
-    /// <remarks><c>IComparable&lt;TSelf&gt;</c> 的 <c>T? other</c> 对值类型即 <c>T</c>，故两种形态签名不同，写错会 CS8767。</remarks>
     private static string GetCompareToParameter(StronglyTypedIdInfo idInfo)
         => idInfo.TypeKindSuffix is null ? $"{idInfo.Name}? other" : $"{idInfo.Name} other";
 
     /// <summary>
     /// 取 <c>CompareTo</c> 的表达式体。
     /// </summary>
-    /// <remarks>引用类型的 <see langword="null"/> 排在末尾，与 <c>Comparer&lt;T&gt;.Default</c> 一致。</remarks>
     private static string GetCompareToBody(StronglyTypedIdInfo idInfo)
         => idInfo.TypeKindSuffix is null
             ? "other is null ? 1 : Value.CompareTo(other.Value)"
             : "Value.CompareTo(other.Value)";
 
     /// <summary>
-    /// 生成追加在模板末尾的成员：非抛异常的工厂 <c>TryCreate</c>，以及按基元能力条件生成的各种格式化与
-    /// UTF-8 解析成员。
+    /// 生成追加在模板末尾的成员：非抛异常的工厂 <c>TryCreate</c>，以及按基元能力条件生成的各种格式化与 UTF-8 解析成员。
     /// </summary>
-    /// <remarks>模板是单个原始字符串字面量，条件片段无法在中段插入，故整体追加在类型末尾。</remarks>
     private static string GetAdditionalMembers(StronglyTypedIdInfo idInfo, string version)
     {
         var members = new StringBuilder();
@@ -728,10 +670,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 追加 <c>TryCreate</c>：<c>Create</c> 的非抛异常版本。
     /// </summary>
-    /// <remarks>
-    /// 未指定验证器时不能照 <c>TryParse</c> 写成 <c>if (true) { … }</c>，否则后续语句不可达（CS0162）。
-    /// 归一化与校验的顺序和 <c>Create</c> 保持一致：先归一化，再校验，最后构造。
-    /// </remarks>
     private static void AppendTryCreateMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
         var signature = $"public static bool TryCreate({idInfo.PrimitiveIdTypeName} value, {MaybeNullOutAttribute}{idInfo.Name} result)";
@@ -764,7 +702,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 为 string 基元追加驻留缓存与 <c>Intern</c> 辅助方法：相等字符串值共享同一实例，减少重复 Id 的内存占用。
     /// </summary>
-    /// <remarks>用每类型独立的 <c>ConcurrentDictionary</c> 而非 <see cref="string.Intern"/>：后者永不回收，对无界取值是内存泄漏。</remarks>
     private static void AppendStringInternMembers(StringBuilder builder, string version)
     {
         AppendMember(
@@ -786,7 +723,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 追加 <c>Deconstruct</c>：让用户以 <c>(var value) = id;</c> 解构出基元值。
     /// </summary>
-    /// <remarks>单参数解构在 C# 里合法（<c>var (v) = id;</c>、<c>id is (var v)</c>），且对所有 Id 一致成立。</remarks>
     private static void AppendDeconstructMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
         AppendMember(
@@ -800,7 +736,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 追加 UTF-8 的 <c>Parse</c> / <c>TryParse</c> 重载。
     /// </summary>
-    /// <remarks>直接写 <c>PrimitiveIdTypeName.TryParse</c>：基元下该重载唯一，不装箱，也绕开显式接口实现。验证器语义与字符串路径一致。</remarks>
     private static void AppendUtf8ParseMembers(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
         // 经接口名调用静态抽象成员会 CS8926，按具体基元类型调用则合法；该重载在基元下唯一，不会歧义。

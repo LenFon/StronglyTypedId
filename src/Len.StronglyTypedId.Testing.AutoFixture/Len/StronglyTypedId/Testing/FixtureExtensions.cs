@@ -1,4 +1,4 @@
-using AutoFixture;
+﻿using AutoFixture;
 
 namespace Len.StronglyTypedId.Testing;
 
@@ -16,7 +16,9 @@ public static class FixtureExtensions
     /// the created ids reproducible.
     /// </param>
     /// <returns>The same fixture, so calls can be chained.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="fixture"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="fixture"/> is <see langword="null"/>.
+    /// </exception>
     public static IFixture WithStronglyTypedIds(this IFixture fixture, AnyIdGenerator? generator = null)
     {
         ArgumentNullException.ThrowIfNull(fixture);

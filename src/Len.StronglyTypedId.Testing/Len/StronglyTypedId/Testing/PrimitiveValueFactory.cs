@@ -1,15 +1,10 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
 /// Produces plausible values for every primitive type the generator supports.
 /// </summary>
-/// <remarks>
-/// Values are deliberately "ordinary": finite floats, non-empty strings, dates inside 1970–2100.
-/// A test fixture that hands out <see cref="double.NaN"/> or <see cref="DateTime.MaxValue"/> mostly
-/// produces failures unrelated to the code under test.
-/// </remarks>
 internal sealed class PrimitiveValueFactory(Random random, int stringLength, Func<Type, object?>? customFactory)
 {
     private const string Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -23,7 +18,9 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
     /// </summary>
     /// <param name="type">The primitive type to produce a value for.</param>
     /// <returns>A value assignable to <paramref name="type"/>.</returns>
-    /// <exception cref="NotSupportedException"><paramref name="type"/> is not a supported primitive.</exception>
+    /// <exception cref="NotSupportedException">
+    /// <paramref name="type"/> is not a supported primitive.
+    /// </exception>
     public object? Create(Type type)
     {
         if (customFactory?.Invoke(type) is { } customValue)

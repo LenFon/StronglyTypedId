@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace Len.StronglyTypedId.Testing;
@@ -6,18 +6,6 @@ namespace Len.StronglyTypedId.Testing;
 /// <summary>
 /// Creates strongly typed ids with plausible primitive values, for use in tests.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The generator discovers the wrapped primitive from the implemented
-/// <see cref="IStronglyTypedId{TSelf, TPrimitiveId}"/> interface, so it works for ids declared in any
-/// assembly — including ones generated after this package was compiled.
-/// </para>
-/// <para>
-/// Instances are thread-safe: the underlying <see cref="Random"/> is guarded by a lock, and registrations
-/// live in a concurrent dictionary. Sharing one instance across a parallel test run therefore yields a
-/// well-defined (though not deterministic) sequence.
-/// </para>
-/// </remarks>
 public sealed class AnyIdGenerator
 {
     private static readonly ConcurrentDictionary<Type, Func<AnyIdGenerator, object>> _factories = new();
@@ -47,7 +35,9 @@ public sealed class AnyIdGenerator
     /// Initializes a new instance with the specified options.
     /// </summary>
     /// <param name="options">The options controlling seeding, string length and value generation.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="AnyIdOptions.StringLength"/> or <see cref="AnyIdOptions.MaxAttempts"/> is less than 1.
     /// </exception>
@@ -100,11 +90,10 @@ public sealed class AnyIdGenerator
     /// </summary>
     /// <param name="idType">A type implementing <see cref="IStronglyTypedId{TSelf, TPrimitiveId}"/>.</param>
     /// <returns>A new id wrapping a generated primitive value.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="idType"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="idType"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentException"><paramref name="idType"/> is not a strongly typed id.</exception>
-    /// <remarks>
-    /// The non-generic entry point exists for reflection-driven consumers such as AutoFixture specimen builders.
-    /// </remarks>
     public object Create(Type idType)
     {
         ArgumentNullException.ThrowIfNull(idType);
@@ -118,12 +107,12 @@ public sealed class AnyIdGenerator
     /// Registers an explicit factory for <typeparamref name="TId"/>, overriding value generation.
     /// </summary>
     /// <typeparam name="TId">The strongly typed id type.</typeparam>
-    /// <param name="factory">The factory invoked on every subsequent request for <typeparamref name="TId"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// This is the escape hatch for ids whose validator is too strict for random values — for example one that
-    /// only accepts ids issued by a sequence generator.
-    /// </remarks>
+    /// <param name="factory">
+    /// The factory invoked on every subsequent request for <typeparamref name="TId"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="factory"/> is <see langword="null"/>.
+    /// </exception>
     public void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
     {
@@ -153,11 +142,6 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// Generates a value and wraps it, retrying while the id's validator rejects it.
     /// </summary>
-    /// <remarks>
-    /// Only <see cref="ArgumentException"/> is retried: that is exactly what the generated <c>Create</c>
-    /// throws when a validator returns <see langword="false"/>. Anything else (a broken validator, a
-    /// mismatched primitive) is a real defect and must not be masked by retries.
-    /// </remarks>
     private object CreateCore<TId, TPrimitive>()
         where TId : IStronglyTypedId<TId, TPrimitive>
         where TPrimitive : notnull, IComparable

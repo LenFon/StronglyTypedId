@@ -1,12 +1,8 @@
-namespace Len.StronglyTypedId;
+﻿namespace Len.StronglyTypedId;
 
 /// <summary>
 /// 指定强类型 Id 读回带前缀的文本时采用的策略。
 /// </summary>
-/// <remarks>
-/// Only meaningful when <see cref="StronglyTypedIdAttribute.Prefix"/> is set. <see cref="Lenient"/> keeps reading
-/// backward compatible; <see cref="Strict"/> makes <c>ToString</c> and <c>Parse</c> a bijection.
-/// </remarks>
 public enum PrefixReadMode
 {
     /// <summary>

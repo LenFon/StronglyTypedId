@@ -27,8 +27,13 @@ public static class StronglyTypedIdExtensions
     /// Attempts to get the primitive type wrapped by the specified strongly typed id.
     /// </summary>
     /// <param name="type">The type to inspect.</param>
-    /// <param name="primitiveIdType">The wrapped primitive type when this method returns <see langword="true"/>.</param>
-    /// <returns><see langword="true"/> when <paramref name="type"/> is a strongly typed id; otherwise, <see langword="false"/>.</returns>
+    /// <param name="primitiveIdType">
+    /// The wrapped primitive type when this method returns <see langword="true"/>.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="type"/> is a strongly typed id; otherwise,
+    /// <see langword="false"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
     public static bool TryGetPrimitiveIdType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type, [NotNullWhen(true)] out Type? primitiveIdType)
     {

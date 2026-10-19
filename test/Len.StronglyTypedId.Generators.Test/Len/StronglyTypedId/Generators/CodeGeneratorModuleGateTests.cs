@@ -11,23 +11,6 @@ namespace Len.StronglyTypedId.Generators;
 /// <summary>
 /// 生成器「模块版本闸门」的单元测试：三类生成器各按一个被引用程序集的主版本号决定是否启用。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 闸门分别是 <c>Microsoft.EntityFrameworkCore</c> 主版本 ≥ 7（<c>EfCoreCodeGenerator</c>）、
-/// <c>Swashbuckle.AspNetCore.SwaggerGen</c> 主版本 ≥ 6（<c>SwaggerCodeGenerator</c>）、
-/// <c>Newtonsoft.Json</c> 主版本 ≥ 13（<c>GetCodeGenerators</c> 的模块匹配项）。
-/// </para>
-/// <para>
-/// 既有用例只覆盖了「没有引用该程序集」与「引用的是满足闸门的真实版本」两种情形；
-/// 「引用了、但版本低于阈值」这条最易写错（例如把 <c>≥13</c> 写成 <c>≥12</c>）的分支此前无人把守。
-/// 低于阈值的版本无法靠测试宿主的真实引用构造，故通过
-/// <see cref="SyntheticAssembly"/> 注入只有名称与版本、没有真实 API 的合成程序集。
-/// </para>
-/// <para>
-/// 每条闸门都成对给出正/反用例：反向用例的「不生成」只有在正向用例「生成」成立时才说明是闸门生效，
-/// 否则可能只是示例源码根本没走到对应生成器（例如缺少 <c>ConfigureConventions</c> 语法）。
-/// </para>
-/// </remarks>
 public class CodeGeneratorModuleGateTests
 {
     #region EF Core：Microsoft.EntityFrameworkCore 主版本 >= 7
@@ -105,8 +88,8 @@ public class CodeGeneratorModuleGateTests
     }
 
     /// <summary>
-    /// Newtonsoft.Json 12.x 仍被广泛使用，但其 <c>JsonConverter&lt;T&gt;</c> 与 13.x 存在差异，
-    /// 生成器据此只在 13+ 产出转换器。阈值若被误写成 12，本用例即失败。
+    /// Newtonsoft.Json 12.x 仍被广泛使用，但其 <c>JsonConverter&lt;T&gt;</c> 与 13.x 存在差异，生成器据此只在 13+ 产出转换器。阈值若被误写成
+    /// 12，本用例即失败。
     /// </summary>
     [Fact]
     public void NewtonsoftJson_Should_NotGenerate_WhenMajorVersionIsTwelve()
@@ -261,8 +244,8 @@ public class CodeGeneratorModuleGateTests
     #region System.Text.Json / Newtonsoft.Json 全局注册入口
 
     /// <summary>
-    /// STJ 侧此前只有逐 Id 的 <c>[JsonConverter]</c>，没有与 EF / Swagger / Dapper / MVC / 内置 OpenAPI
-    /// 对称的 <c>ApplyTo</c>。本用例锁住聚合入口的存在与内容：注册的必须是各 Id 内嵌的转换器实例。
+    /// STJ 侧此前只有逐 Id 的 <c>[JsonConverter]</c>，没有与 EF / Swagger / Dapper / MVC / 内置 OpenAPI 对称的
+    /// <c>ApplyTo</c>。本用例锁住聚合入口的存在与内容：注册的必须是各 Id 内嵌的转换器实例。
     /// </summary>
     [Fact]
     public void SystemTextJsonRegistration_Should_GenerateApplyTo()
@@ -278,8 +261,8 @@ public class CodeGeneratorModuleGateTests
     }
 
     /// <summary>
-    /// Newtonsoft 侧的入口沿用 <c>sample1</c> 里曾被注释掉的 <c>AddStronglyTypedId()</c> 形态：
-    /// <c>JsonSerializerSettings</c> 上的扩展方法。
+    /// Newtonsoft 侧的入口沿用 <c>sample1</c> 里曾被注释掉的 <c>AddStronglyTypedId()</c> 形态： <c>JsonSerializerSettings</c>
+    /// 上的扩展方法。
     /// </summary>
     [Fact]
     public void NewtonsoftJsonRegistration_Should_GenerateExtensionMethod()
@@ -297,9 +280,8 @@ public class CodeGeneratorModuleGateTests
     }
 
     /// <summary>
-    /// 引用程序集里的 Id 若没有内嵌 <c>SystemTextJsonConverter</c>（声明它的程序集没引用 System.Text.Json），
-    /// 注册入口必须跳过它。否则生成 <c>new X.SystemTextJsonConverter()</c> 会 CS0426 —— 而这条编译错误
-    /// 出现在<b>消费者</b>的编译里，库作者完全看不到。
+    /// 引用程序集里的 Id 若没有内嵌 <c>SystemTextJsonConverter</c>（声明它的程序集没引用 System.Text.Json），注册入口必须跳过它。否则生成
+    /// <c>new X.SystemTextJsonConverter()</c> 会 CS0426 ——而这条编译错误出现在<b>消费者</b>的编译里，库作者完全看不到。
     /// </summary>
     [Fact]
     public void SystemTextJsonRegistration_Should_Skip_WhenReferencedIdHasNoConverter()
@@ -381,8 +363,7 @@ public class CodeGeneratorModuleGateTests
         """;
 
     /// <summary>
-    /// 一个「已由生成器补齐接口实现、但没有内嵌任何 JSON 转换器」的强类型 Id，
-    /// 等价于「声明它的程序集既没引用 System.Text.Json 也没引用 Newtonsoft.Json」的产物。
+    /// 一个「已由生成器补齐接口实现、但没有内嵌任何 JSON 转换器」的强类型 Id，等价于「声明它的程序集既没引用 System.Text.Json 也没引用 Newtonsoft.Json」的产物。
     /// </summary>
     private const string ReferencedIdWithoutConvertersSource = """
         namespace Already.Generated;
@@ -413,8 +394,7 @@ public class CodeGeneratorModuleGateTests
         """;
 
     /// <summary>
-    /// 示例源码必须出现 <c>protected override void ConfigureConventions(…)</c> 语法，
-    /// 否则 EF Core 生成器根本不会被选入，反向用例将失去判别力。
+    /// 示例源码必须出现 <c>protected override void ConfigureConventions(…)</c> 语法，否则 EF Core 生成器根本不会被选入，反向用例将失去判别力。
     /// </summary>
     private const string DbContextSource = """
         using System;
@@ -431,9 +411,8 @@ public class CodeGeneratorModuleGateTests
         """;
 
     /// <summary>
-    /// 测试宿主 AppDomain 里必然加载了这些包的真实版本（且都是满足闸门的版本）。
-    /// 它们必须排除在默认引用之外，只由用例通过 <see cref="SyntheticAssembly"/> 按需注入指定版本，
-    /// 否则同名程序集出现两份引用，闸门判定的将是真实版本而非用例指定的版本。
+    /// 测试宿主 AppDomain 里必然加载了这些包的真实版本（且都是满足闸门的版本）。它们必须排除在默认引用之外，只由用例通过 <see cref="SyntheticAssembly"/>
+    /// 按需注入指定版本，否则同名程序集出现两份引用，闸门判定的将是真实版本而非用例指定的版本。
     /// </summary>
     private static readonly string[] _versionGatedAssemblies =
     [
@@ -470,11 +449,6 @@ public class CodeGeneratorModuleGateTests
     /// <summary>
     /// 把一个源码片段编译成「被引用程序集」的引用（<see cref="CompilationReference"/>）。
     /// </summary>
-    /// <remarks>
-    /// 程序集名必须与被测编译不同，否则两份同名程序集同时出现在引用集里会 CS1704。
-    /// 走 <see cref="CompilationReference"/> 而非 emit 到磁盘，是为了让其中的类型符号带着
-    /// 完整的接口实现信息 —— 生成器要靠「是否实现 <c>IStronglyTypedId</c>」区分「已生成」与「本次新声明」。
-    /// </remarks>
     private static CompilationReference CreateReferencedAssembly(string assemblyName, string sourceCode)
         => (CompilationReference)CreateCompilation(assemblyName, sourceCode, []).ToMetadataReference();
 

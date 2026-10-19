@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Linq;
 using Xunit;
@@ -8,29 +8,24 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// 把两个可发布项目各打一次包，供全部包内容断言共享。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 打包是重活（要跑一遍 Release 构建 + 两次 <c>dotnet pack</c>），因此放在集合夹具里只做一次，
-/// 而不是每个用例各打一次。产物落在临时目录，按「输入指纹」命名 —— 同一份源码在两个 TFM 的测试进程
-/// 里算出同一个指纹，于是第二个进程直接复用第一个的产物，不重复打包。
-/// </para>
-/// <para>
-/// 断言对象是产物包本身，不是「打包命令有没有成功」：<c>dotnet pack</c> 退出码非 0 时直接抛异常，
-/// 让失败原因（stdout / stderr）出现在测试输出里，而不是变成一个语焉不详的断言失败。
-/// </para>
-/// </remarks>
 public sealed class PackedPackagesFixture : IAsyncLifetime
 {
-    /// <summary>本地占位版本号（与 <c>version.props</c> 一致），显式钉住以保证断言确定。</summary>
+    /// <summary>
+    /// 本地占位版本号（与 <c>version.props</c> 一致），显式钉住以保证断言确定。
+    /// </summary>
     private const string PackageVersion = "1.0.0";
 
     private const string GeneratorsProject = "src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj";
     private const string MainProject = "src/Len.StronglyTypedId/Len.StronglyTypedId.csproj";
 
-    /// <summary>仓库根目录（含 <c>Len.StronglyTypedId.slnx</c> 的那一层）。</summary>
+    /// <summary>
+    /// 仓库根目录（含 <c>Len.StronglyTypedId.slnx</c> 的那一层）。
+    /// </summary>
     public string RepositoryRoot { get; private set; } = string.Empty;
 
-    /// <summary>两个包落地的目录（临时目录，按输入指纹隔离）。</summary>
+    /// <summary>
+    /// 两个包落地的目录（临时目录，按输入指纹隔离）。
+    /// </summary>
     public string OutputDirectory { get; private set; } = string.Empty;
 
     public string GeneratorsPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Generators.{PackageVersion}.nupkg");
@@ -141,10 +136,6 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     /// <summary>
     /// 按「会影响包内容的输入文件的最新写入时间」算一个指纹，用作临时目录名。
     /// </summary>
-    /// <remarks>
-    /// 指纹变了就重新打包，没变就复用 —— 既让同一轮里两个 TFM 的测试进程共享产物，又不会在源码改动后
-    /// 复用过期包。取 <c>src/</c> 下全部文件与几个打包相关 props 的最大写入时间即可。
-    /// </remarks>
     private static string ComputeInputStamp(string repositoryRoot)
     {
         var inputs = new List<string>

@@ -248,11 +248,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 回归用例：使用者自定义的 <c>X.Guid</c> 并不是 BCL 的 <see cref="System.Guid"/>，必须报 STIA0008。
     /// </summary>
-    /// <remarks>
-    /// 基元类型判据曾只比简单名：这种同名类型会被当作合法基元放行，生成器随后把它嵌进生成代码，
-    /// 使用者最终看到的是若干条报在<b>生成文件</b>里的 CS0315（类型不满足泛型约束），
-    /// 而不是一条指向自己源码的 STIA0008。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenParameterTypeSharesSimpleNameWithBclType()
     {
@@ -689,8 +684,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 只配了归一化、没配验证器时，直接构造同样要提示 STIA0011：绕过归一化得到的 Id 不是规范形，
-    /// 相等性比较与字典键都会失效。
+    /// 只配了归一化、没配验证器时，直接构造同样要提示 STIA0011：绕过归一化得到的 Id 不是规范形，相等性比较与字典键都会失效。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenConstructedDirectlyWithNormalizer()
@@ -740,10 +734,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 目标类型化的 <c>new(...)</c> 与显式 <c>new Xxx(...)</c> 等价，同样绕过验证器，应报告 STIA0011。
     /// </summary>
-    /// <remarks>
-    /// 隐式创建是独立的语法节点（<c>ImplicitObjectCreationExpression</c>），只注册 <c>ObjectCreationExpression</c>
-    /// 时会整类漏检。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenConstructedWithTargetTypedNew()
     {
@@ -822,9 +812,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 与 <c>default</c> 做相等比较是合法的判空写法，不应报告 STIA0011。
     /// </summary>
-    /// <remarks>
-    /// 这是该规则最容易误报的地方：一旦漏掉这层排除，任何 <c>if (id == default)</c> 都会被标红，规则随即失去可信度。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenDefaultIsComparisonOperand()
     {
@@ -901,10 +888,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 验证器来自装配级 <c>[assembly: StronglyTypedIdDefaults]</c> 时，直接构造同样是绕过，应报告 STIA0011。
     /// </summary>
-    /// <remarks>
-    /// 只查类型上的 <c>Validator</c> 实参会把这种形态整类漏掉；判据必须走 <c>GetEffectiveValidatorName</c>
-    /// 回退到装配级默认值。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyDefaultValidatorBypassed()
     {
@@ -1035,9 +1018,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 规则默认关闭：即便「public + Validator」这种可被绕过的组合，未在 <c>.editorconfig</c> 调级时也不上报。
     /// </summary>
-    /// <remarks>
-    /// 这是该规则的设计前提 —— 绝大多数公开 Id 都会配验证器，默认开启只会制造噪音。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorBypassRuleIsNotEnabled()
     {
@@ -1118,9 +1098,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 嵌套在 <c>internal</c> 容器里的 <c>public</c> 类型实际不可跨程序集访问，不应上报。
     /// </summary>
-    /// <remarks>
-    /// 可见性必须逐层向上判定：只看类型自身的 <c>public</c> 会产生误报。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorOwnerIsNestedInInternalContainer()
     {
@@ -1156,8 +1133,8 @@ public class StronglyTypedIdAnalyzerTests
     #region 装配级默认验证器（STIA0010 的装配级形态）
 
     /// <summary>
-    /// 装配级 <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 作用于全体 Id，
-    /// 当某个 Id 自带匹配的静态验证器方法时不报告任何诊断。
+    /// 装配级 <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 作用于全体 Id，当某个 Id
+    /// 自带匹配的静态验证器方法时不报告任何诊断。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenAssemblyDefaultValidatorMatches()
@@ -1227,9 +1204,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 后缀按序数比较：<c>OrderID</c> 不合规（.NET 命名约定是 <c>Id</c>），建议名须替换而非追加。
     /// </summary>
-    /// <remarks>
-    /// 若建议名简单地取「原名 + Id」，这里会得到 <c>OrderIDId</c> —— 一条没法照着改的建议。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNameEndsWithUppercaseId()
     {
@@ -1271,9 +1245,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 同一命名空间下两个 Id 共用同一基元时，只在组内名字序最小的那个上报告一次。
     /// </summary>
-    /// <remarks>
-    /// 每个成员各报一次会让 n 个同基元 Id 产出 n 条重复提示，而这条规则只是「回头看一眼」的提醒。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenTwoIdsSharePrimitive()
     {
@@ -1367,10 +1338,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 嵌套 Id 的作用域由包含类型界定，不属于命名空间级重复，不参与分组。
     /// </summary>
-    /// <remarks>
-    /// <c>GetTypeMembers</c> 只返回命名空间的直接成员，嵌套类型天然不在其中 —— 这里把该行为固化成用例，
-    /// 免得日后换成别的枚举方式时悄悄把嵌套类型也拉进来。
-    /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenNestedIdSharesPrimitiveWithTopLevelId()
     {
@@ -1396,12 +1363,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// STIA0007 / STIA0008 的规则 ID 与对应的实参样例。
     /// </summary>
-    /// <remarks>
-    /// 数据里放规则 ID（<see cref="string"/>）而不是 <see cref="DiagnosticDescriptor"/> 本身：
-    /// xUnit1044 要求 <c>TheoryData</c> 的类型实参可序列化，否则 Test Explorer 无法逐行枚举
-    /// 数据（每行会塌成一个用例）；<see cref="DiagnosticDescriptor"/> 不可序列化，规则 ID 可以。
-    /// 描述符在用例内按 ID 从 <see cref="Descriptors.All"/> 取回。
-    /// </remarks>
     public static TheoryData<string, string> ParameterDiagnostics => new()
     {
         { Descriptors.ParameterNameMustBeValueId, "Value1" },
@@ -1411,11 +1372,6 @@ public class StronglyTypedIdAnalyzerTests
     /// <summary>
     /// 回归用例：STIA0007 / STIA0008 的文案必须保留 <c>{0}</c> 占位符。
     /// </summary>
-    /// <remarks>
-    /// 分析器实现传入了实参（参数名 / 参数类型），文案缺少占位符时它们被静默丢弃，
-    /// 诊断里看不到究竟是哪个名字或哪个类型。断言「渲染文本包含实参」与当前区域性无关：
-    /// 不显式指定区域性时 <see cref="LocalizedString"/> 回退到内嵌的 en 资源。
-    /// </remarks>
     [Theory]
     [MemberData(nameof(ParameterDiagnostics))]
     public void Diagnostic_MessageFormat_Should_ContainArgument(string diagnosticId, string argument)

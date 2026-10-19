@@ -14,20 +14,11 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 生成代码里 <c>GeneratedCodeAttribute</c> 的版本号。
     /// </summary>
-    /// <remarks>
-    /// 生成器写进产物的版本取自<b>自身程序集</b>的版本（见 <c>StronglyTypedIdGenerator._version</c>），
-    /// 而该版本由根 <c>version.props</c> 决定。因此期望快照必须按同一来源取值 ——
-    /// 写死字面量会让整套快照在每次改版本号（也就是每次发版）时集体失效。
-    /// </remarks>
     private static readonly string _generatorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
 
     /// <summary>
     /// 生成代码里 <c>UnconditionalSuppressMessage</c> 的 <c>Justification</c> 文案。
     /// </summary>
-    /// <remarks>
-    /// 与 <c>SystemTextJsonCodeGenerator.AotSuppressionJustification</c> 保持一致；
-    /// 该常量是私有的，故此处按字面量镜像一份，改文案时两处需同步。
-    /// </remarks>
     private const string AotJustification =
         "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
 
@@ -80,23 +71,12 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 目标框架的 <see cref="System.Guid"/> 是否实现 <see cref="System.IUtf8SpanParsable{T}"/>。
     /// </summary>
-    /// <remarks>
-    /// 该接口由生成器按「编译引用的 BCL 符号」判定，而测试合成编译引用的是宿主运行时自身的
-    /// <c>System.Guid</c>，二者一致。.NET 8 的 Guid 实现 <see cref="System.IUtf8SpanFormattable"/> 但不实现
-    /// <see cref="System.IUtf8SpanParsable{T}"/>，.NET 10 两者皆实现 —— 此探测决定核心产物基线里
-    /// 是否出现 UTF-8 解析成员。
-    /// </remarks>
     private static bool GuidSupportsUtf8Parsing()
         => typeof(global::System.Guid).GetInterface("System.IUtf8SpanParsable`1") is not null;
 
     /// <summary>
     /// 嵌套类型的 Id：声明必须逐层嵌回包含类型，hint 名带上包含类型链。
     /// </summary>
-    /// <remarks>
-    /// 这里只断言骨架（hint 名、包装开头、收尾括号）而不是整份快照：嵌套包装是纯文本变换，
-    /// 逐字符的缩进与括号层级已由 <c>NestInContainingTypes</c> 自己的用例钉住，
-    /// 再抄一份百行快照只会让「改个成员」也要同步两处。
-    /// </remarks>
     [Fact]
     public void Generator_Should_NestGeneratedDeclaration_WhenIdIsNested()
     {
@@ -579,10 +559,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：与 BCL 基元同名、却不在 <c>System</c> 命名空间下的类型不是基元类型，生成器不得产出代码。
     /// </summary>
-    /// <remarks>
-    /// 判据曾只比简单名，于是 <c>Probe.Fake.Guid</c> 被当成 <see cref="System.Guid"/> 写进生成代码，
-    /// 使用者拿到的是报在生成文件里的 CS0315。
-    /// </remarks>
     [Fact]
     public void Generator_Should_ReturnEmpty_WhenPrimitiveTypeSharesSimpleNameWithBclType()
     {
@@ -609,11 +585,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：<c>[StronglyTypedId]</c> 标在不承载主构造函数的那一段上时，仍必须产出代码。
     /// </summary>
-    /// <remarks>
-    /// 生成器的语法谓词只对「带 attribute 的那一段」被调用。若它要求该段自身形如 <c>(Value)</c>，
-    /// 这种把主构造函数写在另一段的分段写法就会既没有任何产物、也不报任何诊断 ——
-    /// 而分析器是按「类型」判定的，同样不会报错，于是问题彻底静默。
-    /// </remarks>
     [Fact]
     public void Generator_Should_GenerateCode_WhenAttributeIsOnSegmentWithoutPrimaryConstructor()
     {
@@ -701,8 +672,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 枚举基元：生成逻辑须走 <c>Enum.TryParse&lt;TEnum&gt;</c> 而非基元的 <c>TryParse(value, provider, …)</c>，
-    /// 且核心 Id 仍实现 <c>IParsable</c>、提供 <c>Create</c>。
+    /// 枚举基元：生成逻辑须走 <c>Enum.TryParse&lt;TEnum&gt;</c> 而非基元的 <c>TryParse(value, provider, …)</c>，且核心 Id 仍实现
+    /// <c>IParsable</c>、提供 <c>Create</c>。
     /// </summary>
     [Theory]
     [InlineData("record")]
@@ -739,19 +710,16 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 构造被测合成编译：先按 <see cref="ShouldReferenceAssembly"/> 过滤 AppDomain 中已加载的程序集，
-    /// 再并上默认种子程序集与调用方通过 <paramref name="extraAssemblyTypes"/> 显式指定的程序集。
+    /// 构造被测合成编译：先按 <see cref="ShouldReferenceAssembly"/> 过滤 AppDomain 中已加载的程序集，再并上默认种子程序集与调用方通过
+    /// <paramref name="extraAssemblyTypes"/> 显式指定的程序集。
     /// </summary>
     private static CSharpCompilation CreateDefaultCompilation(string sourceCode, params Type[] extraAssemblyTypes)
         => CreateCompilation(sourceCode, extraAssemblyTypes, []);
 
     /// <summary>
-    /// 同 <see cref="CreateDefaultCompilation(string, Type[])"/>，但额外接受任意 <see cref="MetadataReference"/>，
-    /// 用于构造「引用程序集里已有生成产物」这类多程序集消费者画像。
+    /// 同 <see cref="CreateDefaultCompilation(string, Type[])"/>，但额外接受任意 <see
+    /// cref="MetadataReference"/>，用于构造「引用程序集里已有生成产物」这类多程序集消费者画像。
     /// </summary>
-    /// <remarks>
-    /// 项目引用（<c>CompilationReference</c>）无法用 <see cref="Type"/> 表达，只能以引用实例传入。
-    /// </remarks>
     private static CSharpCompilation CreateCompilation(
         string sourceCode,
         Type[] extraAssemblyTypes,
@@ -813,9 +781,9 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 与 <see cref="GetGeneratedCode"/> 类似，但按 hint 名称返回所有生成的源文件，便于针对单个生成器产物断言。
-    /// 额外程序集（EF Core / Swashbuckle 等）通过 <paramref name="extraAssemblyTypes"/> 显式引入，
-    /// 避免被 AppDomain 中已加载的其它测试程序集污染，导致 EF Core / Swagger 生成器意外触发。
+    /// 与 <see cref="GetGeneratedCode"/> 类似，但按 hint 名称返回所有生成的源文件，便于针对单个生成器产物断言。额外程序集（EF Core / Swashbuckle
+    /// 等）通过 <paramref name="extraAssemblyTypes"/> 显式引入，避免被 AppDomain 中已加载的其它测试程序集污染，导致 EF Core / Swagger
+    /// 生成器意外触发。
     /// </summary>
     private static Dictionary<string, string> GetGeneratedCodeByHint(string sourceCode, params Type[] extraAssemblyTypes)
         => GetGeneratedCodeByHint(sourceCode, extraAssemblyTypes, []);
@@ -844,8 +812,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 生成器测试不应引用以下程序集，否则会触发 EF Core / Swagger 生成器或被 TestBase 中已实现的强类型 Id 污染发现结果。
-    /// 这些程序集仅在对应测试里通过 <see cref="GetGeneratedCodeByHint"/> 的 <paramref name="extraAssemblyTypes"/> 显式引入。
+    /// 生成器测试不应引用以下程序集，否则会触发 EF Core / Swagger 生成器或被 TestBase 中已实现的强类型 Id 污染发现结果。这些程序集仅在对应测试里通过
+    /// <see cref="GetGeneratedCodeByHint"/> 的 <paramref name="extraAssemblyTypes"/> 显式引入。
     /// </summary>
     private static bool ShouldReferenceAssembly(Assembly assembly)
         => assembly.GetName().Name is not
@@ -989,13 +957,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 回归用例：不同命名空间下的同名强类型 Id 都生成进同一个 <c>StronglyTypedIds</c> 类，
-    /// 转换器类名必须区分，否则相互冲突（CS0102 等）。
+    /// 回归用例：不同命名空间下的同名强类型 Id 都生成进同一个 <c>StronglyTypedIds</c> 类，转换器类名必须区分，否则相互冲突（CS0102 等）。
     /// </summary>
-    /// <remarks>
-    /// 只有确实出现同名时才给类名加命名空间前缀，无冲突场景下既有的 <c>OrderIdConverter</c>
-    /// 命名保持不变（见上方 <c>EfCore_Should_GenerateConverter_WhenReferencedAndConfigureConventions</c>）。
-    /// </remarks>
     [Fact]
     public void EfCore_Should_DisambiguateConverterNames_WhenSameNameInDifferentNamespaces()
     {
@@ -1044,8 +1007,7 @@ public class StronglyTypedIdGeneratorTests
     #region Swagger 生成器（SwaggerCodeGenerator）
 
     /// <summary>
-    /// 嵌套之后，同一命名空间里「同名但容器不同」的 Id 也会落进同一个 <c>StronglyTypedIds</c> 类：
-    /// 消歧名必须带上包含类型链，只用命名空间 + 短名仍会撞名（CS0102）。
+    /// 嵌套之后，同一命名空间里「同名但容器不同」的 Id 也会落进同一个 <c>StronglyTypedIds</c> 类：消歧名必须带上包含类型链，只用命名空间 + 短名仍会撞名（CS0102）。
     /// </summary>
     [Fact]
     public void EfCore_Should_DisambiguateConverterNames_WhenNestedIdsShareName()
@@ -1175,18 +1137,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：全部生成产物在「<c>ImplicitUsings=disable</c> 的消费者」里必须能编译。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// using 指令的作用域是文件级：合成编译的源码里虽有 <c>using System;</c>，但生成出来的每个文件
-    /// 都得自带（或用全限定名写明）它依赖的每一个类型。这与
-    /// <c>&lt;ImplicitUsings&gt;disable&lt;/ImplicitUsings&gt;</c>（且非 Web SDK）的消费者等价。
-    /// </para>
-    /// <para>
-    /// 曾如此暴露过 Newtonsoft 产物里的裸 <c>Nullable</c>（<c>System.Nullable</c> 的短名）：开启
-    /// ImplicitUsings 的消费者因为隐式 <c>global using System;</c> 而侥幸通过，关闭后即 CS0103。
-    /// 断言放在此处而非某个具体生成器的测试里，是因为它守护的是全部生成器共有的契约。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_Compile_WithoutImplicitUsings()
     {
@@ -1221,10 +1171,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 扩展基元类型（DateTime / DateTimeOffset / TimeSpan / decimal）的生成产物必须零警告 Emit。
     /// </summary>
-    /// <remarks>
-    /// 这些类型分别走「<see cref="System.ISpanParsable{T}"/> 解析」与「<see cref="System.IFormattable"/> 格式化」分支，
-    /// 与既有 Guid / int 基元同构，但必须单独用真实编译背书，避免解析/格式化成员生成形态在某种基元上编译不过。
-    /// </remarks>
     [Theory]
     [InlineData("DateTime")]
     [InlineData("DateTimeOffset")]
@@ -1260,9 +1206,9 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 枚举基元的生成产物必须零警告 Emit：验证 <c>Enum.TryParse&lt;TEnum&gt;</c> 解析分支在真实编译里成立，
-    /// 且枚举显式关掉了 <c>IFormattable</c> / <c>ISpanFormattable</c>（其 <c>ToString(string, IFormatProvider)</c>
-    /// 已 [Obsolete]）后既不会 CS0535 也不会 CS0618，<c>IComparable</c> / <c>IParsable</c> 等能力仍正常透出。
+    /// 枚举基元的生成产物必须零警告 Emit：验证 <c>Enum.TryParse&lt;TEnum&gt;</c> 解析分支在真实编译里成立，且枚举显式关掉了 <c>IFormattable</c> /
+    /// <c>ISpanFormattable</c>（其 <c>ToString(string, IFormatProvider)</c> 已 [Obsolete]）后既不会 CS0535 也不会
+    /// CS0618，<c>IComparable</c> / <c>IParsable</c> 等能力仍正常透出。
     /// </summary>
     [Theory]
     [InlineData("record")]
@@ -1307,10 +1253,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 指定 <c>Validator</c> 时，<c>Create</c> 以内联条件表达式拒绝非法值。
     /// </summary>
-    /// <remarks>
-    /// 断言的是「校验确实接在 <c>Create</c> 与两个 <c>TryParse</c> 重载上」这一形态，而不是某个实现细节：
-    /// 三者是使用者可能用到的全部构造入口，漏掉任何一个都会让非法值从对应路径溜进 Id。
-    /// </remarks>
     [Fact]
     public void Generator_Should_EmitValidationGuard_WhenValidatorIsConfigured()
     {
@@ -1334,7 +1276,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹 —— 无验证器的形态必须与加入该能力之前逐字符一致。
+    /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹——无验证器的形态必须与加入该能力之前逐字符一致。
     /// </summary>
     [Fact]
     public void Generator_Should_NotEmitValidationGuard_WhenValidatorIsAbsent()
@@ -1375,11 +1317,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 配置 <c>Normalizer</c> 后，四个构造入口都必须「先归一化、再校验、最后构造」。
     /// </summary>
-    /// <remarks>
-    /// 断言覆盖 <c>Create</c> / <c>TryCreate</c> / <c>TryParse</c> 三条路径：它们是使用者能拿到 Id 的全部入口，
-    /// 漏掉任何一条都会让未经清洗的值从对应路径溜进来。顺序同样要断言 —— 先校验后归一化会把
-    /// <c>"  a@b.com  "</c> 这类合法输入判成非法。
-    /// </remarks>
     [Fact]
     public void Generator_Should_NormalizeBeforeValidating_WhenNormalizerIsConfigured()
     {
@@ -1503,9 +1440,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// <c>[assembly: StronglyTypedIdDefaults(Normalizer = "Normalize")]</c> 成为本程序集内所有强类型 Id 的默认归一化方法。
     /// </summary>
-    /// <remarks>
-    /// 装配级默认值的回退是最容易漏的一环：只读类型上的实参时，这条路径会静默退化成「未配置归一化」。
-    /// </remarks>
     [Fact]
     public void Generator_Should_UseAssemblyDefaultNormalizer_WhenTypeHasNoOwnNormalizer()
     {
@@ -1531,13 +1465,9 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// System.Text.Json 的字典键走 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>，
-    /// 两者都必须生成，否则 <c>Dictionary&lt;OrderId, TValue&gt;</c> 在运行期直接抛 <c>NotSupportedException</c>。
+    /// System.Text.Json 的字典键走 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>，两者都必须生成，否则
+    /// <c>Dictionary&lt;OrderId, TValue&gt;</c> 在运行期直接抛 <c>NotSupportedException</c>。
     /// </summary>
-    /// <remarks>
-    /// 写键一律取不变文化下的文本形式：<c>string</c> 基元的属性名就是取值本身，其余基元经
-    /// <c>ToString(null, InvariantCulture)</c>，避免键名随当前区域性漂移。
-    /// </remarks>
     [Theory]
     [InlineData("Guid", "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)")]
     [InlineData("int", "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)")]
@@ -1566,10 +1496,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 其余基元的属性名按不变文化解析，解析失败抛 <c>JsonException</c>。
     /// </summary>
-    /// <remarks>
-    /// 此处不能转调 <c>Read</c>：方法名路径上 <c>TokenType</c> 是 <c>PropertyName</c> 而非 <c>String</c>，
-    /// 内层转换器会失败。
-    /// </remarks>
     [Fact]
     public void SystemTextJson_Should_ParsePropertyName_WithInvariantCulture()
     {
@@ -1582,8 +1508,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// <c>JsonShape = JsonShape.Object</c> 时，System.Text.Json 产物改为读写 <c>{ "value": … }</c>，
-    /// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。
+    /// <c>JsonShape = JsonShape.Object</c> 时，System.Text.Json 产物改为读写 <c>{ "value": …
+    /// }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。
     /// </summary>
     [Fact]
     public void JsonShape_Object_Should_GenerateObjectShape_ForSystemTextJson()
@@ -1599,7 +1525,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 默认（基元形态）下产物不含任何对象形态痕迹 —— 引入本开关不改变既有产物，是「不破坏既有契约」的前提。
+    /// 默认（基元形态）下产物不含任何对象形态痕迹——引入本开关不改变既有产物，是「不破坏既有契约」的前提。
     /// </summary>
     [Fact]
     public void JsonShape_Primitive_Should_NotGenerateObjectShape_ForSystemTextJson()
@@ -1652,10 +1578,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// <c>string</c> 未实现 <c>IFormattable</c> / <c>ISpanFormattable</c>，因此 string 基元的 Id 也不实现它们。
     /// </summary>
-    /// <remarks>
-    /// 这两个接口若照抄到所有基元上，消费者代码能编译但运行期语义是错的（<c>Value.ToString(format, provider)</c> 对
-    /// <c>string</c> 不存在）—— 实际后果是生成文件根本编译不过，属运行时之前就会暴露的一类。
-    /// </remarks>
     [Fact]
     public void Generator_Should_OmitFormattingInterfaces_ForStringPrimitive()
     {
@@ -1719,8 +1641,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 成为本程序集内所有强类型 Id 的默认验证器，
-    /// 生成器据此在 <c>Create</c> 与 <c>TryParse</c> 上挂校验，与逐类型 <c>Validator</c> 形态逐字符一致。
+    /// <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 成为本程序集内所有强类型 Id 的默认验证器，生成器据此在
+    /// <c>Create</c> 与 <c>TryParse</c> 上挂校验，与逐类型 <c>Validator</c> 形态逐字符一致。
     /// </summary>
     [Fact]
     public void Generator_Should_EmitValidationGuard_WhenAssemblyDefaultValidatorIsSet()
@@ -1747,8 +1669,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 装配级默认验证器与逐类型 <c>Validator</c> 同名时，逐类型优先级更高——但这里两者一致，
-    /// 仅确认装配级默认值在「Id 自身未声明 Validator」时确实生效。
+    /// 装配级默认验证器与逐类型 <c>Validator</c> 同名时，逐类型优先级更高——但这里两者一致，仅确认装配级默认值在「Id 自身未声明 Validator」时确实生效。
     /// </summary>
     [Fact]
     public void Generator_Should_UseAssemblyDefaultValidator_WhenTypeHasNoOwnValidator()
@@ -1779,16 +1700,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 全部生成器同时启用、且消费者的编译引用只含必要程序集时，产物必须能做到「零警告」Emit。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 上一个用例只断言「无错误」。生成器产物里的可疑签名（例如少一个可空标注、接口实现与声明不一致）
-    /// 往往只产生警告，消费者若开了 <c>TreatWarningsAsErrors</c> 就会在下载包之后才发现。
-    /// </para>
-    /// <para>
-    /// 断言取 <c>Severity &gt;= Warning</c> 而非仅 <c>Warning</c>：错误也一并拦下，无需分开两次检查。
-    /// 程序集统一性告警（CS1701/CS1702）来自合成编译拼装引用程序集的方式，与被测产物无关，故排除。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_EmitWithoutWarnings_WhenEveryGeneratorIsEnabled()
     {
@@ -1839,19 +1750,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 生成产物在「<c>Nullable=enable</c> + <c>TreatWarningsAsErrors</c> + 最高警告级别」的消费者下必须零诊断。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 上一个零警告用例跑在 Roslyn 的默认编译选项下（<c>Nullable</c> 关闭、警告级别 4），只能证明「默认档位下干净」。
-    /// 真实消费者常开 <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> 与
-    /// <c>&lt;TreatWarningsAsErrors&gt;true&lt;/TreatWarningsAsErrors&gt;</c>：产物里少一个可空标注、接口实现与声明签名不一致，
-    /// 都要等下载包之后才炸。这里把三档一并拉满，把「生成产物零警告」从设计目标变成可执行约束。
-    /// </para>
-    /// <para>
-    /// 覆盖面尽量铺开：值类型 / 引用类型 record、<c>string</c> / 数值 / 枚举基元、验证器、<c>TypeConverter</c>、
-    /// <c>readonly record struct</c>、嵌套类型。程序集统一性告警（CS1701/CS1702）来自合成编译拼装引用程序集的方式，
-    /// 与被测产物无关，故排除。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_EmitWithoutDiagnostics_UnderNullableAndWarningsAsErrors()
     {
@@ -1925,10 +1823,6 @@ public class StronglyTypedIdGeneratorTests
     /// 严格档编译选项：等价于消费者的 <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> +
     /// <c>&lt;TreatWarningsAsErrors&gt;true&lt;/TreatWarningsAsErrors&gt;</c> + 最高警告级别。
     /// </summary>
-    /// <remarks>
-    /// <c>generalDiagnosticOption: ReportDiagnostic.Error</c> 把所有警告提升为错误，正是
-    /// <c>TreatWarningsAsErrors</c> 的语义；断言仍按 <c>Severity &gt;= Warning</c> 过滤，两种档位下都能拦住。
-    /// </remarks>
     private static readonly CSharpCompilationOptions _strictCompilationOptions = new(
         OutputKind.DynamicallyLinkedLibrary,
         nullableContextOptions: NullableContextOptions.Enable,
@@ -1976,11 +1870,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 引用程序集里已由生成器补齐接口的强类型 Id，必须与本次编译声明的 Id 一起被纳入 EF Core 转换器。
     /// </summary>
-    /// <remarks>
-    /// 两类 Id 走的是不同发现路径：本次声明的由 <c>ForAttributeWithMetadataName</c> 直接提供，
-    /// 引用程序集里的则要靠 <see cref="StronglyTypedIdDiscovery"/> 枚举模块类型。只有把两者合并进
-    /// 同一份注册文件，跨程序集使用强类型 Id 才开箱可用。
-    /// </remarks>
     [Fact]
     public void EfCore_Should_IncludeConverters_ForIdsDeclaredInReferencedAssembly()
     {
@@ -2018,10 +1907,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 强类型 Id 跨多个 partial 声明段拆分时，同一类型仍只应产出一份生成文件。
     /// </summary>
-    /// <remarks>
-    /// 生成器的语法谓词只匹配带主构造函数的那一段，但类型符号是唯一的，因此
-    /// 无论声明了几段，产物数量都必须与单段声明一致。
-    /// </remarks>
     [Theory]
     [InlineData("record struct")]
     [InlineData("record")]
@@ -2062,11 +1947,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 全部生成器同时启用时，所有产物必须能在同一编译里一起通过 Emit。
     /// </summary>
-    /// <remarks>
-    /// 逐个生成器单独测只能发现各自的问题，产物之间还会相互作用：EF Core 与 Swagger 都把
-    /// <c>StronglyTypedIds</c> 写成 <c>partial</c> 类并要求合并到同一命名空间，核心生成器又在同一命名空间下
-    /// 声明 Id 类型。本用例把「同一编译里同时出现全部产物」这一真实场景整体编译一遍。
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_Compile_WhenEveryGeneratorIsEnabled()
     {
@@ -2111,18 +1991,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 嵌套类型的强类型 Id 同样要能在「全部生成器同时启用」的消费者编译里零警告 Emit。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 嵌套包装是纯文本变换，正确与否只能由真实编译裁判：容器链要按种类重新开成 <c>class</c> / <c>struct</c> /
-    /// <c>record</c>，凭印象多补一个修饰符就是 CS0106（接口补 <c>abstract</c>、值类型补 <c>sealed</c> 都不行），
-    /// 少一层大括号则会把后续声明挤到容器外。
-    /// </para>
-    /// <para>
-    /// 同一编译里刻意放入「同名但不同容器」（<c>OrderAggregate.OrderId</c> 与 <c>ShipmentBatch.OrderId</c>）以及
-    /// 「一级与二级嵌套同名」（<c>Inventory.SkuId</c> 与 <c>Inventory.Bin.SkuId</c>）的 Id：EF Core 转换器类名因此
-    /// 必须靠包含类型链消歧，只用命名空间 + 短名会让两个转换器落到同一个类名上，撞 CS0102。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void NestedIds_Should_Compile_WhenEveryGeneratorIsEnabled()
     {
@@ -2226,11 +2094,6 @@ public class StronglyTypedIdGeneratorTests
     /// 嵌套在泛型容器里的强类型 Id 也应正常生成：<see cref="StronglyTypedIdGenerator.CouldBeStronglyTypedId"/>
     /// 不再在容器链上拦截泛型容器，且生成代码会把声明逐层嵌回带类型参数表的容器。
     /// </summary>
-    /// <remarks>
-    /// 覆盖 <c>CouldBeStronglyTypedId</c> 里「容器是泛型」的放开分支（对应生成器源码的容器循环体）。
-    /// 生成的 hint 名经净化去掉尖括号（<c>Container&lt;T&gt;.OrderId</c> → <c>ContainerT.OrderId</c>），
-    /// 故按净化后的 hint 名检索产物。
-    /// </remarks>
     [Fact]
     public void Generator_Should_GenerateCode_WhenContainerIsGeneric()
     {
@@ -2258,15 +2121,9 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 核心生成器集合为空时 <see cref="StronglyTypedIdGenerator.GenerateCoreCode"/> 必须提前返回，
-    /// 而不是对空集合做无意义遍历或抛 <see cref="NullReferenceException"/>。
+    /// 核心生成器集合为空时 <see cref="StronglyTypedIdGenerator.GenerateCoreCode"/> 必须提前返回，而不是对空集合做无意义遍历或抛
+    /// <see cref="NullReferenceException"/>。
     /// </summary>
-    /// <remarks>
-    /// 覆盖 <c>GenerateCoreCode</c> 的 <c>if (generators.IsDefaultOrEmpty) return;</c> 防御分支。
-    /// 触发方式：用合成程序集提供同名 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c> 让强类型 Id 仍被发现，
-    /// 但刻意不引用任何核心生成器依赖的程序集（System.Text.Json / Len.StronglyTypedId.dll / Newtonsoft.Json），
-    /// 使 <c>GetCodeGenerators</c> 返回空集。合成程序集名为 FakeSti，模块名不会命中任何核心生成器判据。
-    /// </remarks>
     [Fact]
     public void Generator_Should_ReturnEmpty_WhenNoCoreGeneratorModuleReferenced()
     {
@@ -2294,8 +2151,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 构造「只提供 [StronglyTypedId] 属性、但不引用任何核心生成器依赖程序集」的编译，
-    /// 使 <see cref="StronglyTypedIdGenerator.GetCodeGenerators"/> 返回空集。
+    /// 构造「只提供 [StronglyTypedId] 属性、但不引用任何核心生成器依赖程序集」的编译，使 
+    /// <see cref="StronglyTypedIdGenerator.GetCodeGenerators"/> 返回空集。
     /// </summary>
     private static CSharpCompilation CreateCompilationWithoutCoreGenerators(string sourceCode, MetadataReference fakeAttributeReference)
     {
@@ -2317,10 +2174,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 合成一个「名为 FakeSti、含 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c> 但没有任何真实 API」的程序集。
     /// </summary>
-    /// <remarks>
-    /// 用它替代真实运行时程序集引用后，强类型 Id 仍会被生成器按属性全名发现，但模块名是
-    /// <c>FakeSti.dll</c> 而非 <c>Len.StronglyTypedId.dll</c>，于是核心生成器集合为空。
-    /// </remarks>
     private static PortableExecutableReference EmitFakeStronglyTypedIdAttributeAssembly()
     {
         var source = """

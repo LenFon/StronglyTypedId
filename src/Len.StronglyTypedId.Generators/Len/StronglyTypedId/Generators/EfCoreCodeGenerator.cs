@@ -42,30 +42,21 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
                     class {{converterName}} : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<{{idInfo.FullyQualifiedName}}, {{idInfo.PrimitiveIdTypeName}}>
                     {
-                        /// <summary>
-                        /// Default constructor.
-                        /// </summary>
+                        /// <summary>Default constructor.</summary>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
                         public {{converterName}}() : base(v => v.Value, val => {{idInfo.FullyQualifiedName}}.Create(val))
                         {
                         }
 
-                        /// <summary>
-                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core via conventions.
-                        /// Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
-                        /// </summary>
+                        /// <summary>Apply the {{idInfo.Name}} converter to the Entity Framework Core via conventions. Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.</summary>
                         /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
                         public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder) =>
                             configurationBuilder.Properties<{{idInfo.FullyQualifiedName}}>().HaveConversion(typeof({{converterName}}));
 
-                        /// <summary>
-                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model.
-                        /// Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available
-                        /// (e.g. when the context does not override <c>ConfigureConventions</c>).
-                        /// </summary>
+                        /// <summary>Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>).</summary>
                         /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
@@ -95,9 +86,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
             {
-                /// <summary>
-                /// Employ strongly typed IDs in Entity Framework Core via conventions.
-                /// </summary>
+                /// <summary>Employ strongly typed IDs in Entity Framework Core via conventions.</summary>
                 /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
@@ -105,11 +94,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 {{{registrations}}
                 }
 
-                /// <summary>
-                /// Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from
-                /// <c>OnModelCreating(ModelBuilder)</c> when the context does not override
-                /// <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
-                /// </summary>
+                /// <summary>Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when the context does not override <c>ConfigureConventions(ModelConfigurationBuilder)</c>.</summary>
                 /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
@@ -129,10 +114,6 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
     /// <param name="requiresNamespaceQualifier">
     /// 是否存在位于其它命名空间的同名强类型 Id，需要以命名空间前缀消歧。
     /// </param>
-    /// <remarks>
-    /// 冲突时把全名里的分隔符换成下划线（<c>Domain.OrderId</c> → <c>Domain_OrderIdConverter</c>），结果只由该 Id
-    /// 自身决定。必须带上包含类型链，否则嵌套后 <c>Domain.A.OrderId</c> 与 <c>Domain.B.OrderId</c> 会撞名。
-    /// </remarks>
     private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
             ? $"{idInfo.HintName.Replace('.', '_')}Converter"

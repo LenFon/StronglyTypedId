@@ -76,8 +76,8 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": … }</c>，
-    /// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
+    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": …
+    /// }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_SerializeAsObject_When()
@@ -113,7 +113,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：对象形态只作用于「值」的位置 —— 字典键本就是字符串，读写键的路径不受影响。
+    /// C4：对象形态只作用于「值」的位置——字典键本就是字符串，读写键的路径不受影响。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_KeepPrimitiveDictionaryKey_When()
@@ -133,10 +133,6 @@ public class SerializationAndDeserializationTests
     /// <summary>
     /// C1：char 基元的字典键走 <c>WriteAsPropertyName</c> / <c>ReadAsPropertyName</c>。
     /// </summary>
-    /// <remarks>
-    /// 这条路径在生成器里用的是 <c>primitiveId.ToString()</c> 而非 <c>ToString(null, InvariantCulture)</c>
-    /// —— char 的后者是显式接口实现（CS1501）。用例同时守住「键能写出去、也能读回来」。
-    /// </remarks>
     [Fact]
     public void CharId_Should_RoundTripAsDictionaryKey_When()
     {
@@ -154,8 +150,7 @@ public class SerializationAndDeserializationTests
     #region C10 文本前缀：JSON 走规范文本形
 
     /// <summary>
-    /// C10：有前缀时，值位置的 JSON 变为字符串（数字 / 枚举 / 日期基元由 number 变 string），
-    /// 内容为规范文本形（含前缀）；两种序列化器行为一致。
+    /// C10：有前缀时，值位置的 JSON 变为字符串（数字 / 枚举 / 日期基元由 number 变 string），内容为规范文本形（含前缀）；两种序列化器行为一致。
     /// </summary>
     [Fact]
     public void Prefix_Should_SerializeAsPrefixedString_When()
@@ -192,7 +187,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C10：前缀 + 对象形态 —— <c>{ "value": "ord_x" }</c>。
+    /// C10：前缀 + 对象形态—— <c>{ "value": "ord_x" }</c>。
     /// </summary>
     [Fact]
     public void Prefix_WithObjectShape_Should_SerializeAsObject_When()

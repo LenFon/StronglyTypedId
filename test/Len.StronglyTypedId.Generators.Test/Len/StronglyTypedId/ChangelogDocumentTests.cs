@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Len.StronglyTypedId.DocGen.Changelog;
 
 namespace Len.StronglyTypedId;
@@ -6,10 +6,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// <c>CHANGELOG.md</c> 解析与结构守卫。
 /// </summary>
-/// <remarks>
-/// 工具侧的 tag 比对需要 git（见 <c>--verify-changelog</c>）；这里只钉住不依赖 git 的部分：
-/// 标题能被解析、正文非空、链接定义齐全。这样本地改坏格式时不必等 CI 才发现。
-/// </remarks>
 public class ChangelogDocumentTests
 {
     private const string Sample = """

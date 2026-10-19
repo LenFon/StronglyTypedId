@@ -12,16 +12,6 @@ namespace Len.StronglyTypedId;
 /// <see cref="ModuleInfo"/>、<see cref="ModuleInfo.Comparer"/> 与 <see cref="ModuleInfoExtensions.HasModule"/>
 /// 的单元测试。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 这三者共同决定「哪些代码生成器被启用」，以及增量管道里模块集合如何去重。
-/// </para>
-/// <para>
-/// 注意两处版本语义并不相同，不能互相替代：<see cref="ModuleInfoExtensions.HasModule"/> 只看
-/// <b>主版本号</b>（用于启用闸门），<see cref="ModuleInfo.Comparer"/> 则按<b>完整版本号</b>判定等价
-/// （用于 <c>SelectMany(…).WithComparer(…)</c> 的去重）。本文件同时把守这两条语义。
-/// </para>
-/// </remarks>
 public class ModuleInfoTests
 {
     #region HasModule：程序集名匹配
@@ -182,8 +172,8 @@ public class ModuleInfoTests
     }
 
     /// <summary>
-    /// 忽略 <see cref="ModuleInfo.MetadataReference"/> 与 <see cref="ModuleInfo.Assembly"/> 的实例差异：
-    /// 同一程序集可能以不同引用形态出现，但去重时它们是同一个模块。
+    /// 忽略 <see cref="ModuleInfo.MetadataReference"/> 与 <see cref="ModuleInfo.Assembly"/>
+    /// 的实例差异：同一程序集可能以不同引用形态出现，但去重时它们是同一个模块。
     /// </summary>
     [Fact]
     public void Comparer_Should_IgnoreMetadataReferenceAndAssemblyIdentity()

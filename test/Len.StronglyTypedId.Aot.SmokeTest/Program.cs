@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -21,24 +21,6 @@ public partial record struct AotPrefixedId(Guid Value);
 /// <summary>
 /// Native AOT / 裁剪环境下的端到端冒烟。
 /// </summary>
-/// <remarks>
-/// <para>
-/// README 宣称本库「works in Native AOT and trimmed applications」。本工程把该宣称变成可执行证据：
-/// 以 <c>PublishAot=true</c> 真实发布，再跑一遍核心路径。分析器零警告 + 运行时全绿，才算通过。
-/// </para>
-/// <para>
-/// 刻意<b>不用</b> <c>JsonSerializer.Serialize&lt;T&gt;</c>：那是 <c>RequiresUnreferencedCode</c> /
-/// <c>RequiresDynamicCode</c> 的。这里直接驱动生成器产出的 <c>SystemTextJsonConverter</c>，
-/// 正是 AOT 场景下真正被使用的那条路径。
-/// </para>
-/// <para>
-/// 转换器内部用 <c>JsonSerializer</c> 处理基元值（以尊重宿主配置的转换器），故 AOT 宿主须提供
-/// 源生成的 <c>JsonSerializerContext</c> —— 见 <see cref="SmokeTestJsonContext"/>。
-/// </para>
-/// <para>
-/// 任一项失败即以非零退出码结束，CI 的 aot job 据此判定。
-/// </para>
-/// </remarks>
 public static class Program
 {
     // AOT 下反射序列化被禁用，必须由源生成的 context 提供 JsonTypeInfo。

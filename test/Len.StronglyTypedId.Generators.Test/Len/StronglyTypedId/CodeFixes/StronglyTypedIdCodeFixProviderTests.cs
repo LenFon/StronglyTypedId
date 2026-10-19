@@ -198,11 +198,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// FixAll（<c>BatchFixer</c>）：一次把源码里全部可修复诊断处理完。
     /// </summary>
-    /// <remarks>
-    /// 既有用例都是「一条诊断、一次修复」。FixAll 走的是 <c>GetFixAllProvider()</c> 返回的批处理器，
-    /// 与逐条修复是两条不同的代码路径：批处理会把各诊断的改动合并到同一份语法树后再整体应用，
-    /// 因此「两条诊断分别位于不同声明上、且都要就地加 partial」这一情形需要单独把守。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_AddPartialToContainingType()
     {
@@ -277,10 +272,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// 绕过验证器直接用 <c>new</c> 构造（STIA0011）时，CodeFix 应把它重写成 <c>Xxx.Create(...)</c>。
     /// </summary>
-    /// <remarks>
-    /// 该诊断只在 Id 设了验证器时触发，而该情形下生成代码已提供静态 <c>Create</c> 工厂，
-    /// 重写后的调用点强制经过校验，与诊断的意图一致。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_ReplaceNewWithCreate_WhenBypassingValidator()
     {
@@ -373,10 +364,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// <c>default</c> 不提供修复：改成 <c>Create(default)</c> 只会把编译期提示换成运行时异常。
     /// </summary>
-    /// <remarks>
-    /// 该场景无法用 <see cref="Verify.VerifyCodeFixAsync(string, DiagnosticResult, string)"/> 表达
-    /// （框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_ShouldNotOfferFix_WhenDefaultLiteralBypassesValidator()
     {
@@ -409,8 +396,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// 对照：同一 harness 在目标类型化 <c>new(...)</c> 上确实会注册修复，
-    /// 证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
+    /// 对照：同一 harness 在目标类型化 <c>new(...)</c> 上确实会注册修复，证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
     /// </summary>
     [Fact]
     public async Task CodeFix_ShouldOfferFix_WhenTargetTypedNewBypassesValidator()
@@ -444,10 +430,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// STIA0000：把 class 转成 record（保留修饰符 / 主构造函数 / 成员 / 标识符）。
     /// </summary>
-    /// <remarks>
-    /// 输入特意写成「命名空间内、已 partial、主构造函数合法」的 class，使修复只改关键字、不再级联其它规则：
-    /// 转换后得到的 <c>partial record OrderId(Guid Value)</c> 已满足 partial / 命名空间 / 主构造全部约束。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_ConvertClassToRecord_WhenTypeMustBeRecord()
     {
@@ -478,10 +460,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// STIA0004：把最外层类型包进命名空间块（占位名固定 MyNamespace，由使用者改名）。
     /// </summary>
-    /// <remarks>
-    /// 顶层类型（直接挂在编译单元下）才触发 STIA0004；此处必须显式 <c>using Len.StronglyTypedId;</c>
-    /// 让特性在命名空间外也能绑定，否则分析器会因找不到特性而零产出。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_WrapInNamespace_WhenTypeMustHaveNamespace()
     {
@@ -637,9 +615,9 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0000：把 struct 转成 record。IsFixable 里 STIA0000 分支判定的是
-    /// <c>ClassDeclarationSyntax or StructDeclarationSyntax</c>，struct 走的是 StructDeclarationSyntax 这一支，
-    /// 与 class 是不同代码路径，需单独把守。
+    /// STIA0000：把 struct 转成 record。IsFixable 里 STIA0000 分支判定的是 
+    /// <c>ClassDeclarationSyntax or StructDeclarationSyntax</c>，struct 走的是 StructDeclarationSyntax 这一支，与
+    /// class 是不同代码路径，需单独把守。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_ConvertStructToRecord_WhenTypeMustBeRecord()
@@ -669,8 +647,8 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0000：转换时基列表（BaseList）必须原样搬移，不能随关键字一起丢掉。
-    /// ConvertToRecord 用 <c>WithBaseList</c> 保留接口实现，否则产物会丢失 <c>: IComparable&lt;OrderId&gt;</c>。
+    /// STIA0000：转换时基列表（BaseList）必须原样搬移，不能随关键字一起丢掉。 ConvertToRecord 用 <c>WithBaseList</c> 保留接口实现，否则产物会丢失
+    /// <c>: IComparable&lt;OrderId&gt;</c>。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_PreserveBaseList_WhenConvertingToRecord()
@@ -700,9 +678,9 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0008：参数带 attribute 时把非法类型改成 Guid 仍需保留 attribute。
-    /// ChangeParameterTypeToGuid 用 <c>WithType(newType.WithTriviaFrom(parameter.Type))</c> 顶掉旧类型，
-    /// 参数上的 <c>[AllowNull]</c> 属于节点本身（不在类型 trivia 里），不会被丢掉。
+    /// STIA0008：参数带 attribute 时把非法类型改成 Guid 仍需保留 attribute。 ChangeParameterTypeToGuid 用
+    /// <c>WithType(newType.WithTriviaFrom(parameter.Type))</c> 顶掉旧类型，参数上的 <c>[AllowNull]</c> 属于节点本身（不在类型
+    /// trivia 里），不会被丢掉。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_PreserveParameterAttribute_WhenChangingTypeToGuid()
@@ -734,9 +712,8 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0010：attribute 有多个命名实参时，只删无效的 Validator，保留其余（TypeConverter）。
-    /// 走 RemoveValidatorArgument 里 <c>Arguments.Count != 1</c> 的分支，
-    /// <c>SeparatedSyntaxList.Remove</c> 自动收拾相邻的逗号分隔符。
+    /// STIA0010：attribute 有多个命名实参时，只删无效的 Validator，保留其余（TypeConverter）。走 RemoveValidatorArgument 里
+    /// <c>Arguments.Count != 1</c> 的分支， <c>SeparatedSyntaxList.Remove</c> 自动收拾相邻的逗号分隔符。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_KeepOtherArguments_WhenRemovingValidator()
@@ -834,10 +811,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// STIA0014：把对外可见的 Id 收窄为 <c>internal</c>，使主构造函数无法被外部直接调用绕过验证器。
     /// </summary>
-    /// <remarks>
-    /// 修复只能改类型可见性 —— record 的主构造函数不允许单独指定可见性（<c>public record R private (int X)</c>
-    /// 是 CS1514），它始终跟随类型本身。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_NarrowVisibilityToInternal_WhenValidatorCanBeBypassed()
     {
@@ -883,9 +856,8 @@ public class StronglyTypedIdCodeFixProviderTests
         """;
 
     /// <summary>
-    /// STIA0010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的
-    /// 桩方法（静态、返回 bool、恰好一个参数且类型等于基元 Id 类型），而非删掉实参。
-    /// 桩方法用全限定名渲染基元类型，避免与任何同名局部类型冲突。
+    /// STIA0010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的桩方法（静态、返回 bool、恰好一个参数且类型等于基元 Id
+    /// 类型），而非删掉实参。桩方法用全限定名渲染基元类型，避免与任何同名局部类型冲突。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_GenerateValidatorStub_WhenValidatorMethodMissing()
@@ -920,10 +892,6 @@ public class StronglyTypedIdCodeFixProviderTests
     /// <summary>
     /// STIA0017：<c>Normalizer</c> 指向的方法不存在时，CodeFix 生成恒等变换的桩方法。
     /// </summary>
-    /// <remarks>
-    /// 桩取 <c>=&gt; value</c> 而非抛异常：它不改变任何取值，语义上等价于「未配置归一化」，
-    /// 使用者能从编译错误里脱身，再按需填入真正的清洗逻辑。
-    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_GenerateNormalizerStub_WhenNormalizerMethodMissing()
     {
@@ -955,7 +923,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0017：归一化方法已存在但签名不符时删掉实参 —— 再生成同名方法会撞 CS0101。
+    /// STIA0017：归一化方法已存在但签名不符时删掉实参——再生成同名方法会撞 CS0101。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_RemoveNormalizerArgument_WhenNormalizerSignatureInvalid()
@@ -1031,10 +999,9 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0005 的 IsFixable 负向分支：record 已有 body 构造函数、却无单参主构造函数时，
-    /// 再加主构造会与既有 body 构造撞 CS0111。此时诊断虽触发，但 CodeFix 不应提供任何修复入口 ——
-    /// RegisterCodeFixesAsync 经 IsFixable 门禁直接跳过，注册 0 个 CodeAction。
-    /// 该场景无法用 VerifyCodeFixAsync 表达（框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
+    /// STIA0005 的 IsFixable 负向分支：record 已有 body 构造函数、却无单参主构造函数时，再加主构造会与既有 body 构造撞 CS0111。此时诊断虽触发，但 CodeFix
+    /// 不应提供任何修复入口—— RegisterCodeFixesAsync 经 IsFixable 门禁直接跳过，注册 0 个 CodeAction。该场景无法用 VerifyCodeFixAsync
+    /// 表达（框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
     /// </summary>
     [Fact]
     public async Task CodeFix_ShouldNotOfferFix_WhenRecordHasBodyConstructor()
@@ -1060,8 +1027,8 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// 对照：同一 harness 在「可修复」情形下确实会注册修复（record 无主构造、也无 body 构造时 STIA0005 可修），
-    /// 证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
+    /// 对照：同一 harness 在「可修复」情形下确实会注册修复（record 无主构造、也无 body 构造时 STIA0005 可修），证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动
+    /// provider。
     /// </summary>
     [Fact]
     public async Task CodeFix_ShouldOfferFix_WhenRecordHasNoConstructor()
@@ -1084,9 +1051,8 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// 直接驱动 CodeFixProvider：把源码解析成 Document，在指定诊断（定位在 record 声明上）上调用
-    /// RegisterCodeFixesAsync，收集它注册的 CodeAction。用于断言「不提供修复」这类 VerifyCodeFixAsync
-    /// 框架本身不支持的场景（后者假定修复一定会被应用）。
+    /// 直接驱动 CodeFixProvider：把源码解析成 Document，在指定诊断（定位在 record 声明上）上调用 RegisterCodeFixesAsync，收集它注册的
+    /// CodeAction。用于断言「不提供修复」这类 VerifyCodeFixAsync 框架本身不支持的场景（后者假定修复一定会被应用）。
     /// </summary>
     private static Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
         string source,

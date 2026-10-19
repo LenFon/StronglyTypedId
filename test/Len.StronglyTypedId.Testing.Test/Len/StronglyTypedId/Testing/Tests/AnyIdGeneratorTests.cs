@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -11,10 +11,6 @@ namespace Len.StronglyTypedId.Testing.Tests;
 /// <summary>
 /// <see cref="AnyIdGenerator"/> 与 <see cref="Any"/> 的行为。
 /// </summary>
-/// <remarks>
-/// 断言只落在「可观察的契约」上：值能被 <c>Create</c> 接受、同种子可复现、验证器被尊重、注册能覆盖生成。
-/// 不比对具体数值 —— 那会把 <see cref="Random"/> 的实现细节固化成契约。
-/// </remarks>
 public class AnyIdGeneratorTests
 {
     [Fact]

@@ -1,17 +1,13 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Len.StronglyTypedId.CodeRefactorings;
 using Xunit;
 
 namespace Len.StronglyTypedId.CodeRefactorings;
 
 /// <summary>
-/// <see cref="StronglyTypedIdRefactoringProvider"/> 的用例：正向「Convert to strongly typed id」与
-/// 反向「Inline strongly typed id」。
+/// <see cref="StronglyTypedIdRefactoringProvider"/> 的用例：正向「Convert to strongly typed id」与反向「Inline strongly
+/// typed id」。
 /// </summary>
-/// <remarks>
-/// 代码重构没有像诊断那样的「期望清单」可供测试框架比对，故经 <c>Verify.ApplyRefactoringAsync</c> 直接驱动
-/// provider 并应用它注册的唯一重构，再按精确文本断言产物。
-/// </remarks>
 public class StronglyTypedIdRefactoringProviderTests
 {
     #region 正向：Convert to strongly typed id
@@ -181,11 +177,6 @@ public class StronglyTypedIdRefactoringProviderTests
     /// <summary>
     /// 正向重构插入的换行沿用文档自身的行尾：CRLF 文档得 CRLF，LF 文档得 LF。
     /// </summary>
-    /// <remarks>
-    /// 期望值用显式 <c>\r\n</c> / <c>\n</c> 拼出，而不是原始字符串字面量 —— 后者的行尾随
-    /// <c>text=auto</c> 在 CRLF（Windows 工作区）与 LF（Linux / macOS 检出）之间变化，
-    /// 断言会隐含依赖平台。这里把「产物行尾必须等于文档行尾」这条不变式显式钉死。
-    /// </remarks>
     [Theory]
     [InlineData("\r\n")]
     [InlineData("\n")]
@@ -443,7 +434,6 @@ public class StronglyTypedIdRefactoringProviderTests
     /// <summary>
     /// 反向重构重排后的换行同样沿用文档自身的行尾（摘掉特性后留下的空行由格式化器补齐）。
     /// </summary>
-    /// <remarks>与正向用例同理，期望值用显式行尾拼出，不依赖检出时的 <c>text=auto</c>。</remarks>
     [Theory]
     [InlineData("\r\n")]
     [InlineData("\n")]

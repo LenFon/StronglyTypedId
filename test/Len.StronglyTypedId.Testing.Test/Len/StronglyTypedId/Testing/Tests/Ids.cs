@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Len.StronglyTypedId;
 
 namespace Len.StronglyTypedId.Testing.Tests;
@@ -84,19 +84,25 @@ public enum Color
     Blue,
 }
 
-/// <summary>验证器只接受正数 —— 随机值约有一半会被拒，用来验证重试路径。</summary>
+/// <summary>
+/// 验证器只接受正数——随机值约有一半会被拒，用来验证重试路径。
+/// </summary>
 [StronglyTypedId(Validator = nameof(IsPositive))]
 public partial record struct PositiveIntId(int Value)
 {
     private static bool IsPositive(int value) => value > 0;
 }
 
-/// <summary>验证器恒为 false —— 用来验证重试预算耗尽后的失败提示。</summary>
+/// <summary>
+/// 验证器恒为 false ——用来验证重试预算耗尽后的失败提示。
+/// </summary>
 [StronglyTypedId(Validator = nameof(AlwaysRejects))]
 public partial record struct ImpossibleId(int Value)
 {
     private static bool AlwaysRejects(int _) => false;
 }
 
-/// <summary>AutoFixture 用例的宿主类型：验证 Id 能作为构造参数被填充。</summary>
+/// <summary>
+/// AutoFixture 用例的宿主类型：验证 Id 能作为构造参数被填充。
+/// </summary>
 public sealed record Order(GuidId Id, StringId Customer, int Quantity);

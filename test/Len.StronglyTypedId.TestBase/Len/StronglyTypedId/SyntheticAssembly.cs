@@ -7,17 +7,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// 生成「只带程序集标识与一个占位类型、不含任何真实 API」的合成程序集引用。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 生成器按「程序集名 + 主版本号」决定启用哪些代码生成器，而测试宿主的 AppDomain 里只会加载被引用
-/// 包的真实版本（恰好都是满足闸门的版本）。要验证「引用低于阈值时不生成」，就必须让编译引用中出现
-/// 一个只有名字和版本、却没有真实 API 的替身，故在此 emit 临时 DLL 作为 <see cref="MetadataReference"/>。
-/// </para>
-/// <para>
-/// 同一个「程序集名 + 版本」只 emit 一次并缓存。合成文件落在临时目录，若每条用例都重写同一路径，
-/// 并行执行的测试类会互相争用文件句柄。
-/// </para>
-/// </remarks>
 public static class SyntheticAssembly
 {
     private static readonly ConcurrentDictionary<string, Lazy<MetadataReference>> _references

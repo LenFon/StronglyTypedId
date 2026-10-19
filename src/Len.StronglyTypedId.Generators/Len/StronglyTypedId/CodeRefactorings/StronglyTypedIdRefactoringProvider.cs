@@ -7,11 +7,6 @@ namespace Len.StronglyTypedId.CodeRefactorings;
 /// <summary>
 /// 把已有 <c>record</c> 一键升级为强类型 Id 的代码重构，以及反向回退的「Inline」重构。
 /// </summary>
-/// <remarks>
-/// 与代码修复的分工：修复针对「已标特性但写错」的诊断，本重构针对「形状已合适、尚未标特性」的普通 record，
-/// 一次补齐特性、<c>partial</c> 与 using。只做这三件事 —— 其余形状问题各有专门诊断；参数名不是 <c>Value</c>
-/// 时也不提供（重命名会连带改掉生成的属性名）。
-/// </remarks>
 [ExportCodeRefactoringProvider(LanguageNames.CSharp, Name = nameof(StronglyTypedIdRefactoringProvider))]
 internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 {
@@ -47,7 +42,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 取光标所在的 record 声明；光标落在声明体内部（成员之间）时不提供重构。
     /// </summary>
-    /// <remarks>只认声明头上的光标（标识符、修饰符、参数表、基列表都在 <c>{</c> / <c>;</c> 之前），否则停在成员体里也会弹重构。</remarks>
     private static RecordDeclarationSyntax? FindRecordDeclaration(SyntaxNode root, TextSpan span)
     {
         var record = root.FindToken(span.Start)
@@ -79,7 +73,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 判断特性名是否指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
     /// </summary>
-    /// <remarks>覆盖 <c>[StronglyTypedId]</c>、<c>[StronglyTypedIdAttribute]</c>、全限定名，以及任意以 <c>.StronglyTypedIdAttribute</c> 结尾的写法。</remarks>
     private static bool IsStronglyTypedIdAttributeName(NameSyntax name)
     {
         var text = name.ToString();
@@ -91,7 +84,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 判断该 record 是否「加上特性、partial 与 using 后就是一个合法的强类型 Id」。
     /// </summary>
-    /// <remarks>只校验重构不去修的那几项：单参数、参数名 <c>Value</c>、非抽象、非泛型、基元受支持。</remarks>
     private static async Task<bool> IsConvertibleAsync(CodeRefactoringContext context, RecordDeclarationSyntax record)
     {
         if (record.ParameterList is not { Parameters: [var parameter] }
@@ -120,7 +112,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 正向重构：补 <c>[StronglyTypedId]</c>、<c>partial</c> 与 <c>using Len.StronglyTypedId;</c>。
     /// </summary>
-    /// <remarks>换行取被编辑文档自身的行尾（见 <see cref="DocumentFormatting"/>），写死 CRLF 会在 LF 文件里留下混排。</remarks>
     private static async Task<Document> ConvertToStronglyTypedIdAsync(
         Document document,
         RecordDeclarationSyntax record,
@@ -155,10 +146,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 反向重构：摘掉 <c>[StronglyTypedId]</c> 与 <c>partial</c>，必要时一并摘掉 using。
     /// </summary>
-    /// <remarks>
-    /// 仅在 Id 只有一个声明段时注册：多段 partial 里摘掉任一段的 <c>partial</c> 都会 CS0260。摘掉特性后
-    /// <c>Create</c> / <c>Parse</c> 的调用点会失去目标，故标题用「Inline」而非「Remove」。
-    /// </remarks>
     private static async Task RegisterInlineRefactoringAsync(CodeRefactoringContext context, RecordDeclarationSyntax record)
     {
         var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
@@ -178,7 +165,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 摘掉 <c>[StronglyTypedId]</c>、<c>partial</c>，并在文件里再无强类型 Id 时摘掉 using。
     /// </summary>
-    /// <remarks>格式化同样按文档自身的行尾进行（见 <see cref="DocumentFormatting"/>）。</remarks>
     private static async Task<Document> InlineToPrimitiveAsync(
         Document document,
         RecordDeclarationSyntax record,
@@ -204,7 +190,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 从特性列表中摘掉全部 <c>[StronglyTypedId]</c>；某条特性列表被摘空时连同方括号一起移除。
     /// </summary>
-    /// <remarks>一条列表里可并列多个特性（<c>[StronglyTypedId, Obsolete]</c>），故按特性粒度摘，摘空时连方括号一起移除。</remarks>
     private static SyntaxList<AttributeListSyntax> RemoveStronglyTypedIdAttributes(SyntaxList<AttributeListSyntax> attributeLists)
     {
         var result = new List<AttributeListSyntax>();
@@ -231,10 +216,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 在编译单元顶部补 <c>using Len.StronglyTypedId;</c>；已有该 using 时原样返回。
     /// </summary>
-    /// <remarks>
-    /// 插入点：已有 using 时插在最后一个之后，否则插在首个成员之前；插入点原有的 trivia 挪到新指令上，
-    /// 再把插入点规整为一个换行，避免多出空行或 using 紧贴 namespace。
-    /// </remarks>
     private static SyntaxNode AddUsingIfMissing(SyntaxNode root, string endOfLine)
     {
         if (root is not CompilationUnitSyntax compilationUnit || HasUsingDirective(compilationUnit))

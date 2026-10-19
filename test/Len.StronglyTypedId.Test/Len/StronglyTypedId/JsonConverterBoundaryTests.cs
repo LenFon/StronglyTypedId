@@ -5,29 +5,12 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// 生成的 JSON 转换器在「null 与畸形载荷」下的边界行为。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 既有 <see cref="SerializationAndDeserializationTests"/> 只覆盖合法值的往返，本类补的是
-/// 生成代码里那条「取不到值」的兜底路径（<c>_ =&gt; throw …</c>）与写侧的空值路径
-/// （<c>writer.WriteNullValue()</c> / <c>writer.WriteNull()</c>），二者此前从未被执行过。
-/// </para>
-/// <para>
-/// 断言按「实测事实」而非「推测」书写，且只锁定异常**类型**不锁定消息文本：消息里的
-/// 路径 / 行列号由 JSON 库在不同主版本间调整。
-/// </para>
-/// <para>
-/// 值类型（record struct）与引用类型（record）在 null 上的契约不同，因此两者都测：
-/// Newtonsoft 的生成代码显式用 <c>null when (objectType.IsClass || …)</c> 分流，System.Text.Json 则由框架
-/// 依据 <see cref="System.Text.Json.Serialization.JsonConverter{T}"/> 的空值处理约定分流。
-/// </para>
-/// </remarks>
 public class JsonConverterBoundaryTests
 {
     #region System.Text.Json：null 令牌
 
     /// <summary>
-    /// 值类型 Id 遇到 JSON <c>null</c> 时，框架仍会把令牌交给生成的转换器，
-    /// 转换器取不到值 → 抛 <see cref="InvalidOperationException"/>。
+    /// 值类型 Id 遇到 JSON <c>null</c> 时，框架仍会把令牌交给生成的转换器，转换器取不到值 → 抛 <see cref="InvalidOperationException"/>。
     /// </summary>
     [Fact]
     public void SystemTextJson_Should_Throw_WhenValueTypeIdReceivesNullToken()
@@ -38,8 +21,7 @@ public class JsonConverterBoundaryTests
     }
 
     /// <summary>
-    /// 引用类型 Id 遇到 JSON <c>null</c> 时由框架直接返回 <see langword="null"/>，
-    /// 不进入转换器（因此不会抛出"取不到值"异常）。
+    /// 引用类型 Id 遇到 JSON <c>null</c> 时由框架直接返回 <see langword="null"/>，不进入转换器（因此不会抛出"取不到值"异常）。
     /// </summary>
     [Fact]
     public void SystemTextJson_Should_ReturnNull_WhenReferenceTypeIdReceivesNullToken()

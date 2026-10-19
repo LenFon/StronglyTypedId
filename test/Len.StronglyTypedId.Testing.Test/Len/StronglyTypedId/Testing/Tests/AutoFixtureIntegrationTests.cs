@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using AutoFixture;
 using FluentAssertions;
 using Xunit;
@@ -6,8 +6,8 @@ using Xunit;
 namespace Len.StronglyTypedId.Testing.Tests;
 
 /// <summary>
-/// AutoFixture 适配：<c>fixture.Create&lt;OrderId&gt;()</c> 必须走生成的 <c>Create</c>，而不是
-/// AutoFixture 默认的「挑一个构造函数」策略 —— 后者会绕过验证器。
+/// AutoFixture 适配：<c>fixture.Create&lt;OrderId&gt;()</c> 必须走生成的 <c>Create</c>，而不是 AutoFixture
+/// 默认的「挑一个构造函数」策略——后者会绕过验证器。
 /// </summary>
 public class AutoFixtureIntegrationTests
 {

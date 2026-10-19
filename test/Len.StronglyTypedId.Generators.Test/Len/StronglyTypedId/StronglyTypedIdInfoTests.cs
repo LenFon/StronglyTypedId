@@ -10,16 +10,8 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// <see cref="StronglyTypedIdInfo"/> 的单元测试，聚焦 <see cref="StronglyTypedIdInfo.PrimitiveIdTypeName"/>
-/// 的解析来源。
+/// <see cref="StronglyTypedIdInfo"/> 的单元测试，聚焦 <see cref="StronglyTypedIdInfo.PrimitiveIdTypeName"/> 的解析来源。
 /// </summary>
-/// <remarks>
-/// 强类型 Id 有两种来源：本次编译新声明的（尚未实现接口，接口由生成代码补充）与引用程序集中已生成的
-/// （已实现接口）。后者必须以 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的第二个类型实参为准，
-/// 而不能按构造函数形状推断，否则会同时暴露两类缺陷：没有单参数构造函数时取首个元素直接抛异常；
-/// 引用类型 <c>record</c> 会合成 <c>Foo(Foo original)</c> 复制构造函数，主构造函数参数多于一个时
-/// 会把该记录自身误判为基元类型。
-/// </remarks>
 public class StronglyTypedIdInfoTests
 {
     #region 接口优先：引用程序集中已生成的强类型 Id
@@ -167,8 +159,8 @@ public class StronglyTypedIdInfoTests
     }
 
     /// <summary>
-    /// <see cref="StronglyTypedIdInfo.TypeKindSuffix"/> 决定生成代码里 <c>record</c> 后面是否补 <c>struct</c>：
-    /// 值类型 record 漏掉它就会生成 <c>partial record OrderId</c>，与源处的 <c>record struct</c> 不匹配。
+    /// <see cref="StronglyTypedIdInfo.TypeKindSuffix"/> 决定生成代码里 <c>record</c> 后面是否补 <c>struct</c>：值类型 record
+    /// 漏掉它就会生成 <c>partial record OrderId</c>，与源处的 <c>record struct</c> 不匹配。
     /// </summary>
     [Theory]
     [InlineData("record struct", " struct")]
@@ -244,9 +236,8 @@ public class StronglyTypedIdInfoTests
     #region 派生能力：格式化接口、string 特判与验证器名
 
     /// <summary>
-    /// 格式化相关能力取自<b>基元类型的符号</b>而不是类型名字面量，因此这些断言同时也是生成模板
-    /// 分支条件的依据：<c>string</c> 未实现 <c>IFormattable</c>，所以 string 基元的 Id 也不能实现它，
-    /// 生成器必须据此条件生成。这条事实一旦变化，模板的分支就要跟着改。
+    /// 格式化相关能力取自<b>基元类型的符号</b>而不是类型名字面量，因此这些断言同时也是生成模板分支条件的依据：<c>string</c> 未实现 <c>IFormattable</c>，所以
+    /// string 基元的 Id 也不能实现它，生成器必须据此条件生成。这条事实一旦变化，模板的分支就要跟着改。
     /// </summary>
     [Theory]
     [InlineData("int", false, true, true)]
@@ -274,8 +265,7 @@ public class StronglyTypedIdInfoTests
     }
 
     /// <summary>
-    /// <c>Validator</c> 是 attribute 的命名实参，会被写进元数据，因此引用程序集里的强类型 Id 与本次编译
-    /// 新声明的走同一条读取路径（生成器入口无需另行传递）。
+    /// <c>Validator</c> 是 attribute 的命名实参，会被写进元数据，因此引用程序集里的强类型 Id 与本次编译新声明的走同一条读取路径（生成器入口无需另行传递）。
     /// </summary>
     [Fact]
     public void Info_Should_ReadValidatorName_FromAttributeNamedArgument()
@@ -317,8 +307,7 @@ public class StronglyTypedIdInfoTests
     #region 文本前缀：Prefix / PrefixReadMode 解析
 
     /// <summary>
-    /// <c>Prefix</c> 与 <c>PrefixReadMode</c> 都是 attribute 命名实参，会被写进元数据，
-    /// 因此引用程序集里的强类型 Id 与本次编译新声明的走同一条读取路径。
+    /// <c>Prefix</c> 与 <c>PrefixReadMode</c> 都是 attribute 命名实参，会被写进元数据，因此引用程序集里的强类型 Id 与本次编译新声明的走同一条读取路径。
     /// </summary>
     [Fact]
     public void Info_Should_ReadPrefix_FromAttributeNamedArgument()
@@ -358,8 +347,8 @@ public class StronglyTypedIdInfoTests
     }
 
     /// <summary>
-    /// 未设置前缀时 <see cref="StronglyTypedIdInfo.Prefix"/> 为 <see langword="null"/>、<c>HasPrefix</c> 为假，
-    /// 生成产物与不支持前缀时逐字节一致。
+    /// 未设置前缀时 <see cref="StronglyTypedIdInfo.Prefix"/> 为 <see langword="null"/>、<c>HasPrefix</c>
+    /// 为假，生成产物与不支持前缀时逐字节一致。
     /// </summary>
     [Fact]
     public void Info_Should_LeavePrefixNull_WhenAttributeOmitsIt()
@@ -482,8 +471,8 @@ public class StronglyTypedIdInfoTests
     #region 容器可访问性：覆盖 GetAccessibilityKeyword 的非常见分支
 
     /// <summary>
-    /// 覆盖 <see cref="StronglyTypedIdInfo.GetAccessibilityKeyword"/> 的 <see cref="Accessibility.Protected"/> 分支：
-    /// 嵌套类型落在 <c>protected</c> 容器里时，重开声明必须写出 <c>protected</c>。
+    /// 覆盖 <see cref="StronglyTypedIdInfo.GetAccessibilityKeyword"/> 的 <see cref="Accessibility.Protected"/>
+    /// 分支：嵌套类型落在 <c>protected</c> 容器里时，重开声明必须写出 <c>protected</c>。
     /// </summary>
     [Fact]
     public void Info_Should_RestateProtectedContainingType_WithAccessibility()
@@ -560,11 +549,6 @@ public class StronglyTypedIdInfoTests
 
     #region 嵌套包装：把声明块嵌回包含类型
 
-    /// <remarks>
-    /// 断言用 <c>"\n"</c> 拼接而不是原始字符串字面量：本方法的契约就是只用 <c>\n</c> 逐行拼接，
-    /// 行尾风格统一交给调用方最后的 <c>NormalizeLineEndings</c>。原始字符串字面量的行尾跟随测试文件
-    /// （本工作区是 CRLF），拿它做期望值会把「平台行尾」混进对拼接契约的断言里。
-    /// </remarks>
     [Fact]
     public void NestInContainingTypes_Should_WrapAndIndent_WhenNested()
     {
@@ -622,8 +606,7 @@ public class StronglyTypedIdInfoTests
     #region 辅助
 
     /// <summary>
-    /// 在合成编译中取出指定元数据名对应的类型符号。测试源码必须先真正编译通过，
-    /// 否则接口未成功绑定、用例会退化为「什么都没测」。
+    /// 在合成编译中取出指定元数据名对应的类型符号。测试源码必须先真正编译通过，否则接口未成功绑定、用例会退化为「什么都没测」。
     /// </summary>
     private static INamedTypeSymbol GetTypeSymbol(string sourceCode, string metadataName)
     {

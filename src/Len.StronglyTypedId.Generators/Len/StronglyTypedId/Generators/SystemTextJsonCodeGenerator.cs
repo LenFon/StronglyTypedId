@@ -5,10 +5,6 @@ namespace Len.StronglyTypedId.Generators;
 /// <summary>
 /// 为强类型 Id 生成 System.Text.Json 转换器。
 /// </summary>
-/// <remarks>
-/// 除值的读写外还必须重写 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>：STJ 处理字典键走这两条路径，
-/// 默认实现只认得内建键类型，否则 <c>Dictionary&lt;OrderId, TValue&gt;</c> 完全不可用。
-/// </remarks>
 internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 {
     internal static readonly ICoreCodeGenerator Instance = new SystemTextJsonCodeGenerator();
@@ -16,11 +12,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 抑制 IL2026 / IL3050 时给出的理由。
     /// </summary>
-    /// <remarks>
-    /// <c>Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c> 带 <c>RequiresUnreferencedCode</c> 与
-    /// <c>RequiresDynamicCode</c>，AOT / Trim 宿主会报 IL2026 / IL3050；但这里的 <c>T</c> 永远是受支持基元，
-    /// STJ 有内建转换器，警告只是保守推断。改用底层 API 会绕过宿主的转换器配置，抑制标注则零行为变更。
-    /// </remarks>
     private const string AotSuppressionJustification =
         "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
 
@@ -98,10 +89,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取写属性名时用的表达式。
     /// </summary>
-    /// <remarks>
-    /// 属性名按不变文化写出，否则同一份数据在不同区域下会得到不同的键。枚举例外：其
-    /// <c>ToString(string, IFormatProvider)</c> 已 [Obsolete]，用它会 CS0618。
-    /// </remarks>
     private static string GetPropertyNameExpression(StronglyTypedIdInfo idInfo)
         => idInfo.HasPrefix
             ? "value.ToString()"
@@ -116,10 +103,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取读入基元值时用的表达式。
     /// </summary>
-    /// <remarks>
-    /// 刻意读非可空基元：<c>Deserialize&lt;int?&gt;</c> 会迫使 AOT 宿主额外注册 <c>Nullable&lt;T&gt;</c>。
-    /// JSON 的 <c>null</c> 已在调用前由 <c>reader.TokenType</c> 拦下，故 <c>string</c> 补 <c>!</c> 抑制 CS8600。
-    /// </remarks>
     private static string GetDeserializeExpression(StronglyTypedIdInfo idInfo)
         => idInfo.IsStringPrimitive
             ? "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!"
@@ -128,10 +111,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>Read</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
     /// </summary>
-    /// <remarks>
-    /// 基元形态（默认）把 Id 与基元值视为同一形状，产物逐字节不变；对象形态读入 <c>{ "value": … }</c>。
-    /// 缩进按产物层级写死，行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 统一。
-    /// </remarks>
     private static string GetReadTail(StronglyTypedIdInfo idInfo)
     {
         var builder = new StringBuilder();
@@ -225,10 +204,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>Write</c> 成员形参表之后的方法体。
     /// </summary>
-    /// <remarks>
-    /// 基元形态写出基元值本身，对象形态写出 <c>{ "value": … }</c>。属性名固定，不跟随
-    /// <c>PropertyNamingPolicy</c>：JSON 形状是对外契约。
-    /// </remarks>
     private static string GetWriteTail(StronglyTypedIdInfo idInfo)
     {
         var builder = new StringBuilder();
@@ -268,10 +243,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 生成 <c>ReadAsPropertyName</c> 成员，整体拼接在最后一个成员的同一行行尾。
     /// </summary>
-    /// <remarks>
-    /// 属性名一定是 JSON 字符串，必须自行转换：<c>Read</c> 依赖 <c>TokenType</c> 为 String / Number，
-    /// 遇到 PropertyName 会在内层转换器里失败。字典键在任何 JSON 形态下都携带基元文本。
-    /// </remarks>
     private static string GetReadAsPropertyName(StronglyTypedIdInfo idInfo, string version)
     {
         var builder = new StringBuilder();

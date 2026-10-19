@@ -6,12 +6,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// <see cref="LocalizedString"/> 的单元测试：相等性、哈希与区域性回退。
 /// </summary>
-/// <remarks>
-/// 该类型存在的理由是分析器规范禁止直接读取 <c>CultureInfo.CurrentCulture</c>（RS1035），
-/// 改为实现 <c>LocalizableString</c> 由 Roslyn 在格式化诊断时注入目标区域性。因此
-/// <c>GetHash</c> / <c>AreEqual</c> 不只是装饰：诊断对象会参与比较与去重，实现错误会导致
-/// 同一条诊断被判为不同，或不同诊断被判为相同。
-/// </remarks>
 public class LocalizedStringTests
 {
     #region 相等性与哈希
@@ -53,7 +47,7 @@ public class LocalizedStringTests
     #region 区域性回退
 
     /// <summary>
-    /// 资源键不存在时必须回退显示键本身，而不是抛异常 —— 漏配一条文案不应让整个诊断崩溃。
+    /// 资源键不存在时必须回退显示键本身，而不是抛异常——漏配一条文案不应让整个诊断崩溃。
     /// </summary>
     [Fact]
     public void ToString_Should_FallBackToKey_WhenResourceIsMissing() => new LocalizedString("NoSuchResourceKey").ToString().Should().Be("NoSuchResourceKey");

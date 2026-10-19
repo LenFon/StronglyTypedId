@@ -9,16 +9,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// README 三张表与源码的一致性守卫。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 三张表（基元类型 / 集成触发条件 / 诊断）都由 <c>tools/Len.StronglyTypedId.DocGen</c> 从生成器内部的
-/// 判定数据渲染，README 里只保留 <c>&lt;!-- BEGIN GENERATED:… --&gt;</c> 标记之间的内容。
-/// 这个用例把「忘了重新生成」变成一次本地可见的失败，而不是等读者发现表格与代码对不上。
-/// </para>
-/// <para>
-/// 表外的正文（段落、示例、FAQ）不受本用例约束 —— 那些是手写的，改了就改了。
-/// </para>
-/// </remarks>
 public class ReadmeDocumentationTests
 {
     [Theory]
@@ -44,9 +34,6 @@ public class ReadmeDocumentationTests
     /// <summary>
     /// 每条诊断都必须有文档条目，且不得登记描述符里不存在的规则 ID。
     /// </summary>
-    /// <remarks>
-    /// 新增诊断却忘了登记时，README 的诊断表会静默少一行 —— 没有人会去数行数。
-    /// </remarks>
     [Fact]
     public void DiagnosticDocumentation_Should_CoverEveryDescriptorExactly()
     {
@@ -63,10 +50,6 @@ public class ReadmeDocumentationTests
     /// <summary>
     /// 「代码修复」列有内容的规则，必须恰好等于 <see cref="StronglyTypedIdCodeFixProvider"/> 声明可修复的那些。
     /// </summary>
-    /// <remarks>
-    /// 这一列无法从 <c>DiagnosticDescriptor</c> 推出，只能手工登记；正因如此才需要把两边钉在一起 ——
-    /// 新增一个修复却忘了改文档，读者会以为那条规则只能手改。
-    /// </remarks>
     [Fact]
     public void DiagnosticDocumentation_Should_MarkExactlyTheFixableRules()
     {
@@ -82,10 +65,6 @@ public class ReadmeDocumentationTests
     /// <summary>
     /// 所有参与渲染的文案都必须有中文版本。
     /// </summary>
-    /// <remarks>
-    /// <c>README.zh-CN.md</c> 与英文版共用同一份数据，只按区域性取不同字段。漏填中文不会报错，
-    /// 只会让中文表格出现空白单元格 —— 那是最容易被忽略的一种退化。
-    /// </remarks>
     [Fact]
     public void Documentation_Should_ProvideChineseTextForEveryCell()
     {

@@ -1,14 +1,10 @@
-using System.Text;
+﻿using System.Text;
 
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
 /// 为强类型 Id 生成 Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 与统一注册入口。
 /// </summary>
-/// <remarks>
-/// Dapper 默认把未知类型按 <c>object</c> 序列化为 JSON，强类型 Id 会退化成一段 JSON 字符串存进数据库。
-/// 实现 <c>TypeHandler&lt;TId&gt;</c> 后写入基元值、读取时还原为 Id。
-/// </remarks>
 internal class DapperCodeGenerator : IIntegrationCodeGenerator
 {
     internal static readonly IIntegrationCodeGenerator Instance = new DapperCodeGenerator();
@@ -92,9 +88,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
                 {
-                    /// <summary>
-                    /// Employ strongly typed IDs in Dapper.
-                    /// </summary>
+                    /// <summary>Employ strongly typed IDs in Dapper.</summary>
                     /// <param name="connection">The Dapper connection to register the type handlers against.</param>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(DapperCodeGenerator), version)}}

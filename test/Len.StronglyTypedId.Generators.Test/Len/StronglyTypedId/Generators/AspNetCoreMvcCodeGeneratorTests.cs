@@ -1,4 +1,4 @@
-// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
+﻿// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
 // 统一在此文件禁用该测试框架分析器警告。
 #pragma warning disable xUnit1051
 using System.IO;
@@ -13,14 +13,9 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// <see cref="AspNetCoreMvcCodeGenerator"/> 的单元测试：覆盖顺序属性、真实 MVC 引用下的产物形态，
-/// 以及「模型绑定 / 路由约束」产物在真实 ASP.NET Core 消费者画像下的可编译性。
+/// <see cref="AspNetCoreMvcCodeGenerator"/> 的单元测试：覆盖顺序属性、真实 MVC 引用下的产物形态，以及「模型绑定 / 路由约束」产物在真实 ASP.NET Core
+/// 消费者画像下的可编译性。
 /// </summary>
-/// <remarks>
-/// 本测试与 <see cref="CodeGeneratorModuleGateTests"/> 的 MVC 闸门用例互补：后者用合成
-/// <c>Microsoft.AspNetCore.Mvc</c> 程序集验证「版本门控是否生效」，本文件则在真实框架引用下
-/// 验证「生成的 MvcOptions / RouteOptions 注册代码确实能编译」。
-/// </remarks>
 public class AspNetCoreMvcCodeGeneratorTests
 {
     #region 辅助：驱动生成器并捕获 MVC 产物
@@ -201,11 +196,6 @@ public class AspNetCoreMvcCodeGeneratorTests
     /// <summary>
     /// 回归用例：MVC 产物在「真实引用 ASP.NET Core」的消费者里必须能编译。
     /// </summary>
-    /// <remarks>
-    /// 生成文件里所有 MVC / 路由符号都用 <c>global::</c> 全限定，不依赖任何隐式 using，
-    /// 因此 Web SDK 与非 Web SDK 消费者都通。必须真正 Emit 一次产物（而非只比对文本），
-    /// 才能抓住「类型/命名空间不可解析」这类真机缺陷。
-    /// </remarks>
     [Fact]
     public void AspNetCoreMvc_Should_Compile_WhenConsumerReferencesMvc()
     {

@@ -15,30 +15,20 @@ internal static class GeneratedCode
     /// <summary>
     /// 把 <paramref name="code"/> 的换行符统一为模板自身使用的风格。
     /// </summary>
-    /// <remarks>
-    /// 模板是原始字符串字面量，行尾随 git 的 <c>text=auto</c> 在 CRLF / LF 间变化，而条件片段一律用 <c>\n</c>；
-    /// 两者相接会产生混排行尾，破坏确定性构建。判据取「模板里是否出现过 <c>\r</c>」，而非
-    /// <see cref="System.Environment.NewLine"/>（那是运行机器的属性，与模板文件无关）。
-    /// </remarks>
     public static string NormalizeLineEndings(string code)
         => code.IndexOf('\r') >= 0
             ? code.Replace("\r\n", "\n").Replace("\n", "\r\n")
             : code.Replace("\r\n", "\n");
 
     /// <summary>
-    /// 各生成器产出的源文件统一文件头：<c>// &lt;auto-generated /&gt;</c> 注释、命名空间声明与
-    /// <c>#nullable enable</c>，并以两个空行收尾，便于直接拼接类型声明块。
+    /// 各生成器产出的源文件统一文件头：<c>// &lt;auto-generated /&gt;</c> 注释、命名空间声明与 <c>#nullable
+    /// enable</c>，并以两个空行收尾，便于直接拼接类型声明块。
     /// </summary>
     /// <param name="namespaceName">生成代码所在命名空间。</param>
     /// <param name="preamble">
     /// 可选的前导段（如 Swagger 生成器需要的 <c>using Microsoft.Extensions.DependencyInjection;</c>），
     /// 置于 <c>// &lt;auto-generated /&gt;</c> 与命名空间声明之间；为空时省略。
     /// </param>
-    /// <remarks>
-    /// 行尾一律用 <c>\n</c>：文件头若自带 <c>\r</c>，<see cref="NormalizeLineEndings"/> 的判据就恒为真，
-    /// 产物永远归一成 CRLF，LF 检出（Linux / macOS CI）下与快照基线不符。调用方须把拼接结果交给
-    /// <see cref="NormalizeLineEndings"/>。
-    /// </remarks>
     public static string Header(string namespaceName, string? preamble = null)
     {
         var builder = new StringBuilder();
@@ -58,7 +48,6 @@ internal static class GeneratedCode
     /// <summary>
     /// 标记成员由源生成器生成的 <c>[CompilerGenerated]</c> 特性文本（不含缩进、不含行尾）。
     /// </summary>
-    /// <remarks>各生成器模板里逐字重复的完全限定名集中在此，避免拼写漂移。</remarks>
     public const string CompilerGeneratedAttribute = "[global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]";
 
     /// <summary>
@@ -77,10 +66,6 @@ internal static class GeneratedCode
     /// 自 <c>partial record …</c> 起、到该类型自身的收尾大括号为止的声明块，书写在 0 缩进处；
     /// 附在 Id 上的特性（如 <c>[JsonConverter]</c>）属于签名的一部分，一并含在其中。
     /// </param>
-    /// <remarks>
-    /// partial 类型的各段必须处在同一容器内，嵌套 Id 只能把声明逐层放回包含类型；顶层类型原样返回。
-    /// 行尾用 <c>\n</c> 拼接，由调用方统一交给 <see cref="NormalizeLineEndings"/>；空行不补缩进。
-    /// </remarks>
     public static string NestInContainingTypes(StronglyTypedIdInfo idInfo, string declarationBlock)
     {
         if (idInfo.NestingDepth == 0)

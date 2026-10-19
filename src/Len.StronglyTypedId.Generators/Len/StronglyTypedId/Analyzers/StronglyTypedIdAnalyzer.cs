@@ -155,7 +155,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 类型名不以 <c>Id</c> 结尾时给出改名建议（STIA0015）。
     /// </summary>
-    /// <remarks>定位取标识符本身：这是一条关于「这个名字」的建议。该规则没有代码修复，不受相关测试约束。</remarks>
     private static void ValidateNameConvention(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
     {
         if (type.Name.EndsWith("Id", StringComparison.Ordinal))
@@ -174,10 +173,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 同一命名空间下多个强类型 Id 共用同一基元类型时提示（STIA0016）。
     /// </summary>
-    /// <remarks>
-    /// 每组只报一次，落在组内名字序最小的类型上。嵌套类型不在 <c>GetTypeMembers</c> 的返回范围内，天然排除。
-    /// 复杂度 O(k²)，k 为同命名空间的类型数，现实中可忽略。
-    /// </remarks>
     private static void ValidateDuplicatePrimitiveType(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
@@ -221,9 +216,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 取强类型 Id 的基元类型，即唯一一个「单参数、且参数类型不是自身」的实例构造函数所带的参数类型。
     /// </summary>
-    /// <remarks>
-    /// 必须排除参数类型等于自身的构造函数：<c>record class</c> 合成的拷贝构造函数也是单参数的。
-    /// </remarks>
     private static ITypeSymbol? GetSingleParameterType(INamedTypeSymbol type)
     {
         foreach (var constructor in type.InstanceConstructors)
@@ -241,10 +233,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 检测「配了归一化或验证器、但类型对外可见」的组合，提示约束可被直接构造绕过（STIA0014）。
     /// </summary>
-    /// <remarks>
-    /// record 的主构造函数不能单独指定可见性（CS1514），它跟随类型本身，故类型对外可见时 <c>new R(default)</c>
-    /// 就可用。该规则默认关闭，此处无条件上报，是否呈现由 <c>IsEnabledByDefault</c> / <c>.editorconfig</c> 决定。
-    /// </remarks>
     private static void ValidateGuardBypass(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
@@ -263,7 +251,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 判断类型（含其全部包含类型）是否对外可见。
     /// </summary>
-    /// <remarks>嵌套在 <c>internal</c> 容器里的 <c>public</c> 类型不可跨程序集访问，故逐层判定。</remarks>
     private static bool IsExternallyVisible(INamedTypeSymbol type)
     {
         for (var current = type; current is not null; current = current.ContainingType)
@@ -280,10 +267,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 校验 <c>[StronglyTypedId(Prefix = …)]</c> 的前缀是否为非空、非纯空白字符串（STIA0013）。
     /// </summary>
-    /// <remarks>
-    /// 生成器把空 / 纯空白前缀静默按「未设置」处理，这里提前告警。取值走符号级命名实参，故常量写法也能判定，
-    /// 且不触发 RS1030。
-    /// </remarks>
     private static void ValidatePrefix(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
     {
         var prefix = AttributeReader.GetString(
@@ -299,10 +282,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 校验 <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法是否为合法的静态验证器。
     /// </summary>
-    /// <remarks>
-    /// 校验项：方法存在、静态、返回 <see cref="bool"/>、恰好一个参数且类型等于基元 Id 类型。可见性不约束 ——
-    /// 生成代码与 Id 同 partial，private 也可达。
-    /// </remarks>
     private static void ValidateValidator(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
@@ -326,10 +305,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 校验 <c>[StronglyTypedId(Normalizer = nameof(Foo))]</c> 指向的方法是否为合法的静态归一化方法。
     /// </summary>
-    /// <remarks>
-    /// 校验项：方法存在、静态、返回类型与唯一参数类型都等于基元 Id 类型。返回类型必须一并校验 ——
-    /// 写成 <c>void</c> 或 <c>object</c> 时错误会跑到生成代码里变成 CS1503 / CS0029，位置却指向 <c>.g.cs</c>。
-    /// </remarks>
     private static void ValidateNormalizer(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
@@ -353,7 +328,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 在声明段里定位 <c>[StronglyTypedId(&lt;argumentName&gt; = …)]</c> 中指定命名实参的语法位置。
     /// </summary>
-    /// <remarks>STIA0010 / STIA0013 / STIA0017 共用：分散实现迟早有一处漏改名字，然后静默退回到整段声明的位置。</remarks>
     private static Location? FindNamedArgumentLocation(RecordDeclarationSyntax[] records, string argumentName)
     {
         foreach (var record in records)
@@ -445,10 +419,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 检测直接构造强类型 Id 的写法（STIA0011）：<c>new Xxx(...)</c> 与目标类型化的 <c>new(...)</c>。
     /// </summary>
-    /// <remarks>
-    /// 两种形态共用一个处理函数：隐式创建没有 <c>Type</c> 属性，只能经符号信息取构造函数，而显式创建同样可以这么取，
-    /// 于是不必写两套。生成代码里的 <c>new Xxx(...)</c> 由生成代码豁免自动忽略，不会误报。
-    /// </remarks>
     private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext context)
     {
         if (context.Node is not BaseObjectCreationExpressionSyntax creation)
@@ -470,14 +440,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 检测 <c>default</c> / <c>default(T)</c> 产生的零值实例（STIA0011）。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 只对值类型 Id 报告：引用类型 record 的 <c>default</c> 就是 <see langword="null"/>，并没有「构造出无效实例」。
-    /// </para>
-    /// <para>
-    /// 与 <c>default</c> 做相等比较是合法且常见的判空写法，必须排除，否则规则会被噪声淹没。
-    /// </para>
-    /// </remarks>
     private static void AnalyzeDefaultValue(OperationAnalysisContext context)
     {
         if (context.Operation is not IDefaultValueOperation defaultValue
@@ -494,10 +456,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 判断 <c>default</c> 是否处在「与空值比较」的语境里（<c>x == default</c>、<c>x.Equals(default)</c>）。
     /// </summary>
-    /// <remarks>
-    /// 必须先穿过隐式转换节点：<c>default</c> 字面量自身没有类型，语义树里通常被一层
-    /// <see cref="IConversionOperation"/> 包着，直接看 <c>Parent</c> 只会看到那层转换。
-    /// </remarks>
     private static bool IsComparisonOperand(IDefaultValueOperation operation)
     {
         var current = operation.Parent;
@@ -518,10 +476,6 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 判断该类型是否「配了归一化或验证器、因而绕过 Create 就等于绕过这些约束」——STIA0011 各形态的统一前提。
     /// </summary>
-    /// <remarks>
-    /// 两个名字都必须走 <c>GetEffective…</c>：它们还会回退到程序集级 <c>StronglyTypedIdDefaults</c>，
-    /// 只查类型上的实参会漏报。归一化也算在内 —— 绕过它得到的 Id 不是规范形，相等性比较会失效。
-    /// </remarks>
     private static bool BypassesGuards(INamedTypeSymbol type, Compilation compilation)
         => HasStronglyTypedIdAttribute(type)
             && (GetEffectiveValidatorName(type, compilation.Assembly) is not null

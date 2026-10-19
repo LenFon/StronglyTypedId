@@ -12,24 +12,10 @@ using Microsoft.Extensions.Logging;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// 生成的 <c>StronglyTypedIds</c> 是 <c>internal static partial class</c>（本编译单元内可见），
-/// 各集成产物按引用的包被门控生成。本测试工程的包引用（EF Core / Dapper / Swashbuckle /
-/// Microsoft.AspNetCore.OpenApi / FrameworkReference Microsoft.AspNetCore.App）使 5 个集成
-/// 生成器全部触发，故 <c>StronglyTypedIds</c> 的 5 组 <c>ApplyTo</c> 都在本编译里可见。
+/// 生成的 <c>StronglyTypedIds</c> 是 <c>internal static partial class</c>（本编译单元内可见），各集成产物按引用的包被门控生成。本测试工程的包引用（EF
+/// Core / Dapper / Swashbuckle / Microsoft.AspNetCore.OpenApi / FrameworkReference
+/// Microsoft.AspNetCore.App）使 5 个集成生成器全部触发，故 <c>StronglyTypedIds</c> 的 5 组 <c>ApplyTo</c> 都在本编译里可见。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 门控判据（见 <see cref="StronglyTypedIdGenerator"/> 的 <c>_generatorCatalog</c>）：
-/// EF Core ≥ 7、Dapper ≥ 2、Swashbuckle ≥ 6、内置 OpenApi ≥ 9（FrameworkReference 在
-/// net10.0 下主版本 10 满足）、MVC 门面/实现任一 ≥ 2（FrameworkReference 下 .NET 10 满足）。
-/// 因此 net8.0 与 net10.0 双目标下，本文件的运行时验证都成立。
-/// </para>
-/// <para>
-/// TestBase 的 <c>GuidId</c> 等 Id 已实现 <c>IStronglyTypedId</c>（TestBase 自身编译里由
-/// 生成器补齐），本工程通过跨程序集发现机制把它们纳入 <c>DiscoveredIds.External</c>，
-/// 集成生成器据此生成转换器 / 处理器 / 注册入口。
-/// </para>
-/// </remarks>
 public class IntegrationRuntimeTests
 {
     #region Dapper：SqlMapper.TypeHandler 真实注册 + 往返
@@ -104,21 +90,6 @@ public class IntegrationRuntimeTests
     /// <summary>
     /// 核实内置 OpenApi 门控（<c>HasModule("Microsoft.AspNetCore.OpenApi.dll", 9)</c>）在 8.0 包引用下的行为。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 本工程的 <c>Microsoft.AspNetCore.OpenApi</c> 包版本为 <c>8.0.0</c>（见 <c>Directory.Packages.props</c>），
-    /// 主版本 8 &lt; 9，按判据<b>不触发</b>内置 OpenApi 生成器。核实结论：
-    /// <c>Microsoft.AspNetCore.OpenApi</c> 8.0 包<b>没有</b> <c>OpenApiOptions</c> 类型（CS0234 实证，
-    /// .NET 8 起内置 OpenAPI 支持，但 <c>OpenApiOptions</c> / <c>IOpenApiSchemaTransformer</c>
-    /// 随 <c>Microsoft.AspNetCore.OpenApi</c> 包 9.0 才可用），故 8.0 下产物<b>必须不生成</b>，
-    /// 否则会引用不存在的类型导致 CS0234。门控判据 <c>≥9</c> 是<b>正确判据</b>而非保守判据——
-    /// 旧注释「门控判据可能有误」是误判。
-    /// </para>
-    /// <para>
-    /// 本用例以「8.0 包引用下产物类不存在」背书门控判据：不直接引用 <c>OpenApiOptions</c>
-    /// （8.0 下不存在、直接引用会 CS0234），改用反射查产物类是否在 <c>StronglyTypedIds</c> 中生成。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void AspNetCoreOpenApi_NotGenerated_WhenPackageVersionIsEight()
     {
@@ -183,8 +154,8 @@ public class IntegrationRuntimeTests
     #region System.Text.Json / Newtonsoft.Json 全局注册入口：真实注册 + 往返
 
     /// <summary>
-    /// <c>StronglyTypedIds.ApplyTo(JsonSerializerOptions)</c> 必须把每个 Id 的内嵌转换器挂到
-    /// <c>options.Converters</c> 上，且挂上之后序列化 / 反序列化往返正确。
+    /// <c>StronglyTypedIds.ApplyTo(JsonSerializerOptions)</c> 必须把每个 Id 的内嵌转换器挂到 <c>options.Converters</c>
+    /// 上，且挂上之后序列化 / 反序列化往返正确。
     /// </summary>
     [Fact]
     public void SystemTextJson_ApplyTo_RegistersConvertersAndRoundTrips()
@@ -206,8 +177,8 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
-    /// <c>settings.AddStronglyTypedId()</c> 必须把每个 Id 的内嵌转换器挂到 <c>settings.Converters</c> 上，
-    /// 且挂上之后 Newtonsoft 往返正确。
+    /// <c>settings.AddStronglyTypedId()</c> 必须把每个 Id 的内嵌转换器挂到 <c>settings.Converters</c> 上，且挂上之后 Newtonsoft
+    /// 往返正确。
     /// </summary>
     [Fact]
     public void Newtonsoft_AddStronglyTypedId_RegistersConvertersAndRoundTrips()
@@ -233,20 +204,10 @@ public class IntegrationRuntimeTests
     #region Minimal API：路由 / 查询参数经 IParsable<T> 绑定
 
     /// <summary>
-    /// Minimal API 的参数绑定约定会为「具备静态 <c>TryParse(string, IFormatProvider, out T)</c> 的类型」
-    /// 自动生成绑定逻辑；强类型 Id 经 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 间接实现了
-    /// <see cref="IParsable{TSelf}"/>，因此无需任何额外生成即可作为路由 / 查询参数。
+    /// Minimal API 的参数绑定约定会为「具备静态 <c>TryParse(string, IFormatProvider, out T)</c> 的类型」自动生成绑定逻辑；强类型 Id 经
+    /// <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 间接实现了 <see cref="IParsable{TSelf}"/>，因此无需任何额外生成即可作为
+    /// 路由 / 查询参数。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 本用例直接驱动 <c>RequestDelegateFactory</c>（Minimal API 的绑定引擎本体），不经 HTTP 服务器：
-    /// 构造一个以强类型 Id 为参数的委托，交给工厂生成 <c>RequestDelegate</c>，再喂入带路由值的
-    /// <c>HttpContext</c>，断言绑定结果。这比「起一个 WebApplication 再发请求」更快也更稳定。
-    /// </para>
-    /// <para>
-    /// 路由值与查询串同时提供，覆盖绑定源推断的两种可能（Path / Query），不依赖框架内部的推断细节。
-    /// </para>
-    /// </remarks>
     [Fact]
     public async Task MinimalApi_BindsStronglyTypedIdFromRouteAndQuery()
     {
@@ -281,8 +242,7 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
-    /// 非法文本必须被 Minimal API 绑定拒绝：<c>TryParse</c> 返回 <see langword="false"/>，
-    /// 框架据此产生 400 而非把垃圾值塞进处理器。
+    /// 非法文本必须被 Minimal API 绑定拒绝：<c>TryParse</c> 返回 <see langword="false"/>，框架据此产生 400 而非把垃圾值塞进处理器。
     /// </summary>
     [Fact]
     public async Task MinimalApi_RejectsInvalidText()
@@ -397,8 +357,7 @@ public class IntegrationRuntimeTests
     #region 辅助
 
     /// <summary>
-    /// 最小 <see cref="IDbDataParameter"/> 桩：生成的 TypeHandler.SetValue 只写 <c>Value</c>，
-    /// 不实际读写数据库，故其余成员给最小实现即可。
+    /// 最小 <see cref="IDbDataParameter"/> 桩：生成的 TypeHandler.SetValue 只写 <c>Value</c>，不实际读写数据库，故其余成员给最小实现即可。
     /// <see cref="DataRowVersion"/> 是 BCL 在 <c>System.Data</c> 下的枚举（net8.0+ 的
     /// <c>IDataParameter.SourceVersion</c> 返回类型），直接以 <c>None</c> 占位。
     /// </summary>

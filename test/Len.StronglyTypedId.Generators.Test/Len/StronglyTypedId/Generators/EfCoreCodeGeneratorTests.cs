@@ -11,26 +11,9 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// <see cref="EfCoreCodeGenerator"/> 的单元测试：覆盖顺序属性、真实 EF Core 引用下的产物形态
-/// （ValueConverter / ModelConfigurationBuilder 约定入口 / ModelBuilder 扫描入口），
-/// 多 Id 注册，以及消费者可编译性。
+/// <see cref="EfCoreCodeGenerator"/> 的单元测试：覆盖顺序属性、真实 EF Core 引用下的产物形态（ValueConverter /
+/// ModelConfigurationBuilder 约定入口 / ModelBuilder 扫描入口），多 Id 注册，以及消费者可编译性。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 本文件与 <see cref="CodeGeneratorModuleGateTests"/> 的 EF Core 闸门用例互补：后者用合成
-/// <c>Microsoft.EntityFrameworkCore</c> 程序集验证「版本门控是否生效」（≥7 才生成），本文件则
-/// 在真实 EF Core 引用下验证「生成的 ValueConverter 与注册代码确实能编译、形态正确」。
-/// </para>
-/// <para>
-/// EF Core 集成生成器额外要求源码出现 <c>ConfigureConventions(ModelConfigurationBuilder)</c>
-/// 语法（见 <see cref="StronglyTypedIdGenerator"/> 的 <c>HasDbContextConventions</c> 门槛），
-/// 故示例源码必须携带一个 DbContext 子类，否则生成器不被选入、反向用例将失去判别力。
-/// </para>
-/// <para>
-/// 本文件刻意排除 Swagger / Dapper / AspNetCoreMvc / AspNetCoreOpenApi 的门控程序集，
-/// 只保留真实 EF Core 引用，使「真实引用 EF Core 的消费者」画像成立。
-/// </para>
-/// </remarks>
 public class EfCoreCodeGeneratorTests
 {
     #region 辅助：驱动生成器并捕获 EF Core 产物
@@ -38,16 +21,6 @@ public class EfCoreCodeGeneratorTests
     /// <summary>
     /// 宿主 bin 里 EF Core 主包与 Abstractions 的绝对路径。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// EF Core 8 起 <c>ModelConfigurationBuilder</c> / <c>IModel</c> 等真实定义在
-    /// <c>Microsoft.EntityFrameworkCore.Abstractions</c>，主包 <c>Microsoft.EntityFrameworkCore</c> 只做类型转发。
-    /// 只把主包喂进合成编译时，编译器无法从中解析转发的 <c>ModelConfigurationBuilder</c>，
-    /// 示例源码的 <c>ConfigureConventions(ModelConfigurationBuilder …)</c> 会 CS0246、EF Core 产物不被触发。
-    /// 因此这里直接按<b>宿主 bin 里的文件路径</b>把主包与 Abstractions 两个 dll 都喂进引用集，
-    /// 绕开宿主 AppDomain 是否已加载这些类型的偶发状态。
-    /// </para>
-    /// </remarks>
     private static readonly string _efCoreMainDll =
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Microsoft.EntityFrameworkCore.dll"));
 
@@ -133,14 +106,6 @@ public class EfCoreCodeGeneratorTests
     /// <summary>
     /// EF Core 集成生成器的示例源码：必须出现 <c>ConfigureConventions</c> 语法，否则不被选入。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 必须带 <c>using Microsoft.EntityFrameworkCore;</c>：示例里 <c>TestDbContext : DbContext</c> 的
-    /// <c>ConfigureConventions(ModelConfigurationBuilder)</c> 形参 <c>ModelConfigurationBuilder</c> 在
-    /// <c>Microsoft.EntityFrameworkCore</c> 命名空间，缺了该 using 会 CS0246、EF Core 产物不被触发。
-    /// 这与 <see cref="StronglyTypedIdGeneratorTests"/> 里 EF Core 用例的源码范式一致。
-    /// </para>
-    /// </remarks>
     private const string EfCoreSource = """
         using System;
         using Microsoft.EntityFrameworkCore;
@@ -310,11 +275,6 @@ public class EfCoreCodeGeneratorTests
     /// <summary>
     /// 回归用例：EF Core 产物在「真实引用 Microsoft.EntityFrameworkCore」的消费者里必须能编译。
     /// </summary>
-    /// <remarks>
-    /// 生成文件里所有 EF Core 符号都用 <c>global::</c> 全限定，不依赖任何隐式 using，
-    /// 因此 Web SDK 与非 Web SDK 消费者都通。必须真正 Emit 一次产物（而非只比对文本），
-    /// 才能抓住「类型 / 命名空间不可解析」这类真机缺陷。
-    /// </remarks>
     [Fact]
     public void EfCore_Should_Compile_WhenConsumerReferencesEntityFrameworkCore()
     {

@@ -1,12 +1,8 @@
-namespace Len.StronglyTypedId.Generators;
+﻿namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
 /// 核心代码生成逻辑：为单个强类型 Id 生成源码（运行时实现、System.Text.Json、Newtonsoft.Json）。
 /// </summary>
-/// <remarks>
-/// 与 <see cref="IIntegrationCodeGenerator"/> 分开是因为输入粒度不同：核心生成器按单个 Id 产出文件，
-/// 才能保住增量性；集成生成器要产出一份「列举全部 Id」的聚合文件，必须看到全集。
-/// </remarks>
 internal interface ICoreCodeGenerator
 {
     /// <summary>

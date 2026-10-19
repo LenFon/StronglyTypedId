@@ -1,10 +1,8 @@
-namespace Len.StronglyTypedId.Generators;
+﻿namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// 集成代码生成逻辑：为全部强类型 Id 生成聚合产物
-/// （EF Core、Swagger、Dapper、内置 OpenAPI、ASP.NET Core MVC）。
+/// 集成代码生成逻辑：为全部强类型 Id 生成聚合产物（EF Core、Swagger、Dapper、内置 OpenAPI、ASP.NET Core MVC）。
 /// </summary>
-/// <remarks>除逐 Id 的转换器 / 处理器外还要产出聚合注册文件，必须看到全集，无法按单个 Id 拆分输出。</remarks>
 internal interface IIntegrationCodeGenerator
 {
     /// <summary>

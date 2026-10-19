@@ -6,11 +6,6 @@ namespace Len.StronglyTypedId;
 /// Defines an interface with a strongly typed id, without exposing the underlying primitive type.
 /// </summary>
 /// <typeparam name="TSelf">The strongly typed id type that implements this interface.</typeparam>
-/// <remarks>
-/// The primitive-agnostic form: every strongly typed id implements both this and
-/// <see cref="IStronglyTypedId{TSelf, TPrimitiveId}"/>. It declares no members of its own — parsing and equality
-/// come from the base interfaces, and <c>Value</c> cannot be exposed without naming the primitive type.
-/// </remarks>
 public interface IStronglyTypedId<TSelf> : IParsable<TSelf>, IEqualityOperators<TSelf, TSelf, bool>
     where TSelf : IStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
 {
@@ -42,11 +37,6 @@ public interface IStronglyTypedId<TSelf, TPrimitiveId> : IStronglyTypedId<TSelf>
 /// Defines a strongly typed id whose wrapped primitive supports culture-aware formatting.
 /// </summary>
 /// <typeparam name="TSelf">The strongly typed id type that implements this interface.</typeparam>
-/// <remarks>
-/// <see cref="IStronglyTypedId{TSelf}"/> deliberately does not require <see cref="IFormattable"/>: <c>string</c>
-/// ids have nothing to forward, and <c>enum</c> ids cannot expose it (<c>Enum.ToString(string, IFormatProvider)</c>
-/// is obsolete). Generated ids implement this interface exactly when the wrapped primitive is formattable.
-/// </remarks>
 public interface IFormattableStronglyTypedId<TSelf> : IStronglyTypedId<TSelf>, IFormattable
     where TSelf : IFormattableStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
 {

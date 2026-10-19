@@ -8,19 +8,16 @@ using FluentAssertions;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// 覆盖由源码生成器生成的强类型 Id 运行时行为：
-/// Create / Parse / TryParse（IParsable 契约）、相等性、ToString、接口契约，
-/// 以及 StronglyTypedIdExtensions 在枚举/数组/普通 record 上的边界分支。
+/// 覆盖由源码生成器生成的强类型 Id 运行时行为： Create / Parse / TryParse（IParsable 契约）、相等性、ToString、接口契约，以及
+/// StronglyTypedIdExtensions 在枚举/数组/普通 record 上的边界分支。
 /// </summary>
 public class StronglyTypedIdBehaviorTests
 {
     #region 测试数据：覆盖所有受支持基元类型（record struct 与 record 两种形态）
 
     /// <summary>
-    /// 样例三元组：(Id 类型, 合法值的字符串形式, 非法输入)。
-    /// 三种列都使用可序列化类型，Test Explorer 才能逐行枚举每条数据
-    /// （若数据行含有不可序列化的 object/Guid，xUnit1042 与 xUnit1045 二者必居其一）。
-    /// 基元值本身由 <see cref="PrimitiveValue"/> 从字符串还原，保持数据源的稳定性。
+    /// 样例三元组：(Id 类型, 合法值的字符串形式, 非法输入)。三种列都使用可序列化类型，Test Explorer 才能逐行枚举每条数据（若数据行含有不可序列化的
+    /// object/Guid，xUnit1042 与 xUnit1045 二者必居其一）。基元值本身由 <see cref="PrimitiveValue"/> 从字符串还原，保持数据源的稳定性。
     /// </summary>
     private static readonly (Type IdType, string Text, string InvalidInput)[] _samples =
     [
@@ -52,7 +49,9 @@ public class StronglyTypedIdBehaviorTests
         (typeof(StringIdV2), "Len", ""),
     ];
 
-    /// <summary>合法样例：(Id 类型, 值的字符串形式)。</summary>
+    /// <summary>
+    /// 合法样例：(Id 类型, 值的字符串形式)。
+    /// </summary>
     public static TheoryData<Type, string> IdSamples()
     {
         var data = new TheoryData<Type, string>();
@@ -65,7 +64,9 @@ public class StronglyTypedIdBehaviorTests
         return data;
     }
 
-    /// <summary>非法输入样例：(Id 类型, 非法输入)。</summary>
+    /// <summary>
+    /// 非法输入样例：(Id 类型, 非法输入)。
+    /// </summary>
     public static TheoryData<Type, string> InvalidIdSamples()
     {
         var data = new TheoryData<Type, string>();
@@ -78,7 +79,9 @@ public class StronglyTypedIdBehaviorTests
         return data;
     }
 
-    /// <summary>全部 Id 类型，供与具体取值无关的用例使用。</summary>
+    /// <summary>
+    /// 全部 Id 类型，供与具体取值无关的用例使用。
+    /// </summary>
     public static TheoryData<Type> IdTypes()
     {
         var data = new TheoryData<Type>();
@@ -149,12 +152,8 @@ public class StronglyTypedIdBehaviorTests
     }
 
     /// <summary>
-    /// C1：char 基元的解析按「长度恰为 1」判定 —— 空串与多字符都必须失败，string 与 span 两个重载一致。
+    /// C1：char 基元的解析按「长度恰为 1」判定——空串与多字符都必须失败，string 与 span 两个重载一致。
     /// </summary>
-    /// <remarks>
-    /// char 的 <c>IParsable&lt;char&gt;</c> 成员是显式接口实现，生成代码不能写 <c>char.TryParse(...)</c>（CS1501），
-    /// 故改为长度判定 + 下标取值。这条用例锁住该分支的语义，避免日后被「顺手改成直呼」而编译不过。
-    /// </remarks>
     [Fact]
     public void CharId_Should_RejectTextWhoseLengthIsNotOne()
     {
@@ -486,8 +485,7 @@ public class StronglyTypedIdBehaviorTests
     private static object GetValue(object id) => ((dynamic)id).Value;
 
     /// <summary>
-    /// string 基元的 Id 对相等的字符串取值做驻留：值相等但引用不同的两个字符串，
-    /// 经 <c>Create</c> 后会共享同一个底层字符串引用，减少重复 Id 的内存占用。
+    /// string 基元的 Id 对相等的字符串取值做驻留：值相等但引用不同的两个字符串，经 <c>Create</c> 后会共享同一个底层字符串引用，减少重复 Id 的内存占用。
     /// </summary>
     [Fact]
     public void StringId_Should_Intern_EqualValueStrings_ToSameReference()

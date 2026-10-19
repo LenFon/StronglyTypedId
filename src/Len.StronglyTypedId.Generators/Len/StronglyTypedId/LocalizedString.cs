@@ -6,11 +6,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// 把一个本地化资源键解析为 <c>Locales.{culture}.txt</c> 中对应区域性的文案。
 /// </summary>
-/// <remarks>
-/// 分析器规范禁止直接读取 <c>CultureInfo.CurrentCulture</c>（RS1035，会破坏分析器的确定性），
-/// 因此这里改为实现 <see cref="LocalizableString"/>：由 Roslyn 在格式化诊断时把目标区域性
-/// 作为 <see cref="IFormatProvider"/> 传入，与编译器自身的诊断本地化行为保持一致。
-/// </remarks>
 internal sealed class LocalizedString(string key) : LocalizableString
 {
     private readonly string _key = key;
@@ -62,7 +57,6 @@ file static class LocalizationTexts
         {
             var content = line.Trim();
 
-            // 跳过空行与以 '#' 起始的注释行。
             if (content.Length == 0 || content.StartsWith("#", StringComparison.Ordinal))
             {
                 continue;

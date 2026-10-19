@@ -83,11 +83,6 @@ public class StronglyTypedIdTests
     /// <summary>
     /// 特性契约：只能标在 class / struct 上，且不可继承、不允许多次标注。
     /// </summary>
-    /// <remarks>
-    /// <c>record</c> 在 IL 上是 class、<c>record struct</c> 是 struct，因此这一组目标同时覆盖两种声明形态。
-    /// 该契约一旦放宽（例如加上 <c>AttributeTargets.Interface</c>），标注在接口上的强类型 Id 会被静默接受，
-    /// 而生成器根本不会为其产出代码。
-    /// </remarks>
     [Fact]
     public void StronglyTypedIdAttribute_Should_DeclareExpectedUsage()
     {

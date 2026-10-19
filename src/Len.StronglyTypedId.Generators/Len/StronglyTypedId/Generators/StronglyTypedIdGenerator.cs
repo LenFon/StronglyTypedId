@@ -113,10 +113,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// 取单个引用所代表的全部模块身份（不解析程序集符号，故不依赖 <see cref="Compilation"/>）。
     /// </summary>
-    /// <remarks>
-    /// 单独抽成方法而非内联 lambda：<c>SelectMany</c> 的展平重载要求选择器返回 <see cref="ImmutableArray{T}"/>，
-    /// 显式返回类型可让推断稳定。
-    /// </remarks>
     private static ImmutableArray<ModuleIdentity> CollectModuleIdentities(MetadataReference reference)
         => [.. reference.GetModuleIdentities()];
 
@@ -137,7 +133,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return;
         }
 
-        // 集成生成器各自注册，这里只跑核心生成器。
         foreach (var generator in generators)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
@@ -207,10 +202,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// 执行单个生成器，并把生成阶段的任何异常转成 <see cref="Descriptors.GeneratorFailure"/> 诊断。
     /// </summary>
-    /// <remarks>
-    /// 生成器抛异常时 Roslyn 会丢弃本次全部产出，只留一条无位置、无原因的 CS8785；这里就地兜住并报出带原因的
-    /// 诊断。取消请求必须原样上抛，否则会留下不完整的产出。拆成委托是为了让失败路径能在测试里真实触发。
-    /// </remarks>
     internal static void RunGuarded(
         string generatorName,
         Action generate,
@@ -259,12 +250,9 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             context.CancellationToken);
 
     /// <summary>
-    /// 代码生成器的模块闸门登记：把「引用了哪个程序集才启用哪个生成器」集中在一处表达
-    /// （Factory + Strategy），取代原先散落在 GetCodeGenerators / GetEfCoreCodeGenerator 等处的重复判定。
+    /// 代码生成器的模块闸门登记：把「引用了哪个程序集才启用哪个生成器」集中在一处表达（Factory + Strategy），取代原先散落在 GetCodeGenerators /
+    /// GetEfCoreCodeGenerator 等处的重复判定。
     /// </summary>
-    /// <remarks>
-    /// <see cref="CodeGeneratorRegistration.IsCore"/> 区分两类：核心生成器随引用批量启用，集成生成器各自独立门控。
-    /// </remarks>
     private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog = ImmutableArray.Create(
         // 核心生成器按模块名精确匹配（区分大小写）。
         new CodeGeneratorRegistration(
@@ -358,19 +346,12 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// README「What gets generated」表的行数据：只含登记了文档的项，顺序即表格行序。
     /// </summary>
-    /// <remarks>
-    /// 由 <c>tools/Len.StronglyTypedId.DocGen</c> 消费。从门控登记里直接取，漏写
-    /// <see cref="CodeGeneratorRegistration.Documentation"/> 的项会当场从表格里消失。
-    /// </remarks>
     internal static ImmutableArray<CodeGeneratorRegistration> DocumentedGenerators
         => [.. _generatorCatalog.Where(static registration => !registration.Documentation.IsEmpty)];
 
     /// <summary>
     /// 单个代码生成器的模块闸门登记项（Factory 注册表的一项）。
     /// </summary>
-    /// <remarks>
-    /// <see cref="Condition"/> 与 <see cref="Documentation"/> 供 README 表格生成；两者都留空的登记不单独成行。
-    /// </remarks>
     internal sealed class CodeGeneratorRegistration
     {
         public CodeGeneratorRegistration(
@@ -413,10 +394,14 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         public bool IsCore { get; }
 
-        /// <summary>README 集成表「Condition in the compilation」列的文案。</summary>
+        /// <summary>
+        /// README 集成表「Condition in the compilation」列的文案。
+        /// </summary>
         public DocText Condition { get; }
 
-        /// <summary>README 集成表「Generated code」列的文案；空文案表示不单独成行。</summary>
+        /// <summary>
+        /// README 集成表「Generated code」列的文案；空文案表示不单独成行。
+        /// </summary>
         public DocText Documentation { get; }
     }
 
@@ -432,10 +417,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// 按登记名取当前编译引用下已启用的集成生成器；未启用时返回 <see langword="null"/>。
     /// </summary>
-    /// <remarks>
-    /// 必须跳过核心生成器：STJ / Newtonsoft 的注册生成器与核心生成器登记在同一程序集名下，不过滤会先命中
-    /// 核心项并因其 <see cref="CodeGeneratorRegistration.IntegrationGenerator"/> 为 <see langword="null"/> 而返回空。
-    /// </remarks>
     private static IIntegrationCodeGenerator? GetIntegrationGenerator(ImmutableArray<ModuleInfo> modules, string assemblyName)
     {
         foreach (var registration in _generatorCatalog)
@@ -473,7 +454,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 指定的默认验证器方法名。
     /// </summary>
-    /// <remarks>生成器不引用运行时程序集，故只能按字符串匹配；未声明时返回 <see langword="null"/>。</remarks>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
         => AttributeReader.GetString(
             AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
@@ -482,7 +462,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Normalizer = …)]</c> 指定的默认归一化方法名。
     /// </summary>
-    /// <remarks>与验证器默认值分别读取：两者互不牵连，只配其中一个时另一个必须保持未设置。</remarks>
     private static string? GetAssemblyDefaultNormalizer(IAssemblySymbol assembly)
         => AttributeReader.GetString(
             AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),

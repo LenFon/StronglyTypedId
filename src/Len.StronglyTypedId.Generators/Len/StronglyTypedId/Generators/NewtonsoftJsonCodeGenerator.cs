@@ -62,10 +62,6 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>ReadJson</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
     /// </summary>
-    /// <remarks>
-    /// 基元形态（默认）把 Id 与基元值视为同一形状，产物逐字节不变；对象形态读入 <c>{ "value": … }</c>。
-    /// 缩进按产物层级写死，行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 统一。
-    /// </remarks>
     private static string GetReadTail(StronglyTypedIdInfo idInfo)
     {
         var builder = new StringBuilder();
@@ -142,9 +138,6 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>WriteJson</c> 成员形参表之后的方法体。
     /// </summary>
-    /// <remarks>
-    /// 基元形态写出基元值本身，对象形态写出 <c>{ "value": … }</c>。属性名固定，不跟随宿主的命名策略。
-    /// </remarks>
     private static string GetWriteTail(StronglyTypedIdInfo idInfo)
     {
         var builder = new StringBuilder();

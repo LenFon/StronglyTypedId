@@ -9,14 +9,9 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// <see cref="StronglyTypedIdDiscovery.Discover"/> 的单元测试：确认只把运行时的
+/// <see cref="StronglyTypedIdDiscovery.Discover"/> 的单元测试：确认只把运行时的 
 /// <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 纳入发现结果。
 /// </summary>
-/// <remarks>
-/// 判据必须同时校验命名空间与类型实参个数。曾只比较接口简单名，于是使用者或第三方程序集里任何
-/// 名为 <c>IStronglyTypedId</c> 的接口都会被纳入，随后解析基元类型失败并抛异常 —— 在真实编译里
-/// 表现为一条 CS8785 警告加上该生成器的产出全部消失（正常的 <c>.g.cs</c> 也一并消失）。
-/// </remarks>
 public class StronglyTypedIdDiscoveryTests
 {
     [Fact]
@@ -78,8 +73,7 @@ public class StronglyTypedIdDiscoveryTests
     }
 
     /// <summary>
-    /// 同一个强类型 Id 同时出现在「引用程序集里已生成的」与「本次编译声明的」两侧时，
-    /// 必须收敛成一条，否则下游生成器会为同一个类型产出重复的 <c>AddSource</c>。
+    /// 同一个强类型 Id 同时出现在「引用程序集里已生成的」与「本次编译声明的」两侧时，必须收敛成一条，否则下游生成器会为同一个类型产出重复的 <c>AddSource</c>。
     /// </summary>
     [Fact]
     public void Discover_Should_Deduplicate_WhenSameIdIsBothDeclaredAndReferenced()
@@ -177,9 +171,8 @@ public class StronglyTypedIdDiscoveryTests
     #endregion
 
     /// <summary>
-    /// 把一个源码片段编译成 <see cref="ModuleInfo"/>。走 <see cref="CompilationReference"/> 路径，
-    /// 这样 <see cref="ModuleInfo.Assembly"/> 上挂着被引用编译的程序集符号，
-    /// <see cref="ModuleInfo.GetTypes"/> 才能枚举其中的类型。
+    /// 把一个源码片段编译成 <see cref="ModuleInfo"/>。走 <see cref="CompilationReference"/> 路径，这样
+    /// <see cref="ModuleInfo.Assembly"/> 上挂着被引用编译的程序集符号， <see cref="ModuleInfo.GetTypes"/> 才能枚举其中的类型。
     /// </summary>
     private static ModuleInfo CreateModule(string assemblyName, string source)
     {

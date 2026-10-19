@@ -1,4 +1,4 @@
-// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
+﻿// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
 // 统一在此文件禁用该测试框架分析器警告。
 #pragma warning disable xUnit1051
 using System.Collections.Immutable;
@@ -12,16 +12,8 @@ namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
 /// <see cref="SwaggerCodeGenerator"/> 的单元测试：覆盖 V1 / V2 两条 OpenApi 模式分支、
-/// <see cref="SwaggerCodeGenerator.CreateOpenApiSchema"/> 的全部基元类型分支（含默认分支），
-/// 以及多 Id 生成的 MapType 连接。
+/// <see cref="SwaggerCodeGenerator.CreateOpenApiSchema"/> 的全部基元类型分支（含默认分支），以及多 Id 生成的 MapType 连接。
 /// </summary>
-/// <remarks>
-/// V1 与 V2 由 <see cref="SwaggerCodeGenerator.UsesMicrosoftOpenApiV2"/> 决定，且只取决于编译引用中
-/// Microsoft.OpenApi 的主版本。测试环境仅直接引用 Swashbuckle 6.x（Microsoft.OpenApi 1.x），
-/// 故 V2 通过合成 Microsoft.OpenApi 2.x 的程序集引用（emit 临时 DLL）注入对应模块。
-/// 注意 Swashbuckle 7/8/9 仍依赖 Microsoft.OpenApi 1.6.x，直到 10.0.0 才升级到 2.x，
-/// 因此「Swashbuckle 主版本」不能作为 OpenApi 主版本的代理判据（见下方 V1 回归用例）。
-/// </remarks>
 public class SwaggerCodeGeneratorTests
 {
     #region 辅助：驱动生成器并捕获 Swagger 产物
@@ -162,13 +154,6 @@ public class SwaggerCodeGeneratorTests
     /// <summary>
     /// 回归用例：源码能解析出 <c>System.Guid</c> 时，基元分支仍必须命中并输出 <c>format: uuid</c>。
     /// </summary>
-    /// <remarks>
-    /// <c>SymbolDisplayFormat.FullyQualifiedFormat</c> 的 UseSpecialTypes 只把 C# 关键字渲染成短名，
-    /// <c>System.Guid</c> 这类普通 BCL 类型得到的是 <c>global::System.Guid</c>。曾按短名字面量匹配
-    /// 基元类型，<c>"Guid"</c> 分支因而永不命中，Guid 强类型 Id 在 OpenAPI 文档里丢掉 format: uuid。
-    /// 既有用例未能发现，是因为源码片段缺少 <c>using System;</c>，<c>Guid</c> 在那里是错误类型符号、
-    /// 反而显示为裸 <c>Guid</c>。
-    /// </remarks>
     [Fact]
     public void Swagger_V1_Should_GenerateUuidFormat_WhenGuidIsResolved()
     {
@@ -188,14 +173,9 @@ public class SwaggerCodeGeneratorTests
     }
 
     /// <summary>
-    /// 回归用例：Swashbuckle 7/8/9 仍依赖 Microsoft.OpenApi 1.6.x，必须继续按 V1 生成；
-    /// 只有 Swashbuckle 10+ 才引入 Microsoft.OpenApi 2.x。
+    /// 回归用例：Swashbuckle 7/8/9 仍依赖 Microsoft.OpenApi 1.6.x，必须继续按 V1 生成；只有 Swashbuckle 10+ 才引入
+    /// Microsoft.OpenApi 2.x。
     /// </summary>
-    /// <remarks>
-    /// 曾经以「Swashbuckle.AspNetCore.SwaggerGen 主版本 ≥ 7」代理 OpenApi 2.x 判据，
-    /// 使 7/8/9 的使用者拿到 1.6.x 下并不存在的 <c>Microsoft.OpenApi.JsonSchemaType</c>
-    /// 与迁移后的命名空间，直接编译失败。
-    /// </remarks>
     [Theory]
     [InlineData("7.0.0.0")]
     [InlineData("8.0.0.0")]
@@ -300,11 +280,6 @@ public class SwaggerCodeGeneratorTests
     /// <summary>
     /// 回归用例：Swagger 产物自带 <c>using Microsoft.Extensions.DependencyInjection;</c>。
     /// </summary>
-    /// <remarks>
-    /// <c>SwaggerGenOptions.MapType&lt;T&gt;</c> 是定义在 <c>Microsoft.Extensions.DependencyInjection</c>
-    /// 命名空间下的扩展方法（容器类 <c>SwaggerGenOptionsExtensions</c>，Swashbuckle 6.x 与 10.x 一致），
-    /// 只能由 using 指令引入，无法改用全限定名调用。
-    /// </remarks>
     [Fact]
     public void Swagger_Should_DeclareDependencyInjectionUsing()
     {
@@ -325,19 +300,6 @@ public class SwaggerCodeGeneratorTests
     /// <summary>
     /// 回归用例：Swagger 产物在「隐式 using 不含 DependencyInjection 的消费者」里必须能编译。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Web SDK（<c>Microsoft.NET.Sdk.Web</c>）的隐式 using 恰好包含
-    /// <c>Microsoft.Extensions.DependencyInjection</c>，因此 Sample 项目全绿也掩盖了此缺陷；
-    /// 类库 / 控制台等非 Web SDK 消费者不含该隐式 using，若生成文件不自带，会得到
-    /// <c>CS1061：“SwaggerGenOptions”未包含“MapType”的定义</c>。
-    /// </para>
-    /// <para>
-    /// 下方合成编译的源码里刻意只有 <c>using System;</c>（不含任何 DependencyInjection 相关 using），
-    /// 等价于非 Web SDK 消费者 —— 这正是「572 全绿仍有缺陷」的那类系统性环境偏差，
-    /// 故必须真正 Emit 一次生成产物，而不是只比对文本。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void Swagger_Should_Compile_WhenConsumerHasNoImplicitDependencyInjectionUsing()
     {
@@ -380,8 +342,7 @@ public class SwaggerCodeGeneratorTests
     #region C10：文本前缀使 schema 变为无 format 的 string
 
     /// <summary>
-    /// 有前缀时规范文本形是字符串，故 schema 一律为 <c>string</c> 且不带 format ——
-    /// 数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
+    /// 有前缀时规范文本形是字符串，故 schema 一律为 <c>string</c> 且不带 format ——数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
     /// </summary>
     [Fact]
     public void Swagger_V1_Should_UsePlainStringSchema_WhenIdHasPrefix()

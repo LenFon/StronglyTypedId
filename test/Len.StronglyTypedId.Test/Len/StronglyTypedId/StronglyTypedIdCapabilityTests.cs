@@ -7,17 +7,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// 强类型 Id 在「排序、格式化、span 解析、字典键、取值校验」上的能力契约。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 这些能力都是基元类型本来就有的，本项目只是把它们透出到 Id 上，因此断言一律<b>以基元类型的行为为参照</b>：
-/// 例如排序结果要对得上 <c>Guid.CompareTo</c>、格式化结果要对得上 <c>int.ToString(format, provider)</c>。
-/// 这样用例守的是「透出没有走样」，而不是把某一版实现的输出抄一遍。
-/// </para>
-/// <para>
-/// 字典键部分按实测行为书写：System.Text.Json 走 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>，
-/// 重写前对非内建键类型一律抛 <c>NotSupportedException</c>；Newtonsoft 则完全不经过 <c>JsonConverter</c>。
-/// </para>
-/// </remarks>
 public class StronglyTypedIdCapabilityTests
 {
     private static readonly Guid _lowGuid = Guid.Parse("00000000-0000-0000-0000-000000000001");
@@ -72,10 +61,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// <c>IComparable&lt;TSelf&gt;</c> 的形参在引用类型上是可空的，空值按约定排在有序序列末尾。
     /// </summary>
-    /// <remarks>
-    /// 这里直接调用 <c>CompareTo</c> 而不经 <c>Comparer&lt;T&gt;.Default</c>：后者会先自行处理空值，
-    /// 从而绕开被测的那条分支。
-    /// </remarks>
     [Fact]
     public void CompareTo_Should_TreatNullAsLast_ForReferenceTypeId()
     {
@@ -99,12 +84,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// <c>ToString()</c> 按不变文化输出，与序列化 / 字典键 / 持久化的规范形一致，跨区域往返安全。
     /// </summary>
-    /// <remarks>
-    /// 德语等区域的小数分隔符是逗号：若 <c>ToString()</c> 跟随当前文化，<c>1.5</c> 会被写成 <c>1,5</c>，
-    /// 与不变文化的解析 / 序列化结果对不上。用例临时切到 de-DE，验证输出仍是 <c>1.5</c>，
-    /// 且 <c>Parse(id.ToString(), InvariantCulture)</c> 能往返。需要按特定文化显示时用
-    /// <c>ToString(string?, IFormatProvider?)</c> 显式传 provider。
-    /// </remarks>
     [Fact]
     public void ToString_Should_UseInvariantCulture_RegardlessOfCurrentCulture()
     {
@@ -125,21 +104,9 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
-    /// <c>Parse</c> / <c>TryParse</c> 在 <c>provider</c> 为 <see langword="null"/> 时按不变文化解析，
-    /// 与 <c>ToString()</c> 的规范形对称，保证 <c>Parse(id.ToString())</c> 恒为往返。
+    /// <c>Parse</c> / <c>TryParse</c> 在 <c>provider</c> 为 <see langword="null"/> 时按不变文化解析，与 <c>ToString()</c>
+    /// 的规范形对称，保证 <c>Parse(id.ToString())</c> 恒为往返。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>IParsable&lt;TSelf&gt;</c> 的约定是「<c>provider</c> 为 <see langword="null"/> 即用当前文化」，
-    /// 但强类型 Id 的文本形式是规范形，由 <c>ToString()</c> 按不变文化写出。若读入跟随当前文化，
-    /// 往返就断了：de-DE 下 <c>decimal</c> 的 <c>"1.5"</c> 会被当成千位分隔而<b>静默</b>解析成 <c>15</c>，
-    /// <c>double</c> 与 <c>DateTime</c> 则直接解析失败。用例临时切到 de-DE 验证这一点。
-    /// </para>
-    /// <para>
-    /// 显式传入 <c>provider</c> 时仍按调用方的文化解析 —— 只有「未表态」的 <see langword="null"/>
-    /// 被解释为不变文化，与 <c>ToString(string?, IFormatProvider?)</c> 的显式文化入口互补。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void Parse_Should_FallBackToInvariantCulture_WhenProviderIsNull()
     {
@@ -170,14 +137,9 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
-    /// 基元具备 <c>IFormattable</c> 时，Id 实现 <see cref="IFormattableStronglyTypedId{TSelf}"/>，
-    /// 泛型代码因此能在不知道基元类型的前提下统一格式化。
+    /// 基元具备 <c>IFormattable</c> 时，Id 实现 <see cref="IFormattableStronglyTypedId{TSelf}"/>，泛型代码因此能在不知道基元类型的前提下统
+    /// 一格式化。
     /// </summary>
-    /// <remarks>
-    /// <see cref="IStronglyTypedId{TSelf}"/> 刻意不约束 <c>IFormattable</c>：<c>string</c> 基元的 Id
-    /// 没有可转发的格式化能力（枚举基元同理，其 <c>ToString(string, IFormatProvider)</c> 已过时）。
-    /// 新接口是 opt-in 标记，只在这些能力真实存在时才由生成器附加。
-    /// </remarks>
     [Fact]
     public void IFormattableStronglyTypedId_Should_BeEmitted_WhenPrimitiveIsFormattable()
     {
@@ -218,10 +180,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// 格式化接口按基元类型条件生成：<c>string</c> 未实现 <c>IFormattable</c>，因此 string 基元的 Id 也不实现它。
     /// </summary>
-    /// <remarks>
-    /// 解析接口用非泛型 <c>BeAssignableTo(Type)</c> 断言：<c>IParsable&lt;T&gt;</c> / <c>ISpanParsable&lt;T&gt;</c> 带静态抽象成员，
-    /// 作泛型实参会被 CS8920 拒绝。
-    /// </remarks>
     [Fact]
     public void FormattingInterfaces_Should_BeEmittedOnlyWhenPrimitiveSupportsThem()
     {
@@ -313,13 +271,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// Newtonsoft 写字典键时取的是键类型的 <c>ToString()</c>，因此键名必须是基元文本而不是 record 的默认打印串。
     /// </summary>
-    /// <remarks>
-    /// 读路径不经 <c>JsonConverter</c>：Newtonsoft 用 <c>TypeDescriptor</c> 把键文本还原成键类型，
-    /// 即使重写了 <c>ReadJson</c> 也接管不到（实测抛
-    /// <c>Could not convert string … Create a TypeConverter to convert from the string to the key type object</c>）。
-    /// 要补齐得给 Id 类型标 <c>[TypeConverter]</c> —— 那会改变类型的全局语义，且与使用者已自标的同名 attribute
-    /// 直接冲突，因此本项目不自动生成；本用例只锁定「写出来的键名是基元文本」这一半。
-    /// </remarks>
     [Fact]
     public void NewtonsoftJson_Should_WritePrimitiveTextAsDictionaryKey()
     {
@@ -388,8 +339,7 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
-    /// 生成代码把 JSON 与 Entity Framework Core 的构造入口一并收敛到 <c>Create</c>，
-    /// 校验因此也覆盖反序列化路径。
+    /// 生成代码把 JSON 与 Entity Framework Core 的构造入口一并收敛到 <c>Create</c>，校验因此也覆盖反序列化路径。
     /// </summary>
     [Fact]
     public void Validator_Should_BeAppliedByJsonDeserialization()
@@ -517,9 +467,9 @@ public class StronglyTypedIdCapabilityTests
 
 #if NET10_0_OR_GREATER
     /// <summary>
-    /// <c>Guid</c> 自 .NET 10 起实现 <c>IUtf8SpanParsable&lt;Guid&gt;</c>，生成器据此为
-    /// <c>GuidId</c> 实现 <c>IUtf8SpanParsable&lt;GuidId&gt;</c> 并提供 UTF-8 的 <c>Parse</c> / <c>TryParse</c>。
-    /// 该接口仅 net10.0+ 可用，用例以编译期 <c>#if</c> 门控避免 net8.0 约束违例（CS0315）。
+    /// <c>Guid</c> 自 .NET 10 起实现 <c>IUtf8SpanParsable&lt;Guid&gt;</c>，生成器据此为 <c>GuidId</c> 实现
+    /// <c>IUtf8SpanParsable&lt;GuidId&gt;</c> 并提供 UTF-8 的 <c>Parse</c> / <c>TryParse</c>。该接口仅 net10.0+
+    /// 可用，用例以编译期 <c>#if</c> 门控避免 net8.0 约束违例（CS0315）。
     /// </summary>
     [Fact]
     public void Utf8Parsable_Should_BeEmitted_WhenPrimitiveSupportsIt()
@@ -541,10 +491,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// 逐类型开启 <c>TypeConverter</c> 后，<c>TypeDescriptor</c> 能在字符串与强类型 Id 间往返。
     /// </summary>
-    /// <remarks>
-    /// 生成的类型必须自带 <c>[TypeConverter(typeof(...))]</c>，且转换器自身是 public sealed 嵌套类、
-    /// 带无参构造函数，<c>Activator.CreateInstance</c> 可达。
-    /// </remarks>
     [Fact]
     public void TypeConverter_Should_RoundTripViaTypeDescriptor()
     {
@@ -565,11 +511,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// 生成的 <c>TypeConverter</c> 与 <c>ToString()</c> 一样按不变文化双向往返，不受当前文化影响。
     /// </summary>
-    /// <remarks>
-    /// Newtonsoft.Json 的字典键、<c>XmlSerializer</c> 与 <c>IConfiguration</c> 绑定都经由此转换器读写。
-    /// 用例在 de-DE 下调用<b>跟随当前文化</b>的重载（<c>ConvertToString</c> / <c>ConvertFromString</c>），
-    /// 断言输出仍是 <c>1.5</c> 且能读回 —— 若两个方向的文化不一致，同一份数据在不同区域下就无法往返。
-    /// </remarks>
     [Fact]
     public void TypeConverter_Should_RoundTripInvariantly_RegardlessOfCurrentCulture()
     {
@@ -593,11 +534,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// 回归用例：开启 <c>TypeConverter</c> 后，Newtonsoft.Json 字典键的<b>读</b>路径也通了。
     /// </summary>
-    /// <remarks>
-    /// Newtonsoft 还原字典键文本走 <c>TypeDescriptor</c> 而非 <c>JsonConverter.ReadJson</c>，
-    /// 因此只有类型自带转换器时键才能被还原。未开启 TypeConverter 的 <c>GuidId</c> 经由同一路径会失败，
-    /// 见 <see cref="StronglyTypedIdCapabilityTests"/> 中 Newtonsoft 写路径用例的注释。
-    /// </remarks>
     [Fact]
     public void NewtonsoftJson_Should_RoundTripKeyedDictionary_WhenTypeConverterEnabled()
     {
@@ -611,8 +547,8 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
-    /// <c>readonly record struct</c> 形态的强类型 Id 必须先编译通过：生成器必须把 <c>readonly</c> 修饰符
-    /// 透出到生成的 partial 段，否则与使用者写下的 readonly 段对「是否 readonly struct」不一致而编译失败。
+    /// <c>readonly record struct</c> 形态的强类型 Id 必须先编译通过：生成器必须把 <c>readonly</c> 修饰符透出到生成的 partial 段，否则与使用者写下的
+    /// readonly 段对「是否 readonly struct」不一致而编译失败。
     /// </summary>
     [Fact]
     public void ReadonlyRecordStruct_Should_CompileAndBehaveLikeRecordStruct()
@@ -654,9 +590,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// 浮点基元（<c>float</c> / <c>double</c> / <c>Half</c>）同样透出全套能力。
     /// </summary>
-    /// <remarks>
-    /// 往返用二进制可精确表示的取值（1.5），避免十进制文本往返带来的舍入差异掩盖真实缺陷。
-    /// </remarks>
     [Fact]
     public void FloatingPointPrimitives_Should_RoundTrip()
     {
@@ -674,10 +607,6 @@ public class StronglyTypedIdCapabilityTests
     /// <summary>
     /// 日期 / 时间基元（<c>DateOnly</c> / <c>TimeOnly</c>）往返遵循不变文化。
     /// </summary>
-    /// <remarks>
-    /// 用显式格式串（而非无参 <c>ToString(provider)</c>）：后者的短时间格式会丢掉秒，
-    /// 往返本身就不可逆，用它断言只会测出格式串的选择而非 Id 的透出行为。
-    /// </remarks>
     [Fact]
     public void DateTimePrimitives_Should_RoundTrip()
     {
@@ -708,12 +637,9 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
-    /// UTF-8 解析按「基元是否暴露公开的 <c>TryParse(ReadOnlySpan&lt;byte&gt;,…)</c>」条件生成：
-    /// 数值型 / <c>Guid</c> 有，故生成；<c>BigInteger</c> 把它实现为显式接口实现、日期时间型根本没有，故都不生成。
+    /// UTF-8 解析按「基元是否暴露公开的 <c>TryParse(ReadOnlySpan&lt;byte&gt;,…)</c>」条件生成：数值型 / <c>Guid</c>
+    /// 有，故生成；<c>BigInteger</c> 把它实现为显式接口实现、日期时间型根本没有，故都不生成。
     /// </summary>
-    /// <remarks>
-    /// 负向断言走接口名反射：<c>IUtf8SpanParsable&lt;T&gt;</c> 带静态抽象成员，把不满足约束的类型当泛型实参用会 CS0315。
-    /// </remarks>
     [Fact]
     public void Utf8Parsing_Should_BeEmittedOnlyWhenPrimitiveExposesPublicTryParse()
     {
@@ -866,8 +792,7 @@ public class StronglyTypedIdCapabilityTests
     #region 单参接口
 
     /// <summary>
-    /// 单参 <c>IStronglyTypedId&lt;TSelf&gt;</c> 让不关心基元类型的泛型代码只写一个类型参数，
-    /// 且对任意基元的 Id 都成立。
+    /// 单参 <c>IStronglyTypedId&lt;TSelf&gt;</c> 让不关心基元类型的泛型代码只写一个类型参数，且对任意基元的 Id 都成立。
     /// </summary>
     [Fact]
     public void SingleParameterInterface_Should_AcceptIdsWithDifferentPrimitives()
