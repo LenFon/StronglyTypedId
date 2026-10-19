@@ -33,6 +33,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [用接口约束泛型](#using-the-interface)
 - [运行时反射](#reflection-helpers)
+- [测试辅助](#testing)
+- [示例程序](#samples)
 - [诊断与代码修复](#diagnostics)
 - [常见问题](#faq)
 - [许可证](#license)
@@ -151,6 +153,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 | ---------------- | ------------------------------------------------------ |
 | `Guid`           | `record struct GuidId(Guid Value)`                     |
 | `string`         | `record StringId(string Value)`                        |
+| `char`           | `record struct CharId(char Value)`                     |
 | `byte`           | `record struct ByteId(byte Value)`                     |
 | `sbyte`          | `record struct SByteId(sbyte Value)`                   |
 | `short`          | `record struct Int16Id(short Value)`                   |
@@ -673,18 +676,77 @@ if (typeof(OrderId).IsStronglyTypedId())
 该判断基于所实现的接口，因此同样能识别由其它程序集生成的强类型 Id。接口、抽象类型、枚举与数组
 永远不会被判定为强类型 Id。
 
+<a id="testing"></a>
+
+## 测试辅助 <a href="#top" style="float:right">↑ 返回目录</a>
+
+`Len.StronglyTypedId.Testing` 用来在 arrange 阶段造 Id，不必到处写 `OrderId.Create(Guid.NewGuid())`：
+
+```csharp
+using Len.StronglyTypedId.Testing;
+
+OrderId orderId = Any.Id<OrderId>();
+IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
+```
+
+取值来自 `IStronglyTypedId<TSelf, TPrimitiveId>` 暴露的基元类型，因此对任意程序集声明的 Id 都有效
+（包括在本测试包编译之后才生成的 Id）。覆盖生成器支持的全部基元类型，外加 `enum`。取值刻意保持
+「普通」：有限浮点数、非空字符串、1970–2100 之间的日期 —— 免得测试因为 `double.NaN` 之类的值
+报出与被测代码无关的失败。
+
+- **可复现** —— `Any.Id<OrderId>(seed: 42)` 在同一运行时版本下返回相同的值；要让一整串值重复，
+  请复用同一个 `AnyIdGenerator` 实例，或用 `Any.Ids<T>(count, seed)`。
+- **尊重验证器** —— 生成最多重试 `AnyIdOptions.MaxAttempts` 次（默认 100），仍不满足则抛出异常，
+  并在消息中指向 `Any.Register<T>(factory)`。
+- **可覆盖** —— `AnyIdOptions.PrimitiveValueFactory` 可按基元类型替换取值来源；返回 `null`
+  表示回落到内置生成逻辑。
+
+配合 AutoFixture 使用时，加上 `Len.StronglyTypedId.Testing.AutoFixture` 并启用定制：
+
+```csharp
+var fixture = new Fixture().WithStronglyTypedIds();
+
+OrderId orderId = fixture.Create<OrderId>();
+```
+
+完整说明见 [TESTING.md](TESTING.md)。
+
+<a id="samples"></a>
+
+## 示例程序 <a href="#top" style="float:right">↑ 返回目录</a>
+
+上文每一项能力在 [`samples/`](samples) 下都有可直接运行的示例：
+
+| 工程 | 目标框架 | 演示内容 |
+|---|---|---|
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、字符串驻留、验证器、文本前缀、`TypeConverter`、System.Text.Json 与 Newtonsoft.Json、嵌套类型、泛型容器、反射辅助、测试辅助包。 |
+| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core（`ApplyTo(ModelConfigurationBuilder)`）与 Dapper（`ApplyTo(IDbConnection)`）跑内存 SQLite，并演示程序集级 `StronglyTypedIdDefaults`。 |
+| `Len.StronglyTypedId.Sample1` | `net8.0` | MVC 模型绑定与 `{id:OrderId}` 路由约束、把 Newtonsoft.Json 用作 MVC 格式化器、EF Core（SQL Server）与 Swashbuckle 6。启动需要可连接的 SQL Server。 |
+| `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API：`IParsable` 绑定、`[AsParameters]`、路由约束、JSON 请求体，以及内置 OpenAPI 转换器（`AddOpenApi(ApplyTo)`）。 |
+| `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10（Microsoft.OpenApi 2.x）的 schema 映射。 |
+
+```shell
+dotnet run --project samples/Len.StronglyTypedId.SampleConsole
+dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
+```
+
+控制台示例逐步打印后退出；Web 示例的文档地址分别是 `/openapi/v1.json`（Sample2）与
+`/swagger/v1/swagger.json`（Sample1、Sample3）。
+
 <a id="diagnostics"></a>
 
 ## 诊断与代码修复 <a href="#top" style="float:right">↑ 返回目录</a>
 
 分析器会强制以下规则；`STIA0012` 是唯一的例外，由生成器在代码产出本身失败时报告。大多数规则作为
-**编译错误**报告，因此不合法的声明无法通过编译；建议性规则（`STIA0011`、`STIA0013`、`STIA0014`、
-`STIA0015`、`STIA0016`）级别较低，可按项目在 `.editorconfig` 中调整。诊断文案会按编译器区域设置输出
-英文或中文。
+**编译错误**报告，因此不合法的声明无法通过编译；`STIA0011` 与 `STIA0013` 是警告，建议性规则
+（`STIA0014`、`STIA0015`、`STIA0016`）级别更低。各级别均可按项目在 `.editorconfig` 中调整。诊断文案
+会按编译器区域设置输出英文或中文。
 
 有几条规则的触发条件比标题看上去更窄：`STIA0011` 要求该 Id 声明了 `Validator`（没有验证器时直接构造
-并不构成绕过），`STIA0014` **默认关闭**，需显式设置 `dotnet_diagnostic.STIA0014.severity = suggestion`
-才会启用，`STIA0016` 对每组共用同一基元的 Id 只报一次，落在组内名字序最小的成员上。
+并不构成绕过），且同时覆盖 `new Xxx(...)`、目标类型化的 `new(...)` 与 `default` / `default(T)`——
+仅用于比较（`id == default`）时不报告；`STIA0014` **默认关闭**，需显式设置
+`dotnet_diagnostic.STIA0014.severity = suggestion` 才会启用；`STIA0016` 对每组共用同一基元的 Id
+只报一次，落在组内名字序最小的成员上。
 
 <!-- BEGIN GENERATED:diagnostics -->
 | 规则 ID  | 说明                                       | 代码修复                               |

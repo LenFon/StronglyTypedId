@@ -7,3 +7,10 @@ STIA0013 | StronglyTypedIdAnalyzer | Warning | Reported when [StronglyTypedId(Pr
 STIA0014 | StronglyTypedIdAnalyzer | Disabled | Reported when an externally visible id declares a Validator, so its primary constructor can bypass it. Enable via .editorconfig.
 STIA0015 | StronglyTypedIdAnalyzer | Info | Reported when the id type name does not end with 'Id'.
 STIA0016 | StronglyTypedIdAnalyzer | Info | Reported once per namespace/primitive group when several ids in the same namespace wrap the same primitive type.
+STIA0017 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(Normalizer = ...)] points at a method that is not a static `static TPrimitiveId Name(TPrimitiveId value)`.
+
+### Changed Rules
+
+Rule ID | New Category | New Severity | Old Category | Old Severity | Notes
+--------|--------------|--------------|--------------|--------------|--------------------
+STIA0011 | StronglyTypedIdAnalyzer | Warning | StronglyTypedIdAnalyzer | Info | Raised so that bypassing a validator is visible in build output and CI. Projects that relied on the advisory level can restore it with `dotnet_diagnostic.STIA0011.severity = suggestion`.

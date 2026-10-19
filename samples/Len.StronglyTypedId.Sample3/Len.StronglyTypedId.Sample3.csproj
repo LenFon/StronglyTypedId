@@ -7,14 +7,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-		<!-- 中心版本为 6.5.0；本项目是"接入新版 Swashbuckle"的验证样例，
-		     通过 VersionOverride 单独使用 10.2.3，不影响 Sample1 / Sample2 -->
+		<!-- 中心版本为 6.5.0；本项目专门验证「Swashbuckle 10（Microsoft.OpenApi 2.x）」这条路径，
+		     通过 VersionOverride 单独使用 10.2.3，不影响 Sample1。 -->
 		<PackageReference Include="Swashbuckle.AspNetCore" VersionOverride="10.2.3" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Len.StronglyTypedId.Sample1\Len.StronglyTypedId.Sample1.csproj" />
+		<ProjectReference Include="..\Len.StronglyTypedId.Domain\Len.StronglyTypedId.Domain.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 

@@ -325,6 +325,123 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
+    /// 目标类型化的 <c>new(...)</c> 没有 <c>Type</c> 属性，修复必须回查语义模型才能拼出 <c>OrderId.Create(...)</c>。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_ReplaceTargetTypedNewWithCreate_WhenBypassingValidator()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => new(Guid.NewGuid());
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => OrderId.Create(Guid.NewGuid());
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate)
+            .WithArguments("OrderId").WithSpan(13, 31, 13, 50);
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// <c>default</c> 不提供修复：改成 <c>Create(default)</c> 只会把编译期提示换成运行时异常。
+    /// </summary>
+    /// <remarks>
+    /// 该场景无法用 <see cref="Verify.VerifyCodeFixAsync(string, DiagnosticResult, string)"/> 表达
+    /// （框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFix_ShouldNotOfferFix_WhenDefaultLiteralBypassesValidator()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => default;
+            }
+            """;
+
+        var offered = await CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.BypassCreate,
+            "OrderId",
+            static root => root.DescendantNodes()
+                .OfType<LiteralExpressionSyntax>()
+                .First(literal => literal.IsKind(SyntaxKind.DefaultLiteralExpression)));
+
+        Assert.Empty(offered);
+    }
+
+    /// <summary>
+    /// 对照：同一 harness 在目标类型化 <c>new(...)</c> 上确实会注册修复，
+    /// 证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldOfferFix_WhenTargetTypedNewBypassesValidator()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => new(Guid.NewGuid());
+            }
+            """;
+
+        var offered = await CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.BypassCreate,
+            "OrderId",
+            static root => root.DescendantNodes().OfType<ImplicitObjectCreationExpressionSyntax>().First());
+
+        Assert.Single(offered);
+    }
+
+    /// <summary>
     /// STIA0000：把 class 转成 record（保留修饰符 / 主构造函数 / 成员 / 标识符）。
     /// </summary>
     /// <remarks>
@@ -799,6 +916,80 @@ public class StronglyTypedIdCodeFixProviderTests
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
+
+    /// <summary>
+    /// STIA0017：<c>Normalizer</c> 指向的方法不存在时，CodeFix 生成恒等变换的桩方法。
+    /// </summary>
+    /// <remarks>
+    /// 桩取 <c>=&gt; value</c> 而非抛异常：它不改变任何取值，语义上等价于「未配置归一化」，
+    /// 使用者能从编译错误里脱身，再按需填入真正的清洗逻辑。
+    /// </remarks>
+    [Fact]
+    public async Task CodeFix_Should_GenerateNormalizerStub_WhenNormalizerMethodMissing()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record OrderId(Guid Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record OrderId(Guid Value)
+            {
+                private static global::System.Guid Normalize(global::System.Guid value) => value;
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithSpan(5, 18, 5, 48).WithArguments("Normalize", "System.Guid");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIA0017：归一化方法已存在但签名不符时删掉实参 —— 再生成同名方法会撞 CS0101。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_RemoveNormalizerArgument_WhenNormalizerSignatureInvalid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record OrderId(Guid Value)
+            {
+                private static void Normalize(Guid value) { }
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value)
+            {
+                private static void Normalize(Guid value) { }
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithSpan(5, 18, 5, 48).WithArguments("Normalize", "System.Guid");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
     /// 证明新修复同样走 BatchFixer 的「合并到同一语法树后整体应用」路径（与既有 TypeMustBePartial 的 FixAll 互补）。
     /// </summary>
     [Fact]
@@ -897,16 +1088,30 @@ public class StronglyTypedIdCodeFixProviderTests
     /// RegisterCodeFixesAsync，收集它注册的 CodeAction。用于断言「不提供修复」这类 VerifyCodeFixAsync
     /// 框架本身不支持的场景（后者假定修复一定会被应用）。
     /// </summary>
-    private static async Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
+    private static Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
         string source,
         DiagnosticDescriptor descriptor,
         string typeName)
+        => CountOfferedCodeFixesAsync(
+            source,
+            descriptor,
+            typeName,
+            static root => root.DescendantNodes().OfType<RecordDeclarationSyntax>().First());
+
+    /// <summary>
+    /// 同上，但由调用方指定诊断落在哪个节点上（例如 <c>default</c> 表达式而非 record 声明）。
+    /// </summary>
+    private static async Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
+        string source,
+        DiagnosticDescriptor descriptor,
+        string typeName,
+        Func<SyntaxNode, SyntaxNode> selectTarget)
     {
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
         var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
         var root = tree.GetRoot();
-        var recordDeclaration = root.DescendantNodes().OfType<RecordDeclarationSyntax>().First();
-        var location = Location.Create(tree, recordDeclaration.Span);
+        var target = selectTarget(root);
+        var location = Location.Create(tree, target.Span);
         var diagnostic = Diagnostic.Create(descriptor, location, typeName);
 
         using var workspace = new AdhocWorkspace();

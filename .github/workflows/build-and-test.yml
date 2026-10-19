@@ -22,6 +22,8 @@ on:
       - "tools/**/*.csproj"
       - "README.md"
       - "README.zh-CN.md"
+      - "CHANGELOG.md"
+      - "CHANGELOG.zh-CN.md"
       # pack 校验由本流水线的 pack job 承担，触发面需覆盖其依赖的工程 / 配置 / 工作流变更
       - "common.props"
       - "version.props"
@@ -48,6 +50,8 @@ on:
       - "tools/**/*.csproj"
       - "README.md"
       - "README.zh-CN.md"
+      - "CHANGELOG.md"
+      - "CHANGELOG.zh-CN.md"
       - "common.props"
       - "version.props"
       - "Directory.Packages.props"
@@ -65,6 +69,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+      with:
+        # CHANGELOG 校验要把每个 tag 与版本小节对上，浅克隆（默认 fetch-depth: 1）读不到 tag，
+        # 校验会直接判失败而不是静默跳过。
+        fetch-depth: 0
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
@@ -82,6 +90,10 @@ jobs:
       # 渲染，README 里只保留 <!-- BEGIN GENERATED:… --> 标记之间的内容。改了判定却没重新生成时，
       # 这一步直接失败并指出首个差异行 —— 否则 README 会静默停在旧内容，而没人会去数表格行数。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify
+    - name: Verify CHANGELOG
+      # 每个 tag 都必须有对应小节、日期与 tag 提交日期一致、文末链接不缺。发布前忘了写变更说明时，
+      # 这一步会点名是哪个 tag 没有小节，而不是等使用者去 NuGet 页面上猜。
+      run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-changelog
     - name: Test (net8.0 行为校验)
       # Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），
       # 而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的

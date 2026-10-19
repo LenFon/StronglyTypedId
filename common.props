@@ -38,7 +38,12 @@
 		-->
 		<EnablePackageValidation>true</EnablePackageValidation>
 		<StronglyTypedIdPackageValidationBaseline>1.3.0-preview.5</StronglyTypedIdPackageValidationBaseline>
-		<PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and $([MSBuild]::VersionGreaterThanOrEquals('$(Version)', '$(StronglyTypedIdPackageValidationBaseline)'))">$(StronglyTypedIdPackageValidationBaseline)</PackageValidationBaselineVersion>
+		<!--
+		  新包（如 Len.StronglyTypedId.Testing）在基线版本里并不存在，挂上基线只会让 pack 去
+		  nuget.org 找一个从未发布过的包而失败。这类项目在自己的 csproj 里把
+		  StronglyTypedIdPackageValidationBaseline 置空即可退出跨版本比对，包内一致性校验仍然生效。
+		-->
+		<PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and '$(StronglyTypedIdPackageValidationBaseline)' != '' and $([MSBuild]::VersionGreaterThanOrEquals('$(Version)', '$(StronglyTypedIdPackageValidationBaseline)'))">$(StronglyTypedIdPackageValidationBaseline)</PackageValidationBaselineVersion>
 		<!--
 		  没挂基线时放过「不必要的抑制」告警（CP0021，含 [Baseline] 变体）。
 

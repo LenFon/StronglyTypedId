@@ -23,6 +23,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId,
             Descriptors.ParameterTypeIsInvalidId,
             Descriptors.ValidatorReferenceInvalidId,
+            Descriptors.NormalizerReferenceInvalidId,
             Descriptors.InvalidPrefixId,
             Descriptors.ValidatorCanBeBypassedId);
 
@@ -58,6 +59,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => EnsurePrimaryConstructorAsync(context, diagnostic, token),
                                 Descriptors.ParameterTypeIsInvalidId => ChangeParameterTypeToGuidAsync(context, diagnostic, token),
                                 Descriptors.ValidatorReferenceInvalidId => FixValidatorReferenceAsync(context, diagnostic, token),
+                                Descriptors.NormalizerReferenceInvalidId => FixNormalizerReferenceAsync(context, diagnostic, token),
                                 Descriptors.InvalidPrefixId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.ValidatorCanBeBypassedId => NarrowVisibilityToInternalAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
@@ -107,6 +109,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.ValidatorReferenceInvalidId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
+            // 删掉 Normalizer 命名实参即可。
+            Descriptors.NormalizerReferenceInvalidId =>
+                FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
+
             // 删掉 Prefix 命名实参即可。
             Descriptors.InvalidPrefixId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
@@ -115,6 +121,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.ValidatorCanBeBypassedId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } bypassCandidate
                     && bypassCandidate.Modifiers.Any(SyntaxKind.PublicKeyword),
+
+            // 只有「带参数列表的构造」能机械改写成 Create(...)。default / default(T) 与无参的对象初始化器
+            // 一律不给修复：前者改成 Create(default) 会把编译期提示换成运行时异常，后者没有可搬运的实参。
+            Descriptors.BypassCreateId =>
+                FindNode<BaseObjectCreationExpressionSyntax>(root, diagnostic) is { ArgumentList: not null },
 
             _ => true,
         };
@@ -200,17 +211,26 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         => ReplaceParameterAsync(context, diagnostic, token, stripNullableSuffix: true);
 
     /// <summary>
-    /// 把诊断所在的 <c>new Xxx(value)</c> 重写成 <c>Xxx.Create(value)</c>，使构造强制经过验证器。
+    /// 把诊断所在的 <c>new Xxx(value)</c> / <c>new(value)</c> 重写成 <c>Xxx.Create(value)</c>，使构造强制经过验证器。
     /// </summary>
     /// <remarks>
-    /// STIA0011 仅在设了验证器时触发，此时已有静态 <c>Create</c> 工厂。参数列表与类型拼写原样保留，
-    /// 前导 trivia 交给新的调用表达式。
+    /// STIA0011 仅在设了验证器时触发，此时已有静态 <c>Create</c> 工厂。参数列表原样搬运；显式创建的
+    /// 类型拼写也原样保留（可能是别名或短名），只有目标类型化的 <c>new(...)</c> 才需要回查语义模型。
     /// </remarks>
     private static async Task<Document> ReplaceWithCreateAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
         var root = await context.Document.GetSyntaxRootAsync(token);
 
-        if (root is null || FindNode<ObjectCreationExpressionSyntax>(root, diagnostic) is not { } creation)
+        if (root is null || FindNode<BaseObjectCreationExpressionSyntax>(root, diagnostic) is not { ArgumentList: { } argumentList } creation)
+        {
+            return context.Document;
+        }
+
+        var typeSyntax = creation is ObjectCreationExpressionSyntax explicitCreation
+            ? explicitCreation.Type
+            : await GetCreatedTypeSyntaxAsync(context, creation, token);
+
+        if (typeSyntax is null)
         {
             return context.Document;
         }
@@ -218,13 +238,34 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         var createInvocation = SyntaxFactory.InvocationExpression(
             SyntaxFactory.MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
-                creation.Type,
+                typeSyntax,
                 SyntaxFactory.IdentifierName("Create")),
-            creation.ArgumentList!);
+            argumentList);
 
         var withTrivia = createInvocation.WithLeadingTrivia(creation.GetLeadingTrivia());
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(creation, withTrivia));
+    }
+
+    /// <summary>
+    /// 取目标类型化 <c>new(...)</c> 的目标类型语法。
+    /// </summary>
+    /// <remarks>
+    /// <c>ImplicitObjectCreationExpressionSyntax</c> 没有 <c>Type</c> 属性，只能经语义模型取类型。
+    /// 用 <c>ToMinimalDisplayString</c> 而非固定格式：它按当前位置算出「最短且无歧义」的名字，
+    /// 既不会拼出 <c>global::Ns.OrderId</c>，也不会在重名时绑错类型。
+    /// </remarks>
+    private static async Task<TypeSyntax?> GetCreatedTypeSyntaxAsync(
+        CodeFixContext context,
+        BaseObjectCreationExpressionSyntax creation,
+        CancellationToken token)
+    {
+        var semanticModel = await context.Document.GetSemanticModelAsync(token);
+        var type = semanticModel?.GetTypeInfo(creation, token).Type;
+
+        return type is null || semanticModel is null
+            ? null
+            : SyntaxFactory.ParseTypeName(type.ToMinimalDisplayString(semanticModel, creation.SpanStart));
     }
 
     /// <summary>
@@ -379,18 +420,63 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         // 方法已存在（但签名不符）时删掉实参；只有根本不存在时才生成桩，二者不可混用。
         return typeSymbol.GetMembers(validatorName).OfType<IMethodSymbol>().Any(member => member.IsStatic)
             ? await RemoveNamedArgumentAsync(context, diagnostic, token)
-            : GenerateValidatorStub(context.Document, root, recordDeclaration, validatorName, primitiveType, token);
+            : GenerateMethodStub(context.Document, root, recordDeclaration, $"private static bool {validatorName}({primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} value) => true;", token);
+    }
+
+    /// <summary>
+    /// STIA0017 修复主入口：决定「生成归一化桩」还是「删掉 Normalizer 实参」。
+    /// </summary>
+    /// <remarks>
+    /// 与 STIA0010 同构。桩方法取恒等变换（<c>=&gt; value</c>）：它不改变任何取值，语义上等价于「未配置归一化」，
+    /// 却能让使用者从编译错误里脱身，再按需填入真正的清洗逻辑。
+    /// </remarks>
+    private static async Task<Document> FixNormalizerReferenceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null || FindNode<RecordDeclarationSyntax>(root, diagnostic) is not { } recordDeclaration)
+        {
+            return context.Document;
+        }
+
+        var semanticModel = await context.Document.GetSemanticModelAsync(token);
+
+        if (semanticModel is null
+            || semanticModel.GetDeclaredSymbol(recordDeclaration, token) is not INamedTypeSymbol typeSymbol)
+        {
+            return context.Document;
+        }
+
+        var normalizerName = GetNormalizerName(typeSymbol);
+        var primitiveType = GetPrimitiveParameterType(recordDeclaration, semanticModel, token);
+
+        if (normalizerName is null || primitiveType is null)
+        {
+            return context.Document;
+        }
+
+        var typeDisplay = primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        return typeSymbol.GetMembers(normalizerName).OfType<IMethodSymbol>().Any(member => member.IsStatic)
+            ? await RemoveNamedArgumentAsync(context, diagnostic, token)
+            : GenerateMethodStub(context.Document, root, recordDeclaration, $"private static {typeDisplay} {normalizerName}({typeDisplay} value) => value;", token);
     }
 
     /// <summary>
     /// 取 <c>[StronglyTypedId(Validator = …)]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
     /// </summary>
     private static string? GetValidatorName(INamedTypeSymbol type)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute")
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == "Validator")
-            .Value.Value as string;
+        => AttributeReader.GetString(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.ValidatorArgumentName);
+
+    /// <summary>
+    /// 取 <c>[StronglyTypedId(Normalizer = …)]</c> 上 <c>Normalizer</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    private static string? GetNormalizerName(INamedTypeSymbol type)
+        => AttributeReader.GetString(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.NormalizerArgumentName);
 
     /// <summary>
     /// 取主构造函数唯一参数的类型（即基元 Id 类型），作为验证器桩方法的参数类型。
@@ -412,22 +498,20 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 在 Id 类型里生成一个符合契约的验证器桩方法，使其通过 STIA0010。
+    /// 在 Id 类型里生成一个桩方法，使诊断消失。
     /// </summary>
     /// <remarks>
-    /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：参数类型用全限定名渲染，
-    /// private 对同 partial 的生成代码可达。<c>;</c> 结尾的声明会被就地转成带 body 的形式。
+    /// 参数类型用全限定名渲染，private 对同 partial 的生成代码可达。<c>;</c> 结尾的声明会被就地转成带 body 的形式。
+    /// 桩的具体形态由调用方以完整签名给出：验证器返回 <c>bool</c>，归一化返回基元值，两者的返回类型不同。
     /// </remarks>
-    private static Document GenerateValidatorStub(
+    private static Document GenerateMethodStub(
         Document document,
         SyntaxNode root,
         TypeDeclarationSyntax typeDeclaration,
-        string validatorName,
-        ITypeSymbol primitiveType,
+        string signature,
         CancellationToken token)
     {
-        var typeDisplay = primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var method = SyntaxFactory.ParseMemberDeclaration($"private static bool {validatorName}({typeDisplay} value) => true;")!
+        var method = SyntaxFactory.ParseMemberDeclaration(signature)!
             .WithLeadingTrivia(SyntaxFactory.EndOfLine(DocumentFormatting.GetEndOfLine(root)));
 
         var newDeclaration = typeDeclaration.OpenBraceToken.IsKind(SyntaxKind.None)

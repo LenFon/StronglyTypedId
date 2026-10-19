@@ -7,6 +7,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<!-- Newtonsoft 的转换器与注册入口只在「声明 Id 的程序集」里生成：宿主引了 Newtonsoft
+		     也没法给别的程序集里的 Id 补转换器（会 CS0426）。Sample1 要用 Newtonsoft 作为 MVC
+		     格式化器，所以这里显式引用；不需要 Newtonsoft 的领域库去掉这一行即可。 -->
+		<PackageReference Include="Newtonsoft.Json" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 	</ItemGroup>

@@ -29,6 +29,7 @@ internal static class Descriptors
     public const string ValidatorCanBeBypassedId = "STIA0014";
     public const string TypeNameShouldEndWithIdId = "STIA0015";
     public const string DuplicatePrimitiveTypeId = "STIA0016";
+    public const string NormalizerReferenceInvalidId = "STIA0017";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -133,18 +134,42 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// 直接 <c>new OrderId(...)</c> 构造强类型 Id，绕过了 <c>Create</c> / <c>TryParse</c> 强制的验证器。
+    /// <c>[StronglyTypedId(Normalizer = nameof(Foo))]</c> 指向的方法不存在、非静态、返回类型不是基元 Id 类型，
+    /// 或形参类型不等于基元 Id 类型。
     /// </summary>
     /// <remarks>
-    /// 仅当该 Id 设了 <c>Validator</c> 时才提示。默认 <see cref="DiagnosticSeverity.Info"/>，可在
-    /// <c>.editorconfig</c> 里调级。生成代码里的 <c>new Xxx(...)</c> 由生成代码豁免自动忽略。
+    /// 与 <see cref="ValidatorReferenceInvalid"/> 分开成两条规则：期望签名完全不同（归一化返回基元值，校验返回
+    /// <see cref="bool"/>），合成一条就只能给出含糊的「签名不对」，使用者还得自己猜该改成什么样。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor NormalizerReferenceInvalid
+        = new(NormalizerReferenceInvalidId,
+            new LocalizedString("NormalizerReferenceInvalidTitle"),
+            new LocalizedString("NormalizerReferenceInvalidMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 直接构造强类型 Id（<c>new OrderId(...)</c> / <c>new(...)</c>）或用 <c>default</c> 取零值实例，
+    /// 绕过了 <c>Create</c> / <c>TryParse</c> 强制的归一化与校验。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 仅当该 Id 设了 <c>Normalizer</c> 或 <c>Validator</c> 时才提示：两者都没设时直接构造与 <c>Create</c> 等价，
+    /// 不构成绕过。
+    /// </para>
+    /// <para>
+    /// 默认 <see cref="DiagnosticSeverity.Warning"/>：这条规则的全部价值在于「让编译器替你守住不变量」，
+    /// 停在 Info 级别时 build 与 CI 都看不见，等于没有。可在 <c>.editorconfig</c> 里按项目调级。
+    /// </para>
+    /// <para>生成代码里的同类构造由生成代码豁免自动忽略。</para>
     /// </remarks>
     public static readonly DiagnosticDescriptor BypassCreate
         = new(BypassCreateId,
             new LocalizedString("BypassCreateTitle"),
             new LocalizedString("BypassCreateMessage"),
             Category,
-            DiagnosticSeverity.Info,
+            DiagnosticSeverity.Warning,
             true);
 
     /// <summary>
@@ -178,11 +203,11 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// 带验证器的强类型 Id 被声明为 <c>public</c>，其主构造函数因而对外可见，验证器可被绕过。
+    /// 配了归一化或验证器的强类型 Id 被声明为 <c>public</c>，其主构造函数因而对外可见，这些约束可被绕过。
     /// </summary>
     /// <remarks>
     /// 主构造函数的可见性跟随类型（CS1514），故 <c>public</c> 类型上任何引用方都能 <c>new OrderId(default)</c>
-    /// 绕过验证器。默认关闭：公开 Id 类型是正常用法，需要强保证的项目可在 <c>.editorconfig</c> 里显式开启。
+    /// 绕过归一化与校验。默认关闭：公开 Id 类型是正常用法，需要强保证的项目可在 <c>.editorconfig</c> 里显式开启。
     /// </remarks>
     public static readonly DiagnosticDescriptor ValidatorCanBeBypassed
         = new(ValidatorCanBeBypassedId,
@@ -239,6 +264,7 @@ internal static class Descriptors
         ParameterTypeIsInvalid,
         ContainingTypeMustBePartial,
         ValidatorReferenceInvalid,
+        NormalizerReferenceInvalid,
         BypassCreate,
         InvalidPrefix,
         ValidatorCanBeBypassed,

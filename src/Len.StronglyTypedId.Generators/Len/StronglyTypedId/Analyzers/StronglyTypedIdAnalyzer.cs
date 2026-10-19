@@ -1,4 +1,5 @@
 ﻿using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace Len.StronglyTypedId.Analyzers;
 
@@ -17,13 +18,16 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
 
         context.RegisterSymbolAction(AnalyzeNamedType, SymbolKind.NamedType);
-        context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression);
+        context.RegisterSyntaxNodeAction(
+            AnalyzeObjectCreation,
+            SyntaxKind.ObjectCreationExpression,
+            SyntaxKind.ImplicitObjectCreationExpression);
+        context.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
     }
 
     private static void AnalyzeNamedType(SymbolAnalysisContext context)
     {
-        if (context.Symbol is not INamedTypeSymbol type
-            || !type.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute"))
+        if (context.Symbol is not INamedTypeSymbol type || !HasStronglyTypedIdAttribute(type))
         {
             return;
         }
@@ -123,19 +127,25 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // 形状校验全部通过后基元类型才可靠，此时再校验 Validator 的方法签名。
+        // 形状校验全部通过后基元类型才可靠，此时再校验 Validator / Normalizer 的方法签名。
         var validatorName = GetEffectiveValidatorName(type, context.Compilation.Assembly);
+        var normalizerName = GetEffectiveNormalizerName(type, context.Compilation.Assembly);
 
         if (validatorName is not null)
         {
             ValidateValidator(context, type, validatorName, constructorParameterType, records);
         }
 
+        if (normalizerName is not null)
+        {
+            ValidateNormalizer(context, type, normalizerName, constructorParameterType, records);
+        }
+
         // 前缀校验与形状 / 验证器无关，独立于上面的早退分支。
         ValidatePrefix(context, type, records);
 
-        // 验证器可绕过同样独立于形状校验，复用上面已算出的名字。
-        ValidateValidatorBypass(context, type, validatorName, records);
+        // 「可被绕过」同样独立于形状校验，复用上面已算出的名字。
+        ValidateGuardBypass(context, type, validatorName, normalizerName, records);
 
         // 风格提示放在全部硬性校验之后，避免连 record 都不是的类型同时冒出改名建议。
         ValidateNameConvention(context, type, records);
@@ -229,19 +239,20 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 检测「配了验证器、但类型对外可见」的组合，提示验证器可被直接构造绕过（STIA0014）。
+    /// 检测「配了归一化或验证器、但类型对外可见」的组合，提示约束可被直接构造绕过（STIA0014）。
     /// </summary>
     /// <remarks>
     /// record 的主构造函数不能单独指定可见性（CS1514），它跟随类型本身，故类型对外可见时 <c>new R(default)</c>
     /// 就可用。该规则默认关闭，此处无条件上报，是否呈现由 <c>IsEnabledByDefault</c> / <c>.editorconfig</c> 决定。
     /// </remarks>
-    private static void ValidateValidatorBypass(
+    private static void ValidateGuardBypass(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
         string? validatorName,
+        string? normalizerName,
         RecordDeclarationSyntax[] records)
     {
-        if (validatorName is null || !IsExternallyVisible(type))
+        if ((validatorName is null && normalizerName is null) || !IsExternallyVisible(type))
         {
             return;
         }
@@ -275,15 +286,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// </remarks>
     private static void ValidatePrefix(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
     {
-        var prefix = type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute")
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == "Prefix")
-            .Value.Value as string;
+        var prefix = AttributeReader.GetString(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.PrefixArgumentName);
 
         if (prefix is not null && string.IsNullOrWhiteSpace(prefix))
         {
-            Report(context, Descriptors.InvalidPrefix, FindPrefixArgumentLocation(records) ?? records[0].GetLocation());
+            Report(context, Descriptors.InvalidPrefix, FindNamedArgumentLocation(records, StronglyTypedIdInfo.PrefixArgumentName) ?? records[0].GetLocation());
         }
     }
 
@@ -303,7 +312,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     {
         var method = type.GetMembers(validatorName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
 
-        var location = FindValidatorArgumentLocation(records) ?? records[0].GetLocation();
+        var location = FindNamedArgumentLocation(records, StronglyTypedIdInfo.ValidatorArgumentName) ?? records[0].GetLocation();
 
         if (method is null
             || method.ReturnType.SpecialType != SpecialType.System_Boolean
@@ -315,39 +324,37 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 在声明段里定位 <c>[StronglyTypedId(Validator = …)]</c> 中 <c>Validator</c> 实参的语法位置。
+    /// 校验 <c>[StronglyTypedId(Normalizer = nameof(Foo))]</c> 指向的方法是否为合法的静态归一化方法。
     /// </summary>
-    private static Location? FindValidatorArgumentLocation(RecordDeclarationSyntax[] records)
+    /// <remarks>
+    /// 校验项：方法存在、静态、返回类型与唯一参数类型都等于基元 Id 类型。返回类型必须一并校验 ——
+    /// 写成 <c>void</c> 或 <c>object</c> 时错误会跑到生成代码里变成 CS1503 / CS0029，位置却指向 <c>.g.cs</c>。
+    /// </remarks>
+    private static void ValidateNormalizer(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        string normalizerName,
+        ITypeSymbol primitiveType,
+        RecordDeclarationSyntax[] records)
     {
-        foreach (var record in records)
+        var method = type.GetMembers(normalizerName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
+
+        var location = FindNamedArgumentLocation(records, StronglyTypedIdInfo.NormalizerArgumentName) ?? records[0].GetLocation();
+
+        if (method is null
+            || !SymbolEqualityComparer.Default.Equals(method.ReturnType, primitiveType)
+            || method.Parameters.Length != 1
+            || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, primitiveType))
         {
-            foreach (var attributeList in record.AttributeLists)
-            {
-                foreach (var attribute in attributeList.Attributes)
-                {
-                    if (!IsStronglyTypedIdAttribute(attribute))
-                    {
-                        continue;
-                    }
-
-                    foreach (var argument in attribute.ArgumentList?.Arguments ?? default)
-                    {
-                        if (argument.NameEquals?.Name.Identifier.ValueText == "Validator")
-                        {
-                            return argument.GetLocation();
-                        }
-                    }
-                }
-            }
+            Report(context, Descriptors.NormalizerReferenceInvalid, location, normalizerName, primitiveType.ToDisplayString());
         }
-
-        return null;
     }
 
     /// <summary>
-    /// 在声明段里定位 <c>[StronglyTypedId(Prefix = …)]</c> 中 <c>Prefix</c> 实参的语法位置。
+    /// 在声明段里定位 <c>[StronglyTypedId(&lt;argumentName&gt; = …)]</c> 中指定命名实参的语法位置。
     /// </summary>
-    private static Location? FindPrefixArgumentLocation(RecordDeclarationSyntax[] records)
+    /// <remarks>STIA0010 / STIA0013 / STIA0017 共用：分散实现迟早有一处漏改名字，然后静默退回到整段声明的位置。</remarks>
+    private static Location? FindNamedArgumentLocation(RecordDeclarationSyntax[] records, string argumentName)
     {
         foreach (var record in records)
         {
@@ -362,7 +369,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
                     foreach (var argument in attribute.ArgumentList?.Arguments ?? default)
                     {
-                        if (argument.NameEquals?.Name.Identifier.ValueText == "Prefix")
+                        if (argument.NameEquals?.Name.Identifier.ValueText == argumentName)
                         {
                             return argument.GetLocation();
                         }
@@ -389,11 +396,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
     /// </summary>
     private static string? GetValidatorName(INamedTypeSymbol type)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute")
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == "Validator")
-            .Value.Value as string;
+        => AttributeReader.GetString(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.ValidatorArgumentName);
 
     /// <summary>
     /// 取生效的验证器方法名：优先逐类型 <c>Validator</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.Validator</c>。
@@ -405,25 +410,48 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 的默认验证器方法名；未声明时为 <see langword="null"/>。
     /// </summary>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
-        => assembly.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute")
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == "Validator")
-            .Value.Value as string;
+        => AttributeReader.GetString(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            StronglyTypedIdInfo.ValidatorArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    private static string? GetNormalizerName(INamedTypeSymbol type)
+        => AttributeReader.GetString(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.NormalizerArgumentName);
+
+    /// <summary>
+    /// 取生效的归一化方法名：优先逐类型 <c>Normalizer</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.Normalizer</c>。
+    /// </summary>
+    private static string? GetEffectiveNormalizerName(INamedTypeSymbol type, IAssemblySymbol assembly)
+        => GetNormalizerName(type) ?? GetAssemblyDefaultNormalizer(assembly);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Normalizer = …)]</c> 的默认归一化方法名；未声明时为 <see langword="null"/>。
+    /// </summary>
+    private static string? GetAssemblyDefaultNormalizer(IAssemblySymbol assembly)
+        => AttributeReader.GetString(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            StronglyTypedIdInfo.NormalizerArgumentName);
 
     /// <summary>
     /// 判断类型是否由 <c>[StronglyTypedId]</c> 标记。
     /// </summary>
     private static bool HasStronglyTypedIdAttribute(INamedTypeSymbol type)
-        => type.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute");
+        => AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName) is not null;
 
     /// <summary>
-    /// 检测直接 <c>new Xxx(...)</c> 构造强类型 Id 的写法，仅在该 Id 设了 <c>Validator</c> 时提示（STIA0011）。
+    /// 检测直接构造强类型 Id 的写法（STIA0011）：<c>new Xxx(...)</c> 与目标类型化的 <c>new(...)</c>。
     /// </summary>
-    /// <remarks>生成代码里的 <c>new Xxx(...)</c> 由生成代码豁免自动忽略，不会误报。</remarks>
+    /// <remarks>
+    /// 两种形态共用一个处理函数：隐式创建没有 <c>Type</c> 属性，只能经符号信息取构造函数，而显式创建同样可以这么取，
+    /// 于是不必写两套。生成代码里的 <c>new Xxx(...)</c> 由生成代码豁免自动忽略，不会误报。
+    /// </remarks>
     private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext context)
     {
-        if (context.Node is not ObjectCreationExpressionSyntax creation)
+        if (context.Node is not BaseObjectCreationExpressionSyntax creation)
         {
             return;
         }
@@ -431,13 +459,73 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         var method = context.SemanticModel.GetSymbolInfo(creation, context.CancellationToken).Symbol as IMethodSymbol;
         var type = method?.ContainingType;
 
-        if (type is null || !HasStronglyTypedIdAttribute(type) || GetEffectiveValidatorName(type, context.SemanticModel.Compilation.Assembly) is null)
+        if (type is null || !BypassesGuards(type, context.SemanticModel.Compilation))
         {
             return;
         }
 
         Report(context, Descriptors.BypassCreate, creation.GetLocation(), type.Name);
     }
+
+    /// <summary>
+    /// 检测 <c>default</c> / <c>default(T)</c> 产生的零值实例（STIA0011）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只对值类型 Id 报告：引用类型 record 的 <c>default</c> 就是 <see langword="null"/>，并没有「构造出无效实例」。
+    /// </para>
+    /// <para>
+    /// 与 <c>default</c> 做相等比较是合法且常见的判空写法，必须排除，否则规则会被噪声淹没。
+    /// </para>
+    /// </remarks>
+    private static void AnalyzeDefaultValue(OperationAnalysisContext context)
+    {
+        if (context.Operation is not IDefaultValueOperation defaultValue
+            || IsComparisonOperand(defaultValue)
+            || defaultValue.Type is not INamedTypeSymbol { TypeKind: TypeKind.Struct } type
+            || !BypassesGuards(type, context.Compilation))
+        {
+            return;
+        }
+
+        context.ReportDiagnostic(Diagnostic.Create(Descriptors.BypassCreate, defaultValue.Syntax.GetLocation(), type.Name));
+    }
+
+    /// <summary>
+    /// 判断 <c>default</c> 是否处在「与空值比较」的语境里（<c>x == default</c>、<c>x.Equals(default)</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 必须先穿过隐式转换节点：<c>default</c> 字面量自身没有类型，语义树里通常被一层
+    /// <see cref="IConversionOperation"/> 包着，直接看 <c>Parent</c> 只会看到那层转换。
+    /// </remarks>
+    private static bool IsComparisonOperand(IDefaultValueOperation operation)
+    {
+        var current = operation.Parent;
+
+        while (current is IConversionOperation conversion)
+        {
+            current = conversion.Parent;
+        }
+
+        return current switch
+        {
+            IBinaryOperation { OperatorKind: BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals } => true,
+            IArgumentOperation { Parent: IInvocationOperation invocation } => invocation.TargetMethod.Name == "Equals",
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// 判断该类型是否「配了归一化或验证器、因而绕过 Create 就等于绕过这些约束」——STIA0011 各形态的统一前提。
+    /// </summary>
+    /// <remarks>
+    /// 两个名字都必须走 <c>GetEffective…</c>：它们还会回退到程序集级 <c>StronglyTypedIdDefaults</c>，
+    /// 只查类型上的实参会漏报。归一化也算在内 —— 绕过它得到的 Id 不是规范形，相等性比较会失效。
+    /// </remarks>
+    private static bool BypassesGuards(INamedTypeSymbol type, Compilation compilation)
+        => HasStronglyTypedIdAttribute(type)
+            && (GetEffectiveValidatorName(type, compilation.Assembly) is not null
+                || GetEffectiveNormalizerName(type, compilation.Assembly) is not null);
 
     private static void Report(SymbolAnalysisContext context, DiagnosticDescriptor descriptor, Location location, params object[] arguments)
         => context.ReportDiagnostic(Diagnostic.Create(descriptor, location, arguments));

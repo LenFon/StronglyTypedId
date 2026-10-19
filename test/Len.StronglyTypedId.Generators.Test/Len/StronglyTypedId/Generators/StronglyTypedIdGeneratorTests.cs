@@ -1343,7 +1343,8 @@ public class StronglyTypedIdGeneratorTests
 
         generated["Len.StronglyTypedId.OrderId.g.cs"]
             .Should().Contain("public static OrderId Create(global::System.Guid value) => new OrderId(value);")
-            .And.NotContain("Validate(");
+            .And.NotContain("Validate(")
+            .And.NotContain("Normalize(");
     }
 
     /// <summary>
@@ -1369,6 +1370,164 @@ public class StronglyTypedIdGeneratorTests
         generated["Len.StronglyTypedId.OrderId.g.cs"]
             .Should().Contain("if (value is { Length: > 0 } && Validate(value))")
             .And.Contain("if (value.Length > 0 && Validate(value.ToString()))");
+    }
+
+    /// <summary>
+    /// 配置 <c>Normalizer</c> 后，四个构造入口都必须「先归一化、再校验、最后构造」。
+    /// </summary>
+    /// <remarks>
+    /// 断言覆盖 <c>Create</c> / <c>TryCreate</c> / <c>TryParse</c> 三条路径：它们是使用者能拿到 Id 的全部入口，
+    /// 漏掉任何一条都会让未经清洗的值从对应路径溜进来。顺序同样要断言 —— 先校验后归一化会把
+    /// <c>"  a@b.com  "</c> 这类合法输入判成非法。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_NormalizeBeforeValidating_WhenNormalizerIsConfigured()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            // Create 从表达式体退化为块体：归一化后的值要同时喂给校验与构造，不能重复调用归一化方法。
+            .Contain("public static OrderId Create(global::System.Guid value)")
+            .And.Contain("value = Normalize(value);")
+            .And.Contain("if (!Validate(value))")
+            .And.Contain("return new OrderId(value);")
+            // TryParse 里校验必须挪到归一化之后，故不再并入解析条件。
+            .And.NotContain("&& Validate(val)")
+            .And.Contain("var normalized = Normalize(val);")
+            .And.Contain("if (!Validate(normalized))")
+            .And.Contain("result = new OrderId(normalized);");
+
+        // TryCreate 单独切出来断言：它与 Create 共用同一句 `value = Normalize(value);`，
+        // 全局 Contain 无法区分「Create 归一化了」与「TryCreate 也归一化了」。
+        var tryCreate = generated[generated.IndexOf("public static bool TryCreate", StringComparison.Ordinal)..];
+
+        tryCreate.Should()
+            .Contain("value = Normalize(value);")
+            .And.Contain("if (!Validate(value))")
+            .And.Contain("result = new OrderId(value);");
+    }
+
+    /// <summary>
+    /// 只配 <c>Normalizer</c> 时不生成任何校验代码：归一化是「修正」，不是「拒绝」。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NormalizeWithoutValidating_WhenOnlyNormalizerIsConfigured()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("var normalized = Normalize(val);")
+            .And.Contain("result = new OrderId(normalized);")
+            .And.NotContain("Validate(");
+    }
+
+    /// <summary>
+    /// 字符串基元的 span 重载以 <c>value.ToString()</c> 派生归一化入参，属归一化入参来源的另一条分支。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NormalizeSpanDerivedValue_ForStringPrimitive()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(string Value)
+            {
+                private static string Normalize(string value) => value.Trim();
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("var normalized = Normalize(value);")
+            .And.Contain("var normalized = Normalize(value.ToString());")
+            // 驻留的必须是归一化之后的实例，否则同一个 Id 会因大小写 / 空白差异散成多个实例。
+            .And.Contain("result = new OrderId(Intern(normalized));");
+    }
+
+    /// <summary>
+    /// UTF-8 的 <c>TryParse</c> 同样要先归一化：同一份数据走文本路径与二进制路径必须得到相同的 Id。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NormalizeUtf8Value()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("public static bool TryParse(")
+            .And.Contain("var normalized = Normalize(val);")
+            .And.Contain("result = new OrderId(normalized);");
+    }
+
+    /// <summary>
+    /// <c>[assembly: StronglyTypedIdDefaults(Normalizer = "Normalize")]</c> 成为本程序集内所有强类型 Id 的默认归一化方法。
+    /// </summary>
+    /// <remarks>
+    /// 装配级默认值的回退是最容易漏的一环：只读类型上的实参时，这条路径会静默退化成「未配置归一化」。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_UseAssemblyDefaultNormalizer_WhenTypeHasNoOwnNormalizer()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Normalizer = "Normalize")]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("value = Normalize(value);")
+            .And.Contain("var normalized = Normalize(val);");
     }
 
     /// <summary>

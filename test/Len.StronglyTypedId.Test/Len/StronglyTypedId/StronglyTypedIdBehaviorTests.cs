@@ -36,6 +36,8 @@ public class StronglyTypedIdBehaviorTests
         (typeof(UInt16Id), "1234", "abc"),
         (typeof(StringId), "Len", ""),
         (typeof(StringIdV3), "Len", ""),
+        // char：合法文本必须恰为一个字符，故非法输入取两个字符（空串同样非法，见下面的专项用例）。
+        (typeof(CharId), "L", "Len"),
 
         // record（引用类型）
         (typeof(GuidIdV2), "d8ac85d4-ed76-4974-b055-8ef3508743f3", "not-a-guid"),
@@ -144,6 +146,27 @@ public class StronglyTypedIdBehaviorTests
         var act = () => Parse(idType, invalidInput);
 
         act.Should().Throw<TargetInvocationException>().WithInnerException<ArgumentException>();
+    }
+
+    /// <summary>
+    /// C1：char 基元的解析按「长度恰为 1」判定 —— 空串与多字符都必须失败，string 与 span 两个重载一致。
+    /// </summary>
+    /// <remarks>
+    /// char 的 <c>IParsable&lt;char&gt;</c> 成员是显式接口实现，生成代码不能写 <c>char.TryParse(...)</c>（CS1501），
+    /// 故改为长度判定 + 下标取值。这条用例锁住该分支的语义，避免日后被「顺手改成直呼」而编译不过。
+    /// </remarks>
+    [Fact]
+    public void CharId_Should_RejectTextWhoseLengthIsNotOne()
+    {
+        CharId.TryParse("", CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        CharId.TryParse("ab", CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        CharId.TryParse("a".AsSpan(), CultureInfo.InvariantCulture, out var fromSpan).Should().BeTrue();
+        fromSpan.Value.Should().Be('a');
+
+        CharId.Parse("z", CultureInfo.InvariantCulture).Value.Should().Be('z');
+        CharId.Create('q').ToString().Should().Be("q");
+        // IFormattable 入口：char 的实现是显式的，生成代码经接口调用（多一次装箱），结果仍是单字符。
+        CharId.Create('q').ToString(null, CultureInfo.InvariantCulture).Should().Be("q");
     }
 
     #endregion

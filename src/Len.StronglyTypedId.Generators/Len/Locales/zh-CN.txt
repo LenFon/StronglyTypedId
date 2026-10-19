@@ -4,7 +4,7 @@ ParameterCannotBeNullableMessage = 参数‘{0}’不能为可空类型。
 ParameterCannotBeNullableTitle = 	参数不能为可空类型	
 ParameterNameMustBeValueMessage = 	参数名‘{0}’应该是‘Value’。	
 ParameterNameMustBeValueTitle = 	参数名应该是‘Value’	
-ParameterTypeIsInvalidMessage = 	参数类型‘{0}’必须是受支持的基元类型：Guid、string、BigInteger、decimal、整型（byte、sbyte、short、ushort、int、uint、long、ulong、Int128、UInt128）、浮点型（Half、float、double）、日期时间型（DateTime、DateTimeOffset、TimeSpan、DateOnly、TimeOnly），或枚举。	
+ParameterTypeIsInvalidMessage = 	参数类型‘{0}’必须是受支持的基元类型：Guid、string、char、BigInteger、decimal、整型（byte、sbyte、short、ushort、int、uint、long、ulong、Int128、UInt128）、浮点型（Half、float、double）、日期时间型（DateTime、DateTimeOffset、TimeSpan、DateOnly、TimeOnly），或枚举。	
 ParameterTypeIsInvalidTitle = 	参数类型无效	
 TypeCannotBeAbstractMessage = 	类型‘{0}’不能被声明为抽象的。	
 TypeCannotBeAbstractTitle = 	类型不能被声明为抽象的	
@@ -20,14 +20,16 @@ TypeMustHaveSingleParameterPrimaryConstructorMessage = 	类型‘{0}’必须有
 TypeMustHaveSingleParameterPrimaryConstructorTitle = 	类型必须有一个仅包含一个参数的主构造函数。	
 ValidatorReferenceInvalidTitle = 验证器方法必须是合法的静态 bool 方法
 ValidatorReferenceInvalidMessage = [StronglyTypedId(Validator = ...)] 引用的验证器方法“{0}”必须是签名为“static bool {0}({1} value)”的静态方法。
+NormalizerReferenceInvalidTitle = 归一化方法必须是合法的静态方法
+NormalizerReferenceInvalidMessage = [StronglyTypedId(Normalizer = ...)] 引用的归一化方法“{0}”必须是签名为“static {1} {0}({1} value)”的静态方法。
 BypassCreateTitle = 强类型 Id 被直接构造
-BypassCreateMessage = 直接构造“{0}”会绕过 Create 与 TryParse 强制的验证。请改用 {0}.Create(...)。
+BypassCreateMessage = 直接构造“{0}”会绕过 Create 与 TryParse 执行的归一化与校验。请改用 {0}.Create(...)。
 GeneratorFailureTitle = 强类型 Id 代码生成失败
 GeneratorFailureMessage = 代码生成器 {0} 因 {1} 失败：{2}。该生成器本次产出的全部源码已被丢弃，请修复根因后重新生成。
 InvalidPrefixTitle = 前缀值为空
 InvalidPrefixMessage = 'Prefix' 的值为空或纯空白，该强类型 Id 将不带前缀。
 ValidatorCanBeBypassedTitle = 验证器可被绕过
-ValidatorCanBeBypassedMessage = “{0}”对外可见，其主构造函数同样对外可见，“new {0}(...)”会跳过验证器。可将类型收窄为 internal，或接受验证器仅为建议性约束。
+ValidatorCanBeBypassedMessage = “{0}”对外可见，其主构造函数同样对外可见，“new {0}(...)”会跳过归一化与校验。可将类型收窄为 internal，或接受这些约束仅为建议性的。
 TypeNameShouldEndWithIdTitle = 类型名应以‘Id’结尾
 TypeNameShouldEndWithIdMessage = 类型名‘{0}’不以‘Id’结尾。建议改名为‘{1}’，让类型名一眼看出是标识符。
 DuplicatePrimitiveTypeTitle = 多个强类型 Id 使用相同的基元类型

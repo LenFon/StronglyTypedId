@@ -1,44 +1,40 @@
+using Len.StronglyTypedId;
+using Len.StronglyTypedId.Domain;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-});
+// Minimal API 不需要额外的绑定代码：路由 / 查询参数经 IParsable<T> 绑定。
+// 路由约束 {id:OrderId} 复用 MVC 集成生成的 RouteOptions 注册，所以这里只注册路由。
+builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+
+// ASP.NET Core OpenAPI（≥ 9.0.0）：把每个 Id 映射到其基元的 schema。
+builder.Services.AddOpenApi(options => StronglyTypedIds.ApplyTo(options));
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
 }
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+// 路由参数："..." 经 IParsable<OrderId>.TryParse 绑定，格式非法时框架直接返回 400。
+app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value))
+    .WithName("GetOrder");
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+// [AsParameters]：按名字把路由 / 查询值绑到记录的各个 Id 属性上。
+app.MapGet("/orders", ([AsParameters] OrderQuery query) => Results.Ok(query.Id.Value))
+    .WithName("QueryOrders");
+
+// JSON 请求体 / 响应体：由 STJ 转换器负责，schema 取 Id 的基元形态。
+app.MapPost("/orders", (CreateOrderRequest request) => TypedResults.Ok(request.Id))
+    .WithName("CreateOrder");
+
+// 路由约束：段格式在进入处理器之前就被校验。
+app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value))
+    .WithName("GetOrderConstrained");
 
 app.Run();
 
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+internal sealed record OrderQuery(OrderId Id);
+
+internal sealed record CreateOrderRequest(OrderId Id);

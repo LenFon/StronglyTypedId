@@ -1,15 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<!-- net10.0 用来演示 Guid 基元的 IUtf8SpanParsable（.NET 10 起才有）；
+		     net8.0 则验证同一份代码在最低支持版本上的行为。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<OutputType>Exe</OutputType>
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="AutoFixture" />
+		<PackageReference Include="Newtonsoft.Json" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing\Len.StronglyTypedId.Testing.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing.AutoFixture\Len.StronglyTypedId.Testing.AutoFixture.csproj" />
 	</ItemGroup>
 
 </Project>

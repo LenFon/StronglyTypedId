@@ -13,9 +13,6 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>运行时 <c>Len.StronglyTypedId</c> 命名空间的显示名（含 <c>global::</c> 前缀）。</summary>
     internal const string InterfaceNamespace = "global::Len.StronglyTypedId";
 
-    /// <summary>运行时 <c>StronglyTypedIdAttribute</c> 的显示名（含 <c>global::</c> 前缀）。</summary>
-    internal const string AttributeName = "global::Len.StronglyTypedId.StronglyTypedIdAttribute";
-
     /// <summary>System.Text.Json 转换器的内嵌类型名。</summary>
     private const string SystemTextJsonConverterTypeName = "SystemTextJsonConverter";
 
@@ -24,6 +21,9 @@ internal readonly record struct StronglyTypedIdInfo
 
     /// <summary>attribute 中验证器方法的命名实参名。</summary>
     internal const string ValidatorArgumentName = "Validator";
+
+    /// <summary>attribute 中归一化方法的命名实参名。</summary>
+    internal const string NormalizerArgumentName = "Normalizer";
 
     /// <summary>attribute 中 <c>TypeConverter</c> 开关的命名实参名。</summary>
     internal const string TypeConverterArgumentName = "TypeConverter";
@@ -70,7 +70,7 @@ internal readonly record struct StronglyTypedIdInfo
             && @interface.TypeArguments.Length == 2
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == InterfaceNamespace;
 
-    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null)
+    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null, string? defaultNormalizerName = null)
     {
         // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace。
         var containingNamespace = type.ContainingNamespace
@@ -97,6 +97,7 @@ internal readonly record struct StronglyTypedIdInfo
 
         // 能力一律按符号判定，不按类型名硬编码。
         IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
+        IsCharPrimitive = primitiveIdType.SpecialType == SpecialType.System_Char;
         IsEnum = primitiveIdType.TypeKind == TypeKind.Enum;
         // 枚举继承的 IFormattable / ISpanFormattable 已被标记 [Obsolete]：透出会 CS0618，不透出又会 CS0535。
         IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
@@ -107,11 +108,14 @@ internal readonly record struct StronglyTypedIdInfo
         IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
         CharTryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Char);
         Utf8TryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Byte);
-        ValidatorName = GetStringArgument(type, ValidatorArgumentName) ?? defaultValidatorName;
-        HasTypeConverter = GetBooleanArgument(type, TypeConverterArgumentName);
-        IsObjectJsonShape = GetJsonShapeIsObject(type);
-        Prefix = NormalizePrefix(GetStringArgument(type, PrefixArgumentName));
-        IsStrictPrefixRead = GetPrefixReadModeIsStrict(type);
+        // 属性只查一次：下面五项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做五遍。
+        var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
+        ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaultValidatorName;
+        NormalizerName = AttributeReader.GetString(attribute, NormalizerArgumentName) ?? defaultNormalizerName;
+        HasTypeConverter = AttributeReader.GetBoolean(attribute, TypeConverterArgumentName);
+        IsObjectJsonShape = AttributeReader.GetEnumFlag(attribute, JsonShapeArgumentName, ObjectJsonShapeValue);
+        Prefix = NormalizePrefix(AttributeReader.GetString(attribute, PrefixArgumentName));
+        IsStrictPrefixRead = AttributeReader.GetEnumFlag(attribute, PrefixReadModeArgumentName, StrictPrefixReadModeValue);
         HasSystemTextJsonConverter = WillHaveNestedType(type, SystemTextJsonConverterTypeName);
         HasNewtonsoftJsonConverter = WillHaveNestedType(type, NewtonsoftJsonConverterTypeName);
     }
@@ -165,6 +169,14 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>基元类型是否为 <c>string</c>。</summary>
     public bool IsStringPrimitive { get; }
 
+    /// <summary>基元类型是否为 <c>char</c>。</summary>
+    /// <remarks>
+    /// <c>char</c> 的 <c>IParsable&lt;char&gt;</c> / <c>IFormattable</c> 成员全部是显式接口实现，
+    /// 按类型名直呼（<c>char.Parse(s, provider)</c>、<c>Value.ToString(null, provider)</c>）会 CS1501；
+    /// 静态抽象成员又不能经接口名调用（CS8926）。故解析与格式化两处单列分支，其余能力仍按符号判定。
+    /// </remarks>
+    public bool IsCharPrimitive { get; }
+
     /// <summary>基元类型是否为枚举（枚举没有带 <c>IFormatProvider</c> 的静态 <c>TryParse</c>）。</summary>
     public bool IsEnum { get; }
 
@@ -191,6 +203,13 @@ internal readonly record struct StronglyTypedIdInfo
 
     /// <summary><c>[StronglyTypedId]</c> 上 <c>Validator</c> 指定的验证器方法名；未指定时为 <see langword="null"/>。</summary>
     public string? ValidatorName { get; }
+
+    /// <summary><c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 指定的归一化方法名；未指定时为 <see langword="null"/>。</summary>
+    /// <remarks>
+    /// 与 <see cref="ValidatorName"/> 相互独立：只配归一化时不生成校验，只配校验时不生成归一化。
+    /// 两者同时存在时生成代码的顺序固定为「归一化 → 校验」，校验看到的必须是最终落库的值。
+    /// </remarks>
+    public string? NormalizerName { get; }
 
     /// <summary><c>[StronglyTypedId]</c> 是否要求生成 <c>System.ComponentModel.TypeConverter</c>。</summary>
     /// <remarks>
@@ -415,38 +434,6 @@ internal readonly record struct StronglyTypedIdInfo
                 ? TryFormatKind.DirectWithoutProvider
                 : TryFormatKind.Interface;
     }
-
-    /// <summary>读取 <c>[StronglyTypedId]</c> 上指定命名实参的布尔值，未指定时返回 <see langword="false"/>。</summary>
-    private static bool GetBooleanArgument(ITypeSymbol type, string argumentName)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == argumentName)
-            .Value.Value is true;
-
-    /// <summary>读取 <c>[StronglyTypedId]</c> 上 <c>JsonShape</c> 是否指向对象形态。</summary>
-    private static bool GetJsonShapeIsObject(ITypeSymbol type)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == JsonShapeArgumentName)
-            .Value.Value is ObjectJsonShapeValue;
-
-    /// <summary>读取 <c>[StronglyTypedId]</c> 上 <c>PrefixReadMode</c> 是否指向严格读入。</summary>
-    private static bool GetPrefixReadModeIsStrict(ITypeSymbol type)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == PrefixReadModeArgumentName)
-            .Value.Value is StrictPrefixReadModeValue;
-
-    /// <summary>读取 <c>[StronglyTypedId]</c> 上指定命名实参的字符串值；未指定时返回 <see langword="null"/>。</summary>
-    private static string? GetStringArgument(ITypeSymbol type, string argumentName)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == argumentName)
-            .Value.Value as string;
 
     /// <summary>把前缀归一化：空串与纯空白一律视为「未设置」（<see langword="null"/>）。</summary>
     private static string? NormalizePrefix(string? prefix)

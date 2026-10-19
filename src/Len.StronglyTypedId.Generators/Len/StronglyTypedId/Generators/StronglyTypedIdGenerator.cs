@@ -463,8 +463,11 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         }
 
         var defaultValidator = GetAssemblyDefaultValidator(context.SemanticModel.Compilation.Assembly);
+        var defaultNormalizer = GetAssemblyDefaultNormalizer(context.SemanticModel.Compilation.Assembly);
 
-        return SupportedPrimitiveTypes.IsSupported(ctorArgType) ? new StronglyTypedIdInfo(symbol, defaultValidator) : null;
+        return SupportedPrimitiveTypes.IsSupported(ctorArgType)
+            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer)
+            : null;
     }
 
     /// <summary>
@@ -472,9 +475,16 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// </summary>
     /// <remarks>生成器不引用运行时程序集，故只能按字符串匹配；未声明时返回 <see langword="null"/>。</remarks>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
-        => assembly.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute")
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == "Validator")
-            .Value.Value as string;
+        => AttributeReader.GetString(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            StronglyTypedIdInfo.ValidatorArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Normalizer = …)]</c> 指定的默认归一化方法名。
+    /// </summary>
+    /// <remarks>与验证器默认值分别读取：两者互不牵连，只配其中一个时另一个必须保持未设置。</remarks>
+    private static string? GetAssemblyDefaultNormalizer(IAssemblySymbol assembly)
+        => AttributeReader.GetString(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            StronglyTypedIdInfo.NormalizerArgumentName);
 }

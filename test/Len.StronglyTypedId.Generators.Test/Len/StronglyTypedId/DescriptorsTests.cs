@@ -58,18 +58,17 @@ public partial class DescriptorsTests
                 descriptor.IsEnabledByDefault.Should().BeTrue();
             }
 
-            // STIA0011（BypassCreate）是「建议性」诊断：仅当 Id 设了 Validator 时提示绕过 Create 的直接构造，
-            // 默认 Info 以避免无验证器场景下的噪声（各项目可在 .editorconfig 里调级）。
-            // STIA0013（InvalidPrefix）是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误，
-            // 默认 Warning —— 不阻断构建，但在错误列表里提示（各项目可在 .editorconfig 里调级）。
-            // STIA0014（ValidatorCanBeBypassed）同为建议性诊断，默认 Info。
+            // STIA0011（BypassCreate）是「告警性」诊断：仅当 Id 设了 Validator 时提示绕过 Create 的构造，
+            // 默认 Warning —— 不阻断构建，但 build 与 CI 都能看见（各项目可在 .editorconfig 里调级）。
+            // STIA0013（InvalidPrefix）同样是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误。
+            // STIA0014（ValidatorCanBeBypassed）为建议性诊断，默认 Info。
             // STIA0015 / STIA0016 是纯命名风格提示（名字不以 Id 结尾、同命名空间共用基元），
             // 与「声明是否合法」无关，默认 Info。
             // 其余规则一律 Error。
             switch (descriptor.Id)
             {
                 case Descriptors.BypassCreateId:
-                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0011 是建议性诊断");
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0011 是告警性诊断");
                     break;
                 case Descriptors.InvalidPrefixId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0013 是告警性诊断");

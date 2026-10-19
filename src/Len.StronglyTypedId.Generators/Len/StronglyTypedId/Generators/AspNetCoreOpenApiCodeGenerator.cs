@@ -110,7 +110,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
     private static string GetTypeLiteral(StronglyTypedIdInfo idInfo, bool useOpenApiV2)
     {
         var isString = idInfo.HasPrefix
-            || StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) is "Guid" or "string";
+            || StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) is "Guid" or "string" or "char";
 
         return useOpenApiV2
             ? (isString ? "global::Microsoft.OpenApi.JsonSchemaType.String" : "global::Microsoft.OpenApi.JsonSchemaType.Integer")

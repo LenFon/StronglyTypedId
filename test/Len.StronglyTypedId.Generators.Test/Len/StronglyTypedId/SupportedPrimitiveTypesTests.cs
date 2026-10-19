@@ -26,6 +26,7 @@ public class SupportedPrimitiveTypesTests
 
     [Theory]
     [InlineData(SpecialType.System_String)]
+    [InlineData(SpecialType.System_Char)]
     [InlineData(SpecialType.System_Byte)]
     [InlineData(SpecialType.System_SByte)]
     [InlineData(SpecialType.System_Int16)]

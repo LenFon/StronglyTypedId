@@ -9,10 +9,12 @@
     <File Path=".editorconfig" />
     <File Path=".gitattributes" />
     <File Path=".gitignore" />
+    <File Path="CHANGELOG.md" />
     <File Path="LICENSE.txt" />
     <File Path="README.md" />
     <File Path="README.zh-CN.md" />
     <File Path="PACKAGE.md" />
+    <File Path="TESTING.md" />
     <File Path="bench.props" />
     <File Path="common.props" />
     <File Path="Directory.Packages.props" />
@@ -30,9 +32,12 @@
     <Project Path="samples/Len.StronglyTypedId.Sample2/Len.StronglyTypedId.Sample2.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample3/Len.StronglyTypedId.Sample3.csproj" />
     <Project Path="samples/Len.StronglyTypedId.SampleConsole/Len.StronglyTypedId.SampleConsole.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.SampleIntegrations/Len.StronglyTypedId.SampleIntegrations.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj" />
+    <Project Path="src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj" />
+    <Project Path="src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj" />
     <Project Path="src/Len.StronglyTypedId/Len.StronglyTypedId.csproj" />
   </Folder>
   <Folder Name="/test/">
@@ -42,6 +47,7 @@
     <Project Path="test/Len.StronglyTypedId.Packaging.Test/Len.StronglyTypedId.Packaging.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.TestBase/Len.StronglyTypedId.TestBase.csproj" />
+    <Project Path="test/Len.StronglyTypedId.Testing.Test/Len.StronglyTypedId.Testing.Test.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Len.StronglyTypedId.DocGen/Len.StronglyTypedId.DocGen.csproj" />

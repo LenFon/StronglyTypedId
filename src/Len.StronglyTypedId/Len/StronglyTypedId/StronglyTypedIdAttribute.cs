@@ -25,10 +25,43 @@ public class StronglyTypedIdAttribute : Attribute
     /// }
     /// </code>
     /// The generated <c>Create</c> and <c>TryParse</c> members call it, so the JSON and EF Core integrations reject
-    /// invalid values too. Constructing through the primary constructor directly is not intercepted — the generator
-    /// cannot inject code into a constructor you declared. When unset, no validator code is emitted at all.
+    /// invalid values too. The generator cannot inject code into a constructor you declared, so direct construction
+    /// remains possible — the analyzer reports it as <c>STIA0011</c> instead. When unset, no validator code is
+    /// emitted at all.
     /// </remarks>
     public string? Validator { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of a static normalizer method declared on the strongly typed id type itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The method must be a static member of the annotated type with the signature
+    /// <c>static TPrimitiveId Normalize(TPrimitiveId value)</c>, returning the canonical form of the value:
+    /// </para>
+    /// <code>
+    /// [StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
+    /// public partial record struct EmailAddress(string Value)
+    /// {
+    ///     private static string Normalize(string value) =&gt; value.Trim().ToLowerInvariant();
+    ///
+    ///     private static bool Validate(string value) =&gt; value.Contains('@');
+    /// }
+    /// </code>
+    /// <para>
+    /// The generated <c>Create</c>, <c>TryCreate</c> and every <c>TryParse</c> overload normalize the incoming
+    /// value <em>before</em> validating it, so the validator always inspects — and the id always stores — the
+    /// canonical value. Parsing <c>"  A@B.com  "</c> therefore yields the same id as parsing <c>"a@b.com"</c>,
+    /// and <c>ToString()</c> round-trips the canonical form rather than whatever the caller happened to pass.
+    /// </para>
+    /// <para>
+    /// Normalization is a <em>repair</em>, not a rejection: use it to trim, fold case or drop separators, and
+    /// keep <see cref="Validator"/> for values that must be refused outright. Like the validator, it cannot
+    /// intercept your primary constructor — the analyzer reports direct construction as <c>STIA0011</c>.
+    /// When unset, no normalization code is emitted at all.
+    /// </para>
+    /// </remarks>
+    public string? Normalizer { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is generated

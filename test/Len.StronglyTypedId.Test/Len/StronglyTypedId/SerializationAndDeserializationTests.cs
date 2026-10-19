@@ -18,6 +18,8 @@ public class SerializationAndDeserializationTests
     [InlineData("Len", typeof(StringId), "\"Len\"")]
     [InlineData("Len", typeof(StringIdV2), "\"Len\"")]
     [InlineData("Len", typeof(StringIdV3), "\"Len\"")]
+    // char 在 JSON 里是单字符串，与 string 同形；这条同时守住「字典键写入不经 IFormattable」的分支。
+    [InlineData('L', typeof(CharId), "\"L\"")]
     [InlineData("D8AC85D4-ED76-4974-B055-8EF3508743F3", typeof(GuidId), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
     [InlineData("D8AC85D4-ED76-4974-B055-8EF3508743F3", typeof(GuidIdV2), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
     [InlineData("d8ac85d4-ed76-4974-b055-8ef3508743f3", typeof(GuidId), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
@@ -49,6 +51,7 @@ public class SerializationAndDeserializationTests
     [InlineData("\"Len\"", typeof(StringId), "Len")]
     [InlineData("\"Len\"", typeof(StringIdV2), "Len")]
     [InlineData("\"Len\"", typeof(StringIdV3), "Len")]
+    [InlineData("\"L\"", typeof(CharId), 'L')]
     [InlineData("\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"", typeof(GuidId), "D8AC85D4-ED76-4974-B055-8EF3508743F3")]
     [InlineData("\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"", typeof(GuidIdV2), "D8AC85D4-ED76-4974-B055-8EF3508743F3")]
     [InlineData("12", typeof(SByteId), (sbyte)12)]
@@ -125,6 +128,27 @@ public class SerializationAndDeserializationTests
         var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<ObjectShapeGuidId, int>>(expectedJson)!;
 
         roundTripped.Should().ContainKey(ObjectShapeGuidId.Create(guid));
+    }
+
+    /// <summary>
+    /// C1：char 基元的字典键走 <c>WriteAsPropertyName</c> / <c>ReadAsPropertyName</c>。
+    /// </summary>
+    /// <remarks>
+    /// 这条路径在生成器里用的是 <c>primitiveId.ToString()</c> 而非 <c>ToString(null, InvariantCulture)</c>
+    /// —— char 的后者是显式接口实现（CS1501）。用例同时守住「键能写出去、也能读回来」。
+    /// </remarks>
+    [Fact]
+    public void CharId_Should_RoundTripAsDictionaryKey_When()
+    {
+        var dictionary = new Dictionary<CharId, int> { [CharId.Create('k')] = 1 };
+
+        const string expectedJson = """{"k":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<CharId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(CharId.Create('k'));
     }
 
     #region C10 文本前缀：JSON 走规范文本形

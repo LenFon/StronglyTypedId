@@ -34,6 +34,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [ASP.NET Core OpenAPI](#aspnetcore-openapi)
 - [Using the interface](#using-the-interface)
 - [Reflection helpers](#reflection-helpers)
+- [Testing](#testing)
+- [Samples](#samples)
 - [Diagnostics](#diagnostics)
 - [FAQ](#faq)
 - [License](#license)
@@ -166,6 +168,7 @@ The wrapped `Value` parameter may be one of:
 | ---------------- | ------------------------------------------------------ |
 | `Guid`           | `record struct GuidId(Guid Value)`                     |
 | `string`         | `record StringId(string Value)`                        |
+| `char`           | `record struct CharId(char Value)`                     |
 | `byte`           | `record struct ByteId(byte Value)`                     |
 | `sbyte`          | `record struct SByteId(sbyte Value)`                   |
 | `short`          | `record struct Int16Id(short Value)`                   |
@@ -732,20 +735,80 @@ if (typeof(OrderId).IsStronglyTypedId())
 The check is based on the implemented interface, so it also recognises ids generated in other assemblies.
 Interfaces, abstract types, enums and arrays are never reported as strongly typed ids.
 
+<a id="testing"></a>
+
+## Testing <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+`Len.StronglyTypedId.Testing` builds ids for arrange blocks, so tests do not need
+`OrderId.Create(Guid.NewGuid())` everywhere:
+
+```csharp
+using Len.StronglyTypedId.Testing;
+
+OrderId orderId = Any.Id<OrderId>();
+IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
+```
+
+Values are derived from the primitive exposed by `IStronglyTypedId<TSelf, TPrimitiveId>`, so ids
+declared in any assembly work — including ones compiled after the testing package. Every supported
+primitive is covered, plus `enum`. Values are deliberately ordinary (finite floats, non-empty strings,
+dates inside 1970–2100) to avoid failures unrelated to the code under test.
+
+- **Reproducible** — `Any.Id<OrderId>(seed: 42)` returns the same value for a given runtime version;
+  use one `AnyIdGenerator` instance (or `Any.Ids<T>(count, seed)`) when a whole sequence must repeat.
+- **Validator-aware** — generation retries up to `AnyIdOptions.MaxAttempts` (100 by default) and then
+  throws with a message pointing at `Any.Register<T>(factory)`.
+- **Overridable** — `AnyIdOptions.PrimitiveValueFactory` replaces the value source per primitive type;
+  returning `null` falls back to the built-in generator.
+
+For AutoFixture, add `Len.StronglyTypedId.Testing.AutoFixture` and enable the customization:
+
+```csharp
+var fixture = new Fixture().WithStronglyTypedIds();
+
+OrderId orderId = fixture.Create<OrderId>();
+```
+
+See [TESTING.md](TESTING.md) for the full guide.
+
+<a id="samples"></a>
+
+## Samples <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+Every feature described above has a runnable counterpart under [`samples/`](samples):
+
+| Project | Target | Demonstrates |
+|---|---|---|
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | Guided tour of the core surface: `Create` / `TryCreate` / `Parse`, formatting, equality and ordering, deconstruction, string interning, validators, text prefixes, `TypeConverter`, System.Text.Json and Newtonsoft.Json, nesting, generic containers, reflection helpers and the testing package. |
+| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core (`ApplyTo(ModelConfigurationBuilder)`) and Dapper (`ApplyTo(IDbConnection)`) against in-memory SQLite, plus assembly-level `StronglyTypedIdDefaults`. |
+| `Len.StronglyTypedId.Sample1` | `net8.0` | MVC model binding and `{id:OrderId}` route constraints, Newtonsoft.Json as the MVC formatter, EF Core (SQL Server) and Swashbuckle 6. Needs a reachable SQL Server to start. |
+| `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API: `IParsable` binding, `[AsParameters]`, route constraints, JSON bodies and the built-in OpenAPI transformer (`AddOpenApi(ApplyTo)`). |
+| `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10 (Microsoft.OpenApi 2.x) schema mapping. |
+
+```shell
+dotnet run --project samples/Len.StronglyTypedId.SampleConsole
+dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
+```
+
+The console samples print each step and exit. The web samples publish their document at
+`/openapi/v1.json` (Sample2) or `/swagger/v1/swagger.json` (Sample1, Sample3).
+
 <a id="diagnostics"></a>
 
 ## Diagnostics <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 The analyzer enforces the following rules; `STIA0012` is the one exception, reported by the generator
 when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
-will not compile; the advisory ones (`STIA0011`, `STIA0013`, `STIA0014`, `STIA0015`, `STIA0016`) are
-reported at a lower severity and can be tuned per project in `.editorconfig`. Diagnostics are localized
-for English and Chinese according to the compiler culture.
+will not compile; `STIA0011` and `STIA0013` are warnings, and the advisory ones (`STIA0014`, `STIA0015`,
+`STIA0016`) sit at a lower severity. Every level can be tuned per project in `.editorconfig`. Diagnostics
+are localized for English and Chinese according to the compiler culture.
 
 A few rules fire in narrower circumstances than their titles suggest: `STIA0011` needs the id to declare
-a `Validator` (without one, constructing it directly is not a bypass), `STIA0014` is **off by default**
-and must be enabled explicitly with `dotnet_diagnostic.STIA0014.severity = suggestion`, and `STIA0016`
-reports once per group of ids sharing a primitive, on the ordinally first member.
+a `Validator` (without one, constructing it directly is not a bypass) and covers `new Xxx(...)`,
+target-typed `new(...)` and `default` / `default(T)` alike — a `default` that is only compared against
+(`id == default`) is not reported; `STIA0014` is **off by default** and must be enabled explicitly with
+`dotnet_diagnostic.STIA0014.severity = suggestion`; and `STIA0016` reports once per group of ids sharing
+a primitive, on the ordinally first member.
 
 <!-- BEGIN GENERATED:diagnostics -->
 | Rule ID  | Description                                                     | Code fix                                                  |

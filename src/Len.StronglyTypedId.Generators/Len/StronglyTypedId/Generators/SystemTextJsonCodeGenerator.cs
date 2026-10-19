@@ -107,7 +107,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             ? "value.ToString()"
             : idInfo.IsStringPrimitive
                 ? "primitiveId"
-                : idInfo.IsEnum
+                : idInfo.IsEnum || idInfo.IsCharPrimitive
+                    // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现（CS1501），
+                    // 且其无参 ToString() 与文化无关。
                     ? "primitiveId.ToString()"
                     : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
 

@@ -53,6 +53,12 @@ public partial record struct ByteId(byte Value);
 [StronglyTypedId]
 public partial record struct StringId(string Value);
 
+// C1：char 是唯一「接口面同构、但成员全是显式接口实现」的基元 —— IParsable / IFormattable 的
+// Parse / TryParse / ToString(format, provider) 都不能按类型名直呼（CS1501），故生成器为它单列分支：
+// 解析按「长度恰为 1」判定，格式化走无参 ToString() 或 IFormattable 接口调用。
+[StronglyTypedId]
+public partial record struct CharId(char Value);
+
 [StronglyTypedId]
 public partial record GuidIdV2(Guid Value);
 

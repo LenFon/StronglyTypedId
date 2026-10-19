@@ -1,20 +1,23 @@
 ﻿using System.Globalization;
+using Len.StronglyTypedId.DocGen.Changelog;
 
 namespace Len.StronglyTypedId.DocGen;
 
 /// <summary>
-/// README 三张表的生成器：默认就地重写，<c>--verify</c> 只校验不改文件。
+/// 文档工具：README 三张表的生成器 + <c>CHANGELOG.md</c> / <c>CHANGELOG.zh-CN.md</c> 的结构校验与草稿。
 /// </summary>
 /// <remarks>
 /// <para>
 /// 用法：
 /// </para>
 /// <code>
-/// dotnet run --project tools/Len.StronglyTypedId.DocGen              # 重新生成两张 README 的表格
-/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify  # CI 门禁：不一致则退出码 1
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen                          # 重新生成两张 README 的表格
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify              # CI 门禁：README 与源码不一致则退出码 1
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-changelog    # CI 门禁：tag 与两份 CHANGELOG 的小节对不上则退出码 1
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --draft-changelog     # 打印 [Unreleased] 草稿（按 Conventional Commits 分类）
 /// </code>
 /// <para>
-/// 退出码：<c>0</c> 一致（或已更新），<c>1</c> <c>--verify</c> 下发现不一致，<c>2</c> 运行出错。
+/// 退出码：<c>0</c> 一致（或已更新），<c>1</c> 校验发现不一致，<c>2</c> 运行出错。
 /// </para>
 /// </remarks>
 internal static class Program
@@ -40,10 +43,16 @@ internal static class Program
     public static int Main(string[] args)
     {
         var verify = args.Contains("--verify", StringComparer.Ordinal);
+        var verifyChangelog = args.Contains("--verify-changelog", StringComparer.Ordinal);
+        var draftChangelog = args.Contains("--draft-changelog", StringComparer.Ordinal);
 
         try
         {
-            return Run(ResolveRepositoryRoot(args), verify);
+            var root = ResolveRepositoryRoot(args);
+
+            return draftChangelog
+                ? ChangelogDrafter.Draft(root)
+                : verifyChangelog ? ChangelogVerifier.Verify(root) : Run(root, verify);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {

@@ -36,6 +36,21 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     private static readonly string _tryParseBodyIndent = new(' ', 8);
 
     /// <summary>
+    /// 类型成员体的缩进（产物中为 4 空格）。
+    /// </summary>
+    /// <remarks>仅用于 <c>Create</c>：它是模板里唯一需要按条件切换「表达式体 / 块体」的成员。</remarks>
+    private static readonly string _memberBodyIndent = new(' ', 4);
+
+    /// <summary>
+    /// 归一化结果的局部变量名。
+    /// </summary>
+    /// <remarks>
+    /// 归一化后的值要同时喂给校验与构造，重复调用归一化方法既浪费又可能不幂等，故先落到局部变量。
+    /// 名字取小写，避免与使用者的方法名（PascalCase 惯例）相撞。
+    /// </remarks>
+    private const string NormalizedLocal = "normalized";
+
+    /// <summary>
     /// 解析时传给基元的 <c>IFormatProvider</c> 实参：调用方未指定时回退到不变文化。
     /// </summary>
     /// <remarks>
@@ -67,7 +82,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
-                    public static {{idInfo.Name}} Create({{idInfo.PrimitiveIdTypeName}} value) =>{{GetCreateExpression(idInfo)}};
+                {{GetCreateMember(idInfo)}}
 
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -91,10 +106,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                         [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.Name}} result)
                     {
                 {{GetTryParseHead(idInfo, GetTryParseCondition(idInfo, isSpan: false), PrefixTextKind.String)}}
-                        {
-                            result = new {{idInfo.Name}}({{WrapWithIntern(idInfo, GetTryParseValue(idInfo, isSpan: false))}});
-                            return true;
-                        }
+                {{GetTryParseSuccessBlock(idInfo, isSpan: false)}}
 
                         result = default;
                         return false;
@@ -122,10 +134,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                         [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.Name}} result)
                     {
                 {{GetTryParseHead(idInfo, GetTryParseCondition(idInfo, isSpan: true), PrefixTextKind.Span)}}
-                        {
-                            result = new {{idInfo.Name}}({{WrapWithIntern(idInfo, GetTryParseValue(idInfo, isSpan: true))}});
-                            return true;
-                        }
+                {{GetTryParseSuccessBlock(idInfo, isSpan: true)}}
 
                         result = default;
                         return false;
@@ -212,9 +221,13 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </remarks>
     private static string GetToStringBody(StronglyTypedIdInfo idInfo)
     {
-        var body = idInfo.IsFormattable
-            ? "Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty"
-            : "Value.ToString() ?? string.Empty";
+        // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现（CS1501），
+        // 而其无参 ToString() 本就与文化无关，直接调用即可。
+        var body = idInfo.IsCharPrimitive
+            ? "Value.ToString()"
+            : idInfo.IsFormattable
+                ? "Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty"
+                : "Value.ToString() ?? string.Empty";
 
         // 前缀属于规范文本形，故直接外包一层字符串拼接；无前缀时返回原表达式，产物逐字节不变。
         return idInfo.HasPrefix ? $"{Literal(idInfo.Prefix!)} + ({body})" : body;
@@ -291,6 +304,50 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     }
 
     /// <summary>
+    /// 取完整的 <c>Create</c> 成员（含签名）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 未配置归一化时保持表达式体，产物与加入该能力之前逐字符一致。
+    /// </para>
+    /// <para>
+    /// 配置了归一化就必须改成块体：归一化后的值要同时喂给校验与构造，表达式体只能靠重复调用归一化方法来表达，
+    /// 而归一化方法并不保证幂等（例如「截断到 8 个字符」重复执行虽无害，「追加前缀」就会翻倍）。
+    /// </para>
+    /// </remarks>
+    private static string GetCreateMember(StronglyTypedIdInfo idInfo)
+    {
+        var signature = $"public static {idInfo.Name} Create({idInfo.PrimitiveIdTypeName} value)";
+
+        if (idInfo.NormalizerName is null)
+        {
+            return $"{signature} =>{GetCreateExpression(idInfo)};";
+        }
+
+        var lines = new List<string>
+        {
+            signature,
+            "{",
+            $"    value = {idInfo.NormalizerName}(value);",
+        };
+
+        if (idInfo.ValidatorName is not null)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"    if (!{idInfo.ValidatorName}(value))");
+            lines.Add("    {");
+            lines.Add($"        throw new global::System.ArgumentException($\"The value '{{value}}' is not a valid {idInfo.Name}.\", nameof(value));");
+            lines.Add("    }");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add($"    return new {idInfo.Name}({WrapWithIntern(idInfo, "value")});");
+        lines.Add("}");
+
+        return string.Join("\n", lines.Select(line => line.Length == 0 ? string.Empty : _memberBodyIndent + line));
+    }
+
+    /// <summary>
     /// 取 <c>Create</c> 的表达式体。
     /// </summary>
     /// <remarks>有验证器时用条件表达式内联校验，两种形态共用同一模板，无验证器时产物逐字符不变。</remarks>
@@ -312,14 +369,61 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>TryParse</c> 的解析条件。
     /// </summary>
-    /// <remarks>有验证器时把校验并入条件：<c>TryParse</c> 的契约是「非法即返回 false」，不能借抛异常实现。</remarks>
+    /// <remarks>
+    /// 有验证器时把校验并入条件：<c>TryParse</c> 的契约是「非法即返回 false」，不能借抛异常实现。
+    /// 但配置了归一化时校验不能并入 —— 校验必须看到归一化之后的值，只能挪进函数体（见
+    /// <see cref="GetTryParseSuccessBlock"/>）。
+    /// </remarks>
     private static string GetTryParseCondition(StronglyTypedIdInfo idInfo, bool isSpan)
     {
         var condition = GetTryParseConditionCore(idInfo, isSpan);
 
-        return idInfo.ValidatorName is null
+        return idInfo.ValidatorName is null || idInfo.NormalizerName is not null
             ? condition
             : $"{condition} && {idInfo.ValidatorName}({GetTryParseValue(idInfo, isSpan)})";
+    }
+
+    /// <summary>
+    /// 取 <c>TryParse</c> 体内「解析成功」分支的完整文本（含两侧大括号）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 未配置归一化时产物与加入该能力之前逐字符一致。
+    /// </para>
+    /// <para>
+    /// 配置归一化后顺序固定为「归一化 → 校验 → 构造」。校验失败用「赋默认值 + 返回 false」提前退出，
+    /// 而不是再套一层 <c>if</c>：后者要把 <c>return true;</c> 之后的大括号也纳入拼接，模板洞会碎成两段。
+    /// </para>
+    /// </remarks>
+    private static string GetTryParseSuccessBlock(StronglyTypedIdInfo idInfo, bool isSpan)
+    {
+        var value = idInfo.NormalizerName is null
+            ? WrapWithIntern(idInfo, GetTryParseValue(idInfo, isSpan))
+            : WrapWithIntern(idInfo, NormalizedLocal);
+
+        var lines = new List<string> { "{" };
+
+        if (idInfo.NormalizerName is not null)
+        {
+            lines.Add($"    var {NormalizedLocal} = {idInfo.NormalizerName}({GetTryParseValue(idInfo, isSpan)});");
+            lines.Add(string.Empty);
+
+            if (idInfo.ValidatorName is not null)
+            {
+                lines.Add($"    if (!{idInfo.ValidatorName}({NormalizedLocal}))");
+                lines.Add("    {");
+                lines.Add("        result = default;");
+                lines.Add("        return false;");
+                lines.Add("    }");
+                lines.Add(string.Empty);
+            }
+        }
+
+        lines.Add($"    result = new {idInfo.Name}({value});");
+        lines.Add("    return true;");
+        lines.Add("}");
+
+        return string.Join("\n", lines.Select(line => line.Length == 0 ? string.Empty : _tryParseBodyIndent + line));
     }
 
     private static string GetTryParseConditionCore(StronglyTypedIdInfo idInfo, bool isSpan)
@@ -337,17 +441,26 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             return $"global::System.Enum.TryParse<{idInfo.PrimitiveIdTypeName}>({parseArgument}, out var val)";
         }
 
+        if (idInfo.IsCharPrimitive)
+        {
+            // char 的 TryParse 是显式接口实现（CS1501），且「合法文本」的定义就是长度恰为 1；
+            // 取值直接下标取，不经过 out 参数，故 GetTryParseValue 也走同一分支。
+            return isSpan ? "value.Length == 1" : "value is { Length: 1 }";
+        }
+
         return $"{idInfo.PrimitiveIdTypeName}.TryParse(value, {ProviderOrDefault}, out var val)";
     }
 
     /// <summary>
     /// 取传给构造函数的基元值表达式。
     /// </summary>
-    /// <remarks>其余基元的解析结果落在 <c>out var val</c> 上；字符串基元直接取参数本身。</remarks>
+    /// <remarks>其余基元的解析结果落在 <c>out var val</c> 上；字符串基元直接取参数本身；char 取下标的唯一字符。</remarks>
     private static string GetTryParseValue(StronglyTypedIdInfo idInfo, bool isSpan)
-        => idInfo.IsStringPrimitive
-            ? isSpan ? "value.ToString()" : "value"
-            : "val";
+        => idInfo.IsCharPrimitive
+            ? "value[0]"
+            : idInfo.IsStringPrimitive
+                ? isSpan ? "value.ToString()" : "value"
+                : "val";
 
     /// <summary>
     /// 取 <c>TryParse</c> 体中「前缀处理」之后那一行 <c>if</c> 之前的完整文本（含该 <c>if</c> 行）。
@@ -475,6 +588,11 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsFormattable)
         {
+            // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现，只能经接口调用（多一次装箱）。
+            var formatCall = idInfo.IsCharPrimitive
+                ? "((global::System.IFormattable)Value).ToString(format, formatProvider)"
+                : "Value.ToString(format, formatProvider)";
+
             // format 为空时带前缀，非空时裸基元：$"{id}" 等常见路径走 IFormattable，一律裸基元会静默丢前缀。
             AppendMember(
                 members,
@@ -482,8 +600,8 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                 ["<inheritdoc/>"],
                 "public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>",
                 idInfo.HasPrefix
-                    ? $"    global::System.String.IsNullOrEmpty(format) ? {Literal(idInfo.Prefix!)} + Value.ToString(format, formatProvider) : Value.ToString(format, formatProvider);"
-                    : "    Value.ToString(format, formatProvider);");
+                    ? $"    global::System.String.IsNullOrEmpty(format) ? {Literal(idInfo.Prefix!)} + {formatCall} : {formatCall};"
+                    : $"    {formatCall};");
         }
 
         if (idInfo.IsSpanFormattable)
@@ -610,41 +728,37 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 追加 <c>TryCreate</c>：<c>Create</c> 的非抛异常版本。
     /// </summary>
-    /// <remarks>未指定验证器时不能照 <c>TryParse</c> 写成 <c>if (true) { … }</c>，否则后续语句不可达（CS0162）。</remarks>
+    /// <remarks>
+    /// 未指定验证器时不能照 <c>TryParse</c> 写成 <c>if (true) { … }</c>，否则后续语句不可达（CS0162）。
+    /// 归一化与校验的顺序和 <c>Create</c> 保持一致：先归一化，再校验，最后构造。
+    /// </remarks>
     private static void AppendTryCreateMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
         var signature = $"public static bool TryCreate({idInfo.PrimitiveIdTypeName} value, {MaybeNullOutAttribute}{idInfo.Name} result)";
 
-        if (idInfo.ValidatorName is null)
-        {
-            AppendMember(
-                builder,
-                version,
-                _tryCreateDocLines,
-                signature,
-                "{",
-                $"    result = new {idInfo.Name}({WrapWithIntern(idInfo, "value")});",
-                "    return true;",
-                "}");
+        var lines = new List<string> { "{" };
 
-            return;
+        if (idInfo.NormalizerName is not null)
+        {
+            lines.Add($"    value = {idInfo.NormalizerName}(value);");
+            lines.Add(string.Empty);
         }
 
-        AppendMember(
-            builder,
-            version,
-            _tryCreateDocLines,
-            signature,
-            "{",
-            $"    if (!{idInfo.ValidatorName}(value))",
-            "    {",
-            "        result = default;",
-            "        return false;",
-            "    }",
-            string.Empty,
-            $"    result = new {idInfo.Name}({WrapWithIntern(idInfo, "value")});",
-            "    return true;",
-            "}");
+        if (idInfo.ValidatorName is not null)
+        {
+            lines.Add($"    if (!{idInfo.ValidatorName}(value))");
+            lines.Add("    {");
+            lines.Add("        result = default;");
+            lines.Add("        return false;");
+            lines.Add("    }");
+            lines.Add(string.Empty);
+        }
+
+        lines.Add($"    result = new {idInfo.Name}({WrapWithIntern(idInfo, "value")});");
+        lines.Add("    return true;");
+        lines.Add("}");
+
+        AppendMember(builder, version, _tryCreateDocLines, [signature, .. lines]);
     }
 
     /// <summary>
@@ -692,7 +806,8 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         // 经接口名调用静态抽象成员会 CS8926，按具体基元类型调用则合法；该重载在基元下唯一，不会歧义。
         var condition = $"{idInfo.PrimitiveIdTypeName}.TryParse(utf8Text, {ProviderOrDefault}, out var val)";
 
-        if (idInfo.ValidatorName is not null)
+        // 与 UTF-16 路径同理：归一化存在时校验必须挪到归一化之后，不能并入解析条件。
+        if (idInfo.ValidatorName is not null && idInfo.NormalizerName is null)
         {
             condition = $"{condition} && {idInfo.ValidatorName}(val)";
         }
@@ -732,7 +847,24 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         declarationLines.Add($"    if ({condition})");
         declarationLines.Add("    {");
-        declarationLines.Add($"        result = new {idInfo.Name}(val);");
+
+        if (idInfo.NormalizerName is not null)
+        {
+            declarationLines.Add($"        var {NormalizedLocal} = {idInfo.NormalizerName}(val);");
+            declarationLines.Add(string.Empty);
+
+            if (idInfo.ValidatorName is not null)
+            {
+                declarationLines.Add($"        if (!{idInfo.ValidatorName}({NormalizedLocal}))");
+                declarationLines.Add("        {");
+                declarationLines.Add("            result = default;");
+                declarationLines.Add("            return false;");
+                declarationLines.Add("        }");
+                declarationLines.Add(string.Empty);
+            }
+        }
+
+        declarationLines.Add($"        result = new {idInfo.Name}({(idInfo.NormalizerName is null ? "val" : NormalizedLocal)});");
         declarationLines.Add("        return true;");
         declarationLines.Add("    }");
         declarationLines.Add(string.Empty);

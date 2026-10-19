@@ -1,0 +1,10 @@
+#nullable enable
+Len.StronglyTypedId.Testing.FixtureExtensions
+Len.StronglyTypedId.Testing.StronglyTypedIdCustomization
+Len.StronglyTypedId.Testing.StronglyTypedIdCustomization.Customize(AutoFixture.IFixture! fixture) -> void
+Len.StronglyTypedId.Testing.StronglyTypedIdCustomization.StronglyTypedIdCustomization() -> void
+Len.StronglyTypedId.Testing.StronglyTypedIdCustomization.StronglyTypedIdCustomization(Len.StronglyTypedId.Testing.AnyIdGenerator! generator) -> void
+Len.StronglyTypedId.Testing.StronglyTypedIdSpecimenBuilder
+Len.StronglyTypedId.Testing.StronglyTypedIdSpecimenBuilder.Create(object! request, AutoFixture.Kernel.ISpecimenContext! context) -> object!
+Len.StronglyTypedId.Testing.StronglyTypedIdSpecimenBuilder.StronglyTypedIdSpecimenBuilder(Len.StronglyTypedId.Testing.AnyIdGenerator! generator) -> void
+static Len.StronglyTypedId.Testing.FixtureExtensions.WithStronglyTypedIds(this AutoFixture.IFixture! fixture, Len.StronglyTypedId.Testing.AnyIdGenerator? generator = null) -> AutoFixture.IFixture!

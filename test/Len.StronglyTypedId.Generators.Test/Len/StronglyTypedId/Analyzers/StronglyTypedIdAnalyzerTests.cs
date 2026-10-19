@@ -525,6 +525,141 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
+    #region 归一化引用校验（STIA0017）
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Normalizer = nameof(Normalize))]</c> 指向的方法不存在。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNormalizerMethodMissing()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithArguments("Normalize", "System.Guid")
+            .WithSpan(5, 18, 5, 48);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 归一化方法返回 <c>void</c>：生成代码会拿 <c>void</c> 去构造 Id（CS1503），必须在 attribute 上拦住。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNormalizerMethodReturnsVoid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static void Normalize(Guid value) { }
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithArguments("Normalize", "System.Guid")
+            .WithSpan(5, 18, 5, 48);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 归一化方法的参数类型与基元 Id 类型不一致。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNormalizerMethodHasWrongParameterType()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(int value) => Guid.Empty;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithArguments("Normalize", "System.Guid")
+            .WithSpan(5, 18, 5, 48);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 归一化方法不是静态成员，生成代码（处于同一 partial 内）无法可达。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNormalizerMethodIsNotStatic()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private Guid Normalize(Guid value) => value;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithArguments("Normalize", "System.Guid")
+            .WithSpan(5, 18, 5, 48);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 签名完全合规时不报告任何诊断。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerMatches()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 装配级默认归一化要求名为 <c>Normalize</c> 的方法，但本程序集的 Id 没有该方法时应报告 STIA0017。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyDefaultNormalizerHasNoMatchingMethod()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Normalizer = "Normalize")]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithArguments("Normalize", "System.Guid")
+            .WithSpan(7, 1, 8, 50);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    #endregion
+
     #region 绕过 Create 直接构造（STIA0011）
 
     /// <summary>
@@ -554,6 +689,33 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
+    /// 只配了归一化、没配验证器时，直接构造同样要提示 STIA0011：绕过归一化得到的 Id 不是规范形，
+    /// 相等性比较与字典键都会失效。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenConstructedDirectlyWithNormalizer()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => new OrderId(Guid.NewGuid());
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(13, 31, 13, 58);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
     /// 无验证器的 Id 直接构造不构成问题，不应报告 STIA0011。
     /// </summary>
     [Fact]
@@ -570,6 +732,167 @@ public class StronglyTypedIdAnalyzerTests
             public class Usage
             {
                 public OrderId Build() => new OrderId(Guid.NewGuid());
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 目标类型化的 <c>new(...)</c> 与显式 <c>new Xxx(...)</c> 等价，同样绕过验证器，应报告 STIA0011。
+    /// </summary>
+    /// <remarks>
+    /// 隐式创建是独立的语法节点（<c>ImplicitObjectCreationExpression</c>），只注册 <c>ObjectCreationExpression</c>
+    /// 时会整类漏检。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenConstructedWithTargetTypedNew()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => new(Guid.NewGuid());
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(13, 31, 13, 50);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>default</c> 字面量产生零值实例，绕过验证器，应报告 STIA0011。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInitializedWithDefaultLiteral()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => default;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(13, 31, 13, 38);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>default(T)</c> 与 <c>default</c> 字面量等价，应同样报告 STIA0011。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInitializedWithDefaultExpression()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => default(OrderId);
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(13, 31, 13, 47);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 与 <c>default</c> 做相等比较是合法的判空写法，不应报告 STIA0011。
+    /// </summary>
+    /// <remarks>
+    /// 这是该规则最容易误报的地方：一旦漏掉这层排除，任何 <c>if (id == default)</c> 都会被标红，规则随即失去可信度。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenDefaultIsComparisonOperand()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public bool IsEmpty(OrderId id) => id == default;
+
+                public bool IsNotEmpty(OrderId id) => default != id;
+
+                public bool IsEmptyByEquals(OrderId id) => id.Equals(default);
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 引用类型 Id 的 <c>default</c> 就是 <see langword="null"/>，没有「构造出无效实例」，不应报告 STIA0011。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenDefaultUsedOnReferenceTypeId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => default;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 无验证器的 Id 用 <c>default</c> 初始化不构成「绕过校验」，不应报告 STIA0011。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenDefaultUsedWithoutValidator()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            public class Usage
+            {
+                public OrderId Build() => default;
             }
             """";
         await Verify.VerifyAnalyzerAsync(code);

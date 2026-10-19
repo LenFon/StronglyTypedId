@@ -1,0 +1,25 @@
+#nullable enable
+Len.StronglyTypedId.Testing.Any
+Len.StronglyTypedId.Testing.AnyIdGenerator
+Len.StronglyTypedId.Testing.AnyIdGenerator.AnyIdGenerator() -> void
+Len.StronglyTypedId.Testing.AnyIdGenerator.AnyIdGenerator(Len.StronglyTypedId.Testing.AnyIdOptions! options) -> void
+Len.StronglyTypedId.Testing.AnyIdGenerator.Create(System.Type! idType) -> object!
+Len.StronglyTypedId.Testing.AnyIdGenerator.Id<TId>() -> TId
+Len.StronglyTypedId.Testing.AnyIdGenerator.Ids<TId>(int count) -> System.Collections.Generic.IReadOnlyList<TId>!
+Len.StronglyTypedId.Testing.AnyIdGenerator.Register<TId>(System.Func<TId>! factory) -> void
+Len.StronglyTypedId.Testing.AnyIdOptions
+Len.StronglyTypedId.Testing.AnyIdOptions.AnyIdOptions() -> void
+Len.StronglyTypedId.Testing.AnyIdOptions.MaxAttempts.get -> int
+Len.StronglyTypedId.Testing.AnyIdOptions.MaxAttempts.set -> void
+Len.StronglyTypedId.Testing.AnyIdOptions.PrimitiveValueFactory.get -> System.Func<System.Type!, object?>?
+Len.StronglyTypedId.Testing.AnyIdOptions.PrimitiveValueFactory.set -> void
+Len.StronglyTypedId.Testing.AnyIdOptions.Seed.get -> int?
+Len.StronglyTypedId.Testing.AnyIdOptions.Seed.set -> void
+Len.StronglyTypedId.Testing.AnyIdOptions.StringLength.get -> int
+Len.StronglyTypedId.Testing.AnyIdOptions.StringLength.set -> void
+static Len.StronglyTypedId.Testing.Any.Id<TId>() -> TId
+static Len.StronglyTypedId.Testing.Any.Id<TId>(int seed) -> TId
+static Len.StronglyTypedId.Testing.Any.Ids<TId>(int count) -> System.Collections.Generic.IReadOnlyList<TId>!
+static Len.StronglyTypedId.Testing.Any.Ids<TId>(int count, int seed) -> System.Collections.Generic.IReadOnlyList<TId>!
+static Len.StronglyTypedId.Testing.Any.Register<TId>(System.Func<TId>! factory) -> void
+static Len.StronglyTypedId.Testing.Any.Reset() -> void

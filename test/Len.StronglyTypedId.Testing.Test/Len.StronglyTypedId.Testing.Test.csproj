@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\..\test.props" />
+	<PropertyGroup>
+		<!-- 与两个被测包同步多目标，确保 net10.0 产物同样被用例覆盖。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="FluentAssertions" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 测试夹具里的 [StronglyTypedId] 声明需要生成器参与编译。 -->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing.AutoFixture\Len.StronglyTypedId.Testing.AutoFixture.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing\Len.StronglyTypedId.Testing.csproj" />
+	</ItemGroup>
+</Project>

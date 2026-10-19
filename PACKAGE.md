@@ -69,6 +69,11 @@ work in Native AOT and trimmed applications. The only reflection entry point,
 is annotated with `[DynamicallyAccessedMembers(Interfaces)]` so the interface metadata that identifies
 a strongly typed id is preserved under trimming.
 
+## Changelog
+
+Every release, including previews, is documented in
+[CHANGELOG.md](https://github.com/lenfon/StronglyTypedId/blob/main/CHANGELOG.md).
+
 ## License
 
 [MIT License](https://github.com/lenfon/StronglyTypedId/blob/main/LICENSE.txt).
