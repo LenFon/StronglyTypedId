@@ -260,6 +260,11 @@ dotnet_diagnostic.CA2263.severity = warning
 # 只在「类型完全由本程序集掌控」时才会报，故不会波及对外暴露的公开契约。
 dotnet_diagnostic.CA1859.severity = warning
 
+# CA1869（缓存并复用 JsonSerializerOptions 实例）：.NET 分析器的性能规则，默认只是 Info。
+# JsonSerializerOptions 首次参与序列化后会冻结并缓存反射得到的元数据；每次调用都 new 一个
+# 等于把这份缓存重建一遍，热路径上开销显著。改为 static readonly 字段（或注入的共享实例）。
+dotnet_diagnostic.CA1869.severity = warning
+
 # RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
 # src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
 

@@ -32,6 +32,12 @@ internal static class PerformanceGate
     private const int MeasuredRuns = 10;
 
     /// <summary>
+    /// 写基线时用缩进格式，便于 diff 与人工核对。实例复用：<see cref="JsonSerializerOptions"/>
+    /// 首次使用后会冻结并缓存元数据，每次序列化都新建等于把这份缓存重建一遍。
+    /// </summary>
+    private static readonly JsonSerializerOptions _baselineJsonOptions = new() { WriteIndented = true };
+
+    /// <summary>
     /// 分配量的容忍比例：超出基线 10% 即判为退化。
     /// </summary>
     /// <remarks>
@@ -219,7 +225,7 @@ internal static class PerformanceGate
             AllocatedBytesTolerance: AllocatedBytesTolerance,
             ElapsedTolerance: ElapsedTolerance);
 
-        File.WriteAllText(path, JsonSerializer.Serialize(baseline, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(path, JsonSerializer.Serialize(baseline, _baselineJsonOptions));
     }
 
     private static string FindRepositoryRoot()
