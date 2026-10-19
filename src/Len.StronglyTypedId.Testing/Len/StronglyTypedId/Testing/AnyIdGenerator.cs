@@ -28,7 +28,12 @@ public sealed class AnyIdGenerator
 
     private readonly ConcurrentDictionary<Type, Func<object>> _registered = new();
 
+#if NET9_0_OR_GREATER
+    // System.Threading.Lock 仅 net9.0+ 存在；net8.0 目标继续用 object（Monitor）。
+    private readonly System.Threading.Lock _sync = new();
+#else
     private readonly object _sync = new();
+#endif
 
     /// <summary>
     /// Initializes a new instance with default options.

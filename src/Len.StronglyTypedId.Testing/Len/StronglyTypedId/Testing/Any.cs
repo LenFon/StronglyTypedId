@@ -16,9 +16,14 @@ namespace Len.StronglyTypedId.Testing;
 /// </remarks>
 public static class Any
 {
+#if NET9_0_OR_GREATER
+    // System.Threading.Lock 仅 net9.0+ 存在；net8.0 目标继续用 object（Monitor）。
+    private static readonly System.Threading.Lock _sync = new();
+#else
     private static readonly object _sync = new();
+#endif
 
-    private static AnyIdGenerator _generator = new();
+    private static AnyIdGenerator Generator { get; set; } = new();
 
     /// <summary>
     /// Creates a strongly typed id of type <typeparamref name="TId"/>.
@@ -80,7 +85,7 @@ public static class Any
     {
         lock (_sync)
         {
-            _generator = new AnyIdGenerator();
+            Generator = new AnyIdGenerator();
         }
     }
 
@@ -90,7 +95,7 @@ public static class Any
         {
             lock (_sync)
             {
-                return _generator;
+                return Generator;
             }
         }
     }
