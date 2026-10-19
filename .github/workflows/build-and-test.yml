@@ -219,9 +219,13 @@ jobs:
     # -p:AssemblyVersion 透传上面推导出的主段，使 CP0003「程序集版本 ≥ 基线 1.3.0.0」通过。
     - name: Build (Release)
       run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
-    # 只打两个可发布项目：dotnet pack 解决方案会对所有项目跑 pack，test/sample 项目会生成
-    # 垃圾包，且主包多 TFM 的 dll 收集在统一 OutputPath 下会撞 NU5026。逐项目 pack 用各自默认
-    # 输出路径，主包两个 TFM 的 dll 各归其位，可正常成包。pack 同样透传 AssemblyVersion。
+    # 只有两个可发布项目：common.props 把 IsPackable 默认设为 false，仅
+    # src/Len.StronglyTypedId 与 src/Len.StronglyTypedId.Generators 显式打开，
+    # 因此上面的 Release build（GeneratePackageOnBuild）与这里的 pack 都只会产出这两个包，
+    # test / samples / bench / tools 不会再生成垃圾包。
+    # 仍然逐项目 pack 而不是 pack 整个解决方案：主包多 TFM 的 dll 收集在统一 OutputPath 下会撞
+    # NU5026，逐项目 pack 用各自默认输出路径，两个 TFM 的 dll 各归其位，可正常成包。
+    # pack 同样透传 AssemblyVersion。
     - name: Pack (Release, with package validation)
       run: |
         dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}

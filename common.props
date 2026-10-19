@@ -2,6 +2,18 @@
 	<Import Project="version.props" />
 	<PropertyGroup>
 		<RootNamespace />
+		<!--
+		  默认不打包，只有真正要发布的两个包在自己 csproj 里显式打开 IsPackable：
+		    · src/Len.StronglyTypedId
+		    · src/Len.StronglyTypedId.Generators
+
+		  为什么要在公共 props 里关掉：Release 配置下 GeneratePackageOnBuild 是开的（见下方），
+		  而 IsPackable 默认是 true —— 于是 `dotnet build -c Release` 会把 test / samples / bench /
+		  tools 以及尚未发布的 Testing 系列全部打成 .nupkg。这些垃圾包不仅拖慢构建，还会被
+		  publish-nuget.yml 的 `dotnet nuget push bin/Release/*.nupkg` 一并推到 nuget.org。
+		  新增工程默认落在「不打包」这一侧，要发布时必须显式声明，避免再犯同样的错。
+		-->
+		<IsPackable>false</IsPackable>
 		<Authors>lenfon</Authors>
 		<Description>A source generator, analyzer, and code fix provider that turns a one-line record declaration into a fully featured strongly typed id, with built-in System.Text.Json, Newtonsoft.Json, Entity Framework Core, Dapper, Swashbuckle, and ASP.NET Core OpenAPI integrations.</Description>
 		<PackageTags>len;id;strongly-typed;primitive;value;DDD</PackageTags>
@@ -68,6 +80,10 @@
 		<FileVersion Condition="'$(FileVersion)' == ''">1.0.0.0</FileVersion>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+		<!--
+		  只在 Release 下隐式打包（Debug 保持纯构建）。真正生效的前提是 IsPackable=true，
+		  因此这里虽然对所有工程生效，实际只会打出上面那两个包。
+		-->
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	</PropertyGroup>
 	<!--
