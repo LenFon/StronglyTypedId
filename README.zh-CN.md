@@ -138,7 +138,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
    ```
 
    `Value` 参数可以带可空上下文，但类型本身不能可空：`OrderId(Guid? Value)` 会被分析器拒绝
-   （[STIAO006](#diagnostics)）。
+   （[STIA0006](#diagnostics)）。
 
 <a id="supported-primitive-types"></a>
 
@@ -175,7 +175,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 <!-- END GENERATED:primitive-types -->
 
 类型按名称匹配，因此写成 `System.Guid`（或使用别名/using）效果完全相同。仅识别上表中的类型——
-你自己定义的、恰好也叫 `Guid` 的类型并不受支持，会被 [STIAO008](#diagnostics) 拒绝。任意 `enum` 同样受支持：
+你自己定义的、恰好也叫 `Guid` 的类型并不受支持，会被 [STIA0008](#diagnostics) 拒绝。任意 `enum` 同样受支持：
 枚举 Id 通过 `Enum.TryParse<TEnum>` 解析，并保留 `IComparable<TSelf>`、`IParsable<TSelf>` 与
 `ISpanParsable<TSelf>`，但会省略 `IFormattable`/`ISpanFormattable`，因为 `Enum.ToString(string,
 IFormatProvider)` 已被标记过时。
@@ -312,7 +312,7 @@ public partial record struct ConvertibleGuidId(Guid Value);
 时，以该 Id 自己的为准；都没写时才回落到程序集默认值。
 
 > 验证器方法仍需满足 [值校验](#value-validation) 的签名约定（`static bool Validate(TPrimitiveId value)`），
-> 否则由 [STIAO010](#diagnostics) 报错。
+> 否则由 [STIA0010](#diagnostics) 报错。
 
 <a id="nested-types"></a>
 
@@ -332,7 +332,7 @@ var id = OrderAggregate.OrderId.Create(value);   // 按嵌套名使用，与普�
 ```
 
 前置条件只有一条：**包含类型必须都能被生成代码原样重开**——链上每一层都必须是 `partial`、
-也不是 `file` 本地类型。不满足时由 [STIAO009](#diagnostics)（缺 `partial`，或 `file` 本地类型）
+也不是 `file` 本地类型。不满足时由 [STIA0009](#diagnostics)（缺 `partial`，或 `file` 本地类型）
 报错，并附带补 `partial` 的代码修复。
 
 **泛型容器。** 包含类型可以是泛型（例如 `Outer<T>`）：生成器会带着它的类型参数表把声明重开，
@@ -442,7 +442,7 @@ OrderId.TryParse("3f2c…", null, out _);       // false
 > **启用后属破坏性变更。** 对数字、枚举与日期基元，JSON 表示会由 JSON number 变为 JSON string，
 > 因为带前缀的形态是文本。数据库存储不受影响。不设置 `Prefix` 时，生成代码与之前逐字节一致。
 
-空前缀或纯空白前缀按「未设置」处理，并报 `STIAO013`。
+空前缀或纯空白前缀按「未设置」处理，并报 `STIA0013`。
 
 ### 显式注册
 
@@ -677,41 +677,41 @@ if (typeof(OrderId).IsStronglyTypedId())
 
 ## 诊断与代码修复 <a href="#top" style="float:right">↑ 返回目录</a>
 
-分析器会强制以下规则；`STIAO012` 是唯一的例外，由生成器在代码产出本身失败时报告。大多数规则作为
-**编译错误**报告，因此不合法的声明无法通过编译；建议性规则（`STIAO011`、`STIAO013`、`STIAO014`、
-`STIAO015`、`STIAO016`）级别较低，可按项目在 `.editorconfig` 中调整。诊断文案会按编译器区域设置输出
+分析器会强制以下规则；`STIA0012` 是唯一的例外，由生成器在代码产出本身失败时报告。大多数规则作为
+**编译错误**报告，因此不合法的声明无法通过编译；建议性规则（`STIA0011`、`STIA0013`、`STIA0014`、
+`STIA0015`、`STIA0016`）级别较低，可按项目在 `.editorconfig` 中调整。诊断文案会按编译器区域设置输出
 英文或中文。
 
-有几条规则的触发条件比标题看上去更窄：`STIAO011` 要求该 Id 声明了 `Validator`（没有验证器时直接构造
-并不构成绕过），`STIAO014` **默认关闭**，需显式设置 `dotnet_diagnostic.STIAO014.severity = suggestion`
-才会启用，`STIAO016` 对每组共用同一基元的 Id 只报一次，落在组内名字序最小的成员上。
+有几条规则的触发条件比标题看上去更窄：`STIA0011` 要求该 Id 声明了 `Validator`（没有验证器时直接构造
+并不构成绕过），`STIA0014` **默认关闭**，需显式设置 `dotnet_diagnostic.STIA0014.severity = suggestion`
+才会启用，`STIA0016` 对每组共用同一基元的 Id 只报一次，落在组内名字序最小的成员上。
 
 <!-- BEGIN GENERATED:diagnostics -->
 | 规则 ID  | 说明                                       | 代码修复                               |
 | -------- | ------------------------------------------ | -------------------------------------- |
-| STIAO000 | 类型必须被定义为记录类型                   | 转为 `record`                          |
-| STIAO001 | 类型必须被定义为分部类型。                 | 补上 `partial`                         |
-| STIAO002 | 类型不能被声明为抽象的                     | 去掉 `abstract`                        |
-| STIAO003 | 类型不能被声明为泛型                       | 移除类型参数表                         |
-| STIAO004 | 类型必须被声明在命名空间内                 | 包进命名空间                           |
-| STIAO005 | 类型必须有一个仅包含一个参数的主构造函数。 | 补主构造函数                           |
-| STIAO006 | 参数不能为可空类型                         | 去掉 `?` 后缀                          |
-| STIAO007 | 参数名应该是‘Value’                        | 重命名参数                             |
-| STIAO008 | 参数类型无效                               | 改为 `Guid`                            |
-| STIAO009 | 包含类型必须被声明为分部类型               | 给包含类型补 `partial`                 |
-| STIAO010 | 验证器方法必须是合法的静态 bool 方法       | 删掉 `Validator` 实参                  |
-| STIAO011 | 强类型 Id 被直接构造                       | 改用 `Create(...)`                     |
-| STIAO012 | 强类型 Id 代码生成失败                     | —                                      |
-| STIAO013 | 前缀值为空                                 | 删掉 `Prefix` 实参，或给它一个非空白值 |
-| STIAO014 | 验证器可被绕过                             | 收窄为 `internal`                      |
-| STIAO015 | 类型名应以‘Id’结尾                         | —                                      |
-| STIAO016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
+| STIA0000 | 类型必须被定义为记录类型                   | 转为 `record`                          |
+| STIA0001 | 类型必须被定义为分部类型。                 | 补上 `partial`                         |
+| STIA0002 | 类型不能被声明为抽象的                     | 去掉 `abstract`                        |
+| STIA0003 | 类型不能被声明为泛型                       | 移除类型参数表                         |
+| STIA0004 | 类型必须被声明在命名空间内                 | 包进命名空间                           |
+| STIA0005 | 类型必须有一个仅包含一个参数的主构造函数。 | 补主构造函数                           |
+| STIA0006 | 参数不能为可空类型                         | 去掉 `?` 后缀                          |
+| STIA0007 | 参数名应该是‘Value’                        | 重命名参数                             |
+| STIA0008 | 参数类型无效                               | 改为 `Guid`                            |
+| STIA0009 | 包含类型必须被声明为分部类型               | 给包含类型补 `partial`                 |
+| STIA0010 | 验证器方法必须是合法的静态 bool 方法       | 删掉 `Validator` 实参                  |
+| STIA0011 | 强类型 Id 被直接构造                       | 改用 `Create(...)`                     |
+| STIA0012 | 强类型 Id 代码生成失败                     | —                                      |
+| STIA0013 | 前缀值为空                                 | 删掉 `Prefix` 实参，或给它一个非空白值 |
+| STIA0014 | 验证器可被绕过                             | 收窄为 `internal`                      |
+| STIA0015 | 类型名应以‘Id’结尾                         | —                                      |
+| STIA0016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
 <!-- END GENERATED:diagnostics -->
 
-报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIAO003` 仅在 Id 自身是泛型时提供
-（删掉*包含类型*的类型参数会改变你的设计），`STIAO005` 仅在类型没有显式构造函数时提供（在已有构造函数旁
-再加主构造函数会撞 `CS0111`），`STIAO009` 仅在包含类型确实缺 `partial` 时提供（否则会插进第二个 `partial`）。
-两条命名提示（`STIAO015`、`STIAO016`）刻意不提供修复：正确地重命名一个类型意味着同时改掉所有引用，
+报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIA0003` 仅在 Id 自身是泛型时提供
+（删掉*包含类型*的类型参数会改变你的设计），`STIA0005` 仅在类型没有显式构造函数时提供（在已有构造函数旁
+再加主构造函数会撞 `CS0111`），`STIA0009` 仅在包含类型确实缺 `partial` 时提供（否则会插进第二个 `partial`）。
+两条命名提示（`STIA0015`、`STIA0016`）刻意不提供修复：正确地重命名一个类型意味着同时改掉所有引用，
 而「这些 Id 看起来一样」本身没有机械修法。
 
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以

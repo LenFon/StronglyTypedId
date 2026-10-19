@@ -201,7 +201,7 @@ public class StronglyTypedIdAnalyzerTests
             """";
 
         // 只有含主构造函数的那一段参与参数校验，因此非法参数只报告一次，
-        // 不会在后续声明段上再叠加一条 STIAO005。
+        // 不会在后续声明段上再叠加一条 STIA0005。
         var expected = Verify.Diagnostic(Descriptors.ParameterNameMustBeValue)
             .WithSpan(6, 43, 6, 49).WithArguments("Value1");
 
@@ -246,12 +246,12 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 回归用例：使用者自定义的 <c>X.Guid</c> 并不是 BCL 的 <see cref="System.Guid"/>，必须报 STIAO008。
+    /// 回归用例：使用者自定义的 <c>X.Guid</c> 并不是 BCL 的 <see cref="System.Guid"/>，必须报 STIA0008。
     /// </summary>
     /// <remarks>
     /// 基元类型判据曾只比简单名：这种同名类型会被当作合法基元放行，生成器随后把它嵌进生成代码，
     /// 使用者最终看到的是若干条报在<b>生成文件</b>里的 CS0315（类型不满足泛型约束），
-    /// 而不是一条指向自己源码的 STIAO008。
+    /// 而不是一条指向自己源码的 STIA0008。
     /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenParameterTypeSharesSimpleNameWithBclType()
@@ -373,7 +373,7 @@ public class StronglyTypedIdAnalyzerTests
             """";
 
         // 泛型容器现已放开：重开的 partial 只需复现类型参数表（约束子句可省略），hint 名经净化去掉尖括号，
-        // 因此不再报 STIAO003。这里验证分析器对泛型容器不再产生任何诊断。
+        // 因此不再报 STIA0003。这里验证分析器对泛型容器不再产生任何诊断。
         await Verify.VerifyAnalyzerAsync(code);
     }
 
@@ -432,7 +432,7 @@ public class StronglyTypedIdAnalyzerTests
         await Verify.VerifyAnalyzerAsync(code);
     }
 
-    #region 验证器引用校验（STIAO010）
+    #region 验证器引用校验（STIA0010）
 
     /// <summary>
     /// <c>[StronglyTypedId(Validator = nameof(Validate))]</c> 指向的方法不存在。
@@ -525,10 +525,10 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    #region 绕过 Create 直接构造（STIAO011）
+    #region 绕过 Create 直接构造（STIA0011）
 
     /// <summary>
-    /// 设了验证器的 Id 通过 <c>new</c> 直接构造时，应提示 STIAO011（绕过校验）。
+    /// 设了验证器的 Id 通过 <c>new</c> 直接构造时，应提示 STIA0011（绕过校验）。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenConstructedDirectlyWithValidator()
@@ -554,7 +554,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 无验证器的 Id 直接构造不构成问题，不应报告 STIAO011。
+    /// 无验证器的 Id 直接构造不构成问题，不应报告 STIA0011。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenConstructedDirectlyWithoutValidator()
@@ -577,10 +577,10 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    #region 空前缀（STIAO013）
+    #region 空前缀（STIA0013）
 
     /// <summary>
-    /// <c>Prefix = ""</c> 没有任何语义，应报告 STIAO013。
+    /// <c>Prefix = ""</c> 没有任何语义，应报告 STIA0013。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixIsEmpty()
@@ -599,7 +599,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// <c>Prefix = "   "</c>（纯空白）几乎必然是笔误，应报告 STIAO013。
+    /// <c>Prefix = "   "</c>（纯空白）几乎必然是笔误，应报告 STIA0013。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixIsWhitespace()
@@ -640,7 +640,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 非空前缀不报告 STIAO013。
+    /// 非空前缀不报告 STIA0013。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenPrefixIsValid()
@@ -657,7 +657,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 未设置前缀不报告 STIAO013。
+    /// 未设置前缀不报告 STIA0013。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_NoDiagnostic_WhenPrefixIsNotSet()
@@ -675,7 +675,7 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    #region 验证器可被绕过（STIAO014）
+    #region 验证器可被绕过（STIA0014）
 
     /// <summary>
     /// 规则默认关闭：即便「public + Validator」这种可被绕过的组合，未在 <c>.editorconfig</c> 调级时也不上报。
@@ -701,7 +701,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 经 <c>.editorconfig</c> 启用后，对外可见且配了验证器的 Id 上报 STIAO014。
+    /// 经 <c>.editorconfig</c> 启用后，对外可见且配了验证器的 Id 上报 STIA0014。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorBypassRuleIsEnabled()
@@ -787,18 +787,18 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 启用 STIAO014 所用的 <c>.editorconfig</c> 片段。
+    /// 启用 STIA0014 所用的 <c>.editorconfig</c> 片段。
     /// </summary>
     private const string EnableValidatorBypassRule = """
         root = true
 
         [*.cs]
-        dotnet_diagnostic.STIAO014.severity = suggestion
+        dotnet_diagnostic.STIA0014.severity = suggestion
         """;
 
     #endregion
 
-    #region 装配级默认验证器（STIAO010 的装配级形态）
+    #region 装配级默认验证器（STIA0010 的装配级形态）
 
     /// <summary>
     /// 装配级 <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 作用于全体 Id，
@@ -824,7 +824,7 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 装配级默认验证器要求名为 <c>Validate</c> 的方法，但本程序集的 Id 没有该方法时应报告 STIAO010。
+    /// 装配级默认验证器要求名为 <c>Validate</c> 的方法，但本程序集的 Id 没有该方法时应报告 STIA0010。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyDefaultValidatorHasNoMatchingMethod()
@@ -847,7 +847,7 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    #region 命名约定（STIAO015）
+    #region 命名约定（STIA0015）
 
     /// <summary>
     /// 类型名不以 <c>Id</c> 结尾时提示改名，并给出建议名。
@@ -911,7 +911,7 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
-    #region 同命名空间共用基元（STIAO016）
+    #region 同命名空间共用基元（STIA0016）
 
     /// <summary>
     /// 同一命名空间下两个 Id 共用同一基元时，只在组内名字序最小的那个上报告一次。
@@ -1039,7 +1039,7 @@ public class StronglyTypedIdAnalyzerTests
     #endregion
 
     /// <summary>
-    /// STIAO007 / STIAO008 的规则 ID 与对应的实参样例。
+    /// STIA0007 / STIA0008 的规则 ID 与对应的实参样例。
     /// </summary>
     /// <remarks>
     /// 数据里放规则 ID（<see cref="string"/>）而不是 <see cref="DiagnosticDescriptor"/> 本身：
@@ -1054,7 +1054,7 @@ public class StronglyTypedIdAnalyzerTests
     };
 
     /// <summary>
-    /// 回归用例：STIAO007 / STIAO008 的文案必须保留 <c>{0}</c> 占位符。
+    /// 回归用例：STIA0007 / STIA0008 的文案必须保留 <c>{0}</c> 占位符。
     /// </summary>
     /// <remarks>
     /// 分析器实现传入了实参（参数名 / 参数类型），文案缺少占位符时它们被静默丢弃，

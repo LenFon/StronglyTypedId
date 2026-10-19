@@ -58,7 +58,7 @@ internal static class DocumentationRenderer
         var rows = new List<IReadOnlyList<string>>();
 
         // 按规则 ID 排序：描述符数组是按语义分组排的（分析器规则一组、生成器规则一组），
-        // 直接照搬会让 STIAO012 夹在中间，读者按 ID 查找时反而费劲。
+        // 直接照搬会让 STIA0012 夹在中间，读者按 ID 查找时反而费劲。
         var descriptors = Descriptors.All
             .Concat(Descriptors.GeneratorDiagnostics)
             .OrderBy(static descriptor => descriptor.Id, StringComparer.Ordinal);

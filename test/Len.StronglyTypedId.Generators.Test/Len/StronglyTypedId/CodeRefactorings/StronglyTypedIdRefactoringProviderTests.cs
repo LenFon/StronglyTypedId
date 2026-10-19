@@ -273,7 +273,7 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
-    /// 基元类型不受支持：加上特性后会触发 STIAO008，不提供重构。
+    /// 基元类型不受支持：加上特性后会触发 STIA0008，不提供重构。
     /// </summary>
     [Fact]
     public async Task Refactoring_ShouldNotBeOffered_WhenPrimitiveUnsupported()
@@ -333,7 +333,7 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
-    /// 泛型 record 不能成为强类型 Id（STIAO003），不提供重构。
+    /// 泛型 record 不能成为强类型 Id（STIA0003），不提供重构。
     /// </summary>
     [Fact]
     public async Task Refactoring_ShouldNotBeOffered_WhenGeneric()

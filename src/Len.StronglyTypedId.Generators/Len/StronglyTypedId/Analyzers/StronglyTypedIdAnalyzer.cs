@@ -34,7 +34,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 包含类型必须能被生成代码重开）
         // 描述的是整个类型，因此跨全部声明段判定且最多报告一次；而主构造函数及其参数只存在于声明主
         // 构造函数的那一段，故参数级约束只在该段上判定。
-        // 若按段逐条校验，只追加成员的后续段会因缺少 ParameterList 被误判为 STIAO005（类型必须有且
+        // 若按段逐条校验，只追加成员的后续段会因缺少 ParameterList 被误判为 STIA0005（类型必须有且
         // 仅有一个单参数主构造函数），把合法的分段声明标记为错误。
         var declarations = type.DeclaringSyntaxReferences
             .Select(reference => reference.GetSyntax(context.CancellationToken))
@@ -157,7 +157,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 类型名不以 <c>Id</c> 结尾时给出改名建议（STIAO015）。
+    /// 类型名不以 <c>Id</c> 结尾时给出改名建议（STIA0015）。
     /// </summary>
     /// <remarks>
     /// 定位取标识符本身而非整个声明：这是一条关于「这个名字」的建议，指向名字才说得通。
@@ -179,7 +179,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 同一命名空间下多个强类型 Id 共用同一基元类型时提示（STIAO016）。
+    /// 同一命名空间下多个强类型 Id 共用同一基元类型时提示（STIA0016）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -257,7 +257,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 检测「配了验证器、但类型对外可见」的组合，提示验证器可被直接构造绕过（STIAO014）。
+    /// 检测「配了验证器、但类型对外可见」的组合，提示验证器可被直接构造绕过（STIA0014）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -288,7 +288,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 判断类型（含其全部包含类型）是否对外可见。
     /// </summary>
     /// <remarks>
-    /// 嵌套在 <c>internal</c> 容器里的 <c>public</c> 类型实际不可跨程序集访问，不应触发 STIAO014，
+    /// 嵌套在 <c>internal</c> 容器里的 <c>public</c> 类型实际不可跨程序集访问，不应触发 STIA0014，
     /// 故逐层向上判定，任一层不是 <c>public</c> 即视为不可见。
     /// </remarks>
     private static bool IsExternallyVisible(INamedTypeSymbol type)
@@ -305,7 +305,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 校验 <c>[StronglyTypedId(Prefix = …)]</c> 的前缀是否为非空、非纯空白字符串（STIAO013）。
+    /// 校验 <c>[StronglyTypedId(Prefix = …)]</c> 的前缀是否为非空、非纯空白字符串（STIA0013）。
     /// </summary>
     /// <remarks>
     /// 生成器侧把空 / 纯空白前缀静默按「未设置」处理（见 <c>StronglyTypedIdInfo.NormalizePrefix</c>），
@@ -461,7 +461,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         => type.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdAttribute");
 
     /// <summary>
-    /// 检测直接 <c>new Xxx(...)</c> 构造强类型 Id 的写法，仅在该 Id 设了 <c>Validator</c> 时提示（STIAO011）。
+    /// 检测直接 <c>new Xxx(...)</c> 构造强类型 Id 的写法，仅在该 Id 设了 <c>Validator</c> 时提示（STIA0011）。
     /// </summary>
     /// <remarks>
     /// 生成代码里的 <c>new Xxx(...)</c>（位于 <c>Create</c> / <c>TryParse</c> 内）由

@@ -30,9 +30,9 @@ public partial class DescriptorsTests
     private static partial Regex ResourceKeyPattern();
 
     /// <summary>
-    /// 规则 ID 的形态：<c>STIAO</c> + 三位数字。
+    /// 规则 ID 的形态：<c>STIA0</c> + 三位数字。
     /// </summary>
-    [GeneratedRegex(@"^STIAO\d{3}$")]
+    [GeneratedRegex(@"^STIA0\d{3}$")]
     private static partial Regex RuleIdPattern();
 
     [Fact]
@@ -45,43 +45,43 @@ public partial class DescriptorsTests
             descriptor.Id.Should().MatchRegex(RuleIdPattern(), "规则 ID 是对外承诺，不能改号");
             descriptor.Category.Should().Be("StronglyTypedIdAnalyzer");
 
-            // STIAO014（ValidatorCanBeBypassed）默认关闭：public 的 Id 类型是完全正常的用法
+            // STIA0014（ValidatorCanBeBypassed）默认关闭：public 的 Id 类型是完全正常的用法
             // （API 契约、DTO、跨程序集传递都需要），默认开启会在绝大多数项目上制造噪声，
             // 只应由需要「验证器不可绕过」这一强保证的项目在 .editorconfig 里显式开启。
             // 其余规则一律默认启用。
             if (descriptor.Id == Descriptors.ValidatorCanBeBypassedId)
             {
-                descriptor.IsEnabledByDefault.Should().BeFalse("STIAO014 默认关闭，需显式开启");
+                descriptor.IsEnabledByDefault.Should().BeFalse("STIA0014 默认关闭，需显式开启");
             }
             else
             {
                 descriptor.IsEnabledByDefault.Should().BeTrue();
             }
 
-            // STIAO011（BypassCreate）是「建议性」诊断：仅当 Id 设了 Validator 时提示绕过 Create 的直接构造，
+            // STIA0011（BypassCreate）是「建议性」诊断：仅当 Id 设了 Validator 时提示绕过 Create 的直接构造，
             // 默认 Info 以避免无验证器场景下的噪声（各项目可在 .editorconfig 里调级）。
-            // STIAO013（InvalidPrefix）是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误，
+            // STIA0013（InvalidPrefix）是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误，
             // 默认 Warning —— 不阻断构建，但在错误列表里提示（各项目可在 .editorconfig 里调级）。
-            // STIAO014（ValidatorCanBeBypassed）同为建议性诊断，默认 Info。
-            // STIAO015 / STIAO016 是纯命名风格提示（名字不以 Id 结尾、同命名空间共用基元），
+            // STIA0014（ValidatorCanBeBypassed）同为建议性诊断，默认 Info。
+            // STIA0015 / STIA0016 是纯命名风格提示（名字不以 Id 结尾、同命名空间共用基元），
             // 与「声明是否合法」无关，默认 Info。
             // 其余规则一律 Error。
             switch (descriptor.Id)
             {
                 case Descriptors.BypassCreateId:
-                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO011 是建议性诊断");
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0011 是建议性诊断");
                     break;
                 case Descriptors.InvalidPrefixId:
-                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIAO013 是告警性诊断");
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0013 是告警性诊断");
                     break;
                 case Descriptors.ValidatorCanBeBypassedId:
-                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO014 是建议性诊断");
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0014 是建议性诊断");
                     break;
                 case Descriptors.TypeNameShouldEndWithIdId:
-                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO015 是命名风格提示");
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0015 是命名风格提示");
                     break;
                 case Descriptors.DuplicatePrimitiveTypeId:
-                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIAO016 是命名风格提示");
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0016 是命名风格提示");
                     break;
                 default:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);
@@ -112,8 +112,8 @@ public partial class DescriptorsTests
     /// 每条消息都要保留实参占位符。
     /// </summary>
     /// <remarks>
-    /// STIAO007 / STIAO008 曾漏掉 <c>{0}</c>，分析器虽然传入了参数名 / 参数类型，文案却把它们静默丢弃，
-    /// 使用者看不到究竟哪个名字、哪个类型有问题。STIAO013 例外：它描述的是「前缀为空或纯空白」这一事实本身，
+    /// STIA0007 / STIA0008 曾漏掉 <c>{0}</c>，分析器虽然传入了参数名 / 参数类型，文案却把它们静默丢弃，
+    /// 使用者看不到究竟哪个名字、哪个类型有问题。STIA0013 例外：它描述的是「前缀为空或纯空白」这一事实本身，
     /// 可展示的实参就是空 / 空白，回显它只是噪声，故刻意不带占位符。
     /// </remarks>
     [Fact]

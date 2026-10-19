@@ -34,7 +34,7 @@ public static class Verify
 
     /// <summary>
     /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但会启用默认被测试基建屏蔽的两条命名风格提示
-    /// （STIAO015 / STIAO016）。
+    /// （STIA0015 / STIA0016）。
     /// </summary>
     /// <remarks>
     /// 这两条是 Info 级、无代码修复的风格提示，与「声明是否合法」无关（见 <see cref="ApplyDefaults"/>）。
@@ -230,7 +230,7 @@ public static class Verify
         // 在 net10.0 测试宿主里 typeof(StronglyTypedIdAttribute).Assembly 会指向 net10.0 构建的
         // Len.StronglyTypedId.dll，与 net8.0 引用程序集产生版本错位，使
         // [StronglyTypedId(Validator = ...)] 的命名实参无法绑定（被静默丢弃），验证器相关诊断
-        // （STIAO010 / STIAO011）在 net10.0 下零产出。改取同目录下的 net8.0 产物即可对齐。
+        // （STIA0010 / STIA0011）在 net10.0 下零产出。改取同目录下的 net8.0 产物即可对齐。
         var runtimeAssembly = typeof(StronglyTypedIdAttribute).Assembly;
         var net8Location = runtimeAssembly.Location.Replace(
             $"{Path.DirectorySeparatorChar}net10.0{Path.DirectorySeparatorChar}",
@@ -245,14 +245,14 @@ public static class Verify
             test.TestState.AdditionalReferences.Add(runtimeAssembly);
         }
 
-        // STIAO014 是「默认关闭」的建议性规则（IsEnabledByDefault = false）：公开 Id 是正常用法，
+        // STIA0014 是「默认关闭」的建议性规则（IsEnabledByDefault = false）：公开 Id 是正常用法，
         // 默认开启只会在绝大多数项目上制造噪声。但 Roslyn 测试框架默认仍会报告被抑制的诊断，
         // 若不显式登记，凡是「public + Validator」的既有用例都会凭空多出一条诊断。
         // 需要验证该规则的用例走 VerifyAnalyzerWithEditorConfigAsync / VerifyCodeFixWithEditorConfigAsync，
         // 那里会用 EnableOptInDiagnostics 把它从禁用清单里摘掉。
         test.DisabledDiagnostics.Add(Descriptors.ValidatorCanBeBypassedId);
 
-        // STIAO015 / STIAO016 是命名风格提示（Info 级、无代码修复），与「声明是否合法」无关。
+        // STIA0015 / STIA0016 是命名风格提示（Info 级、无代码修复），与「声明是否合法」无关。
         // 代码修复用例的源码里经常出现多个同基元 Id（例如同时声明 OrderId 与 InvoiceId），
         // 修复完成后这些提示依然存在，会让「修复后应无诊断」的断言失败 —— 与修复本身是否正确无关。
         // 需要验证这两条规则的用例走 VerifyAnalyzerWithStyleHintsAsync。
@@ -267,7 +267,7 @@ public static class Verify
         => test.DisabledDiagnostics.Remove(Descriptors.ValidatorCanBeBypassedId);
 
     /// <summary>
-    /// 解除两条命名风格提示的屏蔽，让专门验证 STIAO015 / STIAO016 的用例能看到它们。
+    /// 解除两条命名风格提示的屏蔽，让专门验证 STIA0015 / STIA0016 的用例能看到它们。
     /// </summary>
     private static void EnableStyleHintDiagnostics(AnalyzerTest<DefaultVerifier> test)
     {

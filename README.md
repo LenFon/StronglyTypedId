@@ -153,7 +153,7 @@ the generator's much lower `netstandard2.0` baseline.
    ```
 
    The `Value` parameter may keep its `Nullable` context, but it may not be a nullable type:
-   `OrderId(Guid? Value)` is rejected by the analyzer ([STIAO006](#diagnostics)).
+   `OrderId(Guid? Value)` is rejected by the analyzer ([STIA0006](#diagnostics)).
 
 <a id="supported-primitive-types"></a>
 
@@ -191,7 +191,7 @@ The wrapped `Value` parameter may be one of:
 
 The type is matched by its name, so writing `System.Guid` (or an aliased using) works exactly the same.
 Only the types above are recognised — a type of your own that merely happens to be called `Guid` is not
-supported, and is rejected by [STIAO008](#diagnostics). Any `enum` is supported as well: enum ids are
+supported, and is rejected by [STIA0008](#diagnostics). Any `enum` is supported as well: enum ids are
 parsed with `Enum.TryParse<TEnum>` and keep `IComparable<TSelf>`, `IParsable<TSelf>` and
 `ISpanParsable<TSelf>`, but omit `IFormattable`/`ISpanFormattable` because `Enum.ToString(string,
 IFormatProvider)` is obsolete.
@@ -343,7 +343,7 @@ it on each one:
 the attribute nor the assembly default is set.
 
 > The validator method must still satisfy the [Value validation](#value-validation) signature convention
-> (`static bool Validate(TPrimitiveId value)`), otherwise [STIAO010](#diagnostics) is reported.
+> (`static bool Validate(TPrimitiveId value)`), otherwise [STIA0010](#diagnostics) is reported.
 
 <a id="nested-types"></a>
 
@@ -365,7 +365,7 @@ var id = OrderAggregate.OrderId.Create(value);   // used through its nested name
 
 The only prerequisite is that **every containing type can be reopened verbatim** by the generated code:
 each level must be `partial` and not a `file`-local type. Violations are reported by
-[STIAO009](#diagnostics) (missing `partial`, or `file`-local), which comes with a code fix that adds `partial`.
+[STIA0009](#diagnostics) (missing `partial`, or `file`-local), which comes with a code fix that adds `partial`.
 
 **Generic containers.** The containing type may be generic (for example `Outer<T>`): the generator
 reopens it with its type parameter list, so an id declared inside a generic container compiles and keeps
@@ -487,7 +487,7 @@ OrderId.TryParse("3f2c…", null, out _);       // false
 > from a JSON number to a JSON string, because the prefixed form is text. Database storage is unaffected.
 > Leave `Prefix` unset and the generated code is byte-for-byte identical to before.
 
-An empty or whitespace-only prefix is treated as "no prefix" and reported as `STIAO013`.
+An empty or whitespace-only prefix is treated as "no prefix" and reported as `STIA0013`.
 
 ### Explicit registration
 
@@ -736,45 +736,45 @@ Interfaces, abstract types, enums and arrays are never reported as strongly type
 
 ## Diagnostics <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
-The analyzer enforces the following rules; `STIAO012` is the one exception, reported by the generator
+The analyzer enforces the following rules; `STIA0012` is the one exception, reported by the generator
 when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
-will not compile; the advisory ones (`STIAO011`, `STIAO013`, `STIAO014`, `STIAO015`, `STIAO016`) are
+will not compile; the advisory ones (`STIA0011`, `STIA0013`, `STIA0014`, `STIA0015`, `STIA0016`) are
 reported at a lower severity and can be tuned per project in `.editorconfig`. Diagnostics are localized
 for English and Chinese according to the compiler culture.
 
-A few rules fire in narrower circumstances than their titles suggest: `STIAO011` needs the id to declare
-a `Validator` (without one, constructing it directly is not a bypass), `STIAO014` is **off by default**
-and must be enabled explicitly with `dotnet_diagnostic.STIAO014.severity = suggestion`, and `STIAO016`
+A few rules fire in narrower circumstances than their titles suggest: `STIA0011` needs the id to declare
+a `Validator` (without one, constructing it directly is not a bypass), `STIA0014` is **off by default**
+and must be enabled explicitly with `dotnet_diagnostic.STIA0014.severity = suggestion`, and `STIA0016`
 reports once per group of ids sharing a primitive, on the ordinally first member.
 
 <!-- BEGIN GENERATED:diagnostics -->
 | Rule ID  | Description                                                     | Code fix                                                  |
 | -------- | --------------------------------------------------------------- | --------------------------------------------------------- |
-| STIAO000 | Type must be defined as a record                                | Convert to `record`                                       |
-| STIAO001 | Type must be defined as partial                                 | Add `partial`                                             |
-| STIAO002 | Type cannot be declared abstract                                | Remove `abstract`                                         |
-| STIAO003 | Type cannot be declared as generic                              | Remove the type parameter list                            |
-| STIAO004 | Type must be declared in a namespace                            | Wrap in a namespace                                       |
-| STIAO005 | Type must have a primary constructor with exactly one parameter | Add a primary constructor                                 |
-| STIAO006 | Parameter must not be nullable                                  | Remove the `?` suffix                                     |
-| STIAO007 | Parameter name should be ‘Value’.                               | Rename the parameter                                      |
-| STIAO008 | Parameter type is not valid                                     | Change the type to `Guid`                                 |
-| STIAO009 | Containing type must be declared as partial                     | Add `partial` to the container                            |
-| STIAO010 | Validator method must be a valid static bool method             | Remove the `Validator` argument                           |
-| STIAO011 | Strongly typed id constructed directly                          | Replace with `Create(...)`                                |
-| STIAO012 | Strongly typed id code generation failed                        | —                                                         |
-| STIAO013 | Prefix value is empty                                           | Remove the `Prefix` argument or give it a non-blank value |
-| STIAO014 | Validator can be bypassed                                       | Narrow the type to `internal`                             |
-| STIAO015 | Type name should end with 'Id'                                  | —                                                         |
-| STIAO016 | Several strongly typed ids share the same primitive type        | —                                                         |
+| STIA0000 | Type must be defined as a record                                | Convert to `record`                                       |
+| STIA0001 | Type must be defined as partial                                 | Add `partial`                                             |
+| STIA0002 | Type cannot be declared abstract                                | Remove `abstract`                                         |
+| STIA0003 | Type cannot be declared as generic                              | Remove the type parameter list                            |
+| STIA0004 | Type must be declared in a namespace                            | Wrap in a namespace                                       |
+| STIA0005 | Type must have a primary constructor with exactly one parameter | Add a primary constructor                                 |
+| STIA0006 | Parameter must not be nullable                                  | Remove the `?` suffix                                     |
+| STIA0007 | Parameter name should be ‘Value’.                               | Rename the parameter                                      |
+| STIA0008 | Parameter type is not valid                                     | Change the type to `Guid`                                 |
+| STIA0009 | Containing type must be declared as partial                     | Add `partial` to the container                            |
+| STIA0010 | Validator method must be a valid static bool method             | Remove the `Validator` argument                           |
+| STIA0011 | Strongly typed id constructed directly                          | Replace with `Create(...)`                                |
+| STIA0012 | Strongly typed id code generation failed                        | —                                                         |
+| STIA0013 | Prefix value is empty                                           | Remove the `Prefix` argument or give it a non-blank value |
+| STIA0014 | Validator can be bypassed                                       | Narrow the type to `internal`                             |
+| STIA0015 | Type name should end with 'Id'                                  | —                                                         |
+| STIA0016 | Several strongly typed ids share the same primitive type        | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —
-`STIAO003` is offered only when the id itself is generic (removing the *containing* type's type parameters
-would change your design), `STIAO005` only when the type declares no explicit constructor (adding a primary
-constructor next to an existing one would collide with `CS0111`), and `STIAO009` only when the containing
+`STIA0003` is offered only when the id itself is generic (removing the *containing* type's type parameters
+would change your design), `STIA0005` only when the type declares no explicit constructor (adding a primary
+constructor next to an existing one would collide with `CS0111`), and `STIA0009` only when the containing
 type is actually missing `partial` (otherwise the fix would insert a second `partial`). The two naming
-hints (`STIAO015`, `STIAO016`) deliberately offer none: renaming a type correctly means renaming every
+hints (`STIA0015`, `STIA0016`) deliberately offer none: renaming a type correctly means renaming every
 reference to it, and "these ids look alike" has no mechanical repair.
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /

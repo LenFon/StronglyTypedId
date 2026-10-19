@@ -424,7 +424,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// </para>
     /// <para>
     /// 空串与纯空白一律归一为 <see langword="null"/>（等同「未设置」）：空前缀没有意义，纯空白前缀几乎必然是笔误，
-    /// 静默忽略比生成一段诡异文本更安全。分析器另报 <c>STIAO013</c> 提示该写法。
+    /// 静默忽略比生成一段诡异文本更安全。分析器另报 <c>STIA0013</c> 提示该写法。
     /// </para>
     /// </remarks>
     public string? Prefix { get; }
@@ -774,7 +774,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// </summary>
     /// <remarks>
     /// 空前缀没有任何语义；纯空白前缀几乎必然是笔误。二者都静默按「未设置」处理，避免生成一段诡异文本，
-    /// 分析器另报 <c>STIAO013</c> 提示该写法。
+    /// 分析器另报 <c>STIA0013</c> 提示该写法。
     /// </remarks>
     private static string? NormalizePrefix(string? prefix)
         => string.IsNullOrWhiteSpace(prefix) ? null : prefix;

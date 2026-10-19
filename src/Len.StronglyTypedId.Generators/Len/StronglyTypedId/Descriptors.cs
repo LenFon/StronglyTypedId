@@ -12,23 +12,23 @@ internal static class Descriptors
     /// </summary>
     private const string GeneratorCategory = "StronglyTypedIdGenerator";
 
-    public const string ContainingTypeMustBePartialId = "STIAO009";
-    public const string ParameterCannotBeNullableId = "STIAO006";
-    public const string ParameterNameMustBeValueId = "STIAO007";
-    public const string ParameterTypeIsInvalidId = "STIAO008";
-    public const string ValidatorReferenceInvalidId = "STIAO010";
-    public const string BypassCreateId = "STIAO011";
-    public const string TypeCannotBeAbstractId = "STIAO002";
-    public const string TypeCannotBeGenericId = "STIAO003";
-    public const string TypeMustHaveNamespaceId = "STIAO004";
-    public const string TypeMustBePartialId = "STIAO001";
-    public const string TypeMustBeRecordId = "STIAO000";
-    public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIAO005";
-    public const string GeneratorFailureId = "STIAO012";
-    public const string InvalidPrefixId = "STIAO013";
-    public const string ValidatorCanBeBypassedId = "STIAO014";
-    public const string TypeNameShouldEndWithIdId = "STIAO015";
-    public const string DuplicatePrimitiveTypeId = "STIAO016";
+    public const string ContainingTypeMustBePartialId = "STIA0009";
+    public const string ParameterCannotBeNullableId = "STIA0006";
+    public const string ParameterNameMustBeValueId = "STIA0007";
+    public const string ParameterTypeIsInvalidId = "STIA0008";
+    public const string ValidatorReferenceInvalidId = "STIA0010";
+    public const string BypassCreateId = "STIA0011";
+    public const string TypeCannotBeAbstractId = "STIA0002";
+    public const string TypeCannotBeGenericId = "STIA0003";
+    public const string TypeMustHaveNamespaceId = "STIA0004";
+    public const string TypeMustBePartialId = "STIA0001";
+    public const string TypeMustBeRecordId = "STIA0000";
+    public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIA0005";
+    public const string GeneratorFailureId = "STIA0012";
+    public const string InvalidPrefixId = "STIA0013";
+    public const string ValidatorCanBeBypassedId = "STIA0014";
+    public const string TypeNameShouldEndWithIdId = "STIA0015";
+    public const string DuplicatePrimitiveTypeId = "STIA0016";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -141,7 +141,7 @@ internal static class Descriptors
     /// <remarks>
     /// 仅当该 Id 设了 <c>Validator</c> 时才提示：无验证器时主构造函数本就可无校验地构造，不构成问题。
     /// 严重级别默认 <see cref="DiagnosticSeverity.Info"/>（建议性），且各项目可在 <c>.editorconfig</c> 里
-    /// 通过 <c>dotnet_diagnostic.STIAO011.severity</c> 调整为 warning / error / none，避免噪声。
+    /// 通过 <c>dotnet_diagnostic.STIA0011.severity</c> 调整为 warning / error / none，避免噪声。
     /// 生成代码里的 <c>new Xxx(...)</c>（位于生成的 <c>Create</c> / <c>TryParse</c> 内）由分析器对生成代码的
     /// 豁免配置自动忽略，不会误报。
     /// </remarks>
@@ -206,7 +206,7 @@ internal static class Descriptors
     /// 这条规则默认<b>关闭</b>（<c>IsEnabledByDefault = false</c>）：公开 Id 类型是完全正常的用法
     /// （API 契约、DTO、跨程序集传递都需要它），默认开启只会在绝大多数项目上制造噪声。
     /// 需要「验证器不可绕过」这一强保证的项目可在 <c>.editorconfig</c> 里显式开启：
-    /// <c>dotnet_diagnostic.STIAO014.severity = suggestion</c>（或 warning / error）。
+    /// <c>dotnet_diagnostic.STIA0014.severity = suggestion</c>（或 warning / error）。
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor ValidatorCanBeBypassed
@@ -223,7 +223,7 @@ internal static class Descriptors
     /// <remarks>
     /// <para>
     /// 纯命名风格规则，默认 <see cref="DiagnosticSeverity.Info"/>，可在 <c>.editorconfig</c> 里
-    /// 调级或关闭（<c>dotnet_diagnostic.STIAO015.severity = none</c>）。
+    /// 调级或关闭（<c>dotnet_diagnostic.STIA0015.severity = none</c>）。
     /// </para>
     /// <para>
     /// 后缀按<b>序数</b>比较（区分大小写）：<c>OrderID</c> 会被提示，而 <c>Grid</c> / <c>Solid</c> /

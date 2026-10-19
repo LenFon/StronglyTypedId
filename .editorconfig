@@ -3,7 +3,7 @@
 # 本文件有三个目的：
 #   1. 固化「0 警告」基线 —— 把仓库实际遵守的严重级别显式写下来。默认严重级别不构成约束，
 #      一次 NoWarn 或 WarningsNotAsErrors 就能绕过去；写在这里的才是可评审的承诺。
-#   2. 示范 STIAO011 的严重级别提升 —— README 承诺「可用 .editorconfig 提升」，仓库自身先示范。
+#   2. 示范 STIA0011 的严重级别提升 —— README 承诺「可用 .editorconfig 提升」，仓库自身先示范。
 #   3. 固化代码风格 —— 让新代码与既有代码同形，减少与内容无关的评审噪声。
 #
 # 本文件只声明「仓库实际已经在做的」约定，不引入新的强制项。
@@ -136,26 +136,26 @@ dotnet_naming_style.pascal_case.capitalization = pascal_case
 # ---------------------------------------------------------------------------
 # 诊断严重级别：把「0 警告」基线写死
 # ---------------------------------------------------------------------------
-# STIAO000–STIAO010、STIAO012 默认即为 Error，这里显式重申，使其成为可评审的承诺
+# STIA0000–STIA0010、STIA0012 默认即为 Error，这里显式重申，使其成为可评审的承诺
 # （默认值可以被一次 NoWarn 悄悄绕过，写在这里的不行）。
-dotnet_diagnostic.STIAO000.severity = error
-dotnet_diagnostic.STIAO001.severity = error
-dotnet_diagnostic.STIAO002.severity = error
-dotnet_diagnostic.STIAO003.severity = error
-dotnet_diagnostic.STIAO004.severity = error
-dotnet_diagnostic.STIAO005.severity = error
-dotnet_diagnostic.STIAO006.severity = error
-dotnet_diagnostic.STIAO007.severity = error
-dotnet_diagnostic.STIAO008.severity = error
-dotnet_diagnostic.STIAO009.severity = error
-dotnet_diagnostic.STIAO010.severity = error
-dotnet_diagnostic.STIAO012.severity = error
+dotnet_diagnostic.STIA0000.severity = error
+dotnet_diagnostic.STIA0001.severity = error
+dotnet_diagnostic.STIA0002.severity = error
+dotnet_diagnostic.STIA0003.severity = error
+dotnet_diagnostic.STIA0004.severity = error
+dotnet_diagnostic.STIA0005.severity = error
+dotnet_diagnostic.STIA0006.severity = error
+dotnet_diagnostic.STIA0007.severity = error
+dotnet_diagnostic.STIA0008.severity = error
+dotnet_diagnostic.STIA0009.severity = error
+dotnet_diagnostic.STIA0010.severity = error
+dotnet_diagnostic.STIA0012.severity = error
 
-# STIAO011 默认是 Info：`new XxxId(...)` 会绕过 Create / TryParse，验证器不运行。
+# STIA0011 默认是 Info：`new XxxId(...)` 会绕过 Create / TryParse，验证器不运行。
 # README 承诺「可用 .editorconfig 提升」，此处提升为 warning 作为示范 —— 本仓库自身
 # 一律经 Create / TryParse 构造，不会因此产生告警。
 # 若你的项目里确有必须直接构造的场景，改成 suggestion 或 none 即可。
-dotnet_diagnostic.STIAO011.severity = warning
+dotnet_diagnostic.STIA0011.severity = warning
 
 # IDE1006（命名规则）：默认 suggestion，在 VS 里只是灰色建议、不进错误列表。
 # 提升为 warning，让「私有字段少了 `_` 前缀」这类偏差在错误列表里可见、可评审。
@@ -282,12 +282,12 @@ dotnet_diagnostic.IDE0042.severity = none
 #   - samples 的领域模型本来就有多个 string 基元的 Id（UserId / SellerId）。
 # 这两处都不是「命名失误」，留着只会给仓库自身的错误列表添噪，故按目录关闭。
 [test/**/*.cs]
-dotnet_diagnostic.STIAO015.severity = none
-dotnet_diagnostic.STIAO016.severity = none
+dotnet_diagnostic.STIA0015.severity = none
+dotnet_diagnostic.STIA0016.severity = none
 
 [samples/**/*.cs]
-dotnet_diagnostic.STIAO015.severity = none
-dotnet_diagnostic.STIAO016.severity = none
+dotnet_diagnostic.STIA0015.severity = none
+dotnet_diagnostic.STIA0016.severity = none
 
 # MSBuild 工程文件沿用 Tab 缩进（与现存 .csproj / .props 一致）。
 [*.{csproj,props,targets,proj,vcxproj}]

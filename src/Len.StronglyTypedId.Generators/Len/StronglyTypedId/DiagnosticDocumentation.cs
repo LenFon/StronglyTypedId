@@ -52,7 +52,7 @@ internal static class DiagnosticDocumentation
     /// </summary>
     internal sealed class DiagnosticDocEntry(string ruleId, DocText fix)
     {
-        /// <summary>规则 ID（<c>STIAO000</c> 形式）。</summary>
+        /// <summary>规则 ID（<c>STIA0000</c> 形式）。</summary>
         public string RuleId { get; } = ruleId;
 
         /// <summary>「代码修复」列的文案；<see cref="DocText.Empty"/> 表示无修复。</summary>

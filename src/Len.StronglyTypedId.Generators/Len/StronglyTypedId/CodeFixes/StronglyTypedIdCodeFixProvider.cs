@@ -108,7 +108,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                         ? !recordDeclaration.Members.OfType<ConstructorDeclarationSyntax>().Any()
                         : recordDeclaration.ParameterList.Parameters.Count != 1),
 
-            // 基元类型非法：把参数类型改成受支持的 Guid 即可（名称此前已被 STIAO007 校验为 Value）。
+            // 基元类型非法：把参数类型改成受支持的 Guid 即可（名称此前已被 STIA0007 校验为 Value）。
             Descriptors.ParameterTypeIsInvalidId => true,
 
             // 验证器引用无效：删掉 Validator 命名实参即可，无需判别原因。
@@ -167,7 +167,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 把诊断所在类型的 <c>public</c> 修饰符换成 <c>internal</c>，使验证器无法被外部直接构造绕过（STIAO014）。
+    /// 把诊断所在类型的 <c>public</c> 修饰符换成 <c>internal</c>，使验证器无法被外部直接构造绕过（STIA0014）。
     /// </summary>
     /// <remarks>
     /// record 的主构造函数<b>不能</b>单独指定可见性（<c>public record R private (int X)</c> 是 CS1514），
@@ -219,7 +219,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把诊断所在的 <c>new Xxx(value)</c> 重写成 <c>Xxx.Create(value)</c>，使构造强制经过验证器。
     /// </summary>
     /// <remarks>
-    /// STIAO011 仅在 Id 设了验证器时触发：该情形下生成代码里已有静态 <c>Create</c> 工厂，用它替换直接构造
+    /// STIA0011 仅在 Id 设了验证器时触发：该情形下生成代码里已有静态 <c>Create</c> 工厂，用它替换直接构造
     /// 既消除诊断、又保留校验语义。原 <c>new</c> 关键字的缩进（前导 trivia）交给新的调用表达式，
     /// 参数列表原样保留，因此 <c>new Xxx(Value: value)</c> 这类具名实参也会一并迁移；类型拼写（含
     /// <c>global::</c> 前缀或命名空间限定）沿用 <c>creation.Type</c>，不会丢失。
@@ -246,14 +246,14 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 把 class / struct 关键字转成 record，使其通过 STIAO000。
+    /// 把 class / struct 关键字转成 record，使其通过 STIA0000。
     /// </summary>
     /// <remarks>
     /// class / struct 与 record 是不同形状的语法节点，不能只换一个关键字 token，因此用
     /// <c>SyntaxFactory.RecordDeclaration</c> 重建：原样搬移特性列表、修饰符、标识符、基列表、
     /// 类型参数表、约束子句与全部成员，仅把关键字换成 <c>record</c>（引用记录）。
     /// 转换后若还缺 partial / 主构造等，由各自的诊断继续提供修复（链式）。
-    /// <c>record struct</c> 也属 record，STIAO000 不会对其触发，故此处无需区分，统一转引用 record。
+    /// <c>record struct</c> 也属 record，STIA0000 不会对其触发，故此处无需区分，统一转引用 record。
     /// </remarks>
     private static async Task<Document> ConvertToRecordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -284,12 +284,12 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 把最外层类型包进命名空间块，使其通过 STIAO004。
+    /// 把最外层类型包进命名空间块，使其通过 STIA0004。
     /// </summary>
     /// <remarks>
     /// 诊断定位在 Id 声明上，但真正要包的是链上最外层那个直接挂在编译单元下的类型（Id 自身、或嵌它的容器）。
     /// 命名空间名无从从报错推断：优先取项目的默认命名空间（RootNamespace），取不到时退回占位
-    /// <c>MyNamespace</c>，由使用者改名。STIAO004 只要求「位于命名空间内」，具体名称分析器不过问。
+    /// <c>MyNamespace</c>，由使用者改名。STIA0004 只要求「位于命名空间内」，具体名称分析器不过问。
     /// </remarks>
     private static async Task<Document> WrapInNamespaceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -303,7 +303,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         var outermost = GetOutermostType(found);
 
         // 命名空间名无从从报错推断：统一用占位 MyNamespace，由使用者改名。这是结构性占位 ——
-        // STIAO004 只要求「在命名空间内」，具体叫什么分析器不过问。
+        // STIA0004 只要求「在命名空间内」，具体叫什么分析器不过问。
         var namespaceName = "MyNamespace";
 
         // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 DocumentFormatting 规范化，
@@ -320,10 +320,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 补 / 改单参数主构造函数，使其通过 STIAO005。
+    /// 补 / 改单参数主构造函数，使其通过 STIA0005。
     /// </summary>
     /// <remarks>
-    /// 占位类型用 <c>Guid</c>（最常见的强类型 Id 基元），名称固定 <c>Value</c> 以免再触发 STIAO007。
+    /// 占位类型用 <c>Guid</c>（最常见的强类型 Id 基元），名称固定 <c>Value</c> 以免再触发 STIA0007。
     /// 无主构造时直接补；已有主构造但参数数 != 1 时整段替换为单参版本。已有 body 构造的情形由
     /// <see cref="IsFixable"/> 拦下（再加主构造会撞 CS0111），不在此处理。
     /// </remarks>
@@ -349,10 +349,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 把非受支持基元类型的参数改成 <c>Guid</c>，使其通过 STIAO008。
+    /// 把非受支持基元类型的参数改成 <c>Guid</c>，使其通过 STIA0008。
     /// </summary>
     /// <remarks>
-    /// STIAO008 触发前 STIAO007 已确认参数名为 <c>Value</c>，故此处只换类型。参数上的 attribute、修饰符、
+    /// STIA0008 触发前 STIA0007 已确认参数名为 <c>Value</c>，故此处只换类型。参数上的 attribute、修饰符、
     /// 默认值与全部 trivia（含附着在旧类型上的空白 / 注释）用 <c>WithType</c> 保留，
     /// 新类型沿用旧类型的 trivia 以免拼成 <c>GuidValue</c>。
     /// </remarks>
@@ -372,7 +372,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// STIAO010 修复主入口：决定「生成验证器桩」还是「删掉 Validator 实参」。
+    /// STIA0010 修复主入口：决定「生成验证器桩」还是「删掉 Validator 实参」。
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
@@ -443,7 +443,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 在 Id 类型里生成一个符合契约的验证器桩方法，使其通过 STIAO010。
+    /// 在 Id 类型里生成一个符合契约的验证器桩方法，使其通过 STIA0010。
     /// </summary>
     /// <remarks>
     /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：返回 <see cref="bool"/>、
@@ -480,8 +480,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 从 <c>[StronglyTypedId]</c> 中删掉诊断所在的命名实参，使其通过对应规则。
     /// </summary>
     /// <remarks>
-    /// 供两条规则共用：STIAO010（<c>Validator</c> 指向的方法已存在却签名不符，删掉实参后退回装配级默认）与
-    /// STIAO013（<c>Prefix</c> 为空 / 纯空白，删掉实参即等同「未设置」）。
+    /// 供两条规则共用：STIA0010（<c>Validator</c> 指向的方法已存在却签名不符，删掉实参后退回装配级默认）与
+    /// STIA0013（<c>Prefix</c> 为空 / 纯空白，删掉实参即等同「未设置」）。
     /// 若该实参是 attribute 里唯一实参，则连同整对括号一起删掉；否则只移除它，
     /// <see cref="SeparatedSyntaxList{TNode}.Remove"/> 会自动收拾相邻的逗号分隔符。
     /// </remarks>

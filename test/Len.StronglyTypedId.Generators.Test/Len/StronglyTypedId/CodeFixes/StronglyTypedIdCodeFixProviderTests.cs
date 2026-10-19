@@ -275,7 +275,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// 绕过验证器直接用 <c>new</c> 构造（STIAO011）时，CodeFix 应把它重写成 <c>Xxx.Create(...)</c>。
+    /// 绕过验证器直接用 <c>new</c> 构造（STIA0011）时，CodeFix 应把它重写成 <c>Xxx.Create(...)</c>。
     /// </summary>
     /// <remarks>
     /// 该诊断只在 Id 设了验证器时触发，而该情形下生成代码已提供静态 <c>Create</c> 工厂，
@@ -325,7 +325,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO000：把 class 转成 record（保留修饰符 / 主构造函数 / 成员 / 标识符）。
+    /// STIA0000：把 class 转成 record（保留修饰符 / 主构造函数 / 成员 / 标识符）。
     /// </summary>
     /// <remarks>
     /// 输入特意写成「命名空间内、已 partial、主构造函数合法」的 class，使修复只改关键字、不再级联其它规则：
@@ -359,10 +359,10 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO004：把最外层类型包进命名空间块（占位名固定 MyNamespace，由使用者改名）。
+    /// STIA0004：把最外层类型包进命名空间块（占位名固定 MyNamespace，由使用者改名）。
     /// </summary>
     /// <remarks>
-    /// 顶层类型（直接挂在编译单元下）才触发 STIAO004；此处必须显式 <c>using Len.StronglyTypedId;</c>
+    /// 顶层类型（直接挂在编译单元下）才触发 STIA0004；此处必须显式 <c>using Len.StronglyTypedId;</c>
     /// 让特性在命名空间外也能绑定，否则分析器会因找不到特性而零产出。
     /// </remarks>
     [Fact]
@@ -394,7 +394,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO005：缺主构造函数时补一个单参主构造 (Guid Value)。
+    /// STIA0005：缺主构造函数时补一个单参主构造 (Guid Value)。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_AddPrimaryConstructor_WhenMissing()
@@ -424,7 +424,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO005：主构造函数多参数时整段替换为单参版本，并把参数名规整为 Value。
+    /// STIA0005：主构造函数多参数时整段替换为单参版本，并把参数名规整为 Value。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_FixPrimaryConstructor_WhenMultipleParameters()
@@ -454,7 +454,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO008：把非受支持基元类型参数改成 Guid（名称此前已是 Value）。
+    /// STIA0008：把非受支持基元类型参数改成 Guid（名称此前已是 Value）。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_ChangeParameterTypeToGuid_WhenTypeInvalid()
@@ -484,7 +484,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO010：删掉 [StronglyTypedId] 里无效的 Validator 命名实参（唯一实参时连同括号一起删）。
+    /// STIA0010：删掉 [StronglyTypedId] 里无效的 Validator 命名实参（唯一实参时连同括号一起删）。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_RemoveValidatorArgument_WhenValidatorInvalid()
@@ -520,7 +520,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO000：把 struct 转成 record。IsFixable 里 STIAO000 分支判定的是
+    /// STIA0000：把 struct 转成 record。IsFixable 里 STIA0000 分支判定的是
     /// <c>ClassDeclarationSyntax or StructDeclarationSyntax</c>，struct 走的是 StructDeclarationSyntax 这一支，
     /// 与 class 是不同代码路径，需单独把守。
     /// </summary>
@@ -552,7 +552,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO000：转换时基列表（BaseList）必须原样搬移，不能随关键字一起丢掉。
+    /// STIA0000：转换时基列表（BaseList）必须原样搬移，不能随关键字一起丢掉。
     /// ConvertToRecord 用 <c>WithBaseList</c> 保留接口实现，否则产物会丢失 <c>: IComparable&lt;OrderId&gt;</c>。
     /// </summary>
     [Fact]
@@ -583,7 +583,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO008：参数带 attribute 时把非法类型改成 Guid 仍需保留 attribute。
+    /// STIA0008：参数带 attribute 时把非法类型改成 Guid 仍需保留 attribute。
     /// ChangeParameterTypeToGuid 用 <c>WithType(newType.WithTriviaFrom(parameter.Type))</c> 顶掉旧类型，
     /// 参数上的 <c>[AllowNull]</c> 属于节点本身（不在类型 trivia 里），不会被丢掉。
     /// </summary>
@@ -617,7 +617,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO010：attribute 有多个命名实参时，只删无效的 Validator，保留其余（TypeConverter）。
+    /// STIA0010：attribute 有多个命名实参时，只删无效的 Validator，保留其余（TypeConverter）。
     /// 走 RemoveValidatorArgument 里 <c>Arguments.Count != 1</c> 的分支，
     /// <c>SeparatedSyntaxList.Remove</c> 自动收拾相邻的逗号分隔符。
     /// </summary>
@@ -655,7 +655,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO013：<c>Prefix = ""</c> 时删掉 <c>Prefix</c> 命名实参（等同「未设置」）。
+    /// STIA0013：<c>Prefix = ""</c> 时删掉 <c>Prefix</c> 命名实参（等同「未设置」）。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_RemovePrefixArgument_WhenPrefixIsBlank()
@@ -685,7 +685,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO013：attribute 有多个命名实参时，只删空的 Prefix，保留其余（JsonShape）。
+    /// STIA0013：attribute 有多个命名实参时，只删空的 Prefix，保留其余（JsonShape）。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_KeepOtherArguments_WhenRemovingPrefix()
@@ -715,7 +715,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO014：把对外可见的 Id 收窄为 <c>internal</c>，使主构造函数无法被外部直接调用绕过验证器。
+    /// STIA0014：把对外可见的 Id 收窄为 <c>internal</c>，使主构造函数无法被外部直接调用绕过验证器。
     /// </summary>
     /// <remarks>
     /// 修复只能改类型可见性 —— record 的主构造函数不允许单独指定可见性（<c>public record R private (int X)</c>
@@ -756,17 +756,17 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// 启用 STIAO014 所用的 <c>.editorconfig</c> 片段（该规则默认关闭）。
+    /// 启用 STIA0014 所用的 <c>.editorconfig</c> 片段（该规则默认关闭）。
     /// </summary>
     private const string EnableValidatorBypassRule = """
         root = true
 
         [*.cs]
-        dotnet_diagnostic.STIAO014.severity = suggestion
+        dotnet_diagnostic.STIA0014.severity = suggestion
         """;
 
     /// <summary>
-    /// STIAO010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的
+    /// STIA0010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的
     /// 桩方法（静态、返回 bool、恰好一个参数且类型等于基元 Id 类型），而非删掉实参。
     /// 桩方法用全限定名渲染基元类型，避免与任何同名局部类型冲突。
     /// </summary>
@@ -840,7 +840,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIAO005 的 IsFixable 负向分支：record 已有 body 构造函数、却无单参主构造函数时，
+    /// STIA0005 的 IsFixable 负向分支：record 已有 body 构造函数、却无单参主构造函数时，
     /// 再加主构造会与既有 body 构造撞 CS0111。此时诊断虽触发，但 CodeFix 不应提供任何修复入口 ——
     /// RegisterCodeFixesAsync 经 IsFixable 门禁直接跳过，注册 0 个 CodeAction。
     /// 该场景无法用 VerifyCodeFixAsync 表达（框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
@@ -869,7 +869,7 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// 对照：同一 harness 在「可修复」情形下确实会注册修复（record 无主构造、也无 body 构造时 STIAO005 可修），
+    /// 对照：同一 harness 在「可修复」情形下确实会注册修复（record 无主构造、也无 body 构造时 STIA0005 可修），
     /// 证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
     /// </summary>
     [Fact]

@@ -381,7 +381,7 @@ public class StronglyTypedIdInfoTests
     }
 
     /// <summary>
-    /// 空 / 纯空白前缀按「未设置」归一为 <see langword="null"/>（分析器另行报 STIAO013 告警）。
+    /// 空 / 纯空白前缀按「未设置」归一为 <see langword="null"/>（分析器另行报 STIA0013 告警）。
     /// </summary>
     [Theory]
     [InlineData("")]
