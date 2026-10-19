@@ -17,6 +17,12 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         SourceProductionContext context,
         string version)
     {
+        // Integrations 可以把这个 Id 的 Newtonsoft.Json 集成关掉；程序集门控已在调用方做过。
+        if (!idInfo.Supports(IntegrationFlags.NewtonsoftJson))
+        {
+            return;
+        }
+
         var header = GeneratedCode.Header(idInfo.Namespace);
 
         // 与 System.Text.Json 侧同理：泛型容器里的 Id 无法在特性实参里引用含类型参数的转换器（CS0416）。

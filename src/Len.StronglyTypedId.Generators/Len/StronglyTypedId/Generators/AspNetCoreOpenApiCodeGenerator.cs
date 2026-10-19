@@ -21,9 +21,15 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
     {
         var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
 
-        var schemaEntries = discoveredIds.External
+        var schemaEntries = discoveredIds.ExternalFor(IntegrationFlags.AspNetCoreOpenApi)
             .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(idInfo, useOpenApiV2)}, {GetFormatLiteral(idInfo)}),")
             .ToArray();
+
+        // 空注册入口没有任何作用：Integrations = None 时必须连这个文件也不产出。
+        if (schemaEntries.Length == 0)
+        {
+            return;
+        }
 
         var schemaTypeName = useOpenApiV2
             ? "global::Microsoft.OpenApi.OpenApiSchema"

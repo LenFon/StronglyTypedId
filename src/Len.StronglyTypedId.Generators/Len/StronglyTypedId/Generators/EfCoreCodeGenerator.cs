@@ -17,7 +17,13 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External.ToList();
+        var stronglyTypedIds = discoveredIds.ExternalFor(IntegrationFlags.EntityFrameworkCore).ToList();
+
+        // 空注册入口没有任何作用：Integrations = None 时必须连这个文件也不产出。
+        if (stronglyTypedIds.Count == 0)
+        {
+            return;
+        }
 
         // 同名 Id 会生成进同一个 StronglyTypedIds 类并撞 CS0102；仅在确实重名时才用「命名空间_类型名」消歧，
         // 以免改动无冲突场景下既有的转换器类名。

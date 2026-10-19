@@ -46,11 +46,18 @@ change set rather than reproducing every commit.
   (`AddStronglyTypedId`), for callers that configure converters explicitly instead of relying on the
   generated `[JsonConverter]` attribute.
 - A refactoring provider that turns an existing `record` into a strongly typed id.
-- `STIA0012`–`STIA0018` diagnostics, including `STIA0013` (blank `Prefix`), `STIA0014` (an id with a
+- `Integrations` — narrows which integration code an id gets. It is a **filter, not a switch**: it can only
+  remove integrations whose packages are already referenced. `None` suppresses every integration while
+  keeping the core implementation, `Dapper | SystemTextJson` keeps exactly those, and `All` restores
+  everything under an assembly default of `None`. `[assembly: StronglyTypedIdDefaults(Integrations = ...)]`
+  sets the default, and an id declared in a referenced assembly honours **its own** assembly default.
+  `TypeConverter` is deliberately not part of the mask. Requesting an integration whose assembly is not
+  referenced is reported as `STIA0019`.
+- `STIA0012`–`STIA0019` diagnostics, including `STIA0013` (blank `Prefix`), `STIA0014` (an id with a
   validator or normalizer declared `public`, leaving the primary constructor reachable — `Info`, off by
   default), `STIA0015` (id name should follow the `...Id` convention), `STIA0016` (two ids over the same
-  primitive in one assembly), `STIA0017` (malformed `Normalizer` reference) and `STIA0018` (unusable
-  `ExceptionType`).
+  primitive in one assembly), `STIA0017` (malformed `Normalizer` reference), `STIA0018` (unusable
+  `ExceptionType`) and `STIA0019` (requested integration not referenced).
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
   `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).
@@ -90,6 +97,10 @@ change set rather than reproducing every commit.
   registered manually for a closed instantiation.
 - JSON registration entry points are no longer generated for ids whose declaring assembly does not
   reference the JSON library, removing CS0426 in consumer projects.
+- The EF Core, Dapper, Swagger, MVC and OpenAPI generators no longer emit an empty `StronglyTypedIds`
+  registration class when there is nothing to register. Previously an assembly with no eligible ids
+  still got a `StronglyTypedIds.*.g.cs` whose `ApplyTo` did nothing; now the file is skipped, matching
+  what the JSON registration entry points already did.
 
 ## [1.3.0] - 2026-10-07
 

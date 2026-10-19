@@ -24,6 +24,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [TryCreate 与 UTF-8 接口](#trycreate-and-utf8)
 - [类型转换器（TypeConverter）](#type-converter)
 - [程序集级默认设置](#assembly-defaults)
+- [关闭指定集成](#integrations-filter)
 - [嵌套类型](#nested-types)
 - [序列化](#serialization)
 - [Entity Framework Core](#entity-framework-core)
@@ -46,7 +47,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，14 条规则全都附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，20 条规则大多附带代码修复，
   可一键修好声明（见[诊断与代码修复](#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并为具备相应接口的基元类型（除 `string` 外的全部）
@@ -380,6 +381,43 @@ public partial record struct ConvertibleGuidId(Guid Value);
 > 验证器方法仍需满足 [值校验](#value-validation) 的签名约定（`static bool Validate(TPrimitiveId value)`），
 > 否则由 [STIA0010](#diagnostics) 报错。归一化方法同理，必须是
 > `static TPrimitiveId Normalize(TPrimitiveId value)`，否则由 [STIA0017](#diagnostics) 报错。
+
+<a id="integrations-filter"></a>
+
+## 关闭指定集成 <a href="#top" style="float:right">↑ 返回目录</a>
+
+各类集成默认「只要引用了对应包就生成」。但有时这还不够：宿主应用为了自己的用途引用了 EF Core，
+却希望某个 Id 永远不要拿到值转换器。`Integrations` 可以**逐个 Id** 收窄范围：
+
+```csharp
+[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
+public partial record struct TenantId(Guid Value);          // 只要核心实现：无 EF、Dapper、JSON、Swagger……
+
+[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper | StronglyTypedIdIntegrations.SystemTextJson)]
+public partial record struct OrderId(Guid Value);           // 恰好这两类
+```
+
+`Integrations` 是一道**过滤器**，不是开关：它只能在「已引用对应包」的基础上做减法，绝不会凭空造出
+依赖。请求了某个集成却没引用它的程序集时会报 [STIA0019](#diagnostics)，不会静默失效。
+
+| 取值 | 效果 |
+| --- | --- |
+| *（不写）* | 引用了什么就生成什么 —— 与引入本选项之前完全一致 |
+| `None` | 不生成任何集成代码；核心实现不受影响 |
+| `Dapper \| SystemTextJson` | 只生成列出的这几类（仍需已引用对应包） |
+| `All` | 显式全开；用于在程序集默认 `None` 时把单个 Id 捞回来 |
+
+`StronglyTypedIdDefaults` 上也有同名选项，优先级照旧：逐类型 > 程序集默认 > `All`。
+
+```csharp
+[assembly: StronglyTypedIdDefaults(Integrations = StronglyTypedIdIntegrations.None)]
+```
+
+> `TypeConverter` **不属于** `Integrations`。它是显式 opt-in（`TypeConverter = true`），不是「引用了包
+> 就有」的东西，所以 `Integrations = None` 不会关掉它。
+
+> 引用程序集里的 Id 会尊重**它自己所在程序集**的默认值：领域库若写了
+> `[assembly: StronglyTypedIdDefaults(Integrations = None)]`，消费者就不会再为它的 Id 生成集成代码。
 
 <a id="nested-types"></a>
 
@@ -802,7 +840,7 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 ## 诊断与代码修复 <a href="#top" style="float:right">↑ 返回目录</a>
 
 分析器会强制以下规则；`STIA0012` 是唯一的例外，由生成器在代码产出本身失败时报告。大多数规则作为
-**编译错误**报告，因此不合法的声明无法通过编译；`STIA0011` 与 `STIA0013` 是警告，建议性规则
+**编译错误**报告，因此不合法的声明无法通过编译；`STIA0011`、`STIA0013` 与 `STIA0019` 是警告，建议性规则
 （`STIA0014`、`STIA0015`、`STIA0016`）级别更低。各级别均可按项目在 `.editorconfig` 中调整。诊断文案
 会按编译器区域设置输出英文或中文。
 
@@ -834,6 +872,7 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 | STIA0016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
 | STIA0017 | 归一化方法必须是合法的静态方法             | 删掉 `Normalizer` 实参                 |
 | STIA0018 | 异常类型必须是带字符串构造函数的非抽象异常 | 删掉 `ExceptionType` 实参              |
+| STIA0019 | 请求的集成不可用                           | —                                      |
 <!-- END GENERATED:diagnostics -->
 
 报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIA0003` 仅在 Id 自身是泛型时提供

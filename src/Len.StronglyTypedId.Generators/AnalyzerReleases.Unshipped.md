@@ -9,6 +9,7 @@ STIA0015 | StronglyTypedIdAnalyzer | Info | Reported when the id type name does 
 STIA0016 | StronglyTypedIdAnalyzer | Info | Reported once per namespace/primitive group when several ids in the same namespace wrap the same primitive type.
 STIA0017 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(Normalizer = ...)] points at a method that is not a static `static TPrimitiveId Name(TPrimitiveId value)`.
 STIA0018 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(ExceptionType = ...)] points at a type that is not a non-abstract System.Exception subclass with an accessible single-string constructor.
+STIA0019 | StronglyTypedIdAnalyzer | Warning | Reported when an integration is explicitly enabled via [StronglyTypedId(Integrations = ...)] but the compilation does not reference that integration's assembly.
 
 ### Changed Rules
 

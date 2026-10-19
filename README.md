@@ -25,6 +25,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [TryCreate & UTF-8 interfaces](#trycreate-and-utf8)
 - [TypeConverter](#type-converter)
 - [Assembly-level defaults](#assembly-defaults)
+- [Turning integrations off](#integrations-filter)
 - [Nested types](#nested-types)
 - [Serialization](#serialization)
 - [Entity Framework Core](#entity-framework-core)
@@ -47,8 +48,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
-- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and every one of
-  the fourteen rules comes with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and most of the
+  twenty rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` for every primitive that has them (all but `string`).
@@ -71,6 +72,9 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   `XmlSerializer` scenarios.
 - **Assembly-level defaults** — use `[assembly: StronglyTypedIdDefaults(Validator = ...)]` to set a default
   validator for the whole assembly.
+- **Per-id integration filter** — `[StronglyTypedId(Integrations = ...)]` narrows which integration code an
+  id gets (`None`, a whitelist, or `All`), with an assembly-level default
+  (see [Turning integrations off](#integrations-filter)).
 - **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and `ApplyTo(IDbConnection)` are generated.
 - **ASP.NET Core MVC integration** — when `Microsoft.AspNetCore.Mvc` (or its `Microsoft.AspNetCore.Mvc.Core` facade) ≥ 2.0.0 is referenced, a model-binder provider and per-id route constraints are generated so `[FromRoute]`/`[FromQuery]` and `{id:OrderId}` bind correctly.
 - **Minimal API support** — nothing extra to generate: route/query parameters bind through `IParsable<T>`, and `{id:OrderId}` route constraints reuse the `RouteOptions` registration emitted by the MVC integration.
@@ -417,6 +421,48 @@ applies to every id that does not name its own.
 > (`static bool Validate(TPrimitiveId value)`), otherwise [STIA0010](#diagnostics) is reported. Likewise a
 > normalizer must be `static TPrimitiveId Normalize(TPrimitiveId value)`, otherwise [STIA0017](#diagnostics)
 > is reported.
+
+<a id="integrations-filter"></a>
+
+## Turning integrations off <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+Every integration is generated only when the compilation references its package, but sometimes that is not
+enough: a host application may reference EF Core for its own sake while a particular id should never get a
+value converter. `Integrations` narrows the set **per id**:
+
+```csharp
+[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
+public partial record struct TenantId(Guid Value);          // core only: no EF, Dapper, JSON, Swagger…
+
+[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper | StronglyTypedIdIntegrations.SystemTextJson)]
+public partial record struct OrderId(Guid Value);           // exactly these two
+```
+
+`Integrations` is a **filter, not a switch**: it can only remove integrations that the referenced packages
+would otherwise enable, never add one whose package is missing. Requesting an integration whose assembly is
+not referenced is reported as [STIA0019](#diagnostics) so the mistake is not silent.
+
+| Value | Effect |
+| --- | --- |
+| *(not set)* | Generate everything the referenced packages allow — the behaviour before this option existed |
+| `None` | No integration code at all; the core implementation is unaffected |
+| `Dapper \| SystemTextJson` | Only the listed integrations (still requires the packages) |
+| `All` | Explicitly everything; useful to restore a single id under an assembly default of `None` |
+
+The same option exists on `StronglyTypedIdDefaults`, and the usual precedence applies: the per-type value
+wins, otherwise the assembly default, otherwise `All`.
+
+```csharp
+[assembly: StronglyTypedIdDefaults(Integrations = StronglyTypedIdIntegrations.None)]
+```
+
+> `TypeConverter` is **not** part of `Integrations`. It is an explicit opt-in
+> (`TypeConverter = true`), not something a referenced package turns on, so `Integrations = None` leaves it
+> alone.
+
+> An id declared in a referenced assembly honours **its own** assembly-level default: if a domain library
+> ships `[assembly: StronglyTypedIdDefaults(Integrations = None)]`, consumers stop generating integration
+> code for its ids.
 
 <a id="nested-types"></a>
 
@@ -869,7 +915,7 @@ The console samples print each step and exit. The web samples publish their docu
 
 The analyzer enforces the following rules; `STIA0012` is the one exception, reported by the generator
 when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
-will not compile; `STIA0011` and `STIA0013` are warnings, and the advisory ones (`STIA0014`, `STIA0015`,
+will not compile; `STIA0011`, `STIA0013` and `STIA0019` are warnings, and the advisory ones (`STIA0014`, `STIA0015`,
 `STIA0016`) sit at a lower severity. Every level can be tuned per project in `.editorconfig`. Diagnostics
 are localized for English and Chinese according to the compiler culture.
 
@@ -902,6 +948,7 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0016 | Several strongly typed ids share the same primitive type              | —                                                         |
 | STIA0017 | Normalizer method must be a valid static method                       | Remove the `Normalizer` argument                          |
 | STIA0018 | Exception type must be a concrete exception with a string constructor | Remove the `ExceptionType` argument                       |
+| STIA0019 | Requested integration is not available                                | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —

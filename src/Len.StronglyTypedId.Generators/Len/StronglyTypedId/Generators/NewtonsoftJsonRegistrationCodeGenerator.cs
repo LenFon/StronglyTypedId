@@ -15,7 +15,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External
+        var stronglyTypedIds = discoveredIds.ExternalFor(IntegrationFlags.NewtonsoftJson)
             .Where(static idInfo => idInfo.HasNewtonsoftJsonConverter)
             .ToList();
 

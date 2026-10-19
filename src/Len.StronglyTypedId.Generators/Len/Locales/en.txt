@@ -36,3 +36,5 @@ TypeNameShouldEndWithIdTitle = Type name should end with 'Id'
 TypeNameShouldEndWithIdMessage = The type name '{0}' does not end with 'Id'. Consider renaming it to '{1}' so the type reads as an identifier.
 DuplicatePrimitiveTypeTitle = Several strongly typed ids share the same primitive type
 DuplicatePrimitiveTypeMessage = '{0}' wraps '{1}', and {2} other strongly typed id(s) in namespace '{3}' wrap the same primitive. They are indistinguishable at the storage and wire level, so mixing them up is silent.
+IntegrationUnavailableTitle = Requested integration is not available
+IntegrationUnavailableMessage = '{0}' enables the {1} integration, but the compilation does not reference {2}, so no code is generated for it. Reference the package, or drop the flag.

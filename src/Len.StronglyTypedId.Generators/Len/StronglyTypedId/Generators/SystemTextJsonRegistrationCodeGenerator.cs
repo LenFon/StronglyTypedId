@@ -15,7 +15,7 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External
+        var stronglyTypedIds = discoveredIds.ExternalFor(IntegrationFlags.SystemTextJson)
             .Where(static idInfo => idInfo.HasSystemTextJsonConverter)
             .ToList();
 

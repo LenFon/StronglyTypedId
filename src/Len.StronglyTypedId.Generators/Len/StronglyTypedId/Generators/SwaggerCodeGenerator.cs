@@ -19,8 +19,15 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     {
         var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
 
-        var mapTypeCalls = discoveredIds.External
-            .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo, useOpenApiV2)});");
+        var mapTypeCalls = discoveredIds.ExternalFor(IntegrationFlags.Swagger)
+            .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo, useOpenApiV2)});")
+            .ToList();
+
+        // 空注册入口没有任何作用：Integrations = None 时必须连这个文件也不产出。
+        if (mapTypeCalls.Count == 0)
+        {
+            return;
+        }
 
         // MapType<T> 是该命名空间下的扩展方法，只能用 using 引入。Web SDK 的隐式 using 恰好含它，
         // 类库 / 控制台消费者缺此 using 会 CS1061；该命名空间由 Swashbuckle 的传递依赖提供。

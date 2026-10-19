@@ -21,7 +21,11 @@ internal static class StronglyTypedIdDiscovery
         var all = modules
             .SelectMany(module => module.GetTypes())
             .Where(type => type.Interfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface))
-            .Select(type => new StronglyTypedIdInfo(type))
+            // 外部 Id 的集成开关取自它自己声明程序集的默认值：库作者写了 Integrations = None，
+            // 消费者就不该再为它生成集成代码。逐类型特性由构造函数自行读取。
+            .Select(type => new StronglyTypedIdInfo(
+                type,
+                defaultIntegrations: StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(type.ContainingAssembly)))
             .Union(declaredInfos)
             .Distinct();
 

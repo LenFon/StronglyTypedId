@@ -63,6 +63,11 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string PrefixReadModeArgumentName = "PrefixReadMode";
 
     /// <summary>
+    /// attribute 中集成开关的命名实参名。
+    /// </summary>
+    internal const string IntegrationsArgumentName = "Integrations";
+
+    /// <summary>
     /// <c>PrefixReadMode.Strict</c> 的底层值；命名实参在元数据里存的是枚举值而非成员名。
     /// </summary>
     private const int StrictPrefixReadModeValue = 1;
@@ -105,7 +110,12 @@ internal readonly record struct StronglyTypedIdInfo
             && @interface.TypeArguments.Length == 2
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == InterfaceNamespace;
 
-    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null, string? defaultNormalizerName = null, string? defaultExceptionTypeName = null)
+    public StronglyTypedIdInfo(
+        ITypeSymbol type,
+        string? defaultValidatorName = null,
+        string? defaultNormalizerName = null,
+        string? defaultExceptionTypeName = null,
+        int? defaultIntegrations = null)
     {
         // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace。
         var containingNamespace = type.ContainingNamespace
@@ -154,6 +164,10 @@ internal readonly record struct StronglyTypedIdInfo
         IsObjectJsonShape = AttributeReader.GetEnumFlag(attribute, JsonShapeArgumentName, ObjectJsonShapeValue);
         Prefix = NormalizePrefix(AttributeReader.GetString(attribute, PrefixArgumentName));
         IsStrictPrefixRead = AttributeReader.GetEnumFlag(attribute, PrefixReadModeArgumentName, StrictPrefixReadModeValue);
+        // 逐类型优先，其次程序集默认，最后「引用了就生成」。存整数而非枚举：本类型是增量缓存的键。
+        Integrations = IntegrationFlags.Normalize(AttributeReader.GetEnumValue(attribute, IntegrationsArgumentName))
+            ?? defaultIntegrations
+            ?? IntegrationFlags.All;
         HasSystemTextJsonConverter = WillHaveNestedType(type, SystemTextJsonConverterTypeName);
         HasNewtonsoftJsonConverter = WillHaveNestedType(type, NewtonsoftJsonConverterTypeName);
     }
@@ -313,6 +327,26 @@ internal readonly record struct StronglyTypedIdInfo
     /// 读回带前缀的文本时是否要求前缀必须存在（<c>PrefixReadMode.Strict</c>）。
     /// </summary>
     public bool IsStrictPrefixRead { get; }
+
+    /// <summary>
+    /// 生效的集成掩码（见 <see cref="IntegrationFlags"/>）。已剔除 <c>None</c> 标记位，
+    /// 未指定时等于 <see cref="IntegrationFlags.All"/>。
+    /// </summary>
+    public int Integrations { get; }
+
+    /// <summary>
+    /// 判断给定集成是否被选中。仍须由调用方另外确认「当前编译确实引用了对应程序集」。
+    /// </summary>
+    public bool Supports(int integration) => (Integrations & integration) == integration;
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Integrations = …)]</c> 并规范化；未声明时为
+    /// <see langword="null"/>。
+    /// </summary>
+    public static int? GetAssemblyDefaultIntegrations(IAssemblySymbol assembly)
+        => IntegrationFlags.Normalize(AttributeReader.GetEnumValue(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            IntegrationsArgumentName));
 
     /// <summary>
     /// 解析强类型 Id 所包装的基元类型符号。

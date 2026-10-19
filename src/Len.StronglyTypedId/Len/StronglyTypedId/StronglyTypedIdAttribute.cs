@@ -35,6 +35,19 @@ public class StronglyTypedIdAttribute : Attribute
     public bool TypeConverter { get; set; }
 
     /// <summary>
+    /// Gets or sets which integration code is generated for the strongly typed id. The default is
+    /// <see cref="StronglyTypedIdIntegrations.Default"/>, which means "generate whatever the compilation
+    /// references".
+    /// </summary>
+    /// <remarks>
+    /// This is a filter, not a switch: an integration is only generated when the compilation references its
+    /// assembly <em>and</em> the corresponding flag is set. <see cref="StronglyTypedIdIntegrations.None"/>
+    /// suppresses every integration but leaves the core implementation untouched, and does not affect an
+    /// explicitly enabled <see cref="TypeConverter"/>.
+    /// </remarks>
+    public StronglyTypedIdIntegrations Integrations { get; set; }
+
+    /// <summary>
     /// Gets or sets the shape the strongly typed id takes in JSON. The default is
     /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>.
     /// </summary>

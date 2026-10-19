@@ -29,7 +29,9 @@ internal static class DiagnosticDocumentation
         new DiagnosticDocEntry(Descriptors.ValidatorCanBeBypassedId, new DocText("Narrow the type to `internal`", "收窄为 `internal`")),
         // 命名类提示：正确地重命名一个类型意味着同时改掉所有引用，「这些 Id 看起来一样」也没有机械修法。
         new DiagnosticDocEntry(Descriptors.TypeNameShouldEndWithIdId, DocText.Empty),
-        new DiagnosticDocEntry(Descriptors.DuplicatePrimitiveTypeId, DocText.Empty));
+        new DiagnosticDocEntry(Descriptors.DuplicatePrimitiveTypeId, DocText.Empty),
+        // 缺包不是代码问题：无法替用户添加包引用，只能由人决定是补包还是去掉标志。
+        new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, DocText.Empty));
 
     /// <summary>
     /// 单条诊断的文档条目。

@@ -23,6 +23,12 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         SourceProductionContext context,
         string version)
     {
+        // Integrations 可以把这个 Id 的 System.Text.Json 集成关掉；程序集门控已在调用方做过。
+        if (!idInfo.Supports(IntegrationFlags.SystemTextJson))
+        {
+            return;
+        }
+
         var header = GeneratedCode.Header(idInfo.Namespace);
 
         // 泛型容器里的 Id 不能带 [JsonConverter]：特性实参必须是封闭类型，而

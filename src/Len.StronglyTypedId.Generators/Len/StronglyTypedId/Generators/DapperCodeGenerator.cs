@@ -17,7 +17,14 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External.ToList();
+        var stronglyTypedIds = discoveredIds.ExternalFor(IntegrationFlags.Dapper).ToList();
+
+        // 一个 Id 都没有时不产出空壳注册类：与 System.Text.Json / Newtonsoft.Json 的注册入口保持一致，
+        // 也让 Integrations = None 能真正关掉全部 Dapper 产物。
+        if (stronglyTypedIds.Count == 0)
+        {
+            return;
+        }
 
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)

@@ -18,6 +18,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
 
         context.RegisterSymbolAction(AnalyzeNamedType, SymbolKind.NamedType);
+        // 程序集级默认值只校验一次：若放到逐类型里，程序集默认写错会为每个 Id 各报一条。
+        // 符号操作不支持 SymbolKind.Assembly（RS1003），故走整编译回调。
+        context.RegisterCompilationAction(ReportAssemblyIntegrationProblems);
         context.RegisterSyntaxNodeAction(
             AnalyzeObjectCreation,
             SyntaxKind.ObjectCreationExpression,
@@ -151,6 +154,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         // 前缀校验与形状 / 验证器无关，独立于上面的早退分支。
         ValidatePrefix(context, type, records);
+
+        // 集成开关同样独立：只校验逐类型显式写出的那一份，程序集默认值由 AnalyzeAssembly 负责。
+        ValidateIntegrations(context, type, records);
 
         // 「可被绕过」同样独立于形状校验，复用上面已算出的名字。
         ValidateGuardBypass(context, type, validatorName, normalizerName, records);
@@ -286,6 +292,109 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             Report(context, Descriptors.InvalidPrefix, FindNamedArgumentLocation(records, StronglyTypedIdInfo.PrefixArgumentName) ?? records[0].GetLocation());
         }
     }
+
+    /// <summary>
+    /// 校验 <c>[StronglyTypedId(Integrations = …)]</c> 请求的集成在当前编译里是否真的可用（STIA0019）。
+    /// </summary>
+    /// <remarks>
+    /// 只在逐类型显式写出该参数时校验；未写出时生效的是程序集默认值，由
+    /// <see cref="ReportAssemblyIntegrationProblems"/> 统一报一次。
+    /// </remarks>
+    private static void ValidateIntegrations(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
+    {
+        var raw = AttributeReader.GetEnumValue(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.IntegrationsArgumentName);
+
+        if (raw is null)
+        {
+            return;
+        }
+
+        ReportUnavailableIntegrations(
+            context.Compilation,
+            IntegrationFlags.Normalize(raw)!.Value,
+            type.Name,
+            FindNamedArgumentLocation(records, StronglyTypedIdInfo.IntegrationsArgumentName) ?? records[0].GetLocation(),
+            context.ReportDiagnostic);
+    }
+
+    /// <summary>
+    /// 校验 <c>[assembly: StronglyTypedIdDefaults(Integrations = …)]</c> 请求的集成是否可用（STIA0019）。
+    /// </summary>
+    private static void ReportAssemblyIntegrationProblems(CompilationAnalysisContext context)
+    {
+        var assembly = context.Compilation.Assembly;
+        var attribute = AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName);
+        var raw = AttributeReader.GetEnumValue(attribute, StronglyTypedIdInfo.IntegrationsArgumentName);
+
+        if (raw is null)
+        {
+            return;
+        }
+
+        var location = attribute?.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation();
+
+        ReportUnavailableIntegrations(
+            context.Compilation,
+            IntegrationFlags.Normalize(raw)!.Value,
+            assembly.Name,
+            location ?? Location.None,
+            context.ReportDiagnostic);
+    }
+
+    /// <summary>
+    /// 逐个比对掩码里的集成与当前编译的引用列表，为每个「请求了但没有引用」的集成报一条 STIA0019。
+    /// </summary>
+    private static void ReportUnavailableIntegrations(
+        Compilation compilation,
+        int mask,
+        string ownerName,
+        Location location,
+        Action<Diagnostic> report)
+    {
+        foreach (var requirement in _integrationRequirements)
+        {
+            if ((mask & requirement.Flag) == 0 || IsIntegrationReferenced(compilation, requirement))
+            {
+                continue;
+            }
+
+            report(Diagnostic.Create(
+                Descriptors.IntegrationUnavailable,
+                location,
+                ownerName,
+                requirement.DisplayName,
+                requirement.AssemblyName));
+        }
+    }
+
+    /// <summary>
+    /// 判断编译是否引用了某个集成所需的程序集；MVC 的门面随 .NET 版本分散在三个程序集里，任一存在即可。
+    /// </summary>
+    private static bool IsIntegrationReferenced(Compilation compilation, (int Flag, string AssemblyName, string DisplayName) requirement)
+        => requirement.Flag == IntegrationFlags.AspNetCoreMvc
+            ? ReferencesAssembly(compilation, requirement.AssemblyName)
+                || ReferencesAssembly(compilation, "Microsoft.AspNetCore.Mvc.Core")
+                || ReferencesAssembly(compilation, "Microsoft.AspNetCore.Mvc.Abstractions")
+            : ReferencesAssembly(compilation, requirement.AssemblyName);
+
+    private static bool ReferencesAssembly(Compilation compilation, string simpleName)
+        => compilation.ReferencedAssemblyNames.Any(identity => string.Equals(identity.Name, simpleName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// 集成标志与其所需程序集的对照表。只按程序集名判定：版本不足属于另一类问题，不在这里报。
+    /// </summary>
+    private static readonly (int Flag, string AssemblyName, string DisplayName)[] _integrationRequirements =
+    [
+        (IntegrationFlags.EntityFrameworkCore, "Microsoft.EntityFrameworkCore", "EntityFrameworkCore"),
+        (IntegrationFlags.Dapper, "Dapper", "Dapper"),
+        (IntegrationFlags.SystemTextJson, "System.Text.Json", "SystemTextJson"),
+        (IntegrationFlags.NewtonsoftJson, "Newtonsoft.Json", "NewtonsoftJson"),
+        (IntegrationFlags.Swagger, "Swashbuckle.AspNetCore.SwaggerGen", "Swagger"),
+        (IntegrationFlags.AspNetCoreOpenApi, "Microsoft.AspNetCore.OpenApi", "AspNetCoreOpenApi"),
+        (IntegrationFlags.AspNetCoreMvc, "Microsoft.AspNetCore.Mvc", "AspNetCoreMvc"),
+    ];
 
     /// <summary>
     /// 校验 <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法是否为合法的静态验证器。

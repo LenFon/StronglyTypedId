@@ -15,7 +15,13 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var stronglyTypedIds = discoveredIds.External.ToList();
+        var stronglyTypedIds = discoveredIds.ExternalFor(IntegrationFlags.AspNetCoreMvc).ToList();
+
+        // 空注册入口没有任何作用：Integrations = None 时必须连这个文件也不产出。
+        if (stronglyTypedIds.Count == 0)
+        {
+            return;
+        }
 
         // 每个 Id 注册为路由约束，模板里写 {id:OrderId} 即可校验分段格式。同名 Id 按字典覆盖，属边缘冲突。
         var constraintRegistrations = stronglyTypedIds

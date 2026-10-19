@@ -38,10 +38,17 @@
 - System.Text.Json（`AddStronglyTypedId`）与 Newtonsoft.Json（`AddStronglyTypedId`）的注册入口，
   供显式配置转换器、不依赖生成的 `[JsonConverter]` 特性的调用方使用。
 - 把现有 `record` 转成强类型 Id 的重构（refactoring）提供程序。
-- `STIA0012`–`STIA0018` 诊断，其中包括 `STIA0013`（`Prefix` 为空串或纯空白）、`STIA0014`（带验证器
+- `Integrations` —— 收窄单个 Id 生成哪些集成代码。它是**过滤器**而非开关：只能在「已引用对应包」的
+  基础上做减法。`None` 关掉全部集成但保留核心实现，`Dapper | SystemTextJson` 只保留这两类，`All`
+  可在程序集默认 `None` 时把单个 Id 捞回来。可用
+  `[assembly: StronglyTypedIdDefaults(Integrations = ...)]` 设置默认值，且引用程序集里的 Id 会尊重
+  **它自己所在程序集**的默认值。`TypeConverter` 有意不在掩码内。请求了未引用程序集的集成时报告
+  `STIA0019`。
+- `STIA0012`–`STIA0019` 诊断，其中包括 `STIA0013`（`Prefix` 为空串或纯空白）、`STIA0014`（带验证器
   或归一化器的 Id 被声明为 `public`，主构造函数仍可直达——`Info` 级别，默认关闭）、`STIA0015`
   （Id 名称应遵循 `...Id` 约定）、`STIA0016`（同一程序集内有两个 Id 使用同一基元）、`STIA0017`
-  （`Normalizer` 引用不合法）与 `STIA0018`（`ExceptionType` 不可用）。
+  （`Normalizer` 引用不合法）、`STIA0018`（`ExceptionType` 不可用）与 `STIA0019`（请求的集成未被
+  引用）。
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
   OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。
@@ -75,6 +82,9 @@
 - Dapper 类型处理器改为重写 `SqlMapper.TypeHandler<TId>` 的非可空签名（`SetValue(IDbDataParameter, TId)`
   与 `Parse(object?)`）。此前的 `TId?` 签名对 struct Id 会解析成 `Nullable<TId>`，编译时报
   CS0115 / CS0508。
+- EF Core、Dapper、Swagger、MVC 与 OpenAPI 生成器在「没有可注册的 Id」时不再产出空的
+  `StronglyTypedIds` 注册类。此前没有任何合格 Id 的程序集仍会拿到一个 `ApplyTo` 什么都不做的
+  `StronglyTypedIds.*.g.cs`；现在直接跳过，与 JSON 注册入口的既有行为一致。
 
 ## [1.3.0] - 2026-10-07
 

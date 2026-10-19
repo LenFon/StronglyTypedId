@@ -842,6 +842,108 @@ public class StronglyTypedIdAnalyzerTests
 
     #endregion
 
+    #region 请求了未引用的集成（STIA0019）
+
+    /// <summary>
+    /// 显式请求 Dapper 集成，但编译里没有引用 Dapper：该集成不会产出任何代码，必须可见地提示。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenRequestedIntegrationIsNotReferenced()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.IntegrationUnavailable)
+            .WithArguments("OrderId", "Dapper", "Dapper")
+            .WithSpan(5, 18, 5, 67);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 请求了确实已引用的集成（<c>System.Text.Json</c> 属于基础共享框架）时不报告。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenRequestedIntegrationIsReferenced()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.SystemTextJson)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 未写该参数时按「引用了就生成」处理，不存在「请求了却没有」的问题。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenIntegrationsIsNotSpecified()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>None</c> 只关不请求，掩码归一后为空，不应报告任何集成缺失。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenIntegrationsIsNone()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 程序集级默认值只报一次：若放进逐类型回调，两个 Id 会各刷一条同样的诊断。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenAssemblyDefaultRequestsUnavailableIntegration()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Integrations = Len.StronglyTypedId.StronglyTypedIdIntegrations.Dapper)]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct InvoiceId(int Value);
+            """";
+        // 程序集名取测试基建的默认值 TestProject；「只报一条」才是本用例的判别点
+        // （若放进逐类型回调，两个 Id 会各报一条，此处立刻失败）。
+        var expected = Verify.Diagnostic(Descriptors.IntegrationUnavailable)
+            .WithArguments("TestProject", "Dapper", "Dapper")
+            .WithSpan(3, 12, 3, 126);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    #endregion
+
     #region 绕过 Create 直接构造（STIA0011）
 
     /// <summary>

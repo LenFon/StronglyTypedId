@@ -446,9 +446,10 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         var defaultValidator = GetAssemblyDefaultValidator(context.SemanticModel.Compilation.Assembly);
         var defaultNormalizer = GetAssemblyDefaultNormalizer(context.SemanticModel.Compilation.Assembly);
         var defaultExceptionType = GetAssemblyDefaultExceptionType(context.SemanticModel.Compilation.Assembly);
+        var defaultIntegrations = StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(context.SemanticModel.Compilation.Assembly);
 
         return SupportedPrimitiveTypes.IsSupported(ctorArgType)
-            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType)
+            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType, defaultIntegrations)
             : null;
     }
 

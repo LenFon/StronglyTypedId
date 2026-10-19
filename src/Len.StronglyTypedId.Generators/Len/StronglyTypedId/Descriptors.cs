@@ -31,6 +31,7 @@ internal static class Descriptors
     public const string DuplicatePrimitiveTypeId = "STIA0016";
     public const string NormalizerReferenceInvalidId = "STIA0017";
     public const string ExceptionTypeInvalidId = "STIA0018";
+    public const string IntegrationUnavailableId = "STIA0019";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -218,6 +219,17 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// 显式启用了某个集成，但当前编译没有引用其程序集，该集成不会生成任何代码。
+    /// </summary>
+    public static readonly DiagnosticDescriptor IntegrationUnavailable
+        = new(IntegrationUnavailableId,
+            new LocalizedString("IntegrationUnavailableTitle"),
+            new LocalizedString("IntegrationUnavailableMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -240,6 +252,7 @@ internal static class Descriptors
         ValidatorCanBeBypassed,
         TypeNameShouldEndWithId,
         DuplicatePrimitiveType,
+        IntegrationUnavailable,
     ];
 
     /// <summary>
