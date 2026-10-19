@@ -21,6 +21,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Supported primitive types](#supported-primitive-types)
 - [What gets generated](#what-gets-generated)
 - [Value validation](#value-validation)
+- [Value normalization](#value-normalization)
 - [TryCreate & UTF-8 interfaces](#trycreate-and-utf8)
 - [TypeConverter](#type-converter)
 - [Assembly-level defaults](#assembly-defaults)
@@ -37,6 +38,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Testing](#testing)
 - [Samples](#samples)
 - [Diagnostics](#diagnostics)
+- [Limitations](#limitations)
 - [FAQ](#faq)
 - [License](#license)
 
@@ -54,6 +56,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   so `OrderBy`, `SortedSet<T>` and ranges work without a custom comparer.
 - **Value validation** — point `Validator` at a static method of the id to make `Create` and `TryParse`
   reject invalid values (see [Value validation](#value-validation)).
+- **Value normalization** — point `Normalizer` at a static method to repair incoming values (trim, case-fold,
+  strip separators) before they are validated and stored (see [Value normalization](#value-normalization)).
 - **`TryCreate` factory** — the non-throwing counterpart of `Create`: on a failed parse it returns `false`
   and sets `result` to `default` instead of throwing.
 - **UTF-8 interfaces** — for primitives that expose them (`Guid` from .NET 10, for example),
@@ -289,6 +293,37 @@ code.
 Leaving `Validator` unset emits no validation code at all — the generated members then behave exactly as
 if the property did not exist.
 
+<a id="value-normalization"></a>
+
+## Value normalization <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+`Validator` can only *reject* a value. Point `Normalizer` at a static method of the id and the generated
+entry points will *repair* it first — trim whitespace, fold case, drop separators — then validate, then
+construct:
+
+```csharp
+[StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
+public partial record struct EmailAddress(string Value)
+{
+    private static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+    private static bool Validate(string value) => value.Contains('@');
+}
+
+EmailAddress.Create("  Alice@Example.COM  ").Value;  // "alice@example.com"
+```
+
+The method must be a static member of the id with the signature `static TPrimitiveId Normalize(TPrimitiveId value)`.
+The order is fixed and it matters: **normalize → validate → construct**. Validation therefore sees the value
+that actually gets stored, and `"  a@b.com  "` is accepted instead of rejected. `Create`, `TryCreate`, `Parse`
+and every `TryParse` overload (string, span and UTF-8) go through it.
+
+The normalizer runs exactly once per entry point — the result is kept in a local rather than re-invoked, so a
+normalizer that appends a prefix cannot apply it twice.
+
+Leaving `Normalizer` unset emits no normalization code at all. Like `Validator`, it can also be set for the
+whole assembly with `[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]`.
+
 <a id="trycreate-and-utf8"></a>
 
 ## TryCreate & UTF-8 interfaces <a href="#table-of-contents" style="float:right">↑ Back to top</a>
@@ -345,8 +380,16 @@ it on each one:
 `[StronglyTypedId(Validator = ...)]` keeps its own validator; the assembly default is used only when neither
 the attribute nor the assembly default is set.
 
+`Normalizer` follows the same precedence rule:
+
+```csharp
+[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
+```
+
 > The validator method must still satisfy the [Value validation](#value-validation) signature convention
-> (`static bool Validate(TPrimitiveId value)`), otherwise [STIA0010](#diagnostics) is reported.
+> (`static bool Validate(TPrimitiveId value)`), otherwise [STIA0010](#diagnostics) is reported. Likewise a
+> normalizer must be `static TPrimitiveId Normalize(TPrimitiveId value)`, otherwise [STIA0017](#diagnostics)
+> is reported.
 
 <a id="nested-types"></a>
 
@@ -804,11 +847,11 @@ will not compile; `STIA0011` and `STIA0013` are warnings, and the advisory ones 
 are localized for English and Chinese according to the compiler culture.
 
 A few rules fire in narrower circumstances than their titles suggest: `STIA0011` needs the id to declare
-a `Validator` (without one, constructing it directly is not a bypass) and covers `new Xxx(...)`,
-target-typed `new(...)` and `default` / `default(T)` alike — a `default` that is only compared against
-(`id == default`) is not reported; `STIA0014` is **off by default** and must be enabled explicitly with
-`dotnet_diagnostic.STIA0014.severity = suggestion`; and `STIA0016` reports once per group of ids sharing
-a primitive, on the ordinally first member.
+a `Validator` or a `Normalizer` (without either, constructing it directly is not a bypass) and covers
+`new Xxx(...)`, target-typed `new(...)` and `default` / `default(T)` alike — a `default` that is only
+compared against (`id == default`) is not reported; `STIA0014` is **off by default** and must be enabled
+explicitly with `dotnet_diagnostic.STIA0014.severity = suggestion`; and `STIA0016` reports once per group
+of ids sharing a primitive, on the ordinally first member.
 
 <!-- BEGIN GENERATED:diagnostics -->
 | Rule ID  | Description                                                     | Code fix                                                  |
@@ -830,6 +873,7 @@ a primitive, on the ordinally first member.
 | STIA0014 | Validator can be bypassed                                       | Narrow the type to `internal`                             |
 | STIA0015 | Type name should end with 'Id'                                  | —                                                         |
 | STIA0016 | Several strongly typed ids share the same primitive type        | —                                                         |
+| STIA0017 | Normalizer method must be a valid static method                 | Remove the `Normalizer` argument                          |
 <!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —
@@ -844,6 +888,26 @@ Code fixes are offered through the usual IDE light bulb and support **Fix all oc
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are
 evaluated once for the whole type, and parameter-level rules only against the block that declares the
 primary constructor, so adding members in a separate block is perfectly legal.
+
+<a id="limitations"></a>
+
+## Limitations <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+**`Value` is always public.** The property comes from the positional record's primary constructor, and a
+source generator cannot change the accessibility of a member you declared. Making it `internal` would
+mean hand-writing the type — giving up the one-line declaration that is the point of this library. Treat
+`Value` as the escape hatch it is: reach for it in persistence mappings and interop, keep it out of
+domain signatures. When you need a hard boundary, declare the id `internal` and expose only the
+operations your application actually needs; `STIA0014` flags externally visible ids whose validator
+`new` can bypass (off by default).
+
+**Only the listed primitives are supported.** Arbitrary custom types are not accepted, and `Uri` is
+deliberately absent: `Uri.Equals` ignores the fragment and normalises case and default ports, so two
+different URIs would compare equal and silently collapse into the same id. Wrap such a value in a
+supported primitive (usually `string`) and validate the format in a validator.
+
+**The primary constructor is not guarded.** `new OrderId(...)` bypasses both `Normalizer` and `Validator`;
+only `Create`, `Parse` and `TryParse` enforce them — see [Value normalization](#value-normalization).
 
 <a id="faq"></a>
 

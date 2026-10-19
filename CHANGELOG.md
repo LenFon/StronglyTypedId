@@ -27,6 +27,11 @@ change set rather than reproducing every commit.
 - `char` as a supported primitive, bringing the total to 24 types including `enum`. Its parsing and
   formatting members are explicit interface implementations, so the generator emits a length check
   and an interface call instead of `char.TryParse` / `char.ToString(format, provider)`.
+- `Normalizer` — point it at a `static TPrimitiveId Normalize(TPrimitiveId value)` member to repair
+  incoming values (trim, case-fold, drop separators) before they are validated and stored. Every
+  entry point runs normalize → validate → construct, and `[assembly: StronglyTypedIdDefaults(Normalizer = ...)]`
+  sets an assembly-wide default. A malformed reference is reported as `STIA0017`, with a code fix that
+  generates a pass-through stub or drops the argument.
 - Text prefixes: `Prefix` writes a constant prefix in `ToString` and strips it in `Parse`;
   `PrefixReadMode` chooses between accepting a bare value (`Lenient`) and rejecting it (`Strict`).
 - `JsonShape` selects the serialized shape: the bare primitive (`Primitive`) or
@@ -35,8 +40,9 @@ change set rather than reproducing every commit.
   (`AddStronglyTypedId`), for callers that configure converters explicitly instead of relying on the
   generated `[JsonConverter]` attribute.
 - A refactoring provider that turns an existing `record` into a strongly typed id.
-- `STIA0012`–`STIA0016` diagnostics, including `STIA0015` (id name should follow the `...Id`
-  convention) and `STIA0016` (two ids over the same primitive in one assembly).
+- `STIA0012`–`STIA0017` diagnostics, including `STIA0015` (id name should follow the `...Id`
+  convention), `STIA0016` (two ids over the same primitive in one assembly) and `STIA0017`
+  (malformed `Normalizer` reference).
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
   `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).
@@ -59,9 +65,10 @@ change set rather than reproducing every commit.
   test, package-content assertions and a generator allocation gate.
 - `STIA0011` now also reports target-typed `new(...)` and `default` / `default(T)` construction, not
   just `new Xxx(...)`, and its default severity was raised from `Info` to `Warning` so that bypassing
-  a validator shows up in build output and CI. A `default` that is only compared against
-  (`id == default`) is not reported. Projects building with `TreatWarningsAsErrors` will now fail on
-  a bypassed validator; restore the previous behaviour with
+  a validator shows up in build output and CI. It also fires for ids that only declare a `Normalizer`,
+  since a directly constructed id is then not in canonical form. A `default` that is only compared
+  against (`id == default`) is not reported. Projects building with `TreatWarningsAsErrors` will now
+  fail on a bypassed validator; restore the previous behaviour with
   `dotnet_diagnostic.STIA0011.severity = suggestion`.
 
 ### Fixed

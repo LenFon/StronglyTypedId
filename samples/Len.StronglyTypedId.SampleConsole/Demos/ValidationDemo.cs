@@ -32,5 +32,25 @@ internal static class ValidationDemo
         Demo.Section("没有验证器的 Id 接受任意值");
 
         Demo.Line($"ProductId.Create(-1)              -> {ProductId.Create(-1)}");
+
+        Demo.Section("归一化：先修正、再校验、最后构造");
+
+        var email = EmailAddress.Create("  Alice@Example.COM  ");
+        Demo.Line($"Create(\"  Alice@Example.COM  \")  -> {email}");
+
+        var emailParsed = EmailAddress.TryParse("  BOB@EXAMPLE.COM ", CultureInfo.InvariantCulture, out var parsedEmail);
+        Demo.Line($"TryParse(\"  BOB@EXAMPLE.COM \")   -> {emailParsed}, {parsedEmail}");
+
+        var emailCreated = EmailAddress.TryCreate("  carol@example.com  ", out var createdEmail);
+        Demo.Line($"TryCreate(\"  carol@example.com  \") -> {emailCreated}, {createdEmail}");
+
+        try
+        {
+            _ = EmailAddress.Create("  not-an-email  ");
+        }
+        catch (ArgumentException ex)
+        {
+            Demo.Line($"Create(\"  not-an-email  \")      -> 抛出 {ex.GetType().Name}");
+        }
     }
 }

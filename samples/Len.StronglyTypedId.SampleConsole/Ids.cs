@@ -17,6 +17,15 @@ public partial record struct QuantityId(int Value)
     private static bool IsPositive(int value) => value > 0;
 }
 
+// 归一化 + 校验：先修正取值，再判合法性，最后构造。
+[StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(IsEmail))]
+public partial record struct EmailAddress(string Value)
+{
+    private static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+    private static bool IsEmail(string value) => value.Contains('@');
+}
+
 // 文本前缀：ToString 写出前缀，Parse 读回时剥离；读取默认宽松。
 [StronglyTypedId(Prefix = "inv_")]
 public partial record struct InvoiceId(long Value);

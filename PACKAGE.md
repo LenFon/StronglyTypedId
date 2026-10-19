@@ -48,6 +48,21 @@ public partial record struct OrderId(Guid Value)
 }
 ```
 
+Point `Normalizer` at a static method to repair values before they are validated and stored — trim
+whitespace, fold case, drop separators:
+
+```csharp
+[StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(IsEmail))]
+public partial record struct EmailAddress(string Value)
+{
+    private static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+    private static bool IsEmail(string value) => value.Contains('@');
+}
+
+EmailAddress.Create("  Alice@Example.COM  ").Value; // "alice@example.com"
+```
+
 ## Integrations
 
 All opt-in, generated only when the matching package is referenced:

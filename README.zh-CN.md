@@ -20,6 +20,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [支持的基元类型](#supported-primitive-types)
 - [生成器会生成什么](#what-gets-generated)
 - [值校验](#value-validation)
+- [值归一化](#value-normalization)
 - [TryCreate 与 UTF-8 接口](#trycreate-and-utf8)
 - [类型转换器（TypeConverter）](#type-converter)
 - [程序集级默认设置](#assembly-defaults)
@@ -36,6 +37,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [测试辅助](#testing)
 - [示例程序](#samples)
 - [诊断与代码修复](#diagnostics)
+- [已知限制](#limitations)
 - [常见问题](#faq)
 - [许可证](#license)
 
@@ -53,6 +55,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
   `SortedSet<T>` 与区间判断都无需自定义比较器。
 - **值校验** —— 把 `Validator` 指向 Id 自身的静态方法，即可让 `Create` 与 `TryParse` 拒绝非法取值
   （见[值校验](#value-validation)）。
+- **值归一化** —— 把 `Normalizer` 指向 Id 自身的静态方法，即可在校验与构造之前修正取值（去空白、
+  统一大小写、去分隔符），见[值归一化](#value-normalization)。
 - **`TryCreate` 工厂** —— `Create` 的非抛异常版本：解析失败返回 `false`，`result` 为 `default`，而不是抛异常。
 - **UTF-8 接口** —— 对支持相应接口的基元类型（如 .NET 10 的 `Guid`）自动生成 `IUtf8SpanFormattable` 与
   `IUtf8SpanParsable<TSelf>`，可直接以 `ReadOnlySpan<byte>` 解析 / 格式化。
@@ -262,6 +266,35 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // 返回 false，不抛�
 
 不设置 `Validator` 时完全不生成校验代码——生成成员的行为与没有该属性时逐字节一致。
 
+<a id="value-normalization"></a>
+
+## 值归一化 <a href="#top" style="float:right">↑ 返回目录</a>
+
+`Validator` 只能**拒绝**取值。把 `Normalizer` 指向 Id 自身的静态方法，生成的入口会先**修正**它——
+去首尾空白、统一大小写、去掉分隔符——再校验，最后构造：
+
+```csharp
+[StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
+public partial record struct EmailAddress(string Value)
+{
+    private static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+    private static bool Validate(string value) => value.Contains('@');
+}
+
+EmailAddress.Create("  Alice@Example.COM  ").Value;  // "alice@example.com"
+```
+
+方法必须是该 Id 的静态成员，签名形如 `static TPrimitiveId Normalize(TPrimitiveId value)`。顺序固定且不可颠倒：
+**归一化 → 校验 → 构造**。这样校验看到的就是真正落库的那个值，`"  a@b.com  "` 会被接受而不是被判非法。
+`Create`、`TryCreate`、`Parse` 以及全部 `TryParse` 重载（string、span、UTF-8）都走这条路径。
+
+每个入口只调用一次归一化方法——结果存进局部变量而不是重复调用，所以「追加前缀」这类不幂等的归一化
+不会被执行两次。
+
+不设置 `Normalizer` 时完全不生成归一化代码。与 `Validator` 一样，它也可以用
+`[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]` 在程序集级统一设置。
+
 <a id="trycreate-and-utf8"></a>
 
 ## TryCreate 与 UTF-8 接口 <a href="#top" style="float:right">↑ 返回目录</a>
@@ -314,8 +347,15 @@ public partial record struct ConvertibleGuidId(Guid Value);
 `StronglyTypedIdDefaults.Validator` 仅作为**默认**：单个 Id 上写了 `[StronglyTypedId(Validator = ...)]`
 时，以该 Id 自己的为准；都没写时才回落到程序集默认值。
 
+`Normalizer` 遵循同样的优先级规则：
+
+```csharp
+[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
+```
+
 > 验证器方法仍需满足 [值校验](#value-validation) 的签名约定（`static bool Validate(TPrimitiveId value)`），
-> 否则由 [STIA0010](#diagnostics) 报错。
+> 否则由 [STIA0010](#diagnostics) 报错。归一化方法同理，必须是
+> `static TPrimitiveId Normalize(TPrimitiveId value)`，否则由 [STIA0017](#diagnostics) 报错。
 
 <a id="nested-types"></a>
 
@@ -742,9 +782,9 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 （`STIA0014`、`STIA0015`、`STIA0016`）级别更低。各级别均可按项目在 `.editorconfig` 中调整。诊断文案
 会按编译器区域设置输出英文或中文。
 
-有几条规则的触发条件比标题看上去更窄：`STIA0011` 要求该 Id 声明了 `Validator`（没有验证器时直接构造
-并不构成绕过），且同时覆盖 `new Xxx(...)`、目标类型化的 `new(...)` 与 `default` / `default(T)`——
-仅用于比较（`id == default`）时不报告；`STIA0014` **默认关闭**，需显式设置
+有几条规则的触发条件比标题看上去更窄：`STIA0011` 要求该 Id 声明了 `Validator` 或 `Normalizer`
+（两者都没有时直接构造并不构成绕过），且同时覆盖 `new Xxx(...)`、目标类型化的 `new(...)` 与
+`default` / `default(T)`——仅用于比较（`id == default`）时不报告；`STIA0014` **默认关闭**，需显式设置
 `dotnet_diagnostic.STIA0014.severity = suggestion` 才会启用；`STIA0016` 对每组共用同一基元的 Id
 只报一次，落在组内名字序最小的成员上。
 
@@ -768,6 +808,7 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 | STIA0014 | 验证器可被绕过                             | 收窄为 `internal`                      |
 | STIA0015 | 类型名应以‘Id’结尾                         | —                                      |
 | STIA0016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
+| STIA0017 | 归一化方法必须是合法的静态方法             | 删掉 `Normalizer` 实参                 |
 <!-- END GENERATED:diagnostics -->
 
 报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIA0003` 仅在 Id 自身是泛型时提供
@@ -779,6 +820,22 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以
 拆成多个 `partial` 声明段：类型级规则按整个类型判定一次，参数级规则只在声明主构造函数的那一段上判定，
 因此在另一个声明段里追加成员完全合法。
+
+<a id="limitations"></a>
+
+## 已知限制 <a href="#top" style="float:right">↑ 返回目录</a>
+
+**`Value` 恒为 public。** 该属性来自位置记录的主构造函数，源码生成器无法改变你亲手声明的成员的可见性。
+若要改成 `internal`，就只能手写整个类型——而那正是本库要消灭的一行声明。请把 `Value` 当作逃生舱口：
+持久化映射与互操作时用它，但别让它出现在领域层的签名里。确实需要硬边界时，把 Id 声明为 `internal`，
+只对外暴露应用真正需要的操作；`STIA0014` 会在 Id 对外可见、其验证器可被 `new` 绕过时给出提示（默认关闭）。
+
+**只支持清单内的基元类型。** 任意自定义类型不被接受，`Uri` 则是刻意缺席：`Uri.Equals` 会忽略 fragment，
+并对大小写与默认端口做归一化，两个不同的 URI 会被判为相等、静默塌缩成同一个 Id。这类值请用受支持的
+基元（通常是 `string`）承载，并在验证器里校验格式。
+
+**主构造函数不受约束。** `new OrderId(...)` 会同时绕过 `Normalizer` 与 `Validator`，只有 `Create`、
+`Parse` 与 `TryParse` 会执行它们——详见[值归一化](#value-normalization)。
 
 <a id="faq"></a>
 

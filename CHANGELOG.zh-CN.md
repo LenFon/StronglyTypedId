@@ -24,14 +24,18 @@
   `BigInteger`（连同 `enum` 共 23 种受支持类型）。
 - 新增 `char` 基元，连同 `enum` 共 24 种受支持类型。它的解析与格式化成员都是显式接口实现，
   故生成器改为发射长度判定与接口调用，而不是 `char.TryParse` / `char.ToString(format, provider)`。
+- `Normalizer` —— 指向 `static TPrimitiveId Normalize(TPrimitiveId value)` 成员，即可在校验与落库
+  之前修正传入值（去空白、统一大小写、去分隔符）。每个入口都按「归一化 → 校验 → 构造」执行，
+  并可用 `[assembly: StronglyTypedIdDefaults(Normalizer = ...)]` 设置程序集级默认。引用不合法时
+  报告 `STIA0017`，代码修复可生成直通桩方法或删掉该实参。
 - 文本前缀：`Prefix` 在 `ToString` 中写入固定前缀、在 `Parse` 中将其剥离；`PrefixReadMode` 选择
   接受裸值（`Lenient`）还是拒绝裸值（`Strict`）。
 - `JsonShape` 选择序列化形态：裸基元（`Primitive`）或 `{ "value": ... }`（`Object`）。
 - System.Text.Json（`AddStronglyTypedId`）与 Newtonsoft.Json（`AddStronglyTypedId`）的注册入口，
   供显式配置转换器、不依赖生成的 `[JsonConverter]` 特性的调用方使用。
 - 把现有 `record` 转成强类型 Id 的重构（refactoring）提供程序。
-- `STIA0012`–`STIA0016` 诊断，其中包括 `STIA0015`（Id 名称应遵循 `...Id` 约定）与 `STIA0016`
-  （同一程序集内有两个 Id 使用同一基元）。
+- `STIA0012`–`STIA0017` 诊断，其中包括 `STIA0015`（Id 名称应遵循 `...Id` 约定）、`STIA0016`
+  （同一程序集内有两个 Id 使用同一基元）与 `STIA0017`（`Normalizer` 引用不合法）。
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
   OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。
@@ -49,9 +53,10 @@
 - 构建：`.editorconfig` + `Directory.Build.props` 固定零警告基线（IDE/CA/xUnit 规则提升为警告），
   `dotnet pack` 时执行包校验，CI 新增 Native AOT 冒烟测试、包内容断言与生成器分配门槛。
 - `STIA0011` 现在除 `new Xxx(...)` 外，还报告目标类型化的 `new(...)` 与 `default` / `default(T)`
-  构造，默认级别由 `Info` 提升为 `Warning`，使「绕过验证器」能在 build 输出与 CI 中显现。仅用于
-  比较的 `default`（`id == default`）不报告。开启 `TreatWarningsAsErrors` 的项目将因绕过验证器而
-  构建失败；如需恢复原有行为，设置 `dotnet_diagnostic.STIA0011.severity = suggestion`。
+  构造，默认级别由 `Info` 提升为 `Warning`，使「绕过验证器」能在 build 输出与 CI 中显现。只声明了
+  `Normalizer` 的 Id 同样会触发该规则——直接构造出来的 Id 不是规范形。仅用于比较的 `default`
+  （`id == default`）不报告。开启 `TreatWarningsAsErrors` 的项目将因绕过验证器而构建失败；如需恢复
+  原有行为，设置 `dotnet_diagnostic.STIA0011.severity = suggestion`。
 
 ### 修复
 
