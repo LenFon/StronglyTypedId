@@ -1,31 +1,37 @@
-# For most projects, this workflow file will not need changing; you simply need
-# to commit it to your repository.
+# CodeQL 静态扫描。
 #
-# You may wish to alter this file to override the set of languages analyzed,
-# or to provide custom queries or build logic.
+# 路径过滤器必须用 `**` 递归匹配：本仓源码全在 src/ test/ tools/ samples/ 下，
+# 原先写的 `"*.cs"` 只匹配仓库根目录 —— 本工作流自建立起一次都没触发过（2026-10-19 修正）。
 #
-# ******** NOTE ********
-# We have attempted to detect the languages in your repository. Please check
-# the `language` matrix defined below to confirm you have the correct set of
-# supported CodeQL languages.
-#
+# 不用 autobuild：runner 预装的 SDK 未必含 net10.0，而本仓双目标 net8.0;net10.0，
+# autobuild 会在还原阶段失败。改为显式安装两个 SDK 后手动 build，与 build-and-test.yml 一致。
 name: "CodeQL"
 
 on:
   push:
-    branches: 
+    branches:
       - main
       - dev
     paths:
-      - "*.cs"
+      - "**/*.cs"
+      - "**/*.csproj"
+      - "**/*.props"
+      - "**/*.slnx"
+      - "global.json"
+      - ".github/workflows/codeql-analysis.yml"
   pull_request:
     # The branches below must be a subset of the branches above
     branches:
       - main
       - dev
     paths:
-      - "*.cs"
-      
+      - "**/*.cs"
+      - "**/*.csproj"
+      - "**/*.props"
+      - "**/*.slnx"
+      - "global.json"
+      - ".github/workflows/codeql-analysis.yml"
+
 jobs:
   analyze:
     name: Analyze
@@ -40,43 +46,35 @@ jobs:
       matrix:
         language: [ 'csharp' ]
         # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby' ]
-        # Use only 'java' to analyze code written in Java, Kotlin or both
-        # Use only 'javascript' to analyze code written in JavaScript, TypeScript or both
         # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v7
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
+      uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # By default, queries listed here will override any specified in a config file.
-        # Prefix the list here with "+" to use these queries and those in the config file.
+        # 需要更宽的查询集时在这里加 `queries: security-extended,security-and-quality`；
+        # 默认查询集只报高置信度问题，误报最少。
 
-        # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-        # queries: security-extended,security-and-quality
+    # 顺序不可颠倒：CodeQL 的 C# 提取器挂在编译过程上，必须在 init 之后、analyze 之前完成构建。
+    - name: Restore dependencies
+      run: dotnet restore
 
-
-    # Autobuild attempts to build any compiled languages  (C/C++, C#, Go, or Java).
-    # If this step fails, then you should remove it and run the build manually (see below)
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
-
-    # ℹ️ Command-line programs to run using the OS shell.
-    # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-
-    #   If the Autobuild fails above, remove it and uncomment the following three lines.
-    #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
-
-    # - run: |
-    #     echo "Run, Build Application using script"
-    #     ./location_of_script_within_repo/buildscript.sh
+    - name: Build
+      run: dotnet build --no-restore
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"

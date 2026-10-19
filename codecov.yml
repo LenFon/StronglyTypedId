@@ -1,0 +1,48 @@
+# Codecov 配置。放在仓库根，Codecov 自动读取。
+#
+# 覆盖率报告由 dotnet-coverage 采集，里面混着大量「跑测试用的代码」：测试工程自身、DocGen 工具，
+# 以及 Dapper / Microsoft.CodeAnalysis.Testing 这些测试依赖。它们把总覆盖率稀释到 40% 左右
+# （实测 6207/15491 行），于是「跌 1%」这种阈值永远不会被触发 —— 门槛形同虚设。
+#
+# 所以先用 ignore 把它们剔出去，只留四个随包发布的程序集：
+#   Len.StronglyTypedId / .Generators / .Testing / .Testing.AutoFixture
+# 剔除后的基线是 96.83%（2026-10-19 实测：2959/3056 行）。
+
+coverage:
+  precision: 2
+  round: down
+  range: "90...100"
+
+  status:
+    # 整体覆盖率：与目标分支比较，允许 1% 的自然波动，不设绝对下限。
+    # 绝对下限（比如 95%）在重构、删代码、拆文件时会制造无意义的红。
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+        informational: false
+
+    # 新增/改动行：要求 80%，允许 5% 欠账。这条才是真正拦住「新代码没测试」的门槛。
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        informational: false
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  # 覆盖率没变化就不发评论，避免每个 PR 都刷一条「0% 变化」。
+  require_changes: true
+
+# 只统计随包发布的程序集。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
+ignore:
+  - "test/**"
+  - "tools/**"
+  - "samples/**"
+  - "bench/**"
+  # 下面两条是保险：这两个依赖的源码路径来自嵌入 PDB 的虚拟路径（`/_/Dapper/...`），
+  # Codecov 通常无法映射回仓库而自动丢弃；显式写上，免得哪天映射规则变了又被算进来。
+  - "**/Dapper/**"
+  - "**/Microsoft.CodeAnalysis.Testing/**"

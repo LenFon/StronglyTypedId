@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
 
     - name: Install dotnet tool
       run: dotnet tool install -g dotnetCampus.TagToVersion
@@ -37,7 +37,7 @@ jobs:
         echo "ASSEMBLY_VERSION=${ASM_VERSION}" >> "$GITHUB_ENV"
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         # net8.0 与 net10.0 两个目标框架都要打包，显式安装两者 SDK，
         # 与 build-and-test.yml 保持一致，避免依赖 runner 镜像预装的 .NET 环境。

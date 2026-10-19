@@ -31,6 +31,8 @@ on:
       - "src/Len.StronglyTypedId/CompatibilitySuppressions.xml"
       - "src/Len.StronglyTypedId/PublicAPI.Shipped.txt"
       - "src/Len.StronglyTypedId/PublicAPI.Unshipped.txt"
+      # 覆盖率门槛的统计范围与阈值都在这里，改它就该重跑一次
+      - "codecov.yml"
       - ".github/workflows/build-and-test.yml"
       - ".github/workflows/publish-nuget.yml"
   pull_request:
@@ -58,6 +60,7 @@ on:
       - "src/Len.StronglyTypedId/CompatibilitySuppressions.xml"
       - "src/Len.StronglyTypedId/PublicAPI.Shipped.txt"
       - "src/Len.StronglyTypedId/PublicAPI.Unshipped.txt"
+      - "codecov.yml"
       - ".github/workflows/build-and-test.yml"
       - ".github/workflows/publish-nuget.yml"
   workflow_dispatch:
@@ -68,13 +71,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
       with:
         # CHANGELOG 校验要把每个 tag 与版本小节对上，浅克隆（默认 fetch-depth: 1）读不到 tag，
         # 校验会直接判失败而不是静默跳过。
         fetch-depth: 0
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         # net8.0 与 net10.0 两个目标框架的测试都要跑，必须显式安装两者运行时，
         # 避免依赖 runner 镜像预装的 .NET 8 环境。
@@ -111,10 +114,21 @@ jobs:
       # 仅 net10.0 参与覆盖率；net8.0 仅做行为校验（见上一步）。
       run: dotnet tool run dotnet-coverage -- collect -f cobertura -o TestResults/coverage.net10.cobertura.xml dotnet test --framework net10.0 --no-build --verbosity normal
     - name: Codecov
-      uses: codecov/codecov-action@v3
+      # v5 起 action 只是 Codecov Wrapper 的外壳（CLI 由它自己下载并做 PGP 校验），入参沿用
+      # `files` / `token` 不变；v3 及以下走的是已废弃的 uploader，迟早会被服务端拒绝。
+      #
+      # fail_ci_if_error：上传失败（token 过期、Codecov 故障）直接让构建红。默认值是 false ——
+      # 那意味着覆盖率可以静默停止更新几个月而没人发现，正是这条门槛要防的形态。
+      #
+      # 统计范围与阈值都在仓库根的 codecov.yml：project 只允许比基线跌 1%，patch 要求 80%。
+      # 报告里混着的测试工程 / 工具 / 测试依赖由那边的 ignore 剔除（采集阶段没法按路径过滤：
+      # dotnet-coverage 的 --include-files 区分 / 与 \，同一份通配符在 Windows 与 Linux 上不等价，
+      # 实测在 Windows 上用 `**/src/...` 会得到一份空报告）。
+      uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: "TestResults/coverage.net10.cobertura.xml"
+        fail_ci_if_error: true
 
   # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作。本 job 把这个宣称变成可验证的
   # 证据：真做一次 Native AOT 发布，再运行产物里的冒烟断言（创建 / 解析 / 格式化 / 前缀 / STJ 值
@@ -127,9 +141,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: |
           10.0.x
@@ -154,12 +168,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
       with:
         # 需要 tag 才能让 TagToVersion 推导出正确的下一个版本号
         fetch-depth: 0
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: |
           8.0.x
@@ -228,9 +242,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: |
           10.0.x

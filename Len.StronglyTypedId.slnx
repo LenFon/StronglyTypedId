@@ -17,6 +17,7 @@
     <File Path="PACKAGE.md" />
     <File Path="TESTING.md" />
     <File Path="bench.props" />
+    <File Path="codecov.yml" />
     <File Path="common.props" />
     <File Path="Directory.Packages.props" />
     <File Path="Directory.Build.props" />
