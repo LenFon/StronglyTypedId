@@ -266,6 +266,27 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // 返回 false，不抛�
 
 不设置 `Validator` 时完全不生成校验代码——生成成员的行为与没有该属性时逐字节一致。
 
+### 指定校验失败的异常类型
+
+校验拒绝取值时 `Create` 默认抛 `ArgumentException`。领域库若想抛自己的异常，用 `ExceptionType` 指过去：
+
+```csharp
+public sealed class DomainRuleViolationException(string message) : Exception(message);
+
+[StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainRuleViolationException))]
+public partial record struct OrderId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
+OrderId.Create(Guid.Empty);   // 抛 DomainRuleViolationException
+```
+
+该类型必须派生自 `System.Exception`、不能是抽象类，并且要有可访问的、接收单个 `string` 消息的构造函数；
+否则在声明处报 [STIA0018](#diagnostics)。只有 `Create` 会用它——`Parse` 仍抛 `ArgumentException`，
+因为它的失败还包含「文本根本不是 Id」，属于输入格式错误而非领域规则违规。与其他选项一样，它也可以在
+程序集级设置：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`。
+
 <a id="value-normalization"></a>
 
 ## 值归一化 <a href="#top" style="float:right">↑ 返回目录</a>
@@ -352,6 +373,9 @@ public partial record struct ConvertibleGuidId(Guid Value);
 ```csharp
 [assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
 ```
+
+`ExceptionType` 同样遵循这一规则：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
+对所有未自行指定异常类型的 Id 生效。
 
 > 验证器方法仍需满足 [值校验](#value-validation) 的签名约定（`static bool Validate(TPrimitiveId value)`），
 > 否则由 [STIA0010](#diagnostics) 报错。归一化方法同理，必须是
@@ -809,6 +833,7 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 | STIA0015 | 类型名应以‘Id’结尾                         | —                                      |
 | STIA0016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
 | STIA0017 | 归一化方法必须是合法的静态方法             | 删掉 `Normalizer` 实参                 |
+| STIA0018 | 异常类型必须是带字符串构造函数的非抽象异常 | 删掉 `ExceptionType` 实参              |
 <!-- END GENERATED:diagnostics -->
 
 报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIA0003` 仅在 Id 自身是泛型时提供

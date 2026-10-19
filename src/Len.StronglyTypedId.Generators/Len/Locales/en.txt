@@ -22,6 +22,8 @@ ValidatorReferenceInvalidTitle = Validator method must be a valid static bool me
 ValidatorReferenceInvalidMessage = The validator method '{0}' referenced by [StronglyTypedId(Validator = ...)] must be a static method with the signature 'static bool {0}({1} value)'.
 NormalizerReferenceInvalidTitle = Normalizer method must be a valid static method
 NormalizerReferenceInvalidMessage = The normalizer method '{0}' referenced by [StronglyTypedId(Normalizer = ...)] must be a static method with the signature 'static {1} {0}({1} value)'.
+ExceptionTypeInvalidTitle = Exception type must be a concrete exception with a string constructor
+ExceptionTypeInvalidMessage = The exception type '{0}' referenced by [StronglyTypedId(ExceptionType = ...)] must be a non-abstract class derived from System.Exception with an accessible constructor that takes a single string parameter.
 BypassCreateTitle = Strongly typed id constructed directly
 BypassCreateMessage = Constructing '{0}' directly bypasses the normalization and validation that Create and TryParse enforce. Use {0}.Create(...) instead.
 GeneratorFailureTitle = Strongly typed id code generation failed

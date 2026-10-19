@@ -65,6 +65,14 @@ internal static class AttributeReader
         => GetNamedArgument(attribute, argumentName) is { Value: true };
 
     /// <summary>
+    /// 取 <c>typeof(...)</c> 型命名实参的类型符号；未指定或不是类型实参时为 <see langword="null"/>。
+    /// </summary>
+    internal static ITypeSymbol? GetType(AttributeData? attribute, string argumentName)
+        => GetNamedArgument(attribute, argumentName) is { Kind: TypedConstantKind.Type, Value: ITypeSymbol type }
+            ? type
+            : null;
+
+    /// <summary>
     /// 判断枚举型命名实参是否等于指定底层值。
     /// </summary>
     internal static bool GetEnumFlag(AttributeData? attribute, string argumentName, int value)

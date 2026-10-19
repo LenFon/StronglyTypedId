@@ -30,6 +30,7 @@ internal static class Descriptors
     public const string TypeNameShouldEndWithIdId = "STIA0015";
     public const string DuplicatePrimitiveTypeId = "STIA0016";
     public const string NormalizerReferenceInvalidId = "STIA0017";
+    public const string ExceptionTypeInvalidId = "STIA0018";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -138,6 +139,18 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// <c>[StronglyTypedId(ExceptionType = typeof(…))]</c> 指向的类型不是派生自 <see cref="System.Exception"/>
+    /// 的非抽象类，或不具备可访问的单字符串参数构造函数。
+    /// </summary>
+    public static readonly DiagnosticDescriptor ExceptionTypeInvalid
+        = new(ExceptionTypeInvalidId,
+            new LocalizedString("ExceptionTypeInvalidTitle"),
+            new LocalizedString("ExceptionTypeInvalidMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
     /// 直接构造强类型 Id（<c>new OrderId(...)</c> / <c>new(...)</c>）或用 <c>default</c> 取零值实例，绕过了 <c>Create</c> /
     /// <c>TryParse</c> 强制的归一化与校验。
     /// </summary>
@@ -221,6 +234,7 @@ internal static class Descriptors
         ContainingTypeMustBePartial,
         ValidatorReferenceInvalid,
         NormalizerReferenceInvalid,
+        ExceptionTypeInvalid,
         BypassCreate,
         InvalidPrefix,
         ValidatorCanBeBypassed,

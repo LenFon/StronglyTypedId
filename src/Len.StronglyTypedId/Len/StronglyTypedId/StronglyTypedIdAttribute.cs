@@ -17,6 +17,18 @@ public class StronglyTypedIdAttribute : Attribute
     public string? Normalizer { get; set; }
 
     /// <summary>
+    /// Gets or sets the exception type thrown by <c>Create</c> when the validator rejects a value. The type
+    /// must derive from <see cref="Exception"/>, must not be abstract, and must expose a constructor that
+    /// takes a single <see cref="string"/> message. Defaults to <see cref="ArgumentException"/>.
+    /// </summary>
+    /// <remarks>
+    /// Only the validator rejection in <c>Create</c> uses this type. <c>Parse</c> keeps throwing
+    /// <see cref="ArgumentException"/>, because its failure also covers text that is not a valid id at all —
+    /// a malformed-input error rather than a domain-rule violation.
+    /// </remarks>
+    public Type? ExceptionType { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is
     /// generated for the strongly typed id.
     /// </summary>

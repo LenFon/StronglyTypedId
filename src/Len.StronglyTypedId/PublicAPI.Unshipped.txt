@@ -7,6 +7,8 @@ Len.StronglyTypedId.JsonShape.Primitive = 0 -> Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.PrefixReadMode
 Len.StronglyTypedId.PrefixReadMode.Lenient = 0 -> Len.StronglyTypedId.PrefixReadMode
 Len.StronglyTypedId.PrefixReadMode.Strict = 1 -> Len.StronglyTypedId.PrefixReadMode
+Len.StronglyTypedId.StronglyTypedIdAttribute.ExceptionType.get -> System.Type?
+Len.StronglyTypedId.StronglyTypedIdAttribute.ExceptionType.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShape.get -> Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShape.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.Normalizer.get -> string?
@@ -21,6 +23,8 @@ Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.get -> string?
 Len.StronglyTypedId.StronglyTypedIdAttribute.Validator.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.StronglyTypedIdDefaultsAttribute() -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.ExceptionType.get -> System.Type?
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.ExceptionType.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.get -> string?
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.get -> string?

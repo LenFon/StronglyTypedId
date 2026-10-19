@@ -24,6 +24,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.ParameterTypeIsInvalidId,
             Descriptors.ValidatorReferenceInvalidId,
             Descriptors.NormalizerReferenceInvalidId,
+            Descriptors.ExceptionTypeInvalidId,
             Descriptors.InvalidPrefixId,
             Descriptors.ValidatorCanBeBypassedId);
 
@@ -60,6 +61,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.ParameterTypeIsInvalidId => ChangeParameterTypeToGuidAsync(context, diagnostic, token),
                                 Descriptors.ValidatorReferenceInvalidId => FixValidatorReferenceAsync(context, diagnostic, token),
                                 Descriptors.NormalizerReferenceInvalidId => FixNormalizerReferenceAsync(context, diagnostic, token),
+                                Descriptors.ExceptionTypeInvalidId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.InvalidPrefixId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.ValidatorCanBeBypassedId => NarrowVisibilityToInternalAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
@@ -108,6 +110,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
             Descriptors.NormalizerReferenceInvalidId =>
+                FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
+
+            // 装配级默认值写不出可删的实参，此时不给修复（与 STIA0017 的装配级形态一致）。
+            Descriptors.ExceptionTypeInvalidId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
             Descriptors.InvalidPrefixId =>

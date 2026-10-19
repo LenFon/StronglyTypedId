@@ -293,6 +293,30 @@ code.
 Leaving `Validator` unset emits no validation code at all — the generated members then behave exactly as
 if the property did not exist.
 
+### Choosing the exception type
+
+`Create` throws `ArgumentException` when the validator rejects a value. A domain library that wants its own
+error type can point `ExceptionType` at it:
+
+```csharp
+public sealed class DomainRuleViolationException(string message) : Exception(message);
+
+[StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainRuleViolationException))]
+public partial record struct OrderId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
+OrderId.Create(Guid.Empty);   // throws DomainRuleViolationException
+```
+
+The type must derive from `System.Exception`, must not be abstract, and must expose an accessible constructor
+taking a single `string` message; anything else is reported as [STIA0018](#diagnostics) at the declaration.
+Only `Create` uses it — `Parse` keeps throwing `ArgumentException`, because its failure also covers text that
+is not an id at all, which is a malformed-input error rather than a domain-rule violation. Like the other
+options it can be set for the whole assembly with
+`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`.
+
 <a id="value-normalization"></a>
 
 ## Value normalization <a href="#table-of-contents" style="float:right">↑ Back to top</a>
@@ -385,6 +409,9 @@ the attribute nor the assembly default is set.
 ```csharp
 [assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
 ```
+
+`ExceptionType` follows it too: `[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
+applies to every id that does not name its own.
 
 > The validator method must still satisfy the [Value validation](#value-validation) signature convention
 > (`static bool Validate(TPrimitiveId value)`), otherwise [STIA0010](#diagnostics) is reported. Likewise a
@@ -854,26 +881,27 @@ explicitly with `dotnet_diagnostic.STIA0014.severity = suggestion`; and `STIA001
 of ids sharing a primitive, on the ordinally first member.
 
 <!-- BEGIN GENERATED:diagnostics -->
-| Rule ID  | Description                                                     | Code fix                                                  |
-| -------- | --------------------------------------------------------------- | --------------------------------------------------------- |
-| STIA0000 | Type must be defined as a record                                | Convert to `record`                                       |
-| STIA0001 | Type must be defined as partial                                 | Add `partial`                                             |
-| STIA0002 | Type cannot be declared abstract                                | Remove `abstract`                                         |
-| STIA0003 | Type cannot be declared as generic                              | Remove the type parameter list                            |
-| STIA0004 | Type must be declared in a namespace                            | Wrap in a namespace                                       |
-| STIA0005 | Type must have a primary constructor with exactly one parameter | Add a primary constructor                                 |
-| STIA0006 | Parameter must not be nullable                                  | Remove the `?` suffix                                     |
-| STIA0007 | Parameter name should be ‘Value’.                               | Rename the parameter                                      |
-| STIA0008 | Parameter type is not valid                                     | Change the type to `Guid`                                 |
-| STIA0009 | Containing type must be declared as partial                     | Add `partial` to the container                            |
-| STIA0010 | Validator method must be a valid static bool method             | Remove the `Validator` argument                           |
-| STIA0011 | Strongly typed id constructed directly                          | Replace with `Create(...)`                                |
-| STIA0012 | Strongly typed id code generation failed                        | —                                                         |
-| STIA0013 | Prefix value is empty                                           | Remove the `Prefix` argument or give it a non-blank value |
-| STIA0014 | Validator can be bypassed                                       | Narrow the type to `internal`                             |
-| STIA0015 | Type name should end with 'Id'                                  | —                                                         |
-| STIA0016 | Several strongly typed ids share the same primitive type        | —                                                         |
-| STIA0017 | Normalizer method must be a valid static method                 | Remove the `Normalizer` argument                          |
+| Rule ID  | Description                                                           | Code fix                                                  |
+| -------- | --------------------------------------------------------------------- | --------------------------------------------------------- |
+| STIA0000 | Type must be defined as a record                                      | Convert to `record`                                       |
+| STIA0001 | Type must be defined as partial                                       | Add `partial`                                             |
+| STIA0002 | Type cannot be declared abstract                                      | Remove `abstract`                                         |
+| STIA0003 | Type cannot be declared as generic                                    | Remove the type parameter list                            |
+| STIA0004 | Type must be declared in a namespace                                  | Wrap in a namespace                                       |
+| STIA0005 | Type must have a primary constructor with exactly one parameter       | Add a primary constructor                                 |
+| STIA0006 | Parameter must not be nullable                                        | Remove the `?` suffix                                     |
+| STIA0007 | Parameter name should be ‘Value’.                                     | Rename the parameter                                      |
+| STIA0008 | Parameter type is not valid                                           | Change the type to `Guid`                                 |
+| STIA0009 | Containing type must be declared as partial                           | Add `partial` to the container                            |
+| STIA0010 | Validator method must be a valid static bool method                   | Remove the `Validator` argument                           |
+| STIA0011 | Strongly typed id constructed directly                                | Replace with `Create(...)`                                |
+| STIA0012 | Strongly typed id code generation failed                              | —                                                         |
+| STIA0013 | Prefix value is empty                                                 | Remove the `Prefix` argument or give it a non-blank value |
+| STIA0014 | Validator can be bypassed                                             | Narrow the type to `internal`                             |
+| STIA0015 | Type name should end with 'Id'                                        | —                                                         |
+| STIA0016 | Several strongly typed ids share the same primitive type              | —                                                         |
+| STIA0017 | Normalizer method must be a valid static method                       | Remove the `Normalizer` argument                          |
+| STIA0018 | Exception type must be a concrete exception with a string constructor | Remove the `ExceptionType` argument                       |
 <!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —

@@ -15,4 +15,10 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     /// 获取或设置本程序集内强类型 Id 默认采用的归一化方法名。
     /// </summary>
     public string? Normalizer { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 在验证失败时默认抛出的异常类型。该类型必须派生自
+    /// <see cref="Exception"/>、不能是抽象类，且必须具有接收单个 <see cref="string"/> 消息的构造函数。
+    /// </summary>
+    public Type? ExceptionType { get; set; }
 }

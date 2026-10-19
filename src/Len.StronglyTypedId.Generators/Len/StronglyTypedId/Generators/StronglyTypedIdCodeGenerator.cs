@@ -295,7 +295,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             lines.Add(string.Empty);
             lines.Add($"    if (!{idInfo.ValidatorName}(value))");
             lines.Add("    {");
-            lines.Add($"        throw new global::System.ArgumentException($\"The value '{{value}}' is not a valid {idInfo.Name}.\", nameof(value));");
+            lines.Add($"        {GetValidationFailureThrow(idInfo)};");
             lines.Add("    }");
         }
 
@@ -315,8 +315,17 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         return idInfo.ValidatorName is null
             ? $" new {idInfo.Name}({wrappedValue})"
-            : $" {idInfo.ValidatorName}(value) ? new {idInfo.Name}({wrappedValue}) : throw new global::System.ArgumentException($\"The value '{{value}}' is not a valid {idInfo.Name}.\", nameof(value))";
+            : $" {idInfo.ValidatorName}(value) ? new {idInfo.Name}({wrappedValue}) : {GetValidationFailureThrow(idInfo)}";
     }
+
+    /// <summary>
+    /// 取「验证失败」的 <c>throw</c> 表达式：未配置 <c>ExceptionType</c> 时产物与加入该能力之前逐字符一致，
+    /// 配置后改用该类型的单字符串构造函数（不带 <c>paramName</c>，因为自定义异常未必有双参构造）。
+    /// </summary>
+    private static string GetValidationFailureThrow(StronglyTypedIdInfo idInfo)
+        => idInfo.ExceptionTypeName is null
+            ? $"throw new global::System.ArgumentException($\"The value '{{value}}' is not a valid {idInfo.Name}.\", nameof(value))"
+            : $"throw new {idInfo.ExceptionTypeName}($\"The value '{{value}}' is not a valid {idInfo.Name}.\")";
 
     /// <summary>
     /// 把基元值表达式包进 <c>Intern(...)</c>：仅 string 基元才做字符串驻留，其余基元原样返回。

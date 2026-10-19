@@ -32,6 +32,12 @@ change set rather than reproducing every commit.
   entry point runs normalize → validate → construct, and `[assembly: StronglyTypedIdDefaults(Normalizer = ...)]`
   sets an assembly-wide default. A malformed reference is reported as `STIA0017`, with a code fix that
   generates a pass-through stub or drops the argument.
+- `ExceptionType` — point it at a custom exception to change what `Create` throws when the validator
+  rejects a value. The type must derive from `System.Exception`, be non-abstract and expose an accessible
+  constructor taking a single `string` message; anything else is reported as `STIA0018`, with a code fix
+  that drops the argument. `Parse` keeps throwing `ArgumentException`, because its failure also covers
+  text that is not an id at all. `[assembly: StronglyTypedIdDefaults(ExceptionType = ...)]` sets an
+  assembly-wide default.
 - Text prefixes: `Prefix` writes a constant prefix in `ToString` and strips it in `Parse`;
   `PrefixReadMode` chooses between accepting a bare value (`Lenient`) and rejecting it (`Strict`).
 - `JsonShape` selects the serialized shape: the bare primitive (`Primitive`) or
@@ -40,9 +46,9 @@ change set rather than reproducing every commit.
   (`AddStronglyTypedId`), for callers that configure converters explicitly instead of relying on the
   generated `[JsonConverter]` attribute.
 - A refactoring provider that turns an existing `record` into a strongly typed id.
-- `STIA0012`–`STIA0017` diagnostics, including `STIA0015` (id name should follow the `...Id`
-  convention), `STIA0016` (two ids over the same primitive in one assembly) and `STIA0017`
-  (malformed `Normalizer` reference).
+- `STIA0012`–`STIA0018` diagnostics, including `STIA0015` (id name should follow the `...Id`
+  convention), `STIA0016` (two ids over the same primitive in one assembly), `STIA0017`
+  (malformed `Normalizer` reference) and `STIA0018` (unusable `ExceptionType`).
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
   `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).

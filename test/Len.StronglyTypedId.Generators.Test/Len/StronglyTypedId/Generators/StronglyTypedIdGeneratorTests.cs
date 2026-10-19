@@ -1276,6 +1276,90 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 配置 <c>ExceptionType</c> 后，表达式体 <c>Create</c> 抛出该类型而不是 <see cref="ArgumentException"/>。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ThrowConfiguredException_WhenExceptionTypeIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainException))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::Len.StronglyTypedId.DomainException($\"The value '{value}' is not a valid OrderId.\");")
+            .And.NotContain("global::System.ArgumentException($\"The value");
+    }
+
+    /// <summary>
+    /// 带 <c>Normalizer</c> 时 <c>Create</c> 退化为块体，异常类型同样要生效。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ThrowConfiguredException_InBlockBodiedCreate()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), Normalizer = nameof(Normalize), ExceptionType = typeof(DomainException))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::Len.StronglyTypedId.DomainException($\"The value '{value}' is not a valid OrderId.\");")
+            .And.NotContain("global::System.ArgumentException($\"The value");
+    }
+
+    /// <summary>
+    /// 装配级 <c>StronglyTypedIdDefaults(ExceptionType = …)</c> 在没有逐类型配置时生效。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_UseAssemblyDefaultExceptionType_WhenTypeOmitsIt()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(ExceptionType = typeof(Len.StronglyTypedId.DomainException))]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::Len.StronglyTypedId.DomainException($\"The value '{value}' is not a valid OrderId.\");");
+    }
+
+    /// <summary>
     /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹——无验证器的形态必须与加入该能力之前逐字符一致。
     /// </summary>
     [Fact]

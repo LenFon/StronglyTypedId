@@ -141,6 +141,14 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             ValidateNormalizer(context, type, normalizerName, constructorParameterType, records);
         }
 
+        // 异常类型只在配了验证器时才会被抛出，但仍独立校验：配错了就该在声明处报错，而不是等到运行时。
+        var exceptionType = GetEffectiveExceptionType(type, context.Compilation.Assembly);
+
+        if (exceptionType is not null)
+        {
+            ValidateExceptionType(context, type, exceptionType, records);
+        }
+
         // 前缀校验与形状 / 验证器无关，独立于上面的早退分支。
         ValidatePrefix(context, type, records);
 
@@ -326,6 +334,57 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
+    /// 校验 <c>[StronglyTypedId(ExceptionType = typeof(Foo))]</c> 指向的类型能否被生成代码 <c>new Foo(message)</c> 构造（STIA0018）。
+    /// </summary>
+    private static void ValidateExceptionType(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        ITypeSymbol exceptionType,
+        RecordDeclarationSyntax[] records)
+    {
+        var location = FindNamedArgumentLocation(records, StronglyTypedIdInfo.ExceptionTypeArgumentName) ?? records[0].GetLocation();
+
+        if (!IsUsableExceptionType(exceptionType, type, context.Compilation))
+        {
+            Report(context, Descriptors.ExceptionTypeInvalid, location, exceptionType.ToDisplayString());
+        }
+    }
+
+    /// <summary>
+    /// 判断异常类型是否满足生成代码的构造要求：非抽象、非开放泛型的 <see cref="System.Exception"/> 派生类，
+    /// 且从 Id 类型所在位置可访问到一个接收单个 <see cref="string"/> 的实例构造函数。
+    /// </summary>
+    private static bool IsUsableExceptionType(ITypeSymbol exceptionType, INamedTypeSymbol idType, Compilation compilation)
+    {
+        // 闭合泛型（Foo&lt;int&gt;）可以照常 new，只有开放泛型（typeof(Foo&lt;&gt;)）不行。
+        if (exceptionType is not INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: false } named
+            || named.IsUnboundGenericType)
+        {
+            return false;
+        }
+
+        var exceptionSymbol = compilation.GetTypeByMetadataName("System.Exception");
+
+        if (exceptionSymbol is null)
+        {
+            return false;
+        }
+
+        // 从自身起沿基类链上溯：typeof(Exception) 自身也算「异常类型」。
+        var derivesFromException = SymbolEqualityComparer.Default.Equals(named, exceptionSymbol);
+
+        for (var baseType = named.BaseType; !derivesFromException && baseType is not null; baseType = baseType.BaseType)
+        {
+            derivesFromException = SymbolEqualityComparer.Default.Equals(baseType, exceptionSymbol);
+        }
+
+        return derivesFromException
+            && named.InstanceConstructors.Any(constructor =>
+                constructor.Parameters is [{ Type.SpecialType: SpecialType.System_String }]
+                && compilation.IsSymbolAccessibleWithin(constructor, idType));
+    }
+
+    /// <summary>
     /// 在声明段里定位 <c>[StronglyTypedId(&lt;argumentName&gt; = …)]</c> 中指定命名实参的语法位置。
     /// </summary>
     private static Location? FindNamedArgumentLocation(RecordDeclarationSyntax[] records, string argumentName)
@@ -409,6 +468,28 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         => AttributeReader.GetString(
             AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
             StronglyTypedIdInfo.NormalizerArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>ExceptionType</c> 命名实参的类型；未指定时为 <see langword="null"/>。
+    /// </summary>
+    private static ITypeSymbol? GetExceptionType(INamedTypeSymbol type)
+        => AttributeReader.GetType(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.ExceptionTypeArgumentName);
+
+    /// <summary>
+    /// 取生效的异常类型：优先逐类型 <c>ExceptionType</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.ExceptionType</c>。
+    /// </summary>
+    private static ITypeSymbol? GetEffectiveExceptionType(INamedTypeSymbol type, IAssemblySymbol assembly)
+        => GetExceptionType(type) ?? GetAssemblyDefaultExceptionType(assembly);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(…))]</c> 的默认异常类型；未声明时为 <see langword="null"/>。
+    /// </summary>
+    private static ITypeSymbol? GetAssemblyDefaultExceptionType(IAssemblySymbol assembly)
+        => AttributeReader.GetType(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            StronglyTypedIdInfo.ExceptionTypeArgumentName);
 
     /// <summary>
     /// 判断类型是否由 <c>[StronglyTypedId]</c> 标记。

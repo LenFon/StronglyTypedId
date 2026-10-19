@@ -122,6 +122,17 @@ public partial record struct ShortStringId(string Value)
     private static bool Validate(string value) => value.Length <= 8;
 }
 
+// N3：验证失败异常类型可配。领域库希望 Create 抛自己的异常而不是 ArgumentException，
+// 故把异常类型写成 attribute 命名实参；Parse 仍抛 ArgumentException —— 它的失败还包含
+// 「文本根本不是 Id」，与「值被领域规则拒绝」不是同一类错误。
+public sealed class DomainRuleViolationException(string message) : Exception(message);
+
+[StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainRuleViolationException))]
+public partial record struct DomainValidatedGuidId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
 public partial record NotStronglyTypedId();
 
 // readonly record struct 形态：生成器必须把 readonly 修饰符透出到生成的 partial 段，否则与使用者

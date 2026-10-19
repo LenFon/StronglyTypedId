@@ -43,6 +43,11 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string TypeConverterArgumentName = "TypeConverter";
 
     /// <summary>
+    /// attribute 中验证失败异常类型的命名实参名。
+    /// </summary>
+    internal const string ExceptionTypeArgumentName = "ExceptionType";
+
+    /// <summary>
     /// attribute 中 JSON 形态的命名实参名。
     /// </summary>
     internal const string JsonShapeArgumentName = "JsonShape";
@@ -100,7 +105,7 @@ internal readonly record struct StronglyTypedIdInfo
             && @interface.TypeArguments.Length == 2
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == InterfaceNamespace;
 
-    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null, string? defaultNormalizerName = null)
+    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null, string? defaultNormalizerName = null, string? defaultExceptionTypeName = null)
     {
         // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace。
         var containingNamespace = type.ContainingNamespace
@@ -141,6 +146,10 @@ internal readonly record struct StronglyTypedIdInfo
         var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
         ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaultValidatorName;
         NormalizerName = AttributeReader.GetString(attribute, NormalizerArgumentName) ?? defaultNormalizerName;
+        // 存显示名而非符号：本类型是增量缓存的键，符号跨编译不稳定，显示名才是稳定值。
+        ExceptionTypeName = AttributeReader.GetType(attribute, ExceptionTypeArgumentName)
+                ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            ?? defaultExceptionTypeName;
         HasTypeConverter = AttributeReader.GetBoolean(attribute, TypeConverterArgumentName);
         IsObjectJsonShape = AttributeReader.GetEnumFlag(attribute, JsonShapeArgumentName, ObjectJsonShapeValue);
         Prefix = NormalizePrefix(AttributeReader.GetString(attribute, PrefixArgumentName));
@@ -273,6 +282,12 @@ internal readonly record struct StronglyTypedIdInfo
     /// <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 指定的归一化方法名；未指定时为 <see langword="null"/>。
     /// </summary>
     public string? NormalizerName { get; }
+
+    /// <summary>
+    /// 验证失败时抛出的异常类型全限定名（含 <c>global::</c> 前缀）；未配置时为 <see langword="null"/>，
+    /// 表示沿用 <c>System.ArgumentException</c>。
+    /// </summary>
+    public string? ExceptionTypeName { get; }
 
     /// <summary>
     /// <c>[StronglyTypedId]</c> 是否要求生成 <c>System.ComponentModel.TypeConverter</c>。

@@ -28,14 +28,19 @@
   之前修正传入值（去空白、统一大小写、去分隔符）。每个入口都按「归一化 → 校验 → 构造」执行，
   并可用 `[assembly: StronglyTypedIdDefaults(Normalizer = ...)]` 设置程序集级默认。引用不合法时
   报告 `STIA0017`，代码修复可生成直通桩方法或删掉该实参。
+- `ExceptionType` —— 指向自定义异常，即可改变校验拒绝取值时 `Create` 抛出的异常。该类型必须派生自
+  `System.Exception`、不能是抽象类，并具有可访问的、接收单个 `string` 消息的构造函数；否则报告
+  `STIA0018`，代码修复可删掉该实参。`Parse` 仍抛 `ArgumentException`，因为它的失败还包含「文本根本
+  不是 Id」。可用 `[assembly: StronglyTypedIdDefaults(ExceptionType = ...)]` 设置程序集级默认。
 - 文本前缀：`Prefix` 在 `ToString` 中写入固定前缀、在 `Parse` 中将其剥离；`PrefixReadMode` 选择
   接受裸值（`Lenient`）还是拒绝裸值（`Strict`）。
 - `JsonShape` 选择序列化形态：裸基元（`Primitive`）或 `{ "value": ... }`（`Object`）。
 - System.Text.Json（`AddStronglyTypedId`）与 Newtonsoft.Json（`AddStronglyTypedId`）的注册入口，
   供显式配置转换器、不依赖生成的 `[JsonConverter]` 特性的调用方使用。
 - 把现有 `record` 转成强类型 Id 的重构（refactoring）提供程序。
-- `STIA0012`–`STIA0017` 诊断，其中包括 `STIA0015`（Id 名称应遵循 `...Id` 约定）、`STIA0016`
-  （同一程序集内有两个 Id 使用同一基元）与 `STIA0017`（`Normalizer` 引用不合法）。
+- `STIA0012`–`STIA0018` 诊断，其中包括 `STIA0015`（Id 名称应遵循 `...Id` 约定）、`STIA0016`
+  （同一程序集内有两个 Id 使用同一基元）、`STIA0017`（`Normalizer` 引用不合法）与 `STIA0018`
+  （`ExceptionType` 不可用）。
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
   OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。

@@ -445,9 +445,10 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         var defaultValidator = GetAssemblyDefaultValidator(context.SemanticModel.Compilation.Assembly);
         var defaultNormalizer = GetAssemblyDefaultNormalizer(context.SemanticModel.Compilation.Assembly);
+        var defaultExceptionType = GetAssemblyDefaultExceptionType(context.SemanticModel.Compilation.Assembly);
 
         return SupportedPrimitiveTypes.IsSupported(ctorArgType)
-            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer)
+            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType)
             : null;
     }
 
@@ -466,4 +467,13 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         => AttributeReader.GetString(
             AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
             StronglyTypedIdInfo.NormalizerArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(…))]</c> 指定的默认异常类型显示名。
+    /// </summary>
+    private static string? GetAssemblyDefaultExceptionType(IAssemblySymbol assembly)
+        => AttributeReader.GetType(
+                AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+                StronglyTypedIdInfo.ExceptionTypeArgumentName)
+            ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 }

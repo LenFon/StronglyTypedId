@@ -958,6 +958,37 @@ public class StronglyTypedIdCodeFixProviderTests
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
 
+    /// <summary>
+    /// STIA0018：异常类型不可用时删掉 <c>ExceptionType</c> 实参，回退到 <see cref="ArgumentException"/>。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_RemoveExceptionTypeArgument_WhenExceptionTypeIsInvalid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(ExceptionType = typeof(string))]
+            public partial record OrderId(Guid Value);
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ExceptionTypeInvalid)
+            .WithSpan(5, 18, 5, 48).WithArguments("string");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
     /// 证明新修复同样走 BatchFixer 的「合并到同一语法树后整体应用」路径（与既有 TypeMustBePartial 的 FixAll 互补）。
     /// </summary>
     [Fact]

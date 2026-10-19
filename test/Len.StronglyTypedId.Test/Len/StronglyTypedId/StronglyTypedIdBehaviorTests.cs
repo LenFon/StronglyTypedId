@@ -299,6 +299,32 @@ public class StronglyTypedIdBehaviorTests
         PrefixedStringId.Parse("x", null).Value.Should().Be("x");
     }
 
+    /// <summary>
+    /// N3：配置 <c>ExceptionType</c> 后，<c>Create</c> 的验证失败抛该异常而不是 <see cref="ArgumentException"/>。
+    /// </summary>
+    [Fact]
+    public void Create_Should_ThrowConfiguredException_WhenValidatorRejects()
+    {
+        var act = () => DomainValidatedGuidId.Create(Guid.Empty);
+
+        act.Should().Throw<DomainRuleViolationException>()
+            .WithMessage("*not a valid DomainValidatedGuidId*");
+
+        DomainValidatedGuidId.Create(Guid.NewGuid()).Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
+    /// 自定义异常只作用于 <c>Create</c>：<c>Parse</c> 的失败还包含「文本不是 Id」，仍按 <see cref="IParsable{TSelf}"/>
+    /// 的惯例抛 <see cref="ArgumentException"/>。
+    /// </summary>
+    [Fact]
+    public void Parse_Should_KeepArgumentException_WhenExceptionTypeIsConfigured()
+    {
+        var parse = () => DomainValidatedGuidId.Parse(Guid.Empty.ToString("D"), null);
+
+        parse.Should().Throw<ArgumentException>();
+    }
+
     [Fact]
     public void Prefix_Parse_Should_RequirePrefix_ForStrict()
     {

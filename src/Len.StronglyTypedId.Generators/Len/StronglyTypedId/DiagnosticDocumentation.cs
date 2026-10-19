@@ -21,6 +21,7 @@ internal static class DiagnosticDocumentation
         new DiagnosticDocEntry(Descriptors.ContainingTypeMustBePartialId, new DocText("Add `partial` to the container", "给包含类型补 `partial`")),
         new DiagnosticDocEntry(Descriptors.ValidatorReferenceInvalidId, new DocText("Remove the `Validator` argument", "删掉 `Validator` 实参")),
         new DiagnosticDocEntry(Descriptors.NormalizerReferenceInvalidId, new DocText("Remove the `Normalizer` argument", "删掉 `Normalizer` 实参")),
+        new DiagnosticDocEntry(Descriptors.ExceptionTypeInvalidId, new DocText("Remove the `ExceptionType` argument", "删掉 `ExceptionType` 实参")),
         new DiagnosticDocEntry(Descriptors.BypassCreateId, new DocText("Replace with `Create(...)`", "改用 `Create(...)`")),
         // 生成器侧诊断：故障发生在生成阶段，没有可机械修复的目标。
         new DiagnosticDocEntry(Descriptors.GeneratorFailureId, DocText.Empty),
