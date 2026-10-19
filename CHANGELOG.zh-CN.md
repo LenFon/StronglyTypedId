@@ -38,9 +38,10 @@
 - System.Text.Json（`AddStronglyTypedId`）与 Newtonsoft.Json（`AddStronglyTypedId`）的注册入口，
   供显式配置转换器、不依赖生成的 `[JsonConverter]` 特性的调用方使用。
 - 把现有 `record` 转成强类型 Id 的重构（refactoring）提供程序。
-- `STIA0012`–`STIA0018` 诊断，其中包括 `STIA0015`（Id 名称应遵循 `...Id` 约定）、`STIA0016`
-  （同一程序集内有两个 Id 使用同一基元）、`STIA0017`（`Normalizer` 引用不合法）与 `STIA0018`
-  （`ExceptionType` 不可用）。
+- `STIA0012`–`STIA0018` 诊断，其中包括 `STIA0013`（`Prefix` 为空串或纯空白）、`STIA0014`（带验证器
+  或归一化器的 Id 被声明为 `public`，主构造函数仍可直达——`Info` 级别，默认关闭）、`STIA0015`
+  （Id 名称应遵循 `...Id` 约定）、`STIA0016`（同一程序集内有两个 Id 使用同一基元）、`STIA0017`
+  （`Normalizer` 引用不合法）与 `STIA0018`（`ExceptionType` 不可用）。
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
   OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。
@@ -71,6 +72,9 @@
 - 声明在泛型容器内的 Id 不再发出 `[JsonConverter(typeof(...))]` —— 特性实参中出现类型参数是非法的
   （CS0416）。转换器类型仍会生成，可为封闭构造手动注册。
 - 对于声明程序集未引用 JSON 库的 Id，不再生成 JSON 注册入口，消除了消费者项目中的 CS0426。
+- Dapper 类型处理器改为重写 `SqlMapper.TypeHandler<TId>` 的非可空签名（`SetValue(IDbDataParameter, TId)`
+  与 `Parse(object?)`）。此前的 `TId?` 签名对 struct Id 会解析成 `Nullable<TId>`，编译时报
+  CS0115 / CS0508。
 
 ## [1.3.0] - 2026-10-07
 

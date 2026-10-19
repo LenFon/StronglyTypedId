@@ -46,9 +46,11 @@ change set rather than reproducing every commit.
   (`AddStronglyTypedId`), for callers that configure converters explicitly instead of relying on the
   generated `[JsonConverter]` attribute.
 - A refactoring provider that turns an existing `record` into a strongly typed id.
-- `STIA0012`–`STIA0018` diagnostics, including `STIA0015` (id name should follow the `...Id`
-  convention), `STIA0016` (two ids over the same primitive in one assembly), `STIA0017`
-  (malformed `Normalizer` reference) and `STIA0018` (unusable `ExceptionType`).
+- `STIA0012`–`STIA0018` diagnostics, including `STIA0013` (blank `Prefix`), `STIA0014` (an id with a
+  validator or normalizer declared `public`, leaving the primary constructor reachable — `Info`, off by
+  default), `STIA0015` (id name should follow the `...Id` convention), `STIA0016` (two ids over the same
+  primitive in one assembly), `STIA0017` (malformed `Normalizer` reference) and `STIA0018` (unusable
+  `ExceptionType`).
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
   `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).
@@ -68,7 +70,7 @@ change set rather than reproducing every commit.
   boxes, and the `CompilationProvider` dependency was pushed down.
 - Build: `.editorconfig` + `Directory.Build.props` pin a zero-warning baseline (IDE/CA/xUnit rules
   promoted to warnings), package validation runs on `dotnet pack`, and CI gained a Native AOT smoke
-  test, package-content assertions and a generator allocation gate.
+  test, package-content assertions, a generator allocation gate and coverage thresholds.
 - `STIA0011` now also reports target-typed `new(...)` and `default` / `default(T)` construction, not
   just `new Xxx(...)`, and its default severity was raised from `Info` to `Warning` so that bypassing
   a validator shows up in build output and CI. It also fires for ids that only declare a `Normalizer`,
