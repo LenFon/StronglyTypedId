@@ -10,9 +10,15 @@ namespace Len.StronglyTypedId;
 /// <remarks>
 /// <para>
 /// 这些断言守的是「使用者能拿到生成器」这条生命线。主包对 <c>Len.StronglyTypedId.Generators</c> 的依赖不是
-/// 由 <c>ProjectReference</c> 自然产生的，而是打包后由 <c>InjectGeneratorsPackageDependency</c> 目标直接修补
-/// nuspec 注入的 —— 一旦那个 <c>XmlPoke</c> 静默匹配不到节点，包里就没有依赖，使用者装包后拿不到生成器，
-/// 而且不会有任何报错。下面的依赖断言就是这条链路的哨兵。
+/// 由 <c>ProjectReference</c> 自然产生的 —— 那条引用必须标 <c>ReferenceOutputAssembly=false</c> 才不会把
+/// 生成器带的 Roslyn 程序集拖进编译引用，而 NuGet 构建 restore 图时只收 <c>ReferenceOutputAssembly</c>
+/// 为空或 true 的项目引用，于是它永远进不了 assets，也就永远不会自动成为包依赖。因此只能由打包后的
+/// <c>InjectGeneratorsPackageDependency</c> 目标修补 nuspec 注入。
+/// </para>
+/// <para>
+/// 那个目标内部已经对「产物包不存在 / nuspec 缺 <c>dependencies</c> 节点 / 写入后读回为空」逐条断言并中止构建，
+/// 所以正常情况下不会静默失效。下面的断言是第二道哨兵：万一修补逻辑本身被改坏（比如条件写反导致整段跳过），
+/// 仍然能在 CI 里被抓住。
 /// </para>
 /// <para>
 /// 断言全部落在「产物包」上，而不是「打包命令有没有成功」：命令失败时夹具会直接抛出，不会伪装成断言失败。
@@ -133,8 +139,9 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     /// 主包必须依赖生成器包 —— 这是「使用者装主包就能拿到生成器」的唯一途径。
     /// </summary>
     /// <remarks>
-    /// 该依赖由打包后的 <c>XmlPoke</c> 注入，不是 <c>ProjectReference</c> 的自然产物；一旦注入静默失效，
-    /// 使用者装包后拿不到生成器且没有任何报错。因此这里逐目标框架断言依赖存在、且版本与包版本一致。
+    /// 该依赖由打包后的 <c>InjectGeneratorsPackageDependency</c> 注入，不是 <c>ProjectReference</c> 的自然产物。
+    /// csproj 里的那个目标已经对注入前提逐条断言并会在不满足时中止构建，这里再逐目标框架断言依赖存在、
+    /// 且版本与包版本一致 —— 两道防线互为补充：构建期断言防「静默跳过」，这里防「注入到了错误的形态」。
     /// </remarks>
     [Fact]
     public void MainPackage_Should_DependOnGeneratorsPackage_ForEveryTargetFramework()

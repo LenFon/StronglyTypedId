@@ -40,6 +40,19 @@
 		<StronglyTypedIdPackageValidationBaseline>1.3.0-preview.5</StronglyTypedIdPackageValidationBaseline>
 		<PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and $([MSBuild]::VersionGreaterThanOrEquals('$(Version)', '$(StronglyTypedIdPackageValidationBaseline)'))">$(StronglyTypedIdPackageValidationBaseline)</PackageValidationBaselineVersion>
 		<!--
+		  没挂基线时放过「不必要的抑制」告警（CP0021，含 [Baseline] 变体）。
+
+		  原因：SDK 只要发现项目目录下有 CompatibilitySuppressions.xml 就会自动加载它
+		  （Microsoft.NET.ApiCompat.Common.targets 里那条「Pass in a default suppression file, if it exists」），
+		  与是否挂基线无关。而本地占位版本号（Version=1.0.0 < 基线 1.3.0-preview.5）不挂基线，
+		  抑制条目就没有对应的基线比对可比，于是每条都被判成「不必要的抑制」，让本地 `dotnet pack` 直接失败。
+		  抑制文件本身就是为基线比对准备的，没挂基线时它自然「不必要」—— 这不是待修的回归。
+
+		  挂上基线（发布流水线用 TagToVersion 覆写版本号）后此属性为空，抑制照常参与校验：
+		  条目真的失效了仍会报 CP0021，不会被这条设置掩盖。
+		-->
+		<ApiCompatPermitUnnecessarySuppressions Condition="'$(PackageValidationBaselineVersion)' == ''">true</ApiCompatPermitUnnecessarySuppressions>
+		<!--
 		  程序集版本号默认 1.0.0.0（与 MSBuild 默认一致，显式声明以防被 IDE 工具意外改动）。
 		  本地占位 Version=1.0.0 未挂 ApiCompat 基线，CP0003 不触发。
 		  发布 / CI 的 pack 步骤会用 -p:AssemblyVersion=<major.minor.0.0> 透传与包版本号主号
