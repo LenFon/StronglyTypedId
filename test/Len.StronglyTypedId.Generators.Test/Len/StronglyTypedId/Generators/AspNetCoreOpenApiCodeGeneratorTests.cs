@@ -226,4 +226,42 @@ public class AspNetCoreOpenApiCodeGeneratorTests
     }
 
     #endregion
+
+    #region V2（Microsoft.OpenApi 2.x / ASP.NET Core 10+）：命名空间迁移 + JsonSchemaType 枚举
+
+    /// <summary>
+    /// 合成「Microsoft.OpenApi 2.0.0.0」占位程序集：只用于让生成器按主版本切到 V2 分支。
+    /// </summary>
+    private static MetadataReference OpenApi2Reference { get; }
+        = SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0");
+
+    /// <summary>
+    /// ASP.NET Core 10 携带 Microsoft.OpenApi 2.x：<c>OpenApiSchema</c> 迁到根命名空间，
+    /// <c>Type</c> 由 <c>string?</c> 改为 <c>JsonSchemaType?</c>。回归用例锁住这两处差异。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_V2_Should_UseJsonSchemaType_WhenMicrosoftOpenApiV2Referenced()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct ProductId(int Value);
+            """;
+
+        var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference, OpenApi2Reference);
+
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\"),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (global::Microsoft.OpenApi.JsonSchemaType.Integer, \"int32\"),");
+        generated.Should().Contain("(global::Microsoft.OpenApi.JsonSchemaType Type, string? Format)");
+        generated.Should().Contain("global::Microsoft.OpenApi.OpenApiSchema schema,");
+        generated.Should().NotContain("Microsoft.OpenApi.Models");
+    }
+
+    #endregion
 }

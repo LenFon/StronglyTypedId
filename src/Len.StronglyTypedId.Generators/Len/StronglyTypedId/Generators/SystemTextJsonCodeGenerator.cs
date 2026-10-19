@@ -34,9 +34,15 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     {
         var header = GeneratedCode.Header(idInfo.Namespace);
 
+        // 泛型容器里的 Id 不能带 [JsonConverter]：特性实参必须是封闭类型，而
+        // Box<T>.BoxedId.SystemTextJsonConverter 含类型参数，会 CS0416。转换器本身照常生成，
+        // 使用者可按封闭实例手动注册（new Box<int>.BoxedId.SystemTextJsonConverter()）。
+        var converterAttribute = idInfo.IsInGenericContainer
+            ? string.Empty
+            : "[global::System.Text.Json.Serialization.JsonConverter(typeof(SystemTextJsonConverter))]\n";
+
         var declaration = $$"""
-                [global::System.Text.Json.Serialization.JsonConverter(typeof(SystemTextJsonConverter))]
-                partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
+                {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}

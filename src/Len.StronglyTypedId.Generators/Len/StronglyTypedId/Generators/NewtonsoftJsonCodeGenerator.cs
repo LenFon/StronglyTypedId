@@ -19,9 +19,13 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     {
         var header = GeneratedCode.Header(idInfo.Namespace);
 
+        // 与 System.Text.Json 侧同理：泛型容器里的 Id 无法在特性实参里引用含类型参数的转换器（CS0416）。
+        var converterAttribute = idInfo.IsInGenericContainer
+            ? string.Empty
+            : "[global::Newtonsoft.Json.JsonConverter(typeof(NewtonsoftJsonConverter))]\n";
+
         var declaration = $$"""
-                [global::Newtonsoft.Json.JsonConverter(typeof(NewtonsoftJsonConverter))]
-                partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
+                {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
