@@ -16,6 +16,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- K1：属性测试。只进运行时行为测试工程 —— 生成器侧的不变式由快照用例覆盖，
+		     在那边引入随机输入只会让快照断言不稳定。 -->
+		<PackageReference Include="CsCheck" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 	  <ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
 	</ItemGroup>

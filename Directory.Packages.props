@@ -19,6 +19,9 @@
 
 	<!-- test：测试框架与 Roslyn 测试框架 -->
 	<ItemGroup>
+		<!-- K1：属性测试（round-trip 不变式）。选 CsCheck 而非 FsCheck：纯 C#、无 F# 运行时依赖，
+		     且生成与收缩都基于 PCG，失败时能给出可复现的 seed。 -->
+		<PackageVersion Include="CsCheck" Version="4.9.1" />
 		<PackageVersion Include="Dapper" Version="2.1.35" />
 		<PackageVersion Include="FluentAssertions" Version="8.10.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />

@@ -188,3 +188,14 @@ public partial record struct PrefixedValidatedGuidId(Guid Value)
 [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
 public partial record struct StrictPrefixedGuidId(Guid Value);
 
+// K1：属性测试要覆盖「规范文本形有损」的时间基元。无参 ToString() 对 IFormattable 基元走
+// Value.ToString(null, InvariantCulture)，即默认格式串 —— DateTime / DateTimeOffset 的 "G" 丢亚秒、
+// TimeOnly 的 "t" 丢秒。这三个夹具把这条边界显式测出来：它们只能断言文本幂等，不能断言值往返。
+[StronglyTypedId]
+public partial record struct DateTimeId(DateTime Value);
+
+[StronglyTypedId]
+public partial record struct DateTimeOffsetId(DateTimeOffset Value);
+
+[StronglyTypedId]
+public partial record struct TimeSpanId(TimeSpan Value);
