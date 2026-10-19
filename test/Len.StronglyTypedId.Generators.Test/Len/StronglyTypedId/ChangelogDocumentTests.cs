@@ -81,21 +81,31 @@ public class ChangelogDocumentTests
         ChangelogDocument.HasContent(text, sections[1], -1).Should().BeTrue();
     }
 
-    [Fact]
-    public void Changelog_Should_StartWithUnreleasedAndLinkEverySection()
+    [Theory]
+    [InlineData("CHANGELOG.md")]
+    [InlineData("CHANGELOG.zh-CN.md")]
+    public void Changelog_Should_StartWithUnreleasedAndLinkEverySection(string fileName)
     {
-        var path = Path.Combine(RepositoryRoot(), "CHANGELOG.md");
+        var path = Path.Combine(RepositoryRoot(), fileName);
 
-        File.Exists(path).Should().BeTrue("仓库根目录必须有 CHANGELOG.md");
+        File.Exists(path).Should().BeTrue($"仓库根目录必须有 {fileName}");
 
         var text = File.ReadAllText(path);
         var sections = ChangelogDocument.ParseSections(text);
         var links = ChangelogDocument.ParseLinkDefinitions(text);
 
         sections.Should().NotBeEmpty();
-        sections[0].Version.Should().Be(ChangelogDocument.Unreleased);
+        ChangelogDocument.IsUnreleased(sections[0].Version).Should().BeTrue("第一个小节必须是未发布小节");
         sections.Skip(1).Should().OnlyContain(section => section.Date != null, "已发布小节必须带日期");
         links.Should().Contain(sections.Select(static section => section.Version), "每个小节都要有文末链接定义");
+    }
+
+    [Fact]
+    public void IsUnreleased_Should_AcceptLocalisedHeading()
+    {
+        ChangelogDocument.IsUnreleased(ChangelogDocument.Unreleased).Should().BeTrue();
+        ChangelogDocument.IsUnreleased("未发布").Should().BeTrue();
+        ChangelogDocument.IsUnreleased("1.3.0").Should().BeFalse();
     }
 
     private static string RepositoryRoot()

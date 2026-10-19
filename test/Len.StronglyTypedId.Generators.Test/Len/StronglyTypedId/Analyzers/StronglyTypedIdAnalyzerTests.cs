@@ -898,6 +898,38 @@ public class StronglyTypedIdAnalyzerTests
         await Verify.VerifyAnalyzerAsync(code);
     }
 
+    /// <summary>
+    /// 验证器来自装配级 <c>[assembly: StronglyTypedIdDefaults]</c> 时，直接构造同样是绕过，应报告 STIA0011。
+    /// </summary>
+    /// <remarks>
+    /// 只查类型上的 <c>Validator</c> 实参会把这种形态整类漏掉；判据必须走 <c>GetEffectiveValidatorName</c>
+    /// 回退到装配级默认值。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyDefaultValidatorBypassed()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Validator = "Validate")]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build() => new OrderId(Guid.NewGuid());
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(15, 31, 15, 58);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
     #endregion
 
     #region 空前缀（STIA0013）
