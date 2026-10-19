@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<!-- 与测试工程的最低目标框架对齐：Generators.Test 双目标 net8.0/net10.0，
+		     它要引用本工具来断言 README 与源码一致，故本工具必须能被 net8.0 消费。 -->
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<IsPackable>false</IsPackable>
+		<RootNamespace>Len.StronglyTypedId.DocGen</RootNamespace>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 生成器工程的 PackageReference 全部是 PrivateAssets=all，不会传递过来；
+		     本工具要读 DiagnosticDescriptor / LocalizableString，必须自己引一份。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 测试工程直接调用渲染器，断言两份 README 与源码一致。 -->
+		<InternalsVisibleTo Include="Len.StronglyTypedId.Generators.Test" />
+	</ItemGroup>
+
+</Project>

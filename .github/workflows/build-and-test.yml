@@ -17,6 +17,11 @@ on:
       - "bench/**/*.csproj"
       - "bench/**/baselines/*.json"
       - "bench.props"
+      # README 的三张表由 tools/Len.StronglyTypedId.DocGen 从生成器内部数据渲染，改动源或产物都要跑校验
+      - "tools/**/*.cs"
+      - "tools/**/*.csproj"
+      - "README.md"
+      - "README.zh-CN.md"
       # pack 校验由本流水线的 pack job 承担，触发面需覆盖其依赖的工程 / 配置 / 工作流变更
       - "common.props"
       - "version.props"
@@ -39,6 +44,10 @@ on:
       - "bench/**/*.csproj"
       - "bench/**/baselines/*.json"
       - "bench.props"
+      - "tools/**/*.cs"
+      - "tools/**/*.csproj"
+      - "README.md"
+      - "README.zh-CN.md"
       - "common.props"
       - "version.props"
       - "Directory.Packages.props"
@@ -68,6 +77,11 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
+    - name: Verify generated README tables
+      # 三张表（基元类型 / 集成触发条件 / 诊断）由 tools/Len.StronglyTypedId.DocGen 从生成器内部的判定数据
+      # 渲染，README 里只保留 <!-- BEGIN GENERATED:… --> 标记之间的内容。改了判定却没重新生成时，
+      # 这一步直接失败并指出首个差异行 —— 否则 README 会静默停在旧内容，而没人会去数表格行数。
+      run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify
     - name: Test (net8.0 行为校验)
       # Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），
       # 而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的

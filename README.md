@@ -161,23 +161,33 @@ the generator's much lower `netstandard2.0` baseline.
 
 The wrapped `Value` parameter may be one of:
 
-| C# type           | Example declaration                              |
-| ----------------- | ------------------------------------------------ |
-| `Guid`            | `record struct OrderId(Guid Value)`              |
-| `string`          | `record UserId(string Value)`                    |
-| `byte`            | `record struct ByteId(byte Value)`               |
-| `sbyte`           | `record struct SByteId(sbyte Value)`             |
-| `short`           | `record struct ShortId(short Value)`             |
-| `ushort`          | `record struct UShortId(ushort Value)`           |
-| `int`             | `record struct ProductId(int Value)`             |
-| `uint`            | `record struct UIntId(uint Value)`               |
-| `long`            | `record struct LongId(long Value)`               |
-| `ulong`           | `record struct ULongId(ulong Value)`             |
-| `decimal`         | `record struct Money(decimal Value)`             |
-| `DateTime`        | `record EventId(DateTime Value)`                 |
-| `DateTimeOffset`  | `record EventId(DateTimeOffset Value)`           |
-| `TimeSpan`        | `record DurationId(TimeSpan Value)`              |
-| any `enum`        | `record StatusId(Status Value)`                  |
+<!-- BEGIN GENERATED:primitive-types -->
+| C# type          | Example declaration                                    |
+| ---------------- | ------------------------------------------------------ |
+| `Guid`           | `record struct GuidId(Guid Value)`                     |
+| `string`         | `record StringId(string Value)`                        |
+| `byte`           | `record struct ByteId(byte Value)`                     |
+| `sbyte`          | `record struct SByteId(sbyte Value)`                   |
+| `short`          | `record struct Int16Id(short Value)`                   |
+| `ushort`         | `record struct UInt16Id(ushort Value)`                 |
+| `int`            | `record struct Int32Id(int Value)`                     |
+| `uint`           | `record struct UInt32Id(uint Value)`                   |
+| `long`           | `record struct Int64Id(long Value)`                    |
+| `ulong`          | `record struct UInt64Id(ulong Value)`                  |
+| `Int128`         | `record struct Int128Id(Int128 Value)`                 |
+| `UInt128`        | `record struct UInt128Id(UInt128 Value)`               |
+| `decimal`        | `record struct DecimalId(decimal Value)`               |
+| `Half`           | `record struct HalfId(Half Value)`                     |
+| `float`          | `record struct SingleId(float Value)`                  |
+| `double`         | `record struct DoubleId(double Value)`                 |
+| `DateTime`       | `record struct DateTimeId(DateTime Value)`             |
+| `DateTimeOffset` | `record struct DateTimeOffsetId(DateTimeOffset Value)` |
+| `TimeSpan`       | `record struct TimeSpanId(TimeSpan Value)`             |
+| `DateOnly`       | `record struct DateOnlyId(DateOnly Value)`             |
+| `TimeOnly`       | `record struct TimeOnlyId(TimeOnly Value)`             |
+| `BigInteger`     | `record struct BigIntegerId(BigInteger Value)`         |
+| any `enum`       | `record StatusId(Status Value)`                        |
+<!-- END GENERATED:primitive-types -->
 
 The type is matched by its name, so writing `System.Guid` (or an aliased using) works exactly the same.
 Only the types above are recognised — a type of your own that merely happens to be called `Guid` is not
@@ -195,16 +205,18 @@ nested ids are declared back inside their containing types instead (see
 [Nested types](#nested-types)) —
 your own declaration is never modified. What is emitted depends on what the compilation references:
 
-| Condition in the compilation                                                                        | Generated code                                                                                       |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Always                                                                                              | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                   |
-| `System.Text.Json` is referenced                                                                     | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs` |
-| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                             | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs` |
-| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions` | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
-| `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                            | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                       |
-| `Dapper` ≥ 2.0.0 is referenced                                                                  | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
-| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints) |
-| `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                             | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
+<!-- BEGIN GENERATED:generated-code -->
+| Condition in the compilation                                                                                       | Generated code                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Always                                                                                                             | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                                                                                                                               |
+| `System.Text.Json` is referenced                                                                                   | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`                                    |
+| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                                           | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`                   |
+| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`       | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                                          | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                   |
+| `Dapper` ≥ 2.0.0 is referenced                                                                                     | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`                                                                                  |
+| `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                                               | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                            |
+| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)                                                              |
+<!-- END GENERATED:generated-code -->
 
 The core implementation adds:
 
@@ -724,29 +736,38 @@ Interfaces, abstract types, enums and arrays are never reported as strongly type
 
 ## Diagnostics <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
-The analyzer enforces the following rules. Most are reported as a **compile error**, so an invalid
-declaration will not compile; the advisory ones (`STIAO011`, `STIAO013`, `STIAO014`, `STIAO015`,
-`STIAO016`) are reported at a lower severity and can be tuned per project in `.editorconfig`. Diagnostics
-are localized for English and Chinese according to the compiler culture.
+The analyzer enforces the following rules; `STIAO012` is the one exception, reported by the generator
+when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
+will not compile; the advisory ones (`STIAO011`, `STIAO013`, `STIAO014`, `STIAO015`, `STIAO016`) are
+reported at a lower severity and can be tuned per project in `.editorconfig`. Diagnostics are localized
+for English and Chinese according to the compiler culture.
 
-| Rule ID  | Description                                                                | Code fix                       |
-| -------- | -------------------------------------------------------------------------- | ------------------------------ |
-| STIAO000 | The type must be a `record` (or `record struct`).                           | Convert to `record`            |
-| STIAO001 | The type must be `partial`.                                                 | Add `partial`                  |
-| STIAO002 | The type cannot be `abstract`.                                              | Remove `abstract`              |
-| STIAO003 | The type cannot be `generic`.                                               | Remove the type parameter list |
-| STIAO004 | The type must declare a namespace.                                          | Wrap in a namespace            |
-| STIAO005 | The type must have a single-parameter primary constructor.                  | Add a primary constructor      |
-| STIAO006 | The primary constructor parameter cannot be nullable.                       | Remove the `?` suffix          |
-| STIAO007 | The primary constructor parameter must be named `Value`.                    | Rename the parameter           |
-| STIAO008 | The primary constructor parameter type must be a supported primitive type.  | Change the type to `Guid`      |
-| STIAO009 | The containing type must be reopenable by the generated code: `partial`, and not `file`-local. | Add `partial` to the container |
-| STIAO010 | `Validator` must point to a method that exists, is static, returns `bool`, and takes the primitive id type as its parameter; otherwise no validation is generated. | Remove the `Validator` argument|
-| STIAO011 | Do not construct an id with `new XxxId(...)` to bypass `Create` / `TryParse` (the validator will not run). Reported only when the id has a `Validator`; defaults to Info and can be raised via `.editorconfig`. | Replace with `Create(...)`     |
-| STIAO013 | `Prefix` is set to an empty or whitespace-only string, which is treated as "no prefix". | Remove the `Prefix` argument or give it a non-blank value |
-| STIAO014 | An externally visible id declares a `Validator`, so its primary constructor can bypass validation. **Off by default**; enable it with `dotnet_diagnostic.STIAO014.severity = suggestion` in `.editorconfig`. | Narrow the type to `internal` |
-| STIAO015 | The id type name does not end with `Id` (compared case-sensitively, so `OrderID` is reported too). A naming hint only; defaults to Info and can be turned off via `.editorconfig`. | — (rename the type) |
-| STIAO016 | Several ids in the same namespace wrap the same primitive type, so they are indistinguishable at the storage and wire level. Reported once per group, on the ordinally first member; defaults to Info. | — (review the mappings) |
+A few rules fire in narrower circumstances than their titles suggest: `STIAO011` needs the id to declare
+a `Validator` (without one, constructing it directly is not a bypass), `STIAO014` is **off by default**
+and must be enabled explicitly with `dotnet_diagnostic.STIAO014.severity = suggestion`, and `STIAO016`
+reports once per group of ids sharing a primitive, on the ordinally first member.
+
+<!-- BEGIN GENERATED:diagnostics -->
+| Rule ID  | Description                                                     | Code fix                                                  |
+| -------- | --------------------------------------------------------------- | --------------------------------------------------------- |
+| STIAO000 | Type must be defined as a record                                | Convert to `record`                                       |
+| STIAO001 | Type must be defined as partial                                 | Add `partial`                                             |
+| STIAO002 | Type cannot be declared abstract                                | Remove `abstract`                                         |
+| STIAO003 | Type cannot be declared as generic                              | Remove the type parameter list                            |
+| STIAO004 | Type must be declared in a namespace                            | Wrap in a namespace                                       |
+| STIAO005 | Type must have a primary constructor with exactly one parameter | Add a primary constructor                                 |
+| STIAO006 | Parameter must not be nullable                                  | Remove the `?` suffix                                     |
+| STIAO007 | Parameter name should be ‘Value’.                               | Rename the parameter                                      |
+| STIAO008 | Parameter type is not valid                                     | Change the type to `Guid`                                 |
+| STIAO009 | Containing type must be declared as partial                     | Add `partial` to the container                            |
+| STIAO010 | Validator method must be a valid static bool method             | Remove the `Validator` argument                           |
+| STIAO011 | Strongly typed id constructed directly                          | Replace with `Create(...)`                                |
+| STIAO012 | Strongly typed id code generation failed                        | —                                                         |
+| STIAO013 | Prefix value is empty                                           | Remove the `Prefix` argument or give it a non-blank value |
+| STIAO014 | Validator can be bypassed                                       | Narrow the type to `internal`                             |
+| STIAO015 | Type name should end with 'Id'                                  | —                                                         |
+| STIAO016 | Several strongly typed ids share the same primitive type        | —                                                         |
+<!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —
 `STIAO003` is offered only when the id itself is generic (removing the *containing* type's type parameters

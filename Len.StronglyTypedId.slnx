@@ -43,4 +43,7 @@
     <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.TestBase/Len.StronglyTypedId.TestBase.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Len.StronglyTypedId.DocGen/Len.StronglyTypedId.DocGen.csproj" />
+  </Folder>
 </Solution>

@@ -23,6 +23,8 @@
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
+		<!-- README 表格由 DocGen 从生成器内部数据渲染，测试直接调用同一套渲染器断言 README 未过期。 -->
+		<ProjectReference Include="..\..\tools\Len.StronglyTypedId.DocGen\Len.StronglyTypedId.DocGen.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

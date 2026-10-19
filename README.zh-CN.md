@@ -146,23 +146,33 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 
 被包装的 `Value` 参数可以是以下类型之一：
 
-| C# 类型          | 声明示例                                     |
-| ---------------- | -------------------------------------------- |
-| `Guid`           | `record struct OrderId(Guid Value)`           |
-| `string`         | `record UserId(string Value)`                 |
-| `byte`           | `record struct ByteId(byte Value)`            |
-| `sbyte`          | `record struct SByteId(sbyte Value)`          |
-| `short`          | `record struct ShortId(short Value)`          |
-| `ushort`         | `record struct UShortId(ushort Value)`        |
-| `int`            | `record struct ProductId(int Value)`          |
-| `uint`           | `record struct UIntId(uint Value)`            |
-| `long`           | `record struct LongId(long Value)`            |
-| `ulong`          | `record struct ULongId(ulong Value)`          |
-| `decimal`        | `record struct Money(decimal Value)`          |
-| `DateTime`       | `record EventId(DateTime Value)`              |
-| `DateTimeOffset` | `record EventId(DateTimeOffset Value)`        |
-| `TimeSpan`       | `record DurationId(TimeSpan Value)`           |
-| 任意 `enum`      | `record StatusId(Status Value)`              |
+<!-- BEGIN GENERATED:primitive-types -->
+| C# 类型          | 声明示例                                               |
+| ---------------- | ------------------------------------------------------ |
+| `Guid`           | `record struct GuidId(Guid Value)`                     |
+| `string`         | `record StringId(string Value)`                        |
+| `byte`           | `record struct ByteId(byte Value)`                     |
+| `sbyte`          | `record struct SByteId(sbyte Value)`                   |
+| `short`          | `record struct Int16Id(short Value)`                   |
+| `ushort`         | `record struct UInt16Id(ushort Value)`                 |
+| `int`            | `record struct Int32Id(int Value)`                     |
+| `uint`           | `record struct UInt32Id(uint Value)`                   |
+| `long`           | `record struct Int64Id(long Value)`                    |
+| `ulong`          | `record struct UInt64Id(ulong Value)`                  |
+| `Int128`         | `record struct Int128Id(Int128 Value)`                 |
+| `UInt128`        | `record struct UInt128Id(UInt128 Value)`               |
+| `decimal`        | `record struct DecimalId(decimal Value)`               |
+| `Half`           | `record struct HalfId(Half Value)`                     |
+| `float`          | `record struct SingleId(float Value)`                  |
+| `double`         | `record struct DoubleId(double Value)`                 |
+| `DateTime`       | `record struct DateTimeId(DateTime Value)`             |
+| `DateTimeOffset` | `record struct DateTimeOffsetId(DateTimeOffset Value)` |
+| `TimeSpan`       | `record struct TimeSpanId(TimeSpan Value)`             |
+| `DateOnly`       | `record struct DateOnlyId(DateOnly Value)`             |
+| `TimeOnly`       | `record struct TimeOnlyId(TimeOnly Value)`             |
+| `BigInteger`     | `record struct BigIntegerId(BigInteger Value)`         |
+| 任意 `enum`      | `record StatusId(Status Value)`                        |
+<!-- END GENERATED:primitive-types -->
 
 类型按名称匹配，因此写成 `System.Guid`（或使用别名/using）效果完全相同。仅识别上表中的类型——
 你自己定义的、恰好也叫 `Guid` 的类型并不受支持，会被 [STIAO008](#diagnostics) 拒绝。任意 `enum` 同样受支持：
@@ -178,16 +188,18 @@ IFormatProvider)` 已被标记过时。
 类型里，见[嵌套类型](#nested-types)），你手写的声明不会被改动。
 具体产出取决于当前编译引用了什么：
 
-| 编译中的条件                                                                          | 生成的代码                                                                          |
-| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 始终                                                                                  | 核心实现 → `<命名空间>.<类型名>.g.cs`                                                |
-| 引用了 `System.Text.Json`                                                             | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs` |
-| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                     | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs` |
-| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext` | 嵌套 `{类型名}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
-| 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                     | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`      |
-| 引用了 `Dapper` ≥ 2.0.0                                                                | 嵌套 `{类型名}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs` |
-| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束） |
-| 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                          | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs` |
+<!-- BEGIN GENERATED:generated-code -->
+| 编译中的条件                                                                                             | 生成的代码                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 始终                                                                                                     | 核心实现 → `<命名空间>.<类型名>.g.cs`                                                                                                                                                                          |
+| 引用了 `System.Text.Json`                                                                                | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`                             |
+| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                                        | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`            |
+| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`    | 嵌套 `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                                       | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                |
+| 引用了 `Dapper` ≥ 2.0.0                                                                                  | 嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`                                                                                 |
+| 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                                            | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                         |
+| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束）                                                                    |
+<!-- END GENERATED:generated-code -->
 
 核心实现会补上：
 
@@ -665,28 +677,36 @@ if (typeof(OrderId).IsStronglyTypedId())
 
 ## 诊断与代码修复 <a href="#top" style="float:right">↑ 返回目录</a>
 
-分析器会强制以下规则。大多数规则作为**编译错误**报告，因此不合法的声明无法通过编译；建议性规则
-（`STIAO011`、`STIAO013`、`STIAO014`、`STIAO015`、`STIAO016`）级别较低，可按项目在 `.editorconfig`
-中调整。诊断文案会按编译器区域设置输出英文或中文。
+分析器会强制以下规则；`STIAO012` 是唯一的例外，由生成器在代码产出本身失败时报告。大多数规则作为
+**编译错误**报告，因此不合法的声明无法通过编译；建议性规则（`STIAO011`、`STIAO013`、`STIAO014`、
+`STIAO015`、`STIAO016`）级别较低，可按项目在 `.editorconfig` 中调整。诊断文案会按编译器区域设置输出
+英文或中文。
 
-| 规则 ID  | 说明                                                       | 代码修复               |
-| -------- | ---------------------------------------------------------- | ------------------------ |
-| STIAO000 | 类型必须是 `record`（或 `record struct`）。                | 转为 `record`          |
-| STIAO001 | 类型必须是 `partial`。                                     | 补上 `partial`         |
-| STIAO002 | 类型不能是 `abstract`。                                    | 去掉 `abstract`        |
-| STIAO003 | 类型不能是 `generic`（泛型）。                             | 移除类型参数表         |
-| STIAO004 | 类型必须声明在命名空间内。                                 | 包进命名空间           |
-| STIAO005 | 类型必须拥有单参数的主构造函数。                           | 补主构造函数           |
-| STIAO006 | 主构造函数参数不能为可空类型。                             | 去掉 `?` 后缀          |
-| STIAO007 | 主构造函数参数必须命名为 `Value`。                         | 重命名参数             |
-| STIAO008 | 主构造函数参数类型必须是受支持的基元类型。                 | 改为 `Guid`            |
-| STIAO009 | 包含类型必须能被生成代码重开：是 `partial`，且不是 `file` 本地类型。 | 给包含类型补 `partial` |
-| STIAO010 | `Validator` 指向的方法必须存在、为静态、返回 `bool`、形参类型等于基元 Id 类型；否则不生成校验。 | 删掉 `Validator` 实参  |
-| STIAO011 | 不要用 `new XxxId(...)` 绕过 `Create` / `TryParse`（验证器不会被调用）。仅当该 Id 设了 `Validator` 时才提示，默认级别为 Info，可在 `.editorconfig` 调高。 | 改用 `Create(...)`     |
-| STIAO013 | `Prefix` 被设为空串或纯空白，会按「未设置」处理。 | 删掉 `Prefix` 实参，或给它一个非空白值 |
-| STIAO014 | 对外可见的 Id 声明了 `Validator`，其主构造函数可绕过校验。**默认关闭**，可在 `.editorconfig` 中用 `dotnet_diagnostic.STIAO014.severity = suggestion` 启用。 | 收窄为 `internal` |
-| STIAO015 | 类型名不以 `Id` 结尾（按序数比较，`OrderID` 同样会被提示）。纯命名提示，默认级别为 Info，可在 `.editorconfig` 中关闭。 | —（重命名类型） |
-| STIAO016 | 同一命名空间下多个 Id 共用同一基元类型，它们在存储与传输层面完全同形。每组只报一次，落在组内名字序最小的成员上；默认级别为 Info。 | —（复查映射配置） |
+有几条规则的触发条件比标题看上去更窄：`STIAO011` 要求该 Id 声明了 `Validator`（没有验证器时直接构造
+并不构成绕过），`STIAO014` **默认关闭**，需显式设置 `dotnet_diagnostic.STIAO014.severity = suggestion`
+才会启用，`STIAO016` 对每组共用同一基元的 Id 只报一次，落在组内名字序最小的成员上。
+
+<!-- BEGIN GENERATED:diagnostics -->
+| 规则 ID  | 说明                                       | 代码修复                               |
+| -------- | ------------------------------------------ | -------------------------------------- |
+| STIAO000 | 类型必须被定义为记录类型                   | 转为 `record`                          |
+| STIAO001 | 类型必须被定义为分部类型。                 | 补上 `partial`                         |
+| STIAO002 | 类型不能被声明为抽象的                     | 去掉 `abstract`                        |
+| STIAO003 | 类型不能被声明为泛型                       | 移除类型参数表                         |
+| STIAO004 | 类型必须被声明在命名空间内                 | 包进命名空间                           |
+| STIAO005 | 类型必须有一个仅包含一个参数的主构造函数。 | 补主构造函数                           |
+| STIAO006 | 参数不能为可空类型                         | 去掉 `?` 后缀                          |
+| STIAO007 | 参数名应该是‘Value’                        | 重命名参数                             |
+| STIAO008 | 参数类型无效                               | 改为 `Guid`                            |
+| STIAO009 | 包含类型必须被声明为分部类型               | 给包含类型补 `partial`                 |
+| STIAO010 | 验证器方法必须是合法的静态 bool 方法       | 删掉 `Validator` 实参                  |
+| STIAO011 | 强类型 Id 被直接构造                       | 改用 `Create(...)`                     |
+| STIAO012 | 强类型 Id 代码生成失败                     | —                                      |
+| STIAO013 | 前缀值为空                                 | 删掉 `Prefix` 实参，或给它一个非空白值 |
+| STIAO014 | 验证器可被绕过                             | 收窄为 `internal`                      |
+| STIAO015 | 类型名应以‘Id’结尾                         | —                                      |
+| STIAO016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
+<!-- END GENERATED:diagnostics -->
 
 报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIAO003` 仅在 Id 自身是泛型时提供
 （删掉*包含类型*的类型参数会改变你的设计），`STIAO005` 仅在类型没有显式构造函数时提供（在已有构造函数旁

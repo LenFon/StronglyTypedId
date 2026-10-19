@@ -300,32 +300,62 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         new CodeGeneratorRegistration(
             "Len.StronglyTypedId.dll",
             static modules => modules.Any(static module => module.Name == "Len.StronglyTypedId.dll"),
-            StronglyTypedIdCodeGenerator.Instance),
+            StronglyTypedIdCodeGenerator.Instance,
+            new DocText("Always", "始终"),
+            new DocText(
+                "Core implementation → `<Namespace>.<TypeName>.g.cs`",
+                "核心实现 → `<命名空间>.<类型名>.g.cs`")),
         new CodeGeneratorRegistration(
             "System.Text.Json.dll",
             static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
-            SystemTextJsonCodeGenerator.Instance),
+            SystemTextJsonCodeGenerator.Instance,
+            new DocText("`System.Text.Json` is referenced", "引用了 `System.Text.Json`"),
+            new DocText(
+                "Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`",
+                "嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`")),
         new CodeGeneratorRegistration(
             "Newtonsoft.Json.dll",
             static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
-            NewtonsoftJsonCodeGenerator.Instance),
+            NewtonsoftJsonCodeGenerator.Instance,
+            new DocText("`Newtonsoft.Json` ≥ 13.0.0 is referenced", "引用了 `Newtonsoft.Json` ≥ 13.0.0"),
+            new DocText(
+                "Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`",
+                "嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`")),
         // 集成生成器：HasModule 本身按 OrdinalIgnoreCase 比较（模块名取自元数据读取器，大小写未必规范）。
         new CodeGeneratorRegistration(
             "Microsoft.EntityFrameworkCore.dll",
             static modules => modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7),
-            EfCoreCodeGenerator.Instance),
+            EfCoreCodeGenerator.Instance,
+            new DocText(
+                "`Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`",
+                "引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`"),
+            new DocText(
+                "Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs`",
+                "嵌套 `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs`")),
         new CodeGeneratorRegistration(
             "Swashbuckle.AspNetCore.SwaggerGen.dll",
             static modules => modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6),
-            SwaggerCodeGenerator.Instance),
+            SwaggerCodeGenerator.Instance,
+            new DocText("`Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced", "引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0"),
+            new DocText(
+                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`",
+                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`")),
         new CodeGeneratorRegistration(
             "Dapper.dll",
             static modules => modules.HasModule("Dapper.dll", 2),
-            DapperCodeGenerator.Instance),
+            DapperCodeGenerator.Instance,
+            new DocText("`Dapper` ≥ 2.0.0 is referenced", "引用了 `Dapper` ≥ 2.0.0"),
+            new DocText(
+                "Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`",
+                "嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`")),
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.OpenApi.dll",
             static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
-            AspNetCoreOpenApiCodeGenerator.Instance),
+            AspNetCoreOpenApiCodeGenerator.Instance,
+            new DocText("`Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced", "引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0"),
+            new DocText(
+                "`StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`",
+                "`StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`")),
         // MVC 可用性需覆盖「门面 / 实现」拆分与 .NET 版本差异：
         //   · Microsoft.AspNetCore.Mvc.dll —— 框架引用引入的门面程序集（仅做类型转发），
         //     真实消费者的编译引用里必有，是「MVC 是否可用」的规范判据。
@@ -339,44 +369,81 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             static modules => modules.HasModule("Microsoft.AspNetCore.Mvc.dll", 2)
                 || modules.HasModule("Microsoft.AspNetCore.Mvc.Core.dll", 2)
                 || modules.HasModule("Microsoft.AspNetCore.Mvc.Abstractions.dll", 2),
-            AspNetCoreMvcCodeGenerator.Instance),
+            AspNetCoreMvcCodeGenerator.Instance,
+            new DocText(
+                "`Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade)",
+                "引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面）"),
+            new DocText(
+                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)",
+                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束）")),
         // STJ / Newtonsoft 的全局注册入口与各自的核心生成器共用同一程序集门控（同一份引用决定两者是否启用），
         // 但分属两类：核心生成器逐 Id 产出转换器，注册生成器产出一次性的 StronglyTypedIds 聚合入口。
         // 取集成生成器时按 IsCore 过滤，故同名登记不会互相遮蔽。
+        // 这两条不单独成行（DocText.Empty）：它们的产物已经写进对应核心生成器的 Documentation 里，
+        // 因为「引用同一个程序集」同时决定了两者是否启用，拆成两行只会让表格看起来像有两套触发条件。
         new CodeGeneratorRegistration(
             "System.Text.Json.dll",
             static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
-            SystemTextJsonRegistrationCodeGenerator.Instance),
+            SystemTextJsonRegistrationCodeGenerator.Instance,
+            DocText.Empty,
+            DocText.Empty),
         new CodeGeneratorRegistration(
             "Newtonsoft.Json.dll",
             static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
-            NewtonsoftJsonRegistrationCodeGenerator.Instance));
+            NewtonsoftJsonRegistrationCodeGenerator.Instance,
+            DocText.Empty,
+            DocText.Empty));
+
+    /// <summary>
+    /// README「What gets generated」表的行数据：只含登记了文档的项，顺序即表格行序。
+    /// </summary>
+    /// <remarks>
+    /// 由 <c>tools/Len.StronglyTypedId.DocGen</c> 消费。之所以不另立一张「文档专用」的表，
+    /// 是因为那样一来「新增集成生成器却忘了写文档」就无人察觉；从门控登记里直接取，
+    /// 漏写 <see cref="CodeGeneratorRegistration.Documentation"/> 的那一项会当场从表格里消失。
+    /// </remarks>
+    internal static ImmutableArray<CodeGeneratorRegistration> DocumentedGenerators
+        => [.. _generatorCatalog.Where(static registration => !registration.Documentation.IsEmpty)];
 
     /// <summary>
     /// 单个代码生成器的模块闸门登记项（Factory 注册表的一项）。
     /// </summary>
-    private sealed class CodeGeneratorRegistration
+    /// <remarks>
+    /// <see cref="Condition"/> 与 <see cref="Documentation"/> 是给 README 用的：集成触发条件表由
+    /// <c>tools/Len.StronglyTypedId.DocGen</c> 从这里直接生成，不再手写维护。两者都留空的登记
+    /// （STJ / Newtonsoft 的全局注册入口）不单独成行 —— 它们的产物已经写进对应核心生成器的
+    /// <see cref="Documentation"/> 里，因为「引用同一个程序集」同时决定了两者是否启用。
+    /// </remarks>
+    internal sealed class CodeGeneratorRegistration
     {
         public CodeGeneratorRegistration(
             string assemblyName,
             Func<ImmutableArray<ModuleInfo>, bool> isEnabled,
-            ICoreCodeGenerator generator)
+            ICoreCodeGenerator generator,
+            DocText condition,
+            DocText documentation)
         {
             AssemblyName = assemblyName;
             IsEnabled = isEnabled;
             CoreGenerator = generator;
             IsCore = true;
+            Condition = condition;
+            Documentation = documentation;
         }
 
         public CodeGeneratorRegistration(
             string assemblyName,
             Func<ImmutableArray<ModuleInfo>, bool> isEnabled,
-            IIntegrationCodeGenerator generator)
+            IIntegrationCodeGenerator generator,
+            DocText condition,
+            DocText documentation)
         {
             AssemblyName = assemblyName;
             IsEnabled = isEnabled;
             IntegrationGenerator = generator;
             IsCore = false;
+            Condition = condition;
+            Documentation = documentation;
         }
 
         public string AssemblyName { get; }
@@ -388,6 +455,12 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         public IIntegrationCodeGenerator? IntegrationGenerator { get; }
 
         public bool IsCore { get; }
+
+        /// <summary>README 集成表「Condition in the compilation」列的文案。</summary>
+        public DocText Condition { get; }
+
+        /// <summary>README 集成表「Generated code」列的文案；空文案表示不单独成行。</summary>
+        public DocText Documentation { get; }
     }
 
     /// <summary>
