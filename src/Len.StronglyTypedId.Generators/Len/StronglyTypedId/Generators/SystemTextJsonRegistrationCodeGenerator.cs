@@ -5,24 +5,13 @@ namespace Len.StronglyTypedId.Generators;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 每个强类型 Id 自身已带 <c>[JsonConverter]</c> 特性，STJ 默认就能正确处理它；本生成器补的是
-/// <c>StronglyTypedIds.ApplyTo(JsonSerializerOptions)</c> —— EF / Swagger / Dapper / MVC / 内置 OpenAPI
-/// 都有 <c>ApplyTo</c>，唯独 STJ 缺一个，接口不对称。显式注册在「特性不被采纳」的场景下才有实际作用
-/// （例如使用者显式传入自己的 <c>JsonSerializerOptions</c> 并希望把本库的转换器一并挂上）。
+/// 每个 Id 已带 <c>[JsonConverter]</c>，STJ 默认就能处理；本生成器补的是与其它集成对称的
+/// <c>StronglyTypedIds.ApplyTo(JsonSerializerOptions)</c>。注册的是各 Id 内嵌的 <c>public</c> 转换器
+/// （跨程序集实例化要求可见），字典键支持随之生效。
 /// </para>
 /// <para>
-/// 注册的是各 Id 内嵌的 <c>SystemTextJsonConverter</c>（<c>public</c>，因为注册入口按 <c>External</c> 取全集，
-/// 含来自被引用程序集的 Id，跨程序集实例化要求它对外可见），因此字典键支持
-/// （<c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>）随之一并生效。
-/// </para>
-/// <para>
-/// 取全集后还要按 <see cref="StronglyTypedIdInfo.HasSystemTextJsonConverter"/> 过滤：声明在某程序集里的 Id
-/// 只有该程序集自己也引用了 System.Text.Json 才带内嵌转换器（netstandard2.0 领域库就可能没有）。
-/// 此时若照样生成 <c>new X.SystemTextJsonConverter()</c> 就是 CS0426，宿主编译直接失败；
-/// 而漏注册没有损失 —— 这些 Id 仍带 <c>[JsonConverter]</c> 特性，STJ 默认就会用上它。
-/// </para>
-/// <para>
-/// 生成文件只在引用了 <c>System.Text.Json.dll</c> 时才产出，与核心 STJ 生成器同一门控。
+/// 按 <see cref="StronglyTypedIdInfo.HasSystemTextJsonConverter"/> 过滤：声明程序集未引用 STJ 的 Id 没有内嵌转换器，
+/// 照常生成 <c>new X.SystemTextJsonConverter()</c> 会 CS0426；漏注册无损失，特性仍在。
 /// </para>
 /// </remarks>
 internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerator

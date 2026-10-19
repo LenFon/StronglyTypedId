@@ -71,56 +71,47 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// <summary>
     /// 判断该诊断的靶子是否真的适用对应修复。
     /// </summary>
-    /// <remarks>
-    /// 两条规则各自有两种触发原因，原因不同则可行的修复也不同 —— 不加区分就会给出「点了没反应」
-    /// 甚至把人写坏的入口。
-    /// </remarks>
+    /// <remarks>部分规则有多种触发原因，原因不同则可行的修复也不同，不加区分会给出「点了没反应」的入口。</remarks>
     private static bool IsFixable(Diagnostic diagnostic, SyntaxNode root)
         => diagnostic.Id switch
         {
-            // 泛型靶子有两种：Id 自己泛型（删掉类型参数表即可）与包含类型泛型（删掉容器的类型参数会改坏
-            // 使用者的设计，不该提供修复）。只在靶子是 record 时给修复。
+            // 只在靶子是 record（Id 自己泛型）时给修复；包含类型泛型删掉类型参数会改坏使用者的设计。
             Descriptors.TypeCannotBeGenericId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is RecordDeclarationSyntax,
 
-            // 触发原因有两种：容器缺 partial，或容器是 file 本地类型。只在缺 partial 时提供修复 ——
-            // 否则会往已有的 partial 之后再插一个（file partial class → file partial partial class）。
+            // 只在缺 partial 时提供修复，否则会插出 file partial partial class。
             Descriptors.ContainingTypeMustBePartialId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } declaration
                     && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword),
 
-            // 类型必须 record：靶子当前是 class 或 struct（record 不会触发本规则），直接转关键字即可。
+            // 靶子当前是 class 或 struct，直接转关键字即可。
             Descriptors.TypeMustBeRecordId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is ClassDeclarationSyntax or StructDeclarationSyntax,
 
-            // 类型必须在命名空间内：仅当最外层容器直接挂在编译单元下（链上没有任何命名空间）才包命名空间；
-            // 嵌在类型里又不在命名空间的情形，包的是最外层那个类型，同样是这一个判定。
+            // 仅当最外层容器直接挂在编译单元下（链上没有任何命名空间）才包命名空间。
             Descriptors.TypeMustHaveNamespaceId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } nsCandidate
                     && GetOutermostType(nsCandidate).Parent is CompilationUnitSyntax,
 
-            // 必须恰好一个单参数主构造函数：无主构造且没有任何 body 构造时可安全补一个（Guid Value）；
-            // 已有 body 构造时再加主构造会撞 CS0111，交给用户自己处理，不提供修复。
-            // 已有主构造但参数数 != 1 时，替换为单参主构造是安全的。
+            // 无主构造且无 body 构造时可安全补一个；已有 body 构造时再加主构造会撞 CS0111，不提供修复。
             Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId =>
                 FindNode<RecordDeclarationSyntax>(root, diagnostic) is { } recordDeclaration
                     && (recordDeclaration.ParameterList is null
                         ? !recordDeclaration.Members.OfType<ConstructorDeclarationSyntax>().Any()
                         : recordDeclaration.ParameterList.Parameters.Count != 1),
 
-            // 基元类型非法：把参数类型改成受支持的 Guid 即可（名称此前已被 STIA0007 校验为 Value）。
+            // 把参数类型改成受支持的 Guid 即可（名称此前已被 STIA0007 校验为 Value）。
             Descriptors.ParameterTypeIsInvalidId => true,
 
-            // 验证器引用无效：删掉 Validator 命名实参即可，无需判别原因。
+            // 删掉 Validator 命名实参即可。
             Descriptors.ValidatorReferenceInvalidId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
-            // 空前缀：删掉 Prefix 命名实参即可，无需判别原因。
+            // 删掉 Prefix 命名实参即可。
             Descriptors.InvalidPrefixId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
-            // 验证器可绕过：只有「显式写了 public」才有得收窄。省略修饰符的类型本身就是 internal，
-            // 不会触发本规则，故此处无需考虑「无修饰符」的情形。
+            // 只有显式写了 public 才有得收窄；省略修饰符的类型本身就是 internal。
             Descriptors.ValidatorCanBeBypassedId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } bypassCandidate
                     && bypassCandidate.Modifiers.Any(SyntaxKind.PublicKeyword),
@@ -142,10 +133,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// <summary>
     /// 给诊断所在的包含类型补上 <c>partial</c>。
     /// </summary>
-    /// <remarks>
-    /// 与 <see cref="AddPartialKeywordAsync"/> 的区别只在靶子：嵌套强类型 Id 的容器可以是 class、struct、
-    /// record 或 interface，不限于 record。
-    /// </remarks>
+    /// <remarks>与 <see cref="AddPartialKeywordAsync"/> 的区别只在靶子：容器可以是 class / struct / record / interface。</remarks>
     private static Task<Document> AddPartialToContainingTypeAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceTypeDeclarationAsync(context, diagnostic, token,
             static declaration => declaration.AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword)));
@@ -170,10 +158,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把诊断所在类型的 <c>public</c> 修饰符换成 <c>internal</c>，使验证器无法被外部直接构造绕过（STIA0014）。
     /// </summary>
     /// <remarks>
-    /// record 的主构造函数<b>不能</b>单独指定可见性（<c>public record R private (int X)</c> 是 CS1514），
-    /// 它始终跟随类型本身，所以「只收窄构造函数」这条路不存在，只能收窄类型。
-    /// 显式写成 <c>internal</c> 而不是直接删掉 <c>public</c>：两者语义等价（顶层类型默认 internal），
-    /// 但显式修饰符把意图留在代码里，也免得后来者以为是漏写。
+    /// 主构造函数不能单独指定可见性（CS1514），只能收窄类型。显式写 <c>internal</c> 而非删掉 <c>public</c>，
+    /// 把意图留在代码里。
     /// </remarks>
     private static Task<Document> NarrowVisibilityToInternalAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceTypeDeclarationAsync(context, diagnostic, token, NarrowVisibilityToInternal);
@@ -194,10 +180,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 移除 record 的类型参数表，并把紧随其后的约束子句一并移除。
     /// </summary>
     /// <remarks>
-    /// 只删类型参数表会留下 <c>where T : class</c>，而约束不允许出现在非泛型声明上（CS0080），
-    /// 修复产物依旧是非法代码。此外，分隔参数表与约束子句的空白是参数表末位的 trailing trivia，
-    /// 删掉约束子句后它会变成 <c>OrderId(Guid Value) ;</c>（多行写法下则是悬空换行），故一并清掉；
-    /// 没有约束子句时说明该处的 trivia 另有归属，保持原样。
+    /// 只删类型参数表会留下 <c>where T : class</c>（CS0080），故约束子句一并移除；参数表末位的 trailing trivia
+    /// 也要清掉，否则会拼成 <c>OrderId(Guid Value) ;</c>。
     /// </remarks>
     private static RecordDeclarationSyntax RemoveTypeParametersAndConstraints(RecordDeclarationSyntax declaration)
     {
@@ -219,10 +203,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把诊断所在的 <c>new Xxx(value)</c> 重写成 <c>Xxx.Create(value)</c>，使构造强制经过验证器。
     /// </summary>
     /// <remarks>
-    /// STIA0011 仅在 Id 设了验证器时触发：该情形下生成代码里已有静态 <c>Create</c> 工厂，用它替换直接构造
-    /// 既消除诊断、又保留校验语义。原 <c>new</c> 关键字的缩进（前导 trivia）交给新的调用表达式，
-    /// 参数列表原样保留，因此 <c>new Xxx(Value: value)</c> 这类具名实参也会一并迁移；类型拼写（含
-    /// <c>global::</c> 前缀或命名空间限定）沿用 <c>creation.Type</c>，不会丢失。
+    /// STIA0011 仅在设了验证器时触发，此时已有静态 <c>Create</c> 工厂。参数列表与类型拼写原样保留，
+    /// 前导 trivia 交给新的调用表达式。
     /// </remarks>
     private static async Task<Document> ReplaceWithCreateAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -249,11 +231,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把 class / struct 关键字转成 record，使其通过 STIA0000。
     /// </summary>
     /// <remarks>
-    /// class / struct 与 record 是不同形状的语法节点，不能只换一个关键字 token，因此用
-    /// <c>SyntaxFactory.RecordDeclaration</c> 重建：原样搬移特性列表、修饰符、标识符、基列表、
-    /// 类型参数表、约束子句与全部成员，仅把关键字换成 <c>record</c>（引用记录）。
-    /// 转换后若还缺 partial / 主构造等，由各自的诊断继续提供修复（链式）。
-    /// <c>record struct</c> 也属 record，STIA0000 不会对其触发，故此处无需区分，统一转引用 record。
+    /// class / struct 与 record 是不同形状的语法节点，故用 <c>SyntaxFactory.RecordDeclaration</c> 重建并原样搬移
+    /// 全部子节点。转换后若还缺 partial / 主构造，由各自的诊断继续提供修复。
     /// </remarks>
     private static async Task<Document> ConvertToRecordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -287,9 +266,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把最外层类型包进命名空间块，使其通过 STIA0004。
     /// </summary>
     /// <remarks>
-    /// 诊断定位在 Id 声明上，但真正要包的是链上最外层那个直接挂在编译单元下的类型（Id 自身、或嵌它的容器）。
-    /// 命名空间名无从从报错推断：优先取项目的默认命名空间（RootNamespace），取不到时退回占位
-    /// <c>MyNamespace</c>，由使用者改名。STIA0004 只要求「位于命名空间内」，具体名称分析器不过问。
+    /// 真正要包的是链上最外层那个直接挂在编译单元下的类型。命名空间名无从推断，统一用占位 <c>MyNamespace</c>。
     /// </remarks>
     private static async Task<Document> WrapInNamespaceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -302,12 +279,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
         var outermost = GetOutermostType(found);
 
-        // 命名空间名无从从报错推断：统一用占位 MyNamespace，由使用者改名。这是结构性占位 ——
-        // STIA0004 只要求「在命名空间内」，具体叫什么分析器不过问。
+        // 命名空间名无从推断，统一用占位 MyNamespace，由使用者改名。
         var namespaceName = "MyNamespace";
 
-        // 仅重建命名空间骨架（原样搬移最外层类型作成员），缩进 / 换行交给 DocumentFormatting 规范化，
-        // 避免手工拼 trivia 时「特性与声明之间的换行」漏缩进而拼成无缩进。
+        // 仅重建命名空间骨架，缩进 / 换行交给 DocumentFormatting 规范化。
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(namespaceName))
             .WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(outermost))
             .WithOpenBraceToken(SyntaxFactory.Token(SyntaxKind.OpenBraceToken))
@@ -323,9 +298,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 补 / 改单参数主构造函数，使其通过 STIA0005。
     /// </summary>
     /// <remarks>
-    /// 占位类型用 <c>Guid</c>（最常见的强类型 Id 基元），名称固定 <c>Value</c> 以免再触发 STIA0007。
-    /// 无主构造时直接补；已有主构造但参数数 != 1 时整段替换为单参版本。已有 body 构造的情形由
-    /// <see cref="IsFixable"/> 拦下（再加主构造会撞 CS0111），不在此处理。
+    /// 占位类型用 <c>Guid</c>，名称固定 <c>Value</c> 以免再触发 STIA0007。已有 body 构造的情形由
+    /// <see cref="IsFixable"/> 拦下。
     /// </remarks>
     private static async Task<Document> EnsurePrimaryConstructorAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -352,9 +326,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把非受支持基元类型的参数改成 <c>Guid</c>，使其通过 STIA0008。
     /// </summary>
     /// <remarks>
-    /// STIA0008 触发前 STIA0007 已确认参数名为 <c>Value</c>，故此处只换类型。参数上的 attribute、修饰符、
-    /// 默认值与全部 trivia（含附着在旧类型上的空白 / 注释）用 <c>WithType</c> 保留，
-    /// 新类型沿用旧类型的 trivia 以免拼成 <c>GuidValue</c>。
+    /// 只换类型：参数上的 attribute、修饰符、默认值与 trivia 由 <c>WithType</c> 保留；新类型沿用旧类型的
+    /// trivia 以免拼成 <c>GuidValue</c>。
     /// </remarks>
     private static async Task<Document> ChangeParameterTypeToGuidAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -375,12 +348,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// STIA0010 修复主入口：决定「生成验证器桩」还是「删掉 Validator 实参」。
     /// </summary>
     /// <remarks>
-    /// <list type="bullet">
-    ///   <item>指向的静态方法根本不存在时，在 Id 类型里补一个符合契约的桩方法（静态、返回 <see cref="bool"/>、
-    ///     恰好一个参数且类型等于基元 Id 类型）——这是比「删实参」更贴合意图的修复，保留校验语义。</item>
-    ///   <item>方法已存在却签名不符时，再生成同名方法会撞 CS0101，故退化为删掉实参（见
-    ///     <see cref="RemoveNamedArgumentAsync"/>）。</item>
-    /// </list>
+    /// 方法不存在时补一个符合契约的桩方法（保留校验语义）；方法已存在却签名不符时再生成同名方法会撞 CS0101，
+    /// 故退化为删掉实参。
     /// </remarks>
     private static async Task<Document> FixValidatorReferenceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -427,8 +396,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 取主构造函数唯一参数的类型（即基元 Id 类型），作为验证器桩方法的参数类型。
     /// </summary>
     /// <remarks>
-    /// 沿 record 的主构造函数参数列表取首个参数并用语义模型解析其类型 —— 不依赖
-    /// <c>IMethodSymbol.IsPrimaryConstructor</c>（该成员在 netstandard2.0 目标下的引用程序集里未必存在）。
+    /// 沿主构造函数参数列表取首个参数再解析类型，不依赖 <c>IMethodSymbol.IsPrimaryConstructor</c>
+    /// （netstandard2.0 的引用程序集里未必存在）。
     /// </remarks>
     private static ITypeSymbol? GetPrimitiveParameterType(
         RecordDeclarationSyntax recordDeclaration,
@@ -446,10 +415,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 在 Id 类型里生成一个符合契约的验证器桩方法，使其通过 STIA0010。
     /// </summary>
     /// <remarks>
-    /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：返回 <see cref="bool"/>、
-    /// 恰好一个参数且类型等于基元 Id 类型（用全限定名渲染以避免与任何同名局部类型冲突）、可见性 private
-    /// （生成代码与 Id 同 partial，可达）。<c>;</c> 结尾的声明会被就地转成带 body 的形式，最后交给
-    /// <see cref="DocumentFormatting"/> 按被编辑文档自身的行尾统一缩进。
+    /// 桩方法固定为 <c>private static bool &lt;name&gt;(&lt;基元类型&gt; value) =&gt; true;</c>：参数类型用全限定名渲染，
+    /// private 对同 partial 的生成代码可达。<c>;</c> 结尾的声明会被就地转成带 body 的形式。
     /// </remarks>
     private static Document GenerateValidatorStub(
         Document document,
@@ -480,10 +447,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 从 <c>[StronglyTypedId]</c> 中删掉诊断所在的命名实参，使其通过对应规则。
     /// </summary>
     /// <remarks>
-    /// 供两条规则共用：STIA0010（<c>Validator</c> 指向的方法已存在却签名不符，删掉实参后退回装配级默认）与
-    /// STIA0013（<c>Prefix</c> 为空 / 纯空白，删掉实参即等同「未设置」）。
-    /// 若该实参是 attribute 里唯一实参，则连同整对括号一起删掉；否则只移除它，
-    /// <see cref="SeparatedSyntaxList{TNode}.Remove"/> 会自动收拾相邻的逗号分隔符。
+    /// 供 STIA0010 与 STIA0013 共用。若是唯一实参则连同括号一起删掉，否则只移除它。
     /// </remarks>
     private static async Task<Document> RemoveNamedArgumentAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -548,15 +512,13 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
-        // 就地改写既有节点，而不是用 SyntaxFactory 重建：重建出的参数只带「类型 + 名字」，
-        // 参数上的 attribute、修饰符、默认值以及全部 trivia（注释、空白）都会被丢掉。
+        // 就地改写而非重建：重建出的参数只带「类型 + 名字」，attribute、修饰符、默认值与 trivia 都会丢。
         var newParameter = parameter.WithIdentifier(
             SyntaxFactory.Identifier(parameter.Identifier.LeadingTrivia, ValueParameterName, parameter.Identifier.TrailingTrivia));
 
         if (stripNullableSuffix && parameter.Type is NullableTypeSyntax nullableType)
         {
-            // 用 ElementType 顶掉 `?`，并把整个可空类型节点的前后 trivia 交给它，否则
-            // `Guid? Value` 中附着在 `?` 上的空白（或注释）会丢失，拼成 `GuidValue`。
+            // 用 ElementType 顶掉 `?` 并继承 trivia，否则会拼成 `GuidValue`。
             newParameter = newParameter.WithType(nullableType.ElementType.WithTriviaFrom(nullableType));
         }
 

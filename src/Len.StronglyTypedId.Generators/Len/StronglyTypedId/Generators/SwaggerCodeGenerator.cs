@@ -22,13 +22,8 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
         var mapTypeCalls = discoveredIds.External
             .Select(idInfo => $"options.MapType<{idInfo.FullyQualifiedName}>(() => {CreateOpenApiSchema(idInfo, useOpenApiV2)});");
 
-        // 生成文件必须自带 using Microsoft.Extensions.DependencyInjection：
-        // SwaggerGenOptions.MapType<T> 是该命名空间下的扩展方法（容器类 SwaggerGenOptionsExtensions，
-        // Swashbuckle 6.x 与 10.x 一致），只能由 using 引入，无法用全限定名调用。
-        // Web SDK 的隐式 using 恰好含该命名空间，故只有 Web 项目不会暴露缺口；
-        // 类库 / 控制台等非 Web SDK 消费者的隐式 using 不含它，缺此 using 会得到 CS1061。
-        // 该命名空间必然可解析：它由 Swashbuckle.AspNetCore.SwaggerGen 的传递依赖
-        // Microsoft.Extensions.DependencyInjection.Abstractions 提供，而本文件只在引用前者时才生成。
+        // MapType<T> 是该命名空间下的扩展方法，只能用 using 引入。Web SDK 的隐式 using 恰好含它，
+        // 类库 / 控制台消费者缺此 using 会 CS1061；该命名空间由 Swashbuckle 的传递依赖提供。
         var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
             internal static partial class StronglyTypedIds
             {
@@ -51,17 +46,8 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// 判断当前编译引用的是否为 Microsoft.OpenApi 2.x。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 只以 <c>Microsoft.OpenApi.dll</c> 的主版本为判据，不可改用「Swashbuckle.AspNetCore.SwaggerGen 主版本
-    /// 不低于某个值」作代理：实测 Swashbuckle 7.0.0 依赖 Microsoft.OpenApi ≥ 1.6.22、8.0.0 与 9.0.0 依赖
-    /// ≥ 1.6.23，直到 10.0.0 才升级到 2.3.0 —— 代理判据的分界线是 <b>10</b> 而不是 7，以 7 为界会把
-    /// 7/8/9 误判为 2.x，进而生成 1.6.x 下并不存在的 <c>Microsoft.OpenApi.JsonSchemaType</c> 与迁移后的
-    /// 命名空间，令使用者编译失败。
-    /// </para>
-    /// <para>
-    /// Microsoft.OpenApi 是 Swashbuckle 的传递依赖，其程序集必然出现在使用者的编译引用中，
-    /// 因此本判据无需借助 Swashbuckle 自身的版本号。
-    /// </para>
+    /// 只以 <c>Microsoft.OpenApi.dll</c> 的主版本为判据。不能改用 Swashbuckle 版本作代理：7/8/9 都依赖
+    /// Microsoft.OpenApi 1.6.x，直到 10.0.0 才升到 2.3.0，以 7 为界会生成 1.6.x 下不存在的类型。
     /// </remarks>
     private static bool UsesMicrosoftOpenApiV2(ImmutableArray<ModuleInfo> modules)
         => modules.HasModule(OpenApiAssemblyName, 2);
@@ -70,10 +56,8 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// 按 Microsoft.OpenApi 主版本生成 <c>OpenApiSchema</c> 初始化表达式。
     /// </summary>
     /// <remarks>
-    /// Microsoft.OpenApi 2.x（随 Swashbuckle 10+ 引入）相对 1.x 有两处破坏性变更：
-    ///   1) OpenApiSchema 命名空间由 Microsoft.OpenApi.Models 迁移到 Microsoft.OpenApi；
-    ///   2) OpenApiSchema.Type 由 string 变为 Microsoft.OpenApi.JsonSchemaType? 枚举。
-    /// 这里按主版本分支生成，使同一份生成器同时兼容新旧 Swashbuckle / Microsoft.OpenApi。
+    /// 2.x（随 Swashbuckle 10+）把 OpenApiSchema 的命名空间迁到 <c>Microsoft.OpenApi</c>，并把 <c>Type</c>
+    /// 由 <c>string</c> 改为 <c>JsonSchemaType?</c> 枚举，故按主版本分支生成。
     /// </remarks>
     private static string CreateOpenApiSchema(StronglyTypedIdInfo idInfo, bool useOpenApiV2)
     {

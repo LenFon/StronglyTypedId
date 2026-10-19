@@ -1,6 +1,6 @@
 ﻿namespace Len.StronglyTypedId.Generators;
 
-// 同 StronglyTypedIdAnalyzer：程序集合并后引用 Microsoft.CodeAnalysis.Workspaces 触发 RS1038，局部豁免。
+// 同 StronglyTypedIdAnalyzer：合并后引用 Workspaces 触发 RS1038，局部豁免。
 #pragma warning disable RS1038
 [Generator]
 internal class StronglyTypedIdGenerator : IIncrementalGenerator
@@ -9,8 +9,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // 核心生成器按「单个 Id」注册输出：任一 Id 改动只重跑它自己那一次输出，
-        // 而不是把全部 Id 的产物重算一遍（.Collect() 会让整批一起失效）。
+        // 按「单个 Id」注册输出：任一 Id 改动只重跑它自己，.Collect() 会让整批一起失效。
         var stronglyTypedIdInfos = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 "Len.StronglyTypedId.StronglyTypedIdAttribute",
@@ -19,10 +18,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
            .Where(static info => info is not null)
            .Select(static (info, _) => info!.Value);
 
-        // 模块枚举拆成两级，把 Compilation 依赖下沉到确实需要它的那一步：
-        //   第一级只依赖引用列表（编辑期间不变），元数据解码不会在每次按键后重跑；
-        //   第二级才 Combine(CompilationProvider)，只做「引用 → 程序集符号」的查表。
-        // 两级都按「名 + 版本」比较，故下游（发现、各集成生成器）仍保持稳定。
+        // 拆成两级，把 Compilation 依赖下沉：第一级只依赖引用列表（编辑期间不变），
+        // 第二级才 Combine(CompilationProvider) 做「引用 → 程序集符号」的查表。
         var moduleIdentities = context.MetadataReferencesProvider
             .SelectMany(static (references, _) => CollectModuleIdentities(references))
             .WithComparer(new ModuleIdentity.Comparer())
@@ -34,15 +31,13 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             .WithComparer(new ModuleInfo.Comparer())
             .Collect();
 
-        // 只需知道「是否存在」DbContext 约定配置，故把匹配结果收敛为单个布尔值，
-        // 避免把无意义的 bool 数组一路带到输出阶段。
+        // 只需知道「是否存在」，故把匹配结果收敛为单个布尔值。
         var hasDbContextConventions = context.SyntaxProvider
             .CreateSyntaxProvider(CouldBeEfCoreDbContext, static (_, _) => true)
             .Collect()
             .Select(static (matches, _) => !matches.IsDefaultOrEmpty);
 
-        // 枚举全部引用程序集的所有类型是发现阶段的主要开销，此前 5 个集成生成器各调一次、
-        // 一次生成要枚举 5 遍。这里一次算好，交给各集成生成器取用。
+        // 枚举全部引用程序集的类型是发现阶段的主要开销，这里一次算好，交给各集成生成器取用。
         var discoveredIds = stronglyTypedIdInfos
             .Collect()
             .Combine(modules)
@@ -51,8 +46,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         var idsAndModules = stronglyTypedIdInfos.Combine(modules);
         var discoveredIdsAndModules = discoveredIds.Combine(modules);
 
-        // Swagger 代码是否生成，仅由是否引用了 Swashbuckle.AspNetCore.SwaggerGen.dll 决定，
-        // 不再依赖源码中是否出现 AddSwaggerGen（参见 SwaggerCodeGenerator）。
+        // 各集成生成器是否启用，只由是否引用了对应程序集决定（见 _generatorCatalog）。
         context.RegisterSourceOutput(idsAndModules, GenerateCoreCode);
         context.RegisterSourceOutput(discoveredIdsAndModules.Combine(hasDbContextConventions), GenerateEfCoreCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateSwaggerCode);
@@ -78,17 +72,15 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     {
         if (syntaxNode is not RecordDeclarationSyntax
             {
-                TypeParameterList: null, // 非泛型
+                TypeParameterList: null,
                 Modifiers: var modifiers and not [],
             } record)
         {
             return false;
         }
 
-        // 带主构造函数时，参数名与可空性在语法层即可判定，提前排除。
-        // 不带主构造函数的那一段必须放行：attribute 可能标在不承载主构造函数的段上（例如主构造函数
-        // 写在另一个 partial 段里），而本谓词只会对「带 attribute 的那一段」被调用。若在此一律要求
-        // (Value) 形状，这种分段写法既不会产出任何代码、也不会报任何诊断——分析器是按「类型」判定的。
+        // 带主构造函数时参数名与可空性可提前排除；不带主构造函数的段必须放行 —— attribute 可能标在
+        // 不承载主构造函数的 partial 段上，一律要求 (Value) 形状会让这种写法既不产出代码也不报诊断。
         if (record.ParameterList is { } parameterList
             && parameterList.Parameters is not [{ Type: not NullableTypeSyntax, Identifier.ValueText: "Value" }])
         {
@@ -100,12 +92,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return false;
         }
 
-        // 逐层向上检查容器，最后要求整条链落在命名空间里。
-        // 嵌套类型是被支持的，但生成代码要新增的是嵌套类型自身的成员，而 partial 的各段必须处于同一
-        // 容器内 —— 生成代码只能把声明逐层嵌回原来的包含类型，因此每一层都必须能被原样重开。
-        // 这里挡掉的写法（顶层无命名空间 / 容器非 partial / 容器是 file 本地类型）分析器都会
-        // 另行报错（STIA0004 / STIA0009），先挡掉是为了不再为已知非法的写法生成一份编译不过的代码。
-        // 泛型容器已放开：重开的 partial 只需复现类型参数表、约束子句可省略，故不再在此拦截。
+        // 逐层向上检查容器，最后要求整条链落在命名空间里。这些写法分析器会另行报错（STIA0004 / STIA0009），
+        // 先挡掉是为了不为已知非法的写法生成编译不过的代码。
         var container = record.Parent;
 
         while (container is TypeDeclarationSyntax declaration)
@@ -126,8 +114,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 取单个引用所代表的全部模块身份（不解析程序集符号，故不依赖 <see cref="Compilation"/>）。
     /// </summary>
     /// <remarks>
-    /// 单独抽成方法而非内联 lambda：<c>SelectMany</c> 对 <c>IncrementalValueProvider&lt;ImmutableArray&lt;TSource&gt;&gt;</c>
-    /// 有专门的展平重载，其选择器逐元素调用、必须返回 <see cref="ImmutableArray{T}"/>。显式返回类型可让推断稳定。
+    /// 单独抽成方法而非内联 lambda：<c>SelectMany</c> 的展平重载要求选择器返回 <see cref="ImmutableArray{T}"/>，
+    /// 显式返回类型可让推断稳定。
     /// </remarks>
     private static ImmutableArray<ModuleIdentity> CollectModuleIdentities(MetadataReference reference)
         => [.. reference.GetModuleIdentities()];
@@ -149,7 +137,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return;
         }
 
-        // 集成生成器由各自的 RegisterSourceOutput 单独注册，这里只跑核心生成器。
+        // 集成生成器各自注册，这里只跑核心生成器。
         foreach (var generator in generators)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
@@ -220,18 +208,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 执行单个生成器，并把生成阶段的任何异常转成 <see cref="Descriptors.GeneratorFailure"/> 诊断。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 生成器内部抛异常时，Roslyn 会丢弃该生成器本次的<b>全部</b>产出，使用者只看到一条 CS8785 警告
-    /// （无位置、无原因、无堆栈），表现为「生成的代码凭空消失」。这里就地兜住异常并报出一条带原因的诊断，
-    /// 把黑盒故障变成可定位的错误。
-    /// </para>
-    /// <para>
-    /// 取消不是故障：取消请求必须原样上抛，否则生成器会被当成「已完成」而留下不完整的产出。
-    /// </para>
-    /// <para>
-    /// 拆成 <see cref="Action"/> + <see cref="Action{T}"/> 两个委托而不是直接吃 <see cref="SourceProductionContext"/>，
-    /// 是为了让失败路径可以在单元测试里被真实触发（<see cref="SourceProductionContext"/> 无法在测试中构造）。
-    /// </para>
+    /// 生成器抛异常时 Roslyn 会丢弃本次全部产出，只留一条无位置、无原因的 CS8785；这里就地兜住并报出带原因的
+    /// 诊断。取消请求必须原样上抛，否则会留下不完整的产出。拆成委托是为了让失败路径能在测试里真实触发。
     /// </remarks>
     internal static void RunGuarded(
         string generatorName,
@@ -285,18 +263,10 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// （Factory + Strategy），取代原先散落在 GetCodeGenerators / GetEfCoreCodeGenerator 等处的重复判定。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 每条登记携带一个 <see cref="CodeGeneratorRegistration.IsEnabled"/> 谓词，逐字复刻原有的门控语义
-    /// （含核心生成器的大小写敏感差异），以保证重构前后生成产物字节级一致。
-    /// </para>
-    /// <para>
-    /// <see cref="CodeGeneratorRegistration.IsCore"/> 区分两类生成器：核心生成器（运行时实现 /
-    /// System.Text.Json / Newtonsoft.Json）随引用自动批量启用；集成生成器（EF Core / Swagger / Dapper /
-    /// 内置 OpenAPI / MVC）各自按引用程序集独立门控。
-    /// </para>
+    /// <see cref="CodeGeneratorRegistration.IsCore"/> 区分两类：核心生成器随引用批量启用，集成生成器各自独立门控。
     /// </remarks>
     private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog = ImmutableArray.Create(
-        // 核心生成器：原 switch 按模块名精确匹配（区分大小写），此处用同样的 Any(m => m.Name == …) 复刻。
+        // 核心生成器按模块名精确匹配（区分大小写）。
         new CodeGeneratorRegistration(
             "Len.StronglyTypedId.dll",
             static modules => modules.Any(static module => module.Name == "Len.StronglyTypedId.dll"),
@@ -321,7 +291,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText(
                 "Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`",
                 "嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`")),
-        // 集成生成器：HasModule 本身按 OrdinalIgnoreCase 比较（模块名取自元数据读取器，大小写未必规范）。
+        // 集成生成器走 HasModule（OrdinalIgnoreCase，模块名取自元数据读取器，大小写未必规范）。
         new CodeGeneratorRegistration(
             "Microsoft.EntityFrameworkCore.dll",
             static modules => modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7),
@@ -356,14 +326,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText(
                 "`StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`",
                 "`StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`")),
-        // MVC 可用性需覆盖「门面 / 实现」拆分与 .NET 版本差异：
-        //   · Microsoft.AspNetCore.Mvc.dll —— 框架引用引入的门面程序集（仅做类型转发），
-        //     真实消费者的编译引用里必有，是「MVC 是否可用」的规范判据。
-        //   · Microsoft.AspNetCore.Mvc.Core.dll / Microsoft.AspNetCore.Mvc.Abstractions.dll ——
-        //     实际定义 IModelBinder / MvcOptions 的实现程序集，随 .NET 版本不同而由其一承载
-        //     （如 .NET 8 落在 Abstractions、.NET 10 落在 Core）。测试画像里只加载了承载
-        //     类型定义的那个，门面常因类型转发而未直接进入编译引用。
-        // 三者任一出现即代表 MVC 可用，保证真实消费者与测试画像判定一致。
+        // MVC 的「门面 / 实现」拆分随 .NET 版本变化（.NET 8 落在 Abstractions、.NET 10 落在 Core），
+        // 三者任一出现即视为 MVC 可用，保证真实消费者与测试画像判定一致。
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.Mvc.dll",
             static modules => modules.HasModule("Microsoft.AspNetCore.Mvc.dll", 2)
@@ -376,11 +340,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText(
                 "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)",
                 "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束）")),
-        // STJ / Newtonsoft 的全局注册入口与各自的核心生成器共用同一程序集门控（同一份引用决定两者是否启用），
-        // 但分属两类：核心生成器逐 Id 产出转换器，注册生成器产出一次性的 StronglyTypedIds 聚合入口。
-        // 取集成生成器时按 IsCore 过滤，故同名登记不会互相遮蔽。
-        // 这两条不单独成行（DocText.Empty）：它们的产物已经写进对应核心生成器的 Documentation 里，
-        // 因为「引用同一个程序集」同时决定了两者是否启用，拆成两行只会让表格看起来像有两套触发条件。
+        // 注册入口与核心生成器共用同一程序集门控，但分属两类；取集成生成器时按 IsCore 过滤，不会互相遮蔽。
+        // 这两条不单独成行（DocText.Empty）：产物已写进对应核心生成器的 Documentation。
         new CodeGeneratorRegistration(
             "System.Text.Json.dll",
             static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
@@ -398,9 +359,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// README「What gets generated」表的行数据：只含登记了文档的项，顺序即表格行序。
     /// </summary>
     /// <remarks>
-    /// 由 <c>tools/Len.StronglyTypedId.DocGen</c> 消费。之所以不另立一张「文档专用」的表，
-    /// 是因为那样一来「新增集成生成器却忘了写文档」就无人察觉；从门控登记里直接取，
-    /// 漏写 <see cref="CodeGeneratorRegistration.Documentation"/> 的那一项会当场从表格里消失。
+    /// 由 <c>tools/Len.StronglyTypedId.DocGen</c> 消费。从门控登记里直接取，漏写
+    /// <see cref="CodeGeneratorRegistration.Documentation"/> 的项会当场从表格里消失。
     /// </remarks>
     internal static ImmutableArray<CodeGeneratorRegistration> DocumentedGenerators
         => [.. _generatorCatalog.Where(static registration => !registration.Documentation.IsEmpty)];
@@ -409,10 +369,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 单个代码生成器的模块闸门登记项（Factory 注册表的一项）。
     /// </summary>
     /// <remarks>
-    /// <see cref="Condition"/> 与 <see cref="Documentation"/> 是给 README 用的：集成触发条件表由
-    /// <c>tools/Len.StronglyTypedId.DocGen</c> 从这里直接生成，不再手写维护。两者都留空的登记
-    /// （STJ / Newtonsoft 的全局注册入口）不单独成行 —— 它们的产物已经写进对应核心生成器的
-    /// <see cref="Documentation"/> 里，因为「引用同一个程序集」同时决定了两者是否启用。
+    /// <see cref="Condition"/> 与 <see cref="Documentation"/> 供 README 表格生成；两者都留空的登记不单独成行。
     /// </remarks>
     internal sealed class CodeGeneratorRegistration
     {
@@ -476,9 +433,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 按登记名取当前编译引用下已启用的集成生成器；未启用时返回 <see langword="null"/>。
     /// </summary>
     /// <remarks>
-    /// 必须跳过核心生成器：STJ / Newtonsoft 的注册生成器与各自的核心生成器登记在同一个程序集名下，
-    /// 若不过滤 <see cref="CodeGeneratorRegistration.IsCore"/>，循环会先命中核心项并因其
-    /// <see cref="CodeGeneratorRegistration.IntegrationGenerator"/> 为 <see langword="null"/> 而返回空。
+    /// 必须跳过核心生成器：STJ / Newtonsoft 的注册生成器与核心生成器登记在同一程序集名下，不过滤会先命中
+    /// 核心项并因其 <see cref="CodeGeneratorRegistration.IntegrationGenerator"/> 为 <see langword="null"/> 而返回空。
     /// </remarks>
     private static IIntegrationCodeGenerator? GetIntegrationGenerator(ImmutableArray<ModuleInfo> modules, string assemblyName)
     {
@@ -514,10 +470,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// <summary>
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 指定的默认验证器方法名。
     /// </summary>
-    /// <remarks>
-    /// 生成器项目不引用运行时程序集，故只能以字符串匹配 <c>Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute</c>。
-    /// 未声明时返回 <see langword="null"/>，此时逐类型 <c>Validator</c> 仍是唯一来源。
-    /// </remarks>
+    /// <remarks>生成器不引用运行时程序集，故只能按字符串匹配；未声明时返回 <see langword="null"/>。</remarks>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
         => assembly.GetAttributes()
             .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute")

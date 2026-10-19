@@ -6,14 +6,8 @@ namespace Len.StronglyTypedId;
 /// README 表格单元格的双语文案。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 三张自动生成的表格（基元类型 / 集成触发条件 / 诊断）同时存在于 <c>README.md</c> 与
-/// <c>README.zh-CN.md</c>，因此每个单元格都要有中英两份。
-/// </para>
-/// <para>
-/// 文案与判定逻辑放在一起，是为了让「改了判定却忘了改文档」这件事在物理上不可能发生 ——
-/// 判定改了而文案没跟上，README 会在下一次 <c>DocGen --verify</c> 时直接报错。
-/// </para>
+/// 三张自动生成的表格同时存在于 <c>README.md</c> 与 <c>README.zh-CN.md</c>，故每个单元格都要中英两份。
+/// 文案与判定逻辑放在一起，改了判定却忘了改文案时 <c>DocGen --verify</c> 会直接报错。
 /// </remarks>
 internal sealed class DocText(string en, string zh)
 {

@@ -6,16 +6,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 .NET 9+ 内置 OpenAPI（<c>Microsoft.AspNetCore.OpenApi</c>）的 schema 转换器注册入口。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 内置 OpenAPI 的 schema 由 System.Text.Json 的 schema 生成驱动，因此只要有 STJ 转换器（已生成），强类型 Id
-/// 在文档里就已经是基元形态。但 STJ 不会为 <c>Guid</c> 补 <c>format: uuid</c> 这类语义，故这里用单个
-/// <c>IOpenApiSchemaTransformer</c> 把每个 Id 的「类型 / format」写进文档，与 Swashbuckle 侧生成的
-/// <c>OpenApiSchema</c> 保持一致。
-/// </para>
-/// <para>
-/// 生成文件只在引用了 <c>Microsoft.AspNetCore.OpenApi.dll</c> 时才产出：该命名空间与类型只在启用内置 OpenAPI
-/// 的消费者编译引用里出现，缺此门控会在无关项目里生成无法解析的符号。
-/// </para>
+/// 内置 OpenAPI 的 schema 由 STJ 驱动，Id 已是基元形态，但 STJ 不会补 <c>format: uuid</c> 这类语义，
+/// 故用 <c>IOpenApiSchemaTransformer</c> 把类型 / format 写进文档，与 Swashbuckle 侧保持一致。
 /// </remarks>
 internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
 {
@@ -83,9 +75,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
     /// <summary>
     /// 取 OpenAPI <c>schema.Type</c> 的字面量（字符串形态，对应 Microsoft.OpenApi 1.x 的 <c>string?</c> 字段）。
     /// </summary>
-    /// <remarks>
-    /// 有前缀时规范文本形是字符串，故类型一律为 <c>string</c> —— 数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
-    /// </remarks>
+    /// <remarks>有前缀时对外一律是字符串，故类型恒为 <c>string</c>。</remarks>
     private static string GetTypeLiteral(StronglyTypedIdInfo idInfo)
         => idInfo.HasPrefix
             ? "\"string\""
@@ -98,9 +88,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
     /// <summary>
     /// 取 OpenAPI <c>schema.Format</c> 的字面量；无特定格式时为 <see langword="null"/>。
     /// </summary>
-    /// <remarks>
-    /// 有前缀时类型已是 <c>string</c>，不再带基元特有的 format（如 <c>uuid</c> / <c>int32</c>）。
-    /// </remarks>
+    /// <remarks>有前缀时类型已是 <c>string</c>，不再带 <c>uuid</c> / <c>int32</c> 这类 format。</remarks>
     private static string? GetFormatLiteral(StronglyTypedIdInfo idInfo)
         => idInfo.HasPrefix
             ? "null"

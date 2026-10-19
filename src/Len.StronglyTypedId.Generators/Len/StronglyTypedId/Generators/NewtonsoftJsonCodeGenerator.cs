@@ -51,9 +51,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
 
         var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-        // 与另外两个内嵌式生成器一致地统一行尾：嵌套包装是按 \n 逐行拼出来的，
-        // 与原始字符串字面量（跟随源文件行尾）相接会得到混排行尾。非嵌套时本调用是空操作，
-        // 因为整段文本来自同一个字面量、行尾本就一致。
+        // 嵌套包装按 \n 逐行拼接，与字面量相接会得到混排行尾，故统一行尾。
         context.AddSource($"{idInfo.HintName}.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
     }
 
@@ -61,14 +59,8 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// 取 <c>ReadJson</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 基元形态（默认）把 Id 与其基元值视为同一形状，产物与引入本开关之前<b>逐字节一致</b>；
-    /// 对象形态读入 <c>{ "value": … }</c>，供「已对外承诺对象形态」的既有契约迁移。
-    /// </para>
-    /// <para>
-    /// 缩进按产物中的层级逐行写死（成员 8 空格、方法体 12 空格，依次递增），不依赖原始字符串字面量的
-    /// 裁剪规则；行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 在最后统一。
-    /// </para>
+    /// 基元形态（默认）把 Id 与基元值视为同一形状，产物逐字节不变；对象形态读入 <c>{ "value": … }</c>。
+    /// 缩进按产物层级写死，行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 统一。
     /// </remarks>
     private static string GetReadTail(StronglyTypedIdInfo idInfo)
     {
@@ -147,8 +139,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// 取 <c>WriteJson</c> 成员形参表之后的方法体。
     /// </summary>
     /// <remarks>
-    /// 基元形态写出基元值本身；对象形态写出 <c>{ "value": … }</c>。属性名固定为 <c>value</c>，
-    /// 不跟随宿主的命名策略 —— Id 的 JSON 形状是对外契约，不应随序列化配置漂移。
+    /// 基元形态写出基元值本身，对象形态写出 <c>{ "value": … }</c>。属性名固定，不跟随宿主的命名策略。
     /// </remarks>
     private static string GetWriteTail(StronglyTypedIdInfo idInfo)
     {

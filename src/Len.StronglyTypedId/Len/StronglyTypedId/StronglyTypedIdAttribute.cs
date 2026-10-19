@@ -4,15 +4,9 @@
 /// Marks a partial record (or record struct) as a strongly typed id.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The annotated type must declare exactly one primary constructor parameter, and that parameter
-/// must be named <c>Value</c>. The source generator then emits the strongly typed id implementation,
-/// the <c>IParsable&lt;TSelf&gt;</c> support and the JSON / Entity Framework Core / Swagger integrations.
-/// </para>
-/// <para>
-/// The generator constrains the <em>shape</em> of a strongly typed id, not its <em>values</em>. Set
-/// <see cref="Validator"/> to reject invalid values at the construction entry points.
-/// </para>
+/// The annotated type must declare exactly one primary constructor parameter, named <c>Value</c>. The generator
+/// then emits the implementation, <c>IParsable&lt;TSelf&gt;</c> support and the JSON / EF Core / Swagger integrations.
+/// It constrains the <em>shape</em> of an id, not its <em>values</em> — set <see cref="Validator"/> for that.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false, AllowMultiple = false)]
 public class StronglyTypedIdAttribute : Attribute
@@ -21,11 +15,8 @@ public class StronglyTypedIdAttribute : Attribute
     /// Gets or sets the name of a static validator method declared on the strongly typed id type itself.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// The method must be a static member of the annotated type with the signature
-    /// <c>static bool Validate(TPrimitiveId value)</c>, returning <see langword="true"/> when
-    /// <paramref name="value"/> is acceptable:
-    /// </para>
+    /// <c>static bool Validate(TPrimitiveId value)</c>, returning <see langword="true"/> when the value is acceptable:
     /// <code>
     /// [StronglyTypedId(Validator = nameof(Validate))]
     /// public partial record struct OrderId(Guid Value)
@@ -33,16 +24,9 @@ public class StronglyTypedIdAttribute : Attribute
     ///     private static bool Validate(Guid value) =&gt; value != Guid.Empty;
     /// }
     /// </code>
-    /// <para>
-    /// The generated <c>Create</c> and <c>TryParse</c> members call the method named here, so the JSON and
-    /// Entity Framework Core integrations — which all construct through <c>Create</c> — reject invalid values
-    /// too. Constructing the record through its primary constructor directly is <em>not</em> intercepted:
-    /// the primary constructor is declared by you, and a source generator cannot inject code into it.
-    /// </para>
-    /// <para>
-    /// When this property is left unset, no validator code is emitted at all and the generated members behave
-    /// exactly as if the property did not exist.
-    /// </para>
+    /// The generated <c>Create</c> and <c>TryParse</c> members call it, so the JSON and EF Core integrations reject
+    /// invalid values too. Constructing through the primary constructor directly is not intercepted — the generator
+    /// cannot inject code into a constructor you declared. When unset, no validator code is emitted at all.
     /// </remarks>
     public string? Validator { get; set; }
 
@@ -51,18 +35,11 @@ public class StronglyTypedIdAttribute : Attribute
     /// for the strongly typed id.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This is off by default, and it is <em>not</em> turned on automatically when an integration is referenced.
-    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> changes the global semantics of the type:
-    /// <see cref="System.ComponentModel.TypeDescriptor"/> is the landing point of <c>XmlSerializer</c>,
-    /// <c>IConfiguration</c> binding, XAML and the WinForms/WPF design-time surfaces, and a type may already
-    /// carry its own <c>[TypeConverter]</c> — generating one on top of that would collide.
-    /// </para>
-    /// <para>
-    /// Turning it on also closes the read half of Newtonsoft.Json dictionary keys: restoring a key from its text
-    /// goes through <c>TypeDescriptor</c> rather than <c>JsonConverter.ReadJson</c>, so a custom
-    /// <c>JsonConverter</c> cannot take over that path.
-    /// </para>
+    /// Off by default and never turned on implicitly: <see cref="System.ComponentModel.TypeConverterAttribute"/>
+    /// changes the global semantics of the type (<c>TypeDescriptor</c> backs <c>XmlSerializer</c>,
+    /// <c>IConfiguration</c> binding, XAML and WinForms/WPF design-time), and the type may already carry its own
+    /// <c>[TypeConverter]</c>. Enabling it also closes the read half of Newtonsoft.Json dictionary keys, which go
+    /// through <c>TypeDescriptor</c> rather than <c>JsonConverter.ReadJson</c>.
     /// <code>
     /// [StronglyTypedId(TypeConverter = true)]
     /// public partial record struct OrderId(Guid Value);
@@ -75,17 +52,8 @@ public class StronglyTypedIdAttribute : Attribute
     /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/> keeps the id interchangeable with its primitive
-    /// value in the payload (<c>"3f2c…"</c>), so introducing an id does not change the wire contract.
-    /// <see cref="Len.StronglyTypedId.JsonShape.Object"/> writes <c>{ "value": … }</c> instead, which is what
-    /// an existing contract that already promised the object form needs.
-    /// </para>
-    /// <para>
-    /// The setting applies to both the <c>System.Text.Json</c> and <c>Newtonsoft.Json</c> converters. It does
-    /// <em>not</em> affect dictionary keys: a JSON property name is inherently a string, so keys always carry
-    /// the primitive text regardless of this setting.
-    /// </para>
+    /// Applies to both the <c>System.Text.Json</c> and <c>Newtonsoft.Json</c> converters, but not to dictionary keys:
+    /// a JSON property name is always a string, so keys carry the primitive text regardless.
     /// <code>
     /// [StronglyTypedId(JsonShape = JsonShape.Object)]
     /// public partial record struct OrderId(Guid Value);
@@ -126,15 +94,7 @@ public class StronglyTypedIdAttribute : Attribute
     /// <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/> accepts both the prefixed and the bare form, so existing
-    /// payloads and stored text keep round-tripping while new text is always written with the prefix.
-    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Strict"/> requires the prefix and fails on text that lacks it, which
-    /// makes <c>ToString</c> and <c>Parse</c> a bijection.
-    /// </para>
-    /// <para>
-    /// The setting has no effect when <see cref="Prefix"/> is unset.
-    /// </para>
+    /// Has no effect when <see cref="Prefix"/> is unset.
     /// <code>
     /// [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
     /// public partial record struct OrderId(Guid Value);

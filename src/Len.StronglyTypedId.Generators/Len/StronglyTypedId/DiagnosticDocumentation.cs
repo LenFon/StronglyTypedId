@@ -4,28 +4,16 @@
 /// 诊断的文档补充信息：README 诊断表里「代码修复」一列。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 规则 ID、严重级别、默认是否启用与说明文案都能从 <see cref="Descriptors"/> 直接读出，
-/// 唯独「代码修复」这一列无法从 <see cref="Microsoft.CodeAnalysis.DiagnosticDescriptor"/> 推出 ——
-/// 修复动作写在 <c>StronglyTypedIdCodeFixProvider</c> 的 switch 里，没有可反射的元数据。
-/// 因此单独成表，并与描述符一一对应。
-/// </para>
-/// <para>
-/// 一一对应由测试守着（<c>ReadmeDocumentationTests</c>）：新增一条诊断却没在这里登记，
-/// 或者登记了描述符里不存在的 ID，测试都会失败。这比「README 里漏一行」可靠得多 ——
-/// 后者没人会发现。
-/// </para>
+/// 规则 ID、级别与文案都能从 <see cref="Descriptors"/> 读出，唯独「代码修复」一列无法反射 ——
+/// 修复动作写在 <c>StronglyTypedIdCodeFixProvider</c> 的 switch 里。故单独成表，并由
+/// <c>ReadmeDocumentationTests</c> 断言与描述符一一对应。
 /// </remarks>
 internal static class DiagnosticDocumentation
 {
     /// <summary>
     /// 全部诊断的文档条目，按规则 ID 升序。
     /// </summary>
-    /// <remarks>
-    /// <see cref="DocText.Empty"/> 表示该规则<b>没有</b>代码修复，README 里渲染为 <c>—</c>。
-    /// 「有修复」的集合必须与 <c>StronglyTypedIdCodeFixProvider.FixableDiagnosticIds</c> 完全相等，
-    /// 同样由测试断言。
-    /// </remarks>
+    /// <remarks><see cref="DocText.Empty"/> 表示无代码修复（README 渲染为 <c>—</c>）；有修复的集合须与 <c>FixableDiagnosticIds</c> 相等。</remarks>
     internal static readonly ImmutableArray<DiagnosticDocEntry> Entries = ImmutableArray.Create(
         new DiagnosticDocEntry(Descriptors.TypeMustBeRecordId, new DocText("Convert to `record`", "转为 `record`")),
         new DiagnosticDocEntry(Descriptors.TypeMustBePartialId, new DocText("Add `partial`", "补上 `partial`")),

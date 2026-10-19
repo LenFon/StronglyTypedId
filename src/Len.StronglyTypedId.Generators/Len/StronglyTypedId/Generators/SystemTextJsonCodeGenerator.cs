@@ -6,11 +6,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 System.Text.Json 转换器。
 /// </summary>
 /// <remarks>
-/// 除值的读写外，还必须重写 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>。STJ 处理字典键时
-/// 走的是这两条路径，而 <c>JsonConverter&lt;T&gt;</c> 的默认实现只认得内建的键类型（<c>string</c> 等），
-/// 其余一律抛 <c>NotSupportedException</c>，并在异常里直接提示「重写这两个方法以支持字典键」。
-/// 也就是说，重写之前 <c>Dictionary&lt;OrderId, TValue&gt;</c> —— DDD 里「按 Id 索引的子集合」这种常见
-/// 结构 —— 序列化与反序列化都完全不可用。
+/// 除值的读写外还必须重写 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>：STJ 处理字典键走这两条路径，
+/// 默认实现只认得内建键类型，否则 <c>Dictionary&lt;OrderId, TValue&gt;</c> 完全不可用。
 /// </remarks>
 internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 {
@@ -20,21 +17,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 抑制 IL2026 / IL3050 时给出的理由。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <c>JsonSerializer.Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c> 的泛型重载被标注了
-    /// <c>RequiresUnreferencedCode</c> 与 <c>RequiresDynamicCode</c>，因此在 <c>PublishAot</c> /
-    /// <c>PublishTrimmed</c> 的宿主工程里，生成的转换器会带出一串 IL2026 / IL3050 警告。
-    /// </para>
-    /// <para>
-    /// 但这里的 <c>T</c> 永远是<b>生成期就已确定的受支持基元</b>（<c>Guid</c> / <c>int</c> / <c>string</c> / 枚举 …），
-    /// STJ 对它们有内建转换器，解析 <c>JsonTypeInfo</c> 时不需要反射、也不需要运行时代码生成。
-    /// 换言之警告是保守的静态推断，而非真实的裁剪风险，故按惯例精确抑制这两条规则。
-    /// </para>
-    /// <para>
-    /// 之所以不改成直接调用 <c>writer.WriteStringValue</c> 之类的底层 API：那会绕过宿主在
-    /// <c>JsonSerializerOptions</c> 上配置的转换器（典型如 <c>JsonStringEnumConverter</c> 让枚举按字符串读写），
-    /// 属于可观察的行为变更。抑制标注则是零行为变更。
-    /// </para>
+    /// <c>Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c> 带 <c>RequiresUnreferencedCode</c> 与
+    /// <c>RequiresDynamicCode</c>，AOT / Trim 宿主会报 IL2026 / IL3050；但这里的 <c>T</c> 永远是受支持基元，
+    /// STJ 有内建转换器，警告只是保守推断。改用底层 API 会绕过宿主的转换器配置，抑制标注则零行为变更。
     /// </remarks>
     private const string AotSuppressionJustification =
         "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
@@ -108,10 +93,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 取写属性名时用的表达式。
     /// </summary>
     /// <remarks>
-    /// 受支持的基元类型里除 <c>string</c> 外都实现了 <c>IFormattable</c>，这里以其为准取「不变文化」的文本形式：
-    /// 属性名的格式不应随当前区域性漂移，否则同一份数据在不同区域设置下会写出不同的键。
-    /// 枚举例外：<c>System.Enum</c> 的 <c>ToString(string, IFormatProvider)</c> 已被标记
-    /// [Obsolete]（provider 参数被忽略），用它会触发 CS0618，故枚举直接走无参 <c>ToString()</c>。
+    /// 属性名按不变文化写出，否则同一份数据在不同区域下会得到不同的键。枚举例外：其
+    /// <c>ToString(string, IFormatProvider)</c> 已 [Obsolete]，用它会 CS0618。
     /// </remarks>
     private static string GetPropertyNameExpression(StronglyTypedIdInfo idInfo)
         => idInfo.HasPrefix
@@ -126,15 +109,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 取读入基元值时用的表达式。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 刻意读<b>非可空</b>的基元类型。写成 <c>Deserialize&lt;int?&gt;</c> 会让 AOT 宿主的
-    /// <c>JsonSerializerContext</c> 不得不额外注册 <c>Nullable&lt;T&gt;</c> —— 用户只为用一个 Id 就得
-    /// 记住这条冷知识，代价与收益完全不成比例。
-    /// </para>
-    /// <para>
-    /// 之所以敢去掉可空形态：JSON 里的 <c>null</c> 已在调用前由 <c>reader.TokenType</c> 判定拦下，
-    /// 此处不可能读到 null。引用类型（<c>string</c>）补 <c>!</c> 抑制 CS8600 —— 同一判定保证了它非空。
-    /// </para>
+    /// 刻意读非可空基元：<c>Deserialize&lt;int?&gt;</c> 会迫使 AOT 宿主额外注册 <c>Nullable&lt;T&gt;</c>。
+    /// JSON 的 <c>null</c> 已在调用前由 <c>reader.TokenType</c> 拦下，故 <c>string</c> 补 <c>!</c> 抑制 CS8600。
     /// </remarks>
     private static string GetDeserializeExpression(StronglyTypedIdInfo idInfo)
         => idInfo.IsStringPrimitive
@@ -145,14 +121,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 取 <c>Read</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 基元形态（默认）把 Id 与其基元值视为同一形状，产物与引入本开关之前<b>逐字节一致</b>；
-    /// 对象形态读入 <c>{ "value": … }</c>，供「已对外承诺对象形态」的既有契约迁移。
-    /// </para>
-    /// <para>
-    /// 缩进按产物中的层级逐行写死（成员 8 空格、方法体 12 空格，依次递增），不依赖原始字符串字面量的
-    /// 裁剪规则；行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 在最后统一。
-    /// </para>
+    /// 基元形态（默认）把 Id 与基元值视为同一形状，产物逐字节不变；对象形态读入 <c>{ "value": … }</c>。
+    /// 缩进按产物层级写死，行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 统一。
     /// </remarks>
     private static string GetReadTail(StronglyTypedIdInfo idInfo)
     {
@@ -248,9 +218,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 取 <c>Write</c> 成员形参表之后的方法体。
     /// </summary>
     /// <remarks>
-    /// 基元形态写出基元值本身；对象形态写出 <c>{ "value": … }</c>。属性名固定为 <c>value</c>，不跟随
-    /// <c>JsonSerializerOptions.PropertyNamingPolicy</c> —— Id 的 JSON 形状是对外契约，不应随宿主应用的
-    /// 序列化配置漂移。
+    /// 基元形态写出基元值本身，对象形态写出 <c>{ "value": … }</c>。属性名固定，不跟随
+    /// <c>PropertyNamingPolicy</c>：JSON 形状是对外契约。
     /// </remarks>
     private static string GetWriteTail(StronglyTypedIdInfo idInfo)
     {
@@ -292,21 +261,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 生成 <c>ReadAsPropertyName</c> 成员，整体拼接在最后一个成员的同一行行尾。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 属性名一定是 JSON 字符串，因此这里必须自行完成转换：<c>Read</c> 依赖 <c>TokenType</c> 为
-    /// <c>String</c> / <c>Number</c>，遇到 <c>PropertyName</c> 会在内层转换器里失败，不能转调。
-    /// </para>
-    /// <para>
-    /// <c>string</c> 基元直接取属性名构造，与 <c>Read</c> 的语义严格一致（都不过滤空串，故空串键可往返）；
-    /// 其余基元按不变文化解析，失败时抛 <c>JsonException</c> —— 属性名路径上与框架一致的异常类型。
-    /// </para>
-    /// <para>
-    /// 字典键在任何 JSON 形态下都携带基元文本：属性名本就是字符串，对象形态只作用于值的位置。
-    /// </para>
-    /// <para>
-    /// 缩进按产物中的层级逐行写死（嵌套转换器类的成员为 8 空格），不依赖原始字符串字面量的缩进裁剪规则；
-    /// 行尾由 <see cref="GeneratedCode.NormalizeLineEndings"/> 在最后统一。
-    /// </para>
+    /// 属性名一定是 JSON 字符串，必须自行转换：<c>Read</c> 依赖 <c>TokenType</c> 为 String / Number，
+    /// 遇到 PropertyName 会在内层转换器里失败。字典键在任何 JSON 形态下都携带基元文本。
     /// </remarks>
     private static string GetReadAsPropertyName(StronglyTypedIdInfo idInfo, string version)
     {

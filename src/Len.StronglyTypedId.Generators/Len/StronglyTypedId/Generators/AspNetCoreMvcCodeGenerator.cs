@@ -4,18 +4,9 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 ASP.NET Core MVC 的模型绑定与路由约束注册入口。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 强类型 Id 默认会被 MVC 当作「复杂类型」绑定（尝试按属性名逐个绑定 <c>Value</c>），
-/// 路由模板里的 <c>{id}</c> 也拿不到强类型 Id。本生成器通过一条 <c>IModelBinderProvider</c>
-/// 让所有实现 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的类型走「字符串 → 静态
-/// <c>IParsable&lt;TSelf&gt;.TryParse</c>」这一条干净路径，并额外把每个 Id 注册为路由约束，
-/// 使 <c>{id:OrderId}</c> 这类写法能校验分段格式。
-/// </para>
-/// <para>
-/// 生成物只在引用了 <c>Microsoft.AspNetCore.Mvc.dll</c> 时才产出：MVC 的命名空间与类型
-/// 只在该程序集（及其依赖 <c>Microsoft.AspNetCore.Routing</c>）出现在使用者编译引用里时才能解析，
-/// 缺此门控会在无关项目里生成无法编译的符号。
-/// </para>
+/// 强类型 Id 默认会被 MVC 当作复杂类型绑定，路由里的 <c>{id}</c> 也拿不到它。这里用一条
+/// <c>IModelBinderProvider</c> 把实现了 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的类型路由到
+/// <c>IParsable.TryParse</c>，并把每个 Id 注册为路由约束。
 /// </remarks>
 internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
 {
@@ -31,8 +22,7 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
     {
         var stronglyTypedIds = discoveredIds.External.ToList();
 
-        // 每个 Id 注册为路由约束：路由模板里写 {id:OrderId} 即可按该 Id 的解析规则校验分段格式。
-        // 同名简单名（不同命名空间）会按字典覆盖，取最后注册者——属极边缘冲突，沿用门控消歧哲学不予展开。
+        // 每个 Id 注册为路由约束，模板里写 {id:OrderId} 即可校验分段格式。同名 Id 按字典覆盖，属边缘冲突。
         var constraintRegistrations = stronglyTypedIds
             .Select(idInfo => $$"""        options.ConstraintMap["{{idInfo.Name}}"] = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdRouteConstraint<{{idInfo.FullyQualifiedName}}>);""");
 
@@ -77,8 +67,7 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                     {
                         var modelType = context.Metadata.ModelType;
 
-                        // 仅当类型实现了 IStronglyTypedId<,> 才接管，避免误伤任何其它可解析类型。
-                        // 检查只发生在绑定时的一次性类型判定上，绑定过程本身不再有反射开销。
+                        // 仅接管实现了 IStronglyTypedId<,> 的类型，避免误伤其它可解析类型。
                         foreach (var interfaceType in modelType.GetInterfaces())
                         {
                             if (interfaceType.IsGenericType

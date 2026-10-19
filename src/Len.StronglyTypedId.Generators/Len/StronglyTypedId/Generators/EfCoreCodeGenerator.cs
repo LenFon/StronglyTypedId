@@ -19,9 +19,8 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
     {
         var stronglyTypedIds = discoveredIds.External.ToList();
 
-        // 不同命名空间下的同名强类型 Id 都会生成进同一个 StronglyTypedIds 类：转换器若只取短名，
-        // 二者就相互冲突（CS0102）。仅在确实出现同名时才用「命名空间_类型名」消歧，以免改动
-        // 无冲突场景下既有的转换器类名（使用者可能直接引用该类型）。
+        // 同名 Id 会生成进同一个 StronglyTypedIds 类并撞 CS0102；仅在确实重名时才用「命名空间_类型名」消歧，
+        // 以免改动无冲突场景下既有的转换器类名。
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
@@ -131,11 +130,8 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
     /// 是否存在位于其它命名空间的同名强类型 Id，需要以命名空间前缀消歧。
     /// </param>
     /// <remarks>
-    /// 冲突时使用「全名（含包含类型）里的分隔符换成下划线」（<c>Domain.OrderId</c> → <c>Domain_OrderIdConverter</c>、
-    /// <c>Domain.OrderAggregate.OrderId</c> → <c>Domain_OrderAggregate_OrderIdConverter</c>）：
-    /// 结果只由该 Id 自身决定，与同一次编译里是否恰好还有别的 Id 无关。
-    /// 消歧必须带上包含类型链，不能只用命名空间 + 短名 —— 嵌套之后
-    /// <c>Domain.A.OrderId</c> 与 <c>Domain.B.OrderId</c> 会落到同一个类名上，撞 CS0102。
+    /// 冲突时把全名里的分隔符换成下划线（<c>Domain.OrderId</c> → <c>Domain_OrderIdConverter</c>），结果只由该 Id
+    /// 自身决定。必须带上包含类型链，否则嵌套后 <c>Domain.A.OrderId</c> 与 <c>Domain.B.OrderId</c> 会撞名。
     /// </remarks>
     private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier

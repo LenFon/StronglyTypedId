@@ -16,15 +16,9 @@ internal static class GeneratedCode
     /// 把 <paramref name="code"/> 的换行符统一为模板自身使用的风格。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 生成模板是原始字符串字面量，其行尾即源文件的行尾 —— 随 git 的 <c>text=auto</c> 在 CRLF（Windows 工作区）
-    /// 与 LF（Linux / macOS 检出）之间变化；而按条件拼出的片段一律以 <c>\n</c> 书写。两者直接相接会让同一个
-    /// 生成文件出现混排行尾：既破坏确定性构建，也让快照断言隐含依赖平台。
-    /// </para>
-    /// <para>
-    /// 判据取「模板里是否出现过 <c>\r</c>」，而不是 <see cref="System.Environment.NewLine"/>：
-    /// 后者是运行生成器的机器属性，与模板所在文件的行尾并无必然关系。
-    /// </para>
+    /// 模板是原始字符串字面量，行尾随 git 的 <c>text=auto</c> 在 CRLF / LF 间变化，而条件片段一律用 <c>\n</c>；
+    /// 两者相接会产生混排行尾，破坏确定性构建。判据取「模板里是否出现过 <c>\r</c>」，而非
+    /// <see cref="System.Environment.NewLine"/>（那是运行机器的属性，与模板文件无关）。
     /// </remarks>
     public static string NormalizeLineEndings(string code)
         => code.IndexOf('\r') >= 0
@@ -41,17 +35,9 @@ internal static class GeneratedCode
     /// 置于 <c>// &lt;auto-generated /&gt;</c> 与命名空间声明之间；为空时省略。
     /// </param>
     /// <remarks>
-    /// <para>
-    /// 行尾一律用 <c>\n</c>：文件头必须与行尾风格<b>无关</b>，否则会反过来决定整份产物的行尾。
-    /// <see cref="NormalizeLineEndings"/> 的判据是「整段文本里是否出现过 <c>\r</c>」，若文件头自带 <c>\r</c>，
-    /// 该判据就恒为真，产物永远被归一成 CRLF —— 而模板的行尾是随源文件变化的，于是 LF 检出
-    /// （Linux / macOS CI）下产物为 CRLF、快照基线为 LF，断言必然失败。
-    /// </para>
-    /// <para>
-    /// 用 <c>\n</c> 书写后，判据才真正反映<b>模板</b>（即源文件）的行尾：CRLF 检出归一成 CRLF，
-    /// LF 检出归一成 LF，产物与快照基线始终同源。调用方必须把拼接结果交给
-    /// <see cref="NormalizeLineEndings"/>（见各生成器的 <c>AddSource</c>）。
-    /// </para>
+    /// 行尾一律用 <c>\n</c>：文件头若自带 <c>\r</c>，<see cref="NormalizeLineEndings"/> 的判据就恒为真，
+    /// 产物永远归一成 CRLF，LF 检出（Linux / macOS CI）下与快照基线不符。调用方须把拼接结果交给
+    /// <see cref="NormalizeLineEndings"/>。
     /// </remarks>
     public static string Header(string namespaceName, string? preamble = null)
     {
@@ -92,16 +78,8 @@ internal static class GeneratedCode
     /// 附在 Id 上的特性（如 <c>[JsonConverter]</c>）属于签名的一部分，一并含在其中。
     /// </param>
     /// <remarks>
-    /// <para>
-    /// partial 类型的各段必须处在同一容器内，所以嵌套类型的强类型 Id 无法像顶层类型那样在命名空间层级
-    /// 补成员，只能把声明逐层放回原本的包含类型中。顶层类型（<see cref="StronglyTypedIdInfo.NestingDepth"/>
-    /// 为 0）原样返回，产物与不支持嵌套时的逐字节一致 —— 既有快照即回归基线。
-    /// </para>
-    /// <para>
-    /// 行尾一律用 <c>\n</c> 拼接，由调用方在最后统一交给 <see cref="NormalizeLineEndings"/>；
-    /// 缩进逐行显式写出，不依赖原始字符串字面量的裁剪规则。空行保持为空，不补缩进，
-    /// 以免在产物里留下行尾空白。
-    /// </para>
+    /// partial 类型的各段必须处在同一容器内，嵌套 Id 只能把声明逐层放回包含类型；顶层类型原样返回。
+    /// 行尾用 <c>\n</c> 拼接，由调用方统一交给 <see cref="NormalizeLineEndings"/>；空行不补缩进。
     /// </remarks>
     public static string NestInContainingTypes(StronglyTypedIdInfo idInfo, string declarationBlock)
     {

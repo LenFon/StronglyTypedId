@@ -6,9 +6,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 与统一注册入口。
 /// </summary>
 /// <remarks>
-/// Dapper 默认把未知类型整体序列化为 JSON（按 <c>object</c> 处理），强类型 Id 会退化成一段 JSON 字符串
-/// 存进数据库，既读不通也破坏强类型语义。实现 <c>TypeHandler&lt;TId&gt;</c> 后，DbParameter 写入基元值、
-/// 读取时还原为强类型 Id，与 EF Core / JSON 的行为保持一致。
+/// Dapper 默认把未知类型按 <c>object</c> 序列化为 JSON，强类型 Id 会退化成一段 JSON 字符串存进数据库。
+/// 实现 <c>TypeHandler&lt;TId&gt;</c> 后写入基元值、读取时还原为 Id。
 /// </remarks>
 internal class DapperCodeGenerator : IIntegrationCodeGenerator
 {
@@ -36,14 +35,8 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         {
             var handlerName = GetHandlerName(idInfo, ambiguousNames.Contains(idInfo.Name));
 
-            // Dapper 2.x 的 SqlMapper.TypeHandler<T> 基类签名为：
-            //   abstract void SetValue(System.Data.IDbDataParameter, T?)   ← 形参是可空 T?
-            //   abstract T Parse(System.Object)                            ← 返回非可空 T
-            // 对值类型 T，T? 的可空标注会被擦除、即 T 本身，形参写 T 即可；
-            // 对引用类型 T，T? 才是真正的可空标注，必须照抄，否则与基类不匹配（CS8765）。
-            // Parse 的返回是非可空 T：引用类型 Id 遇数据库 NULL 时语义上就该返回 null，
-            // 故用 default! 显式表态；值类型 Id 的 default 本就是合法取值，无需 !。
-            // 值类型 Id 取 .Value 还原基元；引用类型 Id 直接取 value（运行时为 null 即对应数据库 NULL）。
+            // 基类签名是 SetValue(IDbDataParameter, T?) / Parse(object) → T。值类型 T 的可空标注会被擦除，
+            // 引用类型 T 必须照抄 T?，否则 CS8765。Parse 返回非可空 T，引用类型 Id 遇 NULL 时用 default! 表态。
         var setValueParameter = idInfo.TypeKindSuffix is null
             ? $"{idInfo.FullyQualifiedName}? value"
             : $"{idInfo.FullyQualifiedName} value";
@@ -54,16 +47,9 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
 
         var parseDefaultValue = idInfo.TypeKindSuffix is null ? "default!" : "default";
 
-        // Parse 体（基类签名 Parse(System.Object)）：
-        //   DBNull → default（值类型 0 / 引用类型 null，对应数据库 NULL 与「无 Id」语义）；
-        //   非 DBNull → 强转基元再经 Create 还原强类型 Id。
-        // 用 if 语句体重写，避免三元表达式里 `!`（非空断言）与 `global::`（全局命名空间限定符）
-        // 在解析层面的歧义：Roslyn 在特定上下文下会把 `(global::X)(value!)` 里的 `!` 误识为
-        // 全局命名空间前缀（CS0400），而 `if` 语句体的 `value as global::X` 或 `value is global::X`
-        // 不存在该歧义。
-        // 注意：PrimitiveIdTypeName 由 SymbolDisplayFormat.FullyQualifiedFormat 产出，已含
-        // global:: 前缀（如 global::System.Guid / global::System.Int32），模板里不再套 global::，
-        // 避免重复前缀导致 CS0400。
+        // DBNull → default，否则强转基元再经 Create 还原。用 if 语句体而非三元表达式：Roslyn 在
+        // `(global::X)(value!)` 里会把 `!` 误识为全局命名空间前缀（CS0400）。PrimitiveIdTypeName 已含
+        // global:: 前缀，模板里不再套。
         var parseBody = $$"""
         {
             if (value is global::System.DBNull)
