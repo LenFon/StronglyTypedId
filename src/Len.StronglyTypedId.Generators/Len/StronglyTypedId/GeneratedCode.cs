@@ -13,6 +13,15 @@ internal static class GeneratedCode
     private const int IndentSize = 4;
 
     /// <summary>
+    /// 写入 <c>GeneratedCodeAttribute</c> 的生成器版本。
+    /// </summary>
+    /// <remarks>
+    /// 提到这里是因为 <see cref="StronglyTypedIdInfo"/> 也要渲染带该特性的成员（命名实例），
+    /// 而它是增量缓存的键，只能持有已渲染好的文本，拿不到 <c>Generate</c> 的 <c>version</c> 形参。
+    /// </remarks>
+    internal static readonly string Version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+
+    /// <summary>
     /// 把 <paramref name="code"/> 的换行符统一为模板自身使用的风格。
     /// </summary>
     public static string NormalizeLineEndings(string code)
@@ -57,6 +66,15 @@ internal static class GeneratedCode
     /// <param name="version">写入特性的生成器版本。</param>
     public static string GeneratedCodeAttribute(string generatorName, string version)
         => $"[global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"{generatorName}\", \"{version}\")]";
+
+    /// <summary>
+    /// 把 <c>[Flags]</c> 枚举的「未定义位掩码」渲染成 C# 字面量。
+    /// </summary>
+    /// <remarks>
+    /// 定长十六进制而非十进制：掩码常常接近满位，十进制写法既难核对又容易数错位数。
+    /// </remarks>
+    public static string UndefinedBitsLiteral(ulong mask)
+        => "0x" + mask.ToString("X16", System.Globalization.CultureInfo.InvariantCulture) + "UL";
 
     /// <summary>
     /// 把在命名空间层级书写的强类型 Id 声明块嵌进各层包含类型里，并按嵌套层数整体缩进。

@@ -31,7 +31,11 @@ internal static class DiagnosticDocumentation
         new DiagnosticDocEntry(Descriptors.TypeNameShouldEndWithIdId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.DuplicatePrimitiveTypeId, DocText.Empty),
         // 缺包不是代码问题：无法替用户添加包引用，只能由人决定是补包还是去掉标志。
-        new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, DocText.Empty));
+        new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, DocText.Empty),
+        // 命名实例：改名要同时改掉所有引用点，改值要重新挑一个业务上有意义的取值，两者都没有机械修法。
+        new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, DocText.Empty),
+        new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, DocText.Empty),
+        new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, DocText.Empty));
 
     /// <summary>
     /// 单条诊断的文档条目。

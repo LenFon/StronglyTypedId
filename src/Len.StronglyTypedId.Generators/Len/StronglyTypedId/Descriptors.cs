@@ -32,6 +32,9 @@ internal static class Descriptors
     public const string NormalizerReferenceInvalidId = "STIA0017";
     public const string ExceptionTypeInvalidId = "STIA0018";
     public const string IntegrationUnavailableId = "STIA0019";
+    public const string InvalidInstanceNameId = "STIA0020";
+    public const string InvalidInstanceValueId = "STIA0021";
+    public const string InstanceNameNotPascalCaseId = "STIA0022";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -230,6 +233,41 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// <c>[StronglyTypedIdInstance]</c> 的名字不是合法标识符、与另一条实例重名，或与类型自身 / 既有成员 /
+    /// 即将生成的成员撞名。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidInstanceName
+        = new(InvalidInstanceNameId,
+            new LocalizedString("InvalidInstanceNameTitle"),
+            new LocalizedString("InvalidInstanceNameMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedIdInstance]</c> 的值文本无法解析为该 Id 的基元类型（含越界、<c>char</c> 长度不为 1、
+    /// 枚举未定义值）。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidInstanceValue
+        = new(InvalidInstanceValueId,
+            new LocalizedString("InvalidInstanceValueTitle"),
+            new LocalizedString("InvalidInstanceValueMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 命名实例的名字不是 PascalCase。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InstanceNameNotPascalCase
+        = new(InstanceNameNotPascalCaseId,
+            new LocalizedString("InstanceNameNotPascalCaseTitle"),
+            new LocalizedString("InstanceNameNotPascalCaseMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -253,6 +291,9 @@ internal static class Descriptors
         TypeNameShouldEndWithId,
         DuplicatePrimitiveType,
         IntegrationUnavailable,
+        InvalidInstanceName,
+        InvalidInstanceValue,
+        InstanceNameNotPascalCase,
     ];
 
     /// <summary>

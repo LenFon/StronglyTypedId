@@ -16,6 +16,11 @@ internal static class AttributeReader
     internal const string StronglyTypedIdDefaultsAttributeName = "global::Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute";
 
     /// <summary>
+    /// <c>[StronglyTypedIdInstance]</c> 的全限定显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    internal const string StronglyTypedIdInstanceAttributeName = "global::Len.StronglyTypedId.StronglyTypedIdInstanceAttribute";
+
+    /// <summary>
     /// 取符号上第一个匹配的属性数据；未找到时为 <see langword="null"/>。
     /// </summary>
     internal static AttributeData? Find(ISymbol symbol, string fullyQualifiedAttributeName)
@@ -30,6 +35,36 @@ internal static class AttributeReader
 
         return null;
     }
+
+    /// <summary>
+    /// 取符号上全部匹配的属性数据，保持声明顺序；一个都没有时返回空数组。
+    /// </summary>
+    /// <remarks>
+    /// <c>[StronglyTypedIdInstance]</c> 是 <c>AllowMultiple = true</c>，顺序即生成顺序，故不能用 <see cref="Find"/>。
+    /// </remarks>
+    internal static ImmutableArray<AttributeData> FindAll(ISymbol symbol, string fullyQualifiedAttributeName)
+    {
+        var builder = ImmutableArray.CreateBuilder<AttributeData>();
+
+        foreach (var attribute in symbol.GetAttributes())
+        {
+            if (attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == fullyQualifiedAttributeName)
+            {
+                builder.Add(attribute);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// 取第 <paramref name="index"/> 个位置实参的字符串值；缺失或不是字符串常量时为 <see langword="null"/>。
+    /// </summary>
+    internal static string? GetPositionalString(AttributeData attribute, int index)
+        => attribute.ConstructorArguments.Length > index
+            && attribute.ConstructorArguments[index] is { Kind: TypedConstantKind.Primitive, Value: string value }
+                ? value
+                : null;
 
     /// <summary>
     /// 取命名实参的原始值；未指定时为 <see langword="null"/>。

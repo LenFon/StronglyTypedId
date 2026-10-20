@@ -122,9 +122,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var constructorParameterType = type.Constructors[0].Parameters[0].Type;
+        // 不能用 type.Constructors[0]：它含静态构造与用户额外写的实例构造，顺序不保证主构造在前，
+        // 取 [0].Parameters[0] 会越界并抛 AD0001，把该类型的全部 STIA 诊断一起吞掉。
+        // GetSingleParameterType 遍历 InstanceConstructors 并按「单参数且参数类型不是自身」过滤，
+        // 顺带跳过 record 编译器合成的拷贝构造。
+        var constructorParameterType = GetSingleParameterType(type);
 
-        if (!SupportedPrimitiveTypes.IsSupported(constructorParameterType))
+        if (constructorParameterType is null || !SupportedPrimitiveTypes.IsSupported(constructorParameterType))
         {
             Report(context, Descriptors.ParameterTypeIsInvalid, parameter.Type!.GetLocation(), parameter.Type);
             return;
@@ -157,6 +161,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         // 集成开关同样独立：只校验逐类型显式写出的那一份，程序集默认值由 AnalyzeAssembly 负责。
         ValidateIntegrations(context, type, records);
+
+        // 命名实例的名字与取值：与生成器共用同一份读取逻辑，保证「报错的那条」就是「跳过不生成的那条」。
+        ValidateInstances(context, type, constructorParameterType, records);
 
         // 「可被绕过」同样独立于形状校验，复用上面已算出的名字。
         ValidateGuardBypass(context, type, validatorName, normalizerName, records);
@@ -290,6 +297,66 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         if (prefix is not null && string.IsNullOrWhiteSpace(prefix))
         {
             Report(context, Descriptors.InvalidPrefix, FindNamedArgumentLocation(records, StronglyTypedIdInfo.PrefixArgumentName) ?? records[0].GetLocation());
+        }
+    }
+
+    /// <summary>
+    /// 校验 <c>[StronglyTypedIdInstance]</c> 的名字与取值（STIA0020 / STIA0021），并对非 PascalCase 的名字给出
+    /// 改名建议（STIA0022）。
+    /// </summary>
+    /// <remarks>
+    /// 逐条按属性顺序上报，位置落在对应的那条 attribute 上 —— 一个类型上可以写很多条实例，
+    /// 报在类型声明处等于让人自己猜是哪一条写错了。
+    /// </remarks>
+    private static void ValidateInstances(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        ITypeSymbol primitiveType,
+        RecordDeclarationSyntax[] records)
+    {
+        var attributes = AttributeReader.FindAll(type, AttributeReader.StronglyTypedIdInstanceAttributeName);
+
+        if (attributes.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var declarations = InstanceDeclaration.Read(type, primitiveType);
+
+        for (var index = 0; index < declarations.Length; index++)
+        {
+            var declaration = declarations[index];
+
+            var location = attributes[index].ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation()
+                ?? records[0].GetLocation();
+
+            switch (declaration.Issue)
+            {
+                case InstanceIssue.InvalidName:
+                case InstanceIssue.DuplicateName:
+                case InstanceIssue.CollidingName:
+                    Report(context, Descriptors.InvalidInstanceName, location, declaration.Name, type.Name);
+                    break;
+
+                case InstanceIssue.InvalidValue:
+                    Report(
+                        context,
+                        Descriptors.InvalidInstanceValue,
+                        location,
+                        declaration.Value,
+                        primitiveType.ToDisplayString(),
+                        declaration.Name);
+                    break;
+
+                case InstanceIssue.None:
+                    // 风格提示排在硬性校验之后：已经报错的实例不再顺带建议改名。
+                    if (!InstanceDeclaration.IsPascalCase(declaration.Name, out var suggestion))
+                    {
+                        Report(context, Descriptors.InstanceNameNotPascalCase, location, declaration.Name, suggestion);
+                    }
+
+                    break;
+            }
         }
     }
 

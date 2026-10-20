@@ -33,6 +33,10 @@ Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.get -> string?
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.get -> string?
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.set -> void
+Len.StronglyTypedId.StronglyTypedIdInstanceAttribute
+Len.StronglyTypedId.StronglyTypedIdInstanceAttribute.StronglyTypedIdInstanceAttribute(string! name, string! value) -> void
+Len.StronglyTypedId.StronglyTypedIdInstanceAttribute.Name.get -> string!
+Len.StronglyTypedId.StronglyTypedIdInstanceAttribute.Value.get -> string!
 Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.All = Len.StronglyTypedId.StronglyTypedIdIntegrations.EntityFrameworkCore | Len.StronglyTypedId.StronglyTypedIdIntegrations.Dapper | Len.StronglyTypedId.StronglyTypedIdIntegrations.SystemTextJson | Len.StronglyTypedId.StronglyTypedIdIntegrations.NewtonsoftJson | Len.StronglyTypedId.StronglyTypedIdIntegrations.Swagger | Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreOpenApi | Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreMvc -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreMvc = 128 -> Len.StronglyTypedId.StronglyTypedIdIntegrations

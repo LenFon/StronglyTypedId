@@ -143,6 +143,8 @@ internal readonly record struct StronglyTypedIdInfo
         IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
         IsCharPrimitive = primitiveIdType.SpecialType == SpecialType.System_Char;
         IsEnum = primitiveIdType.TypeKind == TypeKind.Enum;
+        IsFlagsEnum = IsEnum && HasFlagsAttribute(primitiveIdType);
+        FlagsEnumUndefinedBitsMask = IsFlagsEnum ? GetFlagsEnumUndefinedBitsMask(primitiveIdType) : null;
         // 枚举继承的 IFormattable / ISpanFormattable 已被标记 [Obsolete]：透出会 CS0618，不透出又会 CS0535。
         IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
         IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName) && !IsEnum;
@@ -170,6 +172,8 @@ internal readonly record struct StronglyTypedIdInfo
             ?? IntegrationFlags.All;
         HasSystemTextJsonConverter = WillHaveNestedType(type, SystemTextJsonConverterTypeName);
         HasNewtonsoftJsonConverter = WillHaveNestedType(type, NewtonsoftJsonConverterTypeName);
+        // 命名实例在构造期一次性渲染成文本：本类型是增量缓存的键，集合成员会退化成引用比较而让缓存永久失效。
+        InstancesBlock = RenderInstancesBlock(type, primitiveIdType);
     }
 
     /// <summary>
@@ -258,6 +262,20 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsEnum { get; }
 
     /// <summary>
+    /// 基元枚举是否标注了 <c>[System.Flags]</c>。位组合本身就是合法取值，故 <c>TryParse</c> 不能对它做
+    /// <c>Enum.IsDefined</c> 收紧，改用 <see cref="FlagsEnumUndefinedBitsMask"/> 做位校验。
+    /// </summary>
+    public bool IsFlagsEnum { get; }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举里没有任何成员占用的位。运行期只要 <c>(value &amp; mask) != 0</c> 就说明出现了未定义的位。
+    /// </summary>
+    /// <remarks>
+    /// 全部位都已定义时（典型是 <c>All = -1</c>）为 <see langword="null"/>，调用方据此跳过校验、产物与加入该能力之前一致。
+    /// </remarks>
+    public ulong? FlagsEnumUndefinedBitsMask { get; }
+
+    /// <summary>
     /// 基元类型是否实现 <c>System.IFormattable</c>。
     /// </summary>
     public bool IsFormattable { get; }
@@ -338,6 +356,65 @@ internal readonly record struct StronglyTypedIdInfo
     /// 判断给定集成是否被选中。仍须由调用方另外确认「当前编译确实引用了对应程序集」。
     /// </summary>
     public bool Supports(int integration) => (Integrations & integration) == integration;
+
+    /// <summary>
+    /// 命名实例的渲染块：每条实例的文档注释、生成器标注与 <c>public static readonly</c> 字段，
+    /// 自带产物中的绝对缩进（成员级 4 空格），块首是两个换行。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 存渲染后的文本而非实例集合，是因为本类型是 <c>readonly record struct</c>，成员级相等性就是增量缓存的键：
+    /// <see cref="ImmutableArray{T}"/> 的相等性是引用比较，放进来会让该 Id 的缓存永久失效。
+    /// </para>
+    /// <para>
+    /// 未声明任何实例、或声明的全部非法时为空串，此时生成产物与加入该能力之前逐字节一致。
+    /// </para>
+    /// </remarks>
+    public string InstancesBlock { get; }
+
+    /// <summary>
+    /// 渲染全部合法命名实例的成员块；没有合法实例时为空串。
+    /// </summary>
+    /// <remarks>
+    /// 非法项静默跳过：分析器会为它们报 <c>STIA0020</c> / <c>STIA0021</c>（Error，构建必然失败）。
+    /// 生成器绝不能为此抛异常 —— 那会降级成 <c>STIA0012</c>，把真正的原因盖掉。
+    /// </remarks>
+    private static string RenderInstancesBlock(ITypeSymbol type, ITypeSymbol primitiveType)
+    {
+        // 非具名类型在构造函数开头就已抛异常，这里只是让签名不必依赖调用点的静态类型。
+        if (type is not INamedTypeSymbol namedType)
+        {
+            return string.Empty;
+        }
+
+        var instances = InstanceDeclaration.Read(namedType, primitiveType);
+
+        if (instances.IsDefaultOrEmpty)
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+
+        foreach (var instance in instances)
+        {
+            if (instance.Issue != InstanceIssue.None)
+            {
+                continue;
+            }
+
+            // 块经插值洞注入模板，洞写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
+            builder.Append('\n').Append('\n');
+            builder.Append("    /// <summary>").Append('\n');
+            builder.Append("    /// Gets the <c>").Append(instance.Name).Append("</c> instance of <c>").Append(type.Name).Append("</c>.").Append('\n');
+            builder.Append("    /// </summary>").Append('\n');
+            builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
+            builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append('\n');
+            builder.Append("    public static readonly ").Append(type.Name).Append(' ').Append(instance.Name).Append(" = Create(").Append(instance.Expression).Append(");");
+        }
+
+        return builder.ToString();
+    }
 
     /// <summary>
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Integrations = …)]</c> 并规范化；未声明时为
@@ -442,12 +519,46 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 把类型显示名净化成合法的 hint 名：剔除尖括号、逗号与空格。
     /// </summary>
+    /// <remarks>
+    /// 剔除会让不同的全名塌陷到同一个 hint 名（<c>Ns.Outer&lt;T&gt;.Inner</c> 与 <c>Ns.OuterT.Inner</c> 都会变成
+    /// <c>Ns.OuterT.Inner</c>），撞名时 <c>AddSource</c> 抛重复 hint 名，最终降级成 STIA0012。因此只要确实剔掉了字符，
+    /// 就在末尾追加原始全名的稳定哈希，把塌陷的两个名字重新分开。
+    /// </remarks>
     private static string SanitizeHintName(string fullName)
-        => fullName
+    {
+        var sanitized = fullName
             .Replace("<", string.Empty)
             .Replace(">", string.Empty)
             .Replace(",", string.Empty)
             .Replace(" ", string.Empty);
+
+        // 净化只会删字符，长度不变即代表一个字符都没动，此时保持 hint 名原样。
+        return sanitized.Length == fullName.Length
+            ? sanitized
+            : $"{sanitized}_{ComputeStableHash(fullName)}";
+    }
+
+    /// <summary>
+    /// 计算与进程无关的 32 位 FNV-1a 哈希，用作 hint 名的消歧后缀。
+    /// </summary>
+    /// <remarks>
+    /// 不能用 <see cref="string.GetHashCode()"/>：它按进程随机化，会让同一份源码在不同构建之间产出不同的 hint 名。
+    /// </remarks>
+    private static string ComputeStableHash(string value)
+    {
+        const uint OffsetBasis = 2166136261;
+        const uint Prime = 16777619;
+
+        var hash = OffsetBasis;
+
+        foreach (var character in value)
+        {
+            hash ^= character;
+            hash *= Prime;
+        }
+
+        return hash.ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// 把符号的可访问性渲染成 C# 关键字。
@@ -469,6 +580,88 @@ internal readonly record struct StronglyTypedIdInfo
     private static bool ImplementsInterface(ITypeSymbol type, string interfaceName)
         => type.AllInterfaces.Any(@interface => @interface.Name == interfaceName
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == SystemNamespace);
+
+    /// <summary>
+    /// 判断枚举是否标注了 <c>[System.Flags]</c>。
+    /// </summary>
+    internal static bool HasFlagsAttribute(ITypeSymbol type)
+        => type.GetAttributes().Any(attribute =>
+            attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.FlagsAttribute");
+
+    /// <summary>
+    /// 计算 <c>[Flags]</c> 枚举里「没有任何成员占用」的位，供 <c>TryParse</c> 做位校验。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Enum.TryParse</c> 对任意数值文本都返回 <see langword="true"/>，<c>[Flags]</c> 枚举又不能用
+    /// <c>Enum.IsDefined</c> 收紧（位组合本身就是合法取值），于是改成「不许出现未定义的位」：
+    /// 掩码由全部成员的常量按位或取反得出，编译期算好，运行期只剩一次按位与。
+    /// </para>
+    /// <para>
+    /// 掩码按底层类型的宽度裁剪。<c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，不裁剪就会把整个掩码
+    /// 吃掉；裁剪后 <c>All = -1</c> 这类「全位已定义」的枚举得到 0，调用方据此跳过校验。
+    /// </para>
+    /// </remarks>
+    /// <returns>未定义位的掩码；全部位都已定义（或无法确定底层类型）时为 <see langword="null"/>。</returns>
+    internal static ulong? GetFlagsEnumUndefinedBitsMask(ITypeSymbol enumType)
+    {
+        if (enumType is not INamedTypeSymbol { EnumUnderlyingType: { } underlying } namedEnum)
+        {
+            return null;
+        }
+
+        var width = GetIntegralBitWidth(underlying.SpecialType);
+
+        if (width == 0)
+        {
+            return null;
+        }
+
+        var widthMask = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
+        var definedBits = 0UL;
+
+        foreach (var member in namedEnum.GetMembers())
+        {
+            if (member is IFieldSymbol { HasConstantValue: true, ConstantValue: { } constant })
+            {
+                definedBits |= ToBits(constant);
+            }
+        }
+
+        var undefinedBits = ~definedBits & widthMask;
+
+        return undefinedBits == 0 ? null : undefinedBits;
+    }
+
+    /// <summary>
+    /// 取整型基元类型的位宽；非整型返回 0。
+    /// </summary>
+    internal static int GetIntegralBitWidth(SpecialType type)
+        => type switch
+        {
+            SpecialType.System_SByte or SpecialType.System_Byte => 8,
+            SpecialType.System_Int16 or SpecialType.System_UInt16 => 16,
+            SpecialType.System_Int32 or SpecialType.System_UInt32 => 32,
+            SpecialType.System_Int64 or SpecialType.System_UInt64 => 64,
+            _ => 0,
+        };
+
+    /// <summary>
+    /// 把枚举成员的常量值按位展开成 <see cref="ulong"/>（负数按补码展开，随后由宽度掩码裁掉高位）。
+    /// </summary>
+    internal static ulong ToBits(object constant)
+        => constant switch
+        {
+            sbyte value => unchecked((ulong)value),
+            byte value => value,
+            short value => unchecked((ulong)value),
+            ushort value => value,
+            int value => unchecked((ulong)value),
+            uint value => value,
+            long value => unchecked((ulong)value),
+            ulong value => value,
+            _ => 0UL,
+        };
 
     /// <summary>
     /// 判断给定类型是否暴露了公开的静态 <c>TryParse(ReadOnlySpan&lt;TElement&gt;, IFormatProvider, out T)</c> 重载。

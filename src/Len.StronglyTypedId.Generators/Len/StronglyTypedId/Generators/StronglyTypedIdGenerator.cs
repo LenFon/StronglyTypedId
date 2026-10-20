@@ -5,7 +5,7 @@
 [Generator]
 internal class StronglyTypedIdGenerator : IIncrementalGenerator
 {
-    private static readonly string _version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+    private static readonly string _version = GeneratedCode.Version;
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -304,8 +304,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             DapperCodeGenerator.Instance,
             new DocText("`Dapper` ≥ 2.0.0 is referenced", "引用了 `Dapper` ≥ 2.0.0"),
             new DocText(
-                "Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`",
-                "嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`")),
+                "Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`",
+                "嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`")),
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.OpenApi.dll",
             static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
