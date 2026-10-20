@@ -39,8 +39,8 @@ public enum StronglyTypedIdIntegrations
     EntityFrameworkCore = 1 << 1,
 
     /// <summary>
-    /// Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 与 <c>ApplyTo(IDbConnection)</c>。
-    /// 需要引用 <c>Dapper</c> 2.0.0 及以上。
+    /// Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 与 <c>ApplyTo()</c>。注册是进程级全局的，
+    /// 调用一次即可。需要引用 <c>Dapper</c> 2.0.0 及以上。
     /// </summary>
     Dapper = 1 << 2,
 

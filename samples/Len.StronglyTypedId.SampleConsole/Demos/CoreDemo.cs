@@ -62,11 +62,5 @@ internal static class CoreDemo
         productId.Deconstruct(out var value);
         Demo.Line($"Deconstruct                       -> {value}");
         Demo.Line($"Create(5) == Create(5)            -> {ProductId.Create(5) == ProductId.Create(5)}");
-
-        Demo.Section("字符串驻留：相同值的 string Id 共享同一个实例");
-
-        var first = CustomerId.Create("C-001");
-        var second = CustomerId.Create("C-001");
-        Demo.Line($"ReferenceEquals(a.Value, b.Value) -> {ReferenceEquals(first.Value, second.Value)}");
     }
 }

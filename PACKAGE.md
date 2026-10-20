@@ -34,11 +34,6 @@ Supported primitive types: `Guid`, `string`, `byte`, `sbyte`, `short`, `ushort`,
 `long`, `ulong`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, and any `enum`. Use
 `record struct` for a value type, `record` for a reference type.
 
-String-backed ids are **interned**: equal string values share a single underlying instance, so a
-repeated id costs almost no extra memory. Interning is scoped per id type (not the global
-`string.Intern` pool) and capped at 1024 distinct values per type — once full, new values are not
-cached, so memory stays bounded for unbounded value sets.
-
 Point `Validator` at a static method to reject invalid values:
 
 ```csharp
@@ -72,7 +67,9 @@ All opt-in, generated only when the matching package is referenced:
 - **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` from `ConfigureConventions`, plus a
   model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from `OnModelCreating`. Both overloads are
   generated together whenever a `DbContext` overrides `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced.
-- **Dapper** — `StronglyTypedIds.ApplyTo(connection)` registers `TypeHandler`s.
+- **Dapper** — `StronglyTypedIds.ApplyTo()` registers `TypeHandler`s in Dapper's process-wide registry,
+  so it only needs to run once. The `ApplyTo(IDbConnection)` overload is kept for source compatibility and
+  ignores its argument.
 - **Swashbuckle / OpenAPI** — `StronglyTypedIds.ApplyTo(options)` for `AddSwaggerGen` / `AddOpenApi`.
 - **ASP.NET Core MVC** — `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id` and `{id:OrderId}`.
 
