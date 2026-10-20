@@ -53,6 +53,10 @@ retries with fresh values up to `AnyIdOptions.MaxAttempts` (100 by default) and 
 Any.Register<InvoiceNumber>(() => InvoiceNumber.Create(NextInvoiceNumber()));
 ```
 
+A rejection is recognised by its type: `ArgumentException` by default, or whatever the id configures
+through `ExceptionType` (per id, falling back to `[assembly: StronglyTypedIdDefaults]`). Anything else
+thrown by the validator is a bug in the validator, so it propagates instead of being retried.
+
 `Register` affects the shared generator used by the static `Any` members; call `Any.Reset()` between
 tests to drop registrations. Prefer a dedicated `AnyIdGenerator` instance when a test needs isolation.
 

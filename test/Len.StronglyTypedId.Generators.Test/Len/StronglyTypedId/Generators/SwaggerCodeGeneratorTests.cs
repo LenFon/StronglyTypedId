@@ -92,22 +92,39 @@ public class SwaggerCodeGeneratorTests
     // 源码必须带 using System;：否则 Guid 在合成编译里是「错误类型符号」，
     // SymbolDisplayFormat.FullyQualifiedFormat 会把它渲染成裸 Guid，与真实消费者环境
     // （global::System.Guid）不一致，令按短名匹配的基元分支「恰好」命中而掩盖缺陷。
+    // 映射口径对齐 System.Text.Json 的默认写出形态：整数 → integer，浮点/decimal → number，
+    // 日期时间 → string 加 format。枚举另有用例（需要先声明枚举类型）。
     [Theory]
     [InlineData("Guid", "string", "uuid")]
-    [InlineData("int", "integer", "int32")]
-    [InlineData("long", "integer", "int64")]
-    [InlineData("uint", "integer", "uint32")]
-    [InlineData("ulong", "integer", "uint64")]
+    [InlineData("string", "string", null)]
+    [InlineData("char", "string", null)]
     [InlineData("byte", "integer", "byte")]
     [InlineData("sbyte", "integer", "sbyte")]
     [InlineData("short", "integer", "int16")]
     [InlineData("ushort", "integer", "uint16")]
-    // string 不在显式列表内 → 命中默认分支，生成 Type 但无 Format。
-    [InlineData("string", "string", null)]
+    [InlineData("int", "integer", "int32")]
+    [InlineData("uint", "integer", "uint32")]
+    [InlineData("long", "integer", "int64")]
+    [InlineData("ulong", "integer", "uint64")]
+    // 超出 int64 / uint64 范围，OpenAPI 没有对应 format。
+    [InlineData("Int128", "integer", null)]
+    [InlineData("UInt128", "integer", null)]
+    [InlineData("BigInteger", "integer", null)]
+    [InlineData("decimal", "number", null)]
+    [InlineData("double", "number", "double")]
+    [InlineData("float", "number", "float")]
+    [InlineData("Half", "number", null)]
+    [InlineData("DateTime", "string", "date-time")]
+    [InlineData("DateTimeOffset", "string", "date-time")]
+    [InlineData("DateOnly", "string", "date")]
+    [InlineData("TimeOnly", "string", "time")]
+    // TimeSpan 的 JSON 形是 "hh:mm:ss"，不是 ISO 8601 duration。
+    [InlineData("TimeSpan", "string", null)]
     public void Swagger_V1_Should_GenerateMapType_ForPrimitive(string primitive, string openApiType, string? format)
     {
         var code = $$"""
             using System;
+            using System.Numerics;
 
             namespace Len.StronglyTypedId;
 
@@ -125,6 +142,28 @@ public class SwaggerCodeGeneratorTests
 
         generated.Should().Contain(
             $$"""options.MapType<global::Len.StronglyTypedId.OrderId>(() => {{schema}});""");
+    }
+
+    /// <summary>
+    /// 枚举在 JSON 里按底层整数写出（System.Text.Json 默认行为），schema 必须是 <c>integer</c> 而不是 <c>string</c>。
+    /// </summary>
+    [Fact]
+    public void Swagger_V1_Should_MapEnumToInteger()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Active, Suspended }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        GetSwaggerGeneratedCode(code, Swagger6Reference)
+            .Should().Contain(
+                """options.MapType<global::Len.StronglyTypedId.StatusId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "integer" });""");
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.Simplification;
 
 namespace Len.StronglyTypedId.CodeFixes;
 
@@ -329,7 +330,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 SyntaxFactory.Parameter(
                     default,
                     default,
-                    SyntaxFactory.ParseTypeName("Guid"),
+                    GuidTypeName(),
                     SyntaxFactory.Identifier("Value"),
                     default)));
 
@@ -348,11 +349,19 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
-        var newType = SyntaxFactory.ParseTypeName("Guid").WithTriviaFrom(parameter.Type!);
+        var newType = GuidTypeName().WithTriviaFrom(parameter.Type!);
         var updated = parameter.WithType(newType);
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(parameter, updated));
     }
+
+    /// <summary>
+    /// 修复产物里的 <c>Guid</c> 类型名。写成 <c>global::System.Guid</c> 并挂 <see cref="Simplifier.Annotation"/>：
+    /// 文件里已有 <c>using System;</c> 时由 CodeFix 后处理简化回 <c>Guid</c>，没有时停在 <c>System.Guid</c>，
+    /// 否则裸 <c>Guid</c> 会留下一个新的 CS0246。
+    /// </summary>
+    private static TypeSyntax GuidTypeName()
+        => SyntaxFactory.ParseTypeName("global::System.Guid").WithAdditionalAnnotations(Simplifier.Annotation);
 
     /// <summary>
     /// STIA0010 修复主入口：决定「生成验证器桩」还是「删掉 Validator 实参」。

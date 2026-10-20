@@ -147,6 +147,151 @@ public class SerializationAndDeserializationTests
         roundTripped.Should().ContainKey(CharId.Create('k'));
     }
 
+    /// <summary>
+    /// 枚举基元的字典键写成成员名、值写成数字。这不是本项目的独有偏差：<c>System.Text.Json</c> 对原生
+    /// <c>Dictionary&lt;MyEnum, MyEnum&gt;</c> 也是同样的「键用名字、值用数字」（JSON 对象的键只能是字符串）。
+    /// 用例把这个形态钉住，避免日后被当成 bug「修」成另一种表示而破坏线上的 JSON。
+    /// </summary>
+    [Fact]
+    public void EnumId_Should_WriteMemberNameAsDictionaryKey_AndNumberAsValue_When()
+    {
+        var dictionary = new Dictionary<SampleStatusId, SampleStatusId>
+        {
+            [SampleStatusId.Create(SampleStatus.Active)] = SampleStatusId.Create(SampleStatus.Suspended),
+        };
+
+        const string expectedJson = """{"Active":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SampleStatusId, SampleStatusId>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(SampleStatusId.Create(SampleStatus.Active));
+    }
+
+    /// <summary>
+    /// 枚举 Id 作字典键时应用 <c>DictionaryKeyPolicy</c>，与 <c>System.Text.Json</c> 对原生枚举键的行为一致
+    /// （原生 <c>Dictionary&lt;Status,int&gt;</c> 在 CamelCase 下写出 <c>{"active":1}</c>）。
+    /// </summary>
+    [Fact]
+    public void EnumId_Should_ApplyDictionaryKeyPolicy_When()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        };
+
+        var dictionary = new Dictionary<SamplePriorityId, int>
+        {
+            [SamplePriorityId.Create(SamplePriority.VeryHigh)] = 1,
+            [SamplePriorityId.Create(SamplePriority.LowPriority)] = 2,
+        };
+
+        const string expectedJson = """{"veryHigh":1,"lowPriority":2}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary, options).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SamplePriorityId, int>>(expectedJson, options)!;
+
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.VeryHigh));
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.LowPriority));
+    }
+
+    /// <summary>
+    /// 键文本被 policy 改写后仍能读回：解析必须忽略大小写。这也是 <c>System.Text.Json</c> 对原生枚举键的
+    /// 行为（<c>{"ACTIVE":1}</c> 同样能读回 <c>Active</c>）。
+    /// </summary>
+    [Fact]
+    public void EnumId_Should_ReadDictionaryKeyIgnoringCase_When()
+    {
+        const string json = """{"VERYHIGH":1,"lowpriority":2}""";
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SamplePriorityId, int>>(json)!;
+
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.VeryHigh));
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.LowPriority));
+    }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举作字典键：位组合必须能往返（键文本是 <c>"Read, Write"</c>），
+    /// 而含未定义位的键必须被拒 —— 字典键走的是忽略大小写的独立解析路径，位校验在那里同样要生效。
+    /// </summary>
+    [Fact]
+    public void FlagsEnumId_Should_RoundTripCombinationAsDictionaryKey_AndRejectUndefinedBits()
+    {
+        var dictionary = new Dictionary<SampleAccessId, int>
+        {
+            [SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write)] = 1,
+        };
+
+        const string expectedJson = """{"Read, Write":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SampleAccessId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write));
+
+        Action act = () => System.Text.Json.JsonSerializer.Deserialize<Dictionary<SampleAccessId, int>>("""{"999":1}""");
+
+        act.Should().Throw<System.Text.Json.JsonException>();
+    }
+
+    /// <summary>
+    /// 带前缀的枚举 Id 不应用 <c>DictionaryKeyPolicy</c>：键文本含用户定义的前缀，policy 会把前缀一起改写，
+    /// 读回时前缀匹配必然失败。用 SnakeCaseLower 才能看出差异（CamelCase 对 <c>pri_VeryHigh</c> 无变化）。
+    /// </summary>
+    [Fact]
+    public void PrefixedEnumId_Should_NotApplyDictionaryKeyPolicy_When()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
+        };
+
+        var dictionary = new Dictionary<PrefixedPriorityId, int>
+        {
+            [PrefixedPriorityId.Create(SamplePriority.VeryHigh)] = 1,
+        };
+
+        const string expectedJson = """{"pri_VeryHigh":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary, options).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<PrefixedPriorityId, int>>(expectedJson, options)!;
+
+        roundTripped.Should().ContainKey(PrefixedPriorityId.Create(SamplePriority.VeryHigh));
+    }
+
+    /// <summary>
+    /// string 基元的键值是数据本身而非名字，不应用 <c>DictionaryKeyPolicy</c>：改写它等于改写键值，
+    /// 写出去就读不回来（<c>StringId.Create("UserName")</c> 会变成 <c>StringId.Create("userName")</c>）。
+    /// </summary>
+    [Fact]
+    public void StringId_Should_NotApplyDictionaryKeyPolicy_When()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        };
+
+        var dictionary = new Dictionary<StringId, int> { [StringId.Create("UserName")] = 1 };
+
+        const string expectedJson = """{"UserName":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary, options).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<StringId, int>>(expectedJson, options)!;
+
+        roundTripped.Should().ContainKey(StringId.Create("UserName"));
+    }
+
     #region C10 文本前缀：JSON 走规范文本形
 
     /// <summary>

@@ -168,6 +168,30 @@ public class AspNetCoreMvcCodeGeneratorTests
             .And.Contain("private sealed class StronglyTypedIdRouteConstraint<TId> : global::Microsoft.AspNetCore.Routing.IRouteConstraint where TId : global::System.IParsable<TId>");
     }
 
+    /// <summary>
+    /// 路由约束必须接受非字符串的路由值：链接生成（<c>RouteDirection.UrlGeneration</c>）阶段
+    /// <c>values</c> 里放的是 Id 实例，原先的 <c>rawValue is not string</c> 会让带 <c>{id:OrderId}</c>
+    /// 的路由永远生成不出 URL。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreMvc_RouteConstraint_Should_CoerceRouteValueToString()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetMvcGeneratedCode(code);
+
+        generated.Should()
+            .Contain("var text = global::System.Convert.ToString(rawValue, global::System.Globalization.CultureInfo.InvariantCulture);")
+            .And.NotContain("rawValue is not string text");
+    }
+
     [Fact]
     public void AspNetCoreMvc_Should_RegisterConstraintForEveryId()
     {

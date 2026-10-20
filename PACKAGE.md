@@ -36,7 +36,8 @@ Supported primitive types: `Guid`, `string`, `byte`, `sbyte`, `short`, `ushort`,
 
 String-backed ids are **interned**: equal string values share a single underlying instance, so a
 repeated id costs almost no extra memory. Interning is scoped per id type (not the global
-`string.Intern` pool), so it cannot leak memory for unbounded value sets.
+`string.Intern` pool) and capped at 1024 distinct values per type — once full, new values are not
+cached, so memory stays bounded for unbounded value sets.
 
 Point `Validator` at a static method to reject invalid values:
 

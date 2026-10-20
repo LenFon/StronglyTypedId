@@ -15,7 +15,7 @@
 
 - `Len.StronglyTypedId.Testing`：测试用的确定性 Id 生成 —— `Any.Id<T>()`、`Any.Ids<T>(count)`、
   可设定种子的序列、`Any.Register<T>(factory)` 覆盖与 `Any.Reset()`。被生成的验证器拒绝的值会自动
-  重试，而不是表现为测试失败。
+  重试，而不是表现为测试失败。重试同样认得自定义 `ExceptionType`；验证器抛出的其它异常则原样冒泡。
 - `Len.StronglyTypedId.Testing.AutoFixture`：`fixture.WithStronglyTypedIds()` 通过同一套生成器填充
   强类型 Id，因此 AutoFixture 创建的对象图同样遵守验证器。
 - `IStronglyTypedId<TSelf>` —— Id 契约的单参数视图，泛型代码可以用「某个强类型 Id」作约束，而不必
@@ -30,7 +30,7 @@
   报告 `STIA0017`，代码修复可生成直通桩方法或删掉该实参。
 - `ExceptionType` —— 指向自定义异常，即可改变校验拒绝取值时 `Create` 抛出的异常。该类型必须派生自
   `System.Exception`、不能是抽象类，并具有可访问的、接收单个 `string` 消息的构造函数；否则报告
-  `STIA0018`，代码修复可删掉该实参。`Parse` 仍抛 `ArgumentException`，因为它的失败还包含「文本根本
+  `STIA0018`，代码修复可删掉该实参。`Parse` 抛的是 `FormatException`，因为它的失败还包含「文本根本
   不是 Id」。可用 `[assembly: StronglyTypedIdDefaults(ExceptionType = ...)]` 设置程序集级默认。
 - 文本前缀：`Prefix` 在 `ToString` 中写入固定前缀、在 `Parse` 中将其剥离；`PrefixReadMode` 选择
   接受裸值（`Lenient`）还是拒绝裸值（`Strict`）。
@@ -55,11 +55,23 @@
 
 ### 变更
 
+- 生成的类型声明不再带 `/// <summary>` 注释。那句话只是把声明本身又说了一遍，而且是整个文件里
+  唯一不来自 `/// <inheritdoc/>` 的文档注释，在每个生成文件里都像噪音。
+- 其余生成的文档注释改为 C# 惯例写法：`<summary>` 独占一行，正文另起一行，`</summary>` 再占一行。
+  此前 `TryCreate`、`Deconstruct`、null 安全比较辅助方法、`TypeConverter` 以及各集成注册方法都是
+  单行 `<summary>…</summary>`。纯排版变更，编译产物不变。
+- **破坏性变更：** 文本不是合法 Id 时，`Parse` 现在抛 `FormatException` 而不是 `ArgumentException`，
+  与 `IParsable<TSelf>` 的惯例（`int.Parse` / `Guid.Parse`）一致。原先在 `Parse` 外层
+  `catch (ArgumentException)` 的代码必须改为 `catch (FormatException)`，否则抓不到。`Create` 在校验器
+  拒绝取值时仍抛 `ArgumentException`（或配置的 `ExceptionType`），`TryParse` 行为不变。
 - **破坏性变更：** 诊断 ID 从 `STIAO###`（字母 O）改名为 `STIA0###`（数字零）。`.editorconfig` 里
   已有的 `dotnet_diagnostic.STIAO011.severity` 条目不再匹配；改名发生在首个稳定版发布之前。
 - 当格式提供程序为 `null` 时，`Parse` / `TryParse` 现在回退到不变文化，与 `ToString()` 写出的内容
   一致。此前 `null` 表示当前文化，于是 `Parse(id.ToString())` 在 `de-DE` 等区域下会静默产生错误值
   （`"1.5"` → `15`）。显式传入的 provider 仍按其文化处理。
+- Dapper 注册新增无参重载 `StronglyTypedIds.ApplyTo()`。Dapper 的类型处理器存在进程级注册表里，
+  `IDbConnection` 实参本来就没有可作用的对象；原有的 `ApplyTo(IDbConnection)` 保留以维持源码兼容，
+  内部转发到新重载。两者重复调用都无害 —— Dapper 对同一类型是替换而非追加，注册表不会膨胀。
 - README 的参考表格（基元类型、集成、诊断）由 `tools/Len.StronglyTypedId.DocGen` 从生成器源码
   生成；一旦发生漂移，CI 即失败。
 - 性能：生成器的发现结果在整条流水线内复用，`TryFormat` 不再装箱，`CompilationProvider` 依赖下沉。
@@ -71,8 +83,41 @@
   （`id == default`）不报告。开启 `TreatWarningsAsErrors` 的项目将因绕过验证器而构建失败；如需恢复
   原有行为，设置 `dotnet_diagnostic.STIA0011.severity = suggestion`。
 
+### 移除
+
+- 按 Id 类型分别驻留字符串。`Create` / `TryCreate` / `Parse` / `TryParse` 不再把字符串取值送进每类型的
+  `ConcurrentDictionary`，因此字符串型 Id 不再承诺「相等取值共享同一实例」。该缓存只在「少量取值被高频
+  重复创建」时才划算，代价却是每次工厂调用都多一次字典探测、每 Id 类型在进程生命周期内钉住最多 1024 个
+  字符串，且在加上限之前会对无界取值集合无限增长。需要去重请自行使用 `string.Intern` 或在自有层做缓存。
+
 ### 修复
 
+- `Create` 现在与其他成员一样带缩进。模板里的占位符落在原始字符串的去缩进基准列上，首行拿不到缩进，
+  于是表达式体重载顶格输出，而块体重载（配置 `Normalizer` 时）是正常的。纯排版问题 —— 两种形态都能
+  编译 —— 但每个生成文件在编辑器里看着都是坏的。
+- 枚举 Id 作 `Dictionary` 键时忽略 `JsonSerializerOptions.DictionaryKeyPolicy`：`CamelCase` 策略下写出
+  `{"Active":1}`，而原生 `Dictionary<Status, int>` 写出的是 `{"active":1}`。生成的 `WriteAsPropertyName`
+  现在应用该策略，`ReadAsPropertyName` 相应改为忽略大小写解析，被改写的键仍能读回。非枚举基元刻意不动：
+  它们的键文本**就是**值本身，改写等于让键读不回来。
+- 文档订正：声明在泛型容器里的 Id 保留全部核心能力，但**没有**自动的 JSON 接线。转换器类照常生成，
+  却挂不上 `[JsonConverter]` 特性（特性实参不能引用携带容器类型参数的转换器，CS0416），
+  `AddStronglyTypedId` / `ApplyTo` 也会跳过它（开放泛型不能作类型实参）。README 此前声称两种序列化
+  开箱即用，现已改为说明按闭合类型手动注册（`new Outer<int>.InnerId.SystemTextJsonConverter()`）。
+- Swagger 与内置 OpenAPI 转换器现在按 JSON 的真实形态描述 `decimal`、`double`、`float`、`Half`、
+  `Int128`、`UInt128`、`BigInteger`、枚举与日期时间基元。此前 `decimal` 被声明成 `string`（Swagger）
+  或 `integer`（OpenAPI），枚举被声明成 `string`，浮点落到字符串默认分支，导致生成的客户端按错误类型
+  反序列化。两个生成器现在共用同一张映射表。
+- `{id:OrderId}` 路由约束不再阻断链接生成。`RouteDirection.UrlGeneration` 阶段路由值是 Id 实例而非
+  字符串，约束里的 `is not string` 判断把它当成永久不匹配，这类路由因此永远生成不出 URL。现在先用
+  `Convert.ToString(..., InvariantCulture)` 归一，与框架内置约束一致。
+- 枚举基元的 `Parse` / `TryParse` 不再接受未定义数值（`"999"`）、逗号组合（`"1,2"`）等
+  `Enum.TryParse` 恰好放行的文本：解析成功后追加 `Enum.IsDefined` 校验。`[Flags]` 枚举用不了这项校验
+  （位组合本身就是合法取值），改为按「没有任何成员占用的位」掩码校验：`Read | Write` 通过，`999` 被拒。
+  前后空白照旧被裁剪，与其它 BCL 解析器一致。
+- 嵌套在其他类型内部的 Id 开启 `[StronglyTypedId(TypeConverter = true)]` 后，不再生成指向不存在类型的
+  `typeof(...)`。此前特性实参由「命名空间 + Id 名」拼成，丢掉了包含类型链，`Aggregate.NestedId` 会生成
+  `global::Ns.NestedId.NestedIdTypeConverter` 而非 `global::Ns.Aggregate.NestedId.NestedIdTypeConverter`，
+  消费者项目直接 CS0246。
 - OpenAPI 参数 schema 现在带上基元的 `format`（`/orders/{id}` → `type: string, format: uuid`）。
   路由与查询参数在 `JsonTypeInfo` 中描述的是基元，此前的 schema 转换器会漏掉它们；请求体与响应体
   本来就是正确的。
@@ -85,6 +130,28 @@
 - EF Core、Dapper、Swagger、MVC 与 OpenAPI 生成器在「没有可注册的 Id」时不再产出空的
   `StronglyTypedIds` 注册类。此前没有任何合格 Id 的程序集仍会拿到一个 `ApplyTo` 什么都不做的
   `StronglyTypedIds.*.g.cs`；现在直接跳过，与 JSON 注册入口的既有行为一致。
+- 引用类型 Id（`partial record`）的 Dapper 类型处理器改为把被包裹的基元写入 `DbParameter.Value`，
+  不再写入 Id 包装对象。SqlClient / SQLite 等驱动会以「No mapping exists from object type ...」
+  拒绝该包装对象，导致引用类型 Id 的所有插入与更新在参数绑定阶段失败。值类型 Id 不受影响。
+- Dapper 类型处理器读取时改为「转换驱动返回的值」而非直接拆箱。`Parse` 原先把 `object` 强转成基元，
+  只有驱动恰好返回该 CLR 类型时才成立：SQLite 的枚举列返回 `long`、`char` 与 `Guid` 列返回 `string`、
+  `decimal` 列返回 `double`，这四种基元的读取全部抛 `InvalidCastException`（写入正常）。现在驱动已返回
+  基元本身时直取，否则按基元种类转换。
+- 文件里没有 `using System;` 时，`STIA0008` 的代码修复不再留下裸 `Guid`。改为写入
+  `global::System.Guid` 再由简化器缩短，修复不会再把一条诊断换成一条 `CS0246`。
+- 分析器不再从 `Constructors[0].Parameters[0]` 取基元类型 —— 那假定主构造函数排在最前且有参数。
+  若类型的首个构造函数是无参的，这里会抛 `IndexOutOfRangeException`，被 Roslyn 包成 `AD0001`，
+  连带吞掉该类型的全部 `STIA` 诊断。现在改为遍历实例构造函数，取「单参数」的那一个，并跳过编译器
+  合成的拷贝构造函数。
+- 内嵌本地化资源缺失时，不再从诊断消息的渲染路径上抛异常。加载器返回空表、文案回退成资源键，
+  打包失误只会让措辞退化，而不会让分析器崩溃。
+- 引用类型 Id（`partial record`）的比较运算符在左操作数为 `null` 时不再抛 `NullReferenceException`。
+  此前无条件解引用 `left.Value`，而同类型的 `CompareTo` 早已把 `null` 当作最小值；现在运算符共用这一
+  约定，`null < id` 为 `true`、`null >= id` 为 `false`。值类型 Id 不变。
+- 声明在泛型容器内的 Id 不再有 hint 名撞车的风险。净化全名时会剔除 `<`、`>`、`,` 与空格，于是
+  `Ns.Outer<T>.Inner` 会塌陷到真实存在的 `Ns.OuterT.Inner` 上；`AddSource` 因重复 hint 名抛异常，
+  整个 Id 降级成 `STIA0012`。现在只要确实剔掉了字符，就在末尾追加由原始全名算出的稳定 FNV-1a 后缀，
+  两者在不同构建、不同机器上都保持区分。
 
 ## [1.3.0] - 2026-10-07
 

@@ -49,6 +49,11 @@ internal enum InstanceIssue
 internal readonly struct InstanceDeclaration
 {
     /// <summary>
+    /// <c>[System.CodeDom.Compiler.GeneratedCode]</c> 的全限定显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    private const string GeneratedCodeAttributeName = "global::System.CodeDom.Compiler.GeneratedCodeAttribute";
+
+    /// <summary>
     /// 生成代码里会出现的成员名。这些成员此刻还不存在（由生成器稍后产出），
     /// <c>type.GetMembers</c> 查不到，只能硬编码。
     /// </summary>
@@ -163,15 +168,28 @@ internal readonly struct InstanceDeclaration
     /// 判断名字是否会与类型自身、既有成员或即将生成的成员撞名。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 与类型同名会触发 CS0542（成员名不能与包含类型同名），与既有成员同名会触发 CS0102。
     /// <c>type.GetMembers</c> 覆盖用户自己写的成员与 record 合成成员（<c>Value</c> / <c>Equals</c> /
     /// <c>&lt;Clone&gt;$</c> 等），保留名清单覆盖生成器稍后才产出的那些。
+    /// </para>
+    /// <para>
+    /// 必须滤掉生成器自己产出的成员：分析器跑在**已包含生成代码**的编译上，否则每条实例都会撞上
+    /// 它自己刚刚生成的那个字段，于是全部被判成撞名。
+    /// </para>
     /// </remarks>
     private static bool IsReservedName(INamedTypeSymbol type, string name)
         => name == type.Name
             || name == type.Name + "TypeConverter"
             || Array.IndexOf(_reservedNames, name) >= 0
-            || type.GetMembers(name).Length > 0;
+            || type.GetMembers(name).Any(member => !IsGeneratedMember(member));
+
+    /// <summary>
+    /// 判断成员是否由源生成器产出（带 <c>[GeneratedCode]</c>）。
+    /// </summary>
+    private static bool IsGeneratedMember(ISymbol member)
+        => member.GetAttributes().Any(attribute =>
+            attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == GeneratedCodeAttributeName);
 
     /// <summary>
     /// 判断名字是否符合 PascalCase，并在不符合时给出建议名。

@@ -14,6 +14,9 @@
 		     EfCoreCodeGenerator / SwaggerCodeGenerator / AspNetCoreMvcCodeGenerator
 		     在本工程编译里被门控触发，生成 StronglyTypedIds 的集成 ApplyTo 产物。 -->
 		<PackageReference Include="Dapper" />
+		<!-- 真实 SQLite：Dapper 的读取路径只有在驱动返回「非基元 CLR 类型」时才会暴露转换缺陷，
+		     内存库是最小的可复现载体（枚举列 long / char、Guid 列 string / decimal 列 double）。 -->
+		<PackageReference Include="Microsoft.Data.Sqlite" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" />
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />

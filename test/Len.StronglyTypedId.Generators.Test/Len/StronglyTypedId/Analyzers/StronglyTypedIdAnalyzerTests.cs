@@ -159,6 +159,49 @@ public class StronglyTypedIdAnalyzerTests
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
+    /// <summary>
+    /// 静态构造函数也在 <c>INamedTypeSymbol.Constructors</c> 里，且没有参数。若按 <c>Constructors[0].Parameters[0]</c>
+    /// 取基元类型，这里会抛 IndexOutOfRangeException 并被 Roslyn 包成 AD0001，把该类型的全部 STIA 诊断一起吞掉。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenStaticConstructorDeclared()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                static OrderId() { }
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 用户额外写的无参实例构造排在主构造之前时，同样不能让 <c>Constructors[0].Parameters[0]</c> 越界。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenExtraParameterlessConstructorDeclared()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                public OrderId() : this(Guid.Empty) { }
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenSegmentedPartialDeclarationHasNoPrimaryConstructor()
     {

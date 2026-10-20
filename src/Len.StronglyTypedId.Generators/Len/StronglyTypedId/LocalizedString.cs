@@ -49,9 +49,17 @@ file static class LocalizationTexts
     private static Dictionary<string, string> LoadTexts(CultureInfo culture)
     {
         using var stream = OpenLocalizationStream(culture);
-        using var reader = new StreamReader(stream);
 
         var texts = new Dictionary<string, string>();
+
+        // 资源缺失时返回空表而不是抛异常：这段代码跑在 DiagnosticDescriptor 的消息渲染路径上，
+        // 抛出会把整条诊断（乃至整个分析器）带崩。空表让 LocalizedString 回退到 key 本身。
+        if (stream is null)
+        {
+            return texts;
+        }
+
+        using var reader = new StreamReader(stream);
 
         while (reader.ReadLine() is { } line)
         {
@@ -75,17 +83,19 @@ file static class LocalizationTexts
         return texts;
     }
 
-    private static Stream OpenLocalizationStream(CultureInfo culture)
+    /// <summary>
+    /// 打开指定区域性的内嵌资源流；找不到任何可用资源时返回 <see langword="null"/>，由调用方回退到 key 本身。
+    /// </summary>
+    private static Stream? OpenLocalizationStream(CultureInfo culture)
     {
         var assembly = typeof(LocalizationTexts).Assembly;
         var resourceNames = assembly.GetManifestResourceNames();
 
         var resourceName = FindResource(resourceNames, culture.Name)
             ?? FindResource(resourceNames, culture.TwoLetterISOLanguageName)
-            ?? FindResource(resourceNames, FallbackCultureName)
-            ?? throw new InvalidOperationException($"No embedded localization resource was found for culture '{culture.Name}'.");
+            ?? FindResource(resourceNames, FallbackCultureName);
 
-        return assembly.GetManifestResourceStream(resourceName)!;
+        return resourceName is null ? null : assembly.GetManifestResourceStream(resourceName);
     }
 
     private static string? FindResource(string[] resourceNames, string cultureName)

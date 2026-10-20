@@ -4,6 +4,7 @@
 using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using Dapper;
 using FluentAssertions;
 using Len.StronglyTypedId;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,8 +24,8 @@ public class IntegrationRuntimeTests
     [Fact]
     public void Dapper_ApplyTo_RegistersTypeHandlersAndRoundTrips()
     {
-        // 生成器产物的 ApplyTo(System.Data.IDbConnection) 必须可调用且不抛（注册是静态
-        // SqlMapper.AddTypeHandler，不实际连接数据库）。传 null 即可——ApplyTo 不对 connection 解引用。
+        // 带参重载是为源码兼容保留的转发：Dapper 的注册是进程级全局的，connection 不参与。
+        // 传 null 即可——ApplyTo 不对 connection 解引用。
         Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
 
         // 验证生成的 IntegrationGuidIdTypeHandler（internal 嵌套类）可实例化且 SetValue/Parse 往返正确。
@@ -46,6 +47,162 @@ public class IntegrationRuntimeTests
         parsed.Should().Be(default, "DBNull 必须映射到 default 值类型 Id");
         var guid = Guid.NewGuid();
         handler.Parse(guid).Should().Be(IntegrationGuidId.Create(guid));
+    }
+
+    /// <summary>
+    /// 引用类型 Id（<c>record class</c>）的 <c>SetValue</c> 必须写出基元值，而不是 Id 包装对象。
+    /// 后者会让 SqlClient / Sqlite 在参数绑定时抛「No mapping exists from object type ...」——
+    /// 这正是曾经的缺陷：值类型分支取了 <c>.Value</c>，引用类型分支直接把 <c>value</c> 塞了进去。
+    /// </summary>
+    [Fact]
+    public void Dapper_SetValue_WritesPrimitive_ForReferenceTypeId()
+    {
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
+
+        var handlerType = typeof(Len.StronglyTypedId.StronglyTypedIds)
+            .Assembly
+            .GetType("Len.StronglyTypedId.StronglyTypedIds+IntegrationReferenceIdTypeHandler")!;
+
+        handlerType.Should().NotBeNull("引用类型 Id 也必须生成 Dapper 处理器");
+
+        var handler = (Dapper.SqlMapper.TypeHandler<IntegrationReferenceId>)Activator.CreateInstance(handlerType)!;
+
+        var guid = Guid.NewGuid();
+        var parameter = new StubParameter();
+
+        handler.SetValue(parameter, IntegrationReferenceId.Create(guid));
+
+        // 关键断言：写出的必须是 Guid 基元。若写成包装对象，这里会是 IntegrationReferenceId。
+        parameter.Value.Should().BeOfType<Guid>("SetValue 必须解包出基元值，否则驱动无法绑定该参数")
+            .Which.Should().Be(guid);
+
+        // null → DBNull：引用类型 Id 的 NULL 语义必须与值类型一致。
+        var nullParameter = new StubParameter();
+        handler.SetValue(nullParameter, null);
+        nullParameter.Value.Should().Be(DBNull.Value);
+
+        // Parse 往返：Guid → Id；DBNull → null（引用类型的 default）。
+        handler.Parse(guid).Should().Be(IntegrationReferenceId.Create(guid));
+        handler.Parse(DBNull.Value).Should().BeNull();
+    }
+
+    /// <summary>
+    /// 重复调用 <c>ApplyTo</c> 必须幂等。Dapper 的 <c>AddTypeHandler</c> 是按类型赋值而不是追加，
+    /// 所以第二次调用只会把处理器换成等价的新实例：不抛异常，注册表也不膨胀。
+    /// 这正是「每个连接注册一次」这种误用能长期不被发现的原因——它不报错，只是白做功。
+    /// </summary>
+    [Fact]
+    public void Dapper_ApplyTo_IsIdempotent()
+    {
+        // 无参重载是推荐写法；带参重载保留兼容，两者指向同一份进程级注册。
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
+
+        Dapper.SqlMapper.HasTypeHandler(typeof(IntegrationGuidId)).Should().BeTrue("值类型 Id 的处理器必须仍在册");
+        Dapper.SqlMapper.HasTypeHandler(typeof(IntegrationReferenceId)).Should().BeTrue("引用类型 Id 的处理器必须仍在册");
+
+        // 覆盖后行为不变：新实例仍能正确往返。
+        var handlerType = typeof(Len.StronglyTypedId.StronglyTypedIds)
+            .Assembly
+            .GetType("Len.StronglyTypedId.StronglyTypedIds+IntegrationGuidIdTypeHandler")!;
+        var handler = (Dapper.SqlMapper.TypeHandler<IntegrationGuidId>)Activator.CreateInstance(handlerType)!;
+        var guid = Guid.NewGuid();
+
+        handler.Parse(guid).Should().Be(IntegrationGuidId.Create(guid));
+    }
+
+    /// <summary>
+    /// 非 string 基元的读取路径：驱动返回的 CLR 类型往往不是基元本身，裸拆箱强转会抛
+    /// <see cref="InvalidCastException"/>。这里按各驱动的真实返回形态喂给 <c>Parse</c>。
+    /// </summary>
+    [Fact]
+    public void Dapper_Parse_AcceptsProviderShapedValues_ForNonStringPrimitives()
+    {
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+
+        // 枚举：SQLite 的 INTEGER 列一律返回 long；部分驱动把枚举列当文本返回。
+        GetDapperHandler<SampleStatusId>().Parse(1L)
+            .Should().Be(SampleStatusId.Create(SampleStatus.Suspended));
+        GetDapperHandler<SampleStatusId>().Parse("Suspended")
+            .Should().Be(SampleStatusId.Create(SampleStatus.Suspended));
+
+        // char：TEXT 列返回 string。
+        GetDapperHandler<CharId>().Parse("A").Should().Be(CharId.Create('A'));
+
+        // decimal：REAL 列返回 double。
+        GetDapperHandler<DecimalId>().Parse(1.5d).Should().Be(DecimalId.Create(1.5m));
+
+        // Guid：TEXT 列返回 string。
+        var guid = Guid.NewGuid();
+        GetDapperHandler<GuidId>().Parse(guid.ToString()).Should().Be(GuidId.Create(guid));
+
+        // int：INTEGER 列返回 long，需要窄化。
+        GetDapperHandler<Int32Id>().Parse(42L).Should().Be(Int32Id.Create(42));
+
+        // NULL 的两种形态都落到 default。Dapper 基类的 Parse 形参标注为非空 object，故用 ! 表态。
+        GetDapperHandler<GuidId>().Parse(null!).Should().Be(default);
+        GetDapperHandler<GuidId>().Parse(DBNull.Value).Should().Be(default);
+    }
+
+    /// <summary>
+    /// 真实 SQLite 往返：写入侧把基元交给驱动，读取侧由驱动返回 long / string / double，
+    /// 再由生成的 <c>Parse</c> 转换回基元。这条端到端路径此前 4/4 抛 <see cref="InvalidCastException"/>，
+    /// 而当时的集成用例只用 string 基元，缺陷因此长期未被发现。
+    /// </summary>
+    [Fact]
+    public void Dapper_RoundTrips_NonStringPrimitives_ThroughSqlite()
+    {
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        connection.Execute(
+            "CREATE TABLE Probe (Id TEXT NOT NULL, Letter TEXT NOT NULL, Amount REAL NOT NULL, Status INTEGER NOT NULL)");
+
+        var guid = Guid.NewGuid();
+
+        connection.Execute(
+            "INSERT INTO Probe (Id, Letter, Amount, Status) VALUES (@Id, @Letter, @Amount, @Status)",
+            new
+            {
+                Id = GuidId.Create(guid),
+                Letter = CharId.Create('A'),
+                Amount = DecimalId.Create(1.5m),
+                Status = SampleStatusId.Create(SampleStatus.Suspended),
+            });
+
+        var row = connection.QuerySingle<ProbeRow>("SELECT Id, Letter, Amount, Status FROM Probe");
+
+        row.Id.Should().Be(GuidId.Create(guid));
+        row.Letter.Should().Be(CharId.Create('A'));
+        row.Amount.Should().Be(DecimalId.Create(1.5m));
+        row.Status.Should().Be(SampleStatusId.Create(SampleStatus.Suspended));
+    }
+
+    /// <summary>
+    /// 取某个 Id 的 Dapper 处理器实例。处理器是生成在 <c>StronglyTypedIds</c> 里的 <c>internal</c> 嵌套类，
+    /// 只能按名字反射拿到。
+    /// </summary>
+    private static Dapper.SqlMapper.TypeHandler<TId> GetDapperHandler<TId>()
+        => (Dapper.SqlMapper.TypeHandler<TId>)Activator.CreateInstance(
+            typeof(Len.StronglyTypedId.StronglyTypedIds)
+                .Assembly
+                .GetType($"Len.StronglyTypedId.StronglyTypedIds+{typeof(TId).Name}TypeHandler")!)!;
+
+    /// <summary>
+    /// SQLite 往返用的行类型：四个属性分别覆盖 Guid / char / decimal / enum 四种基元。
+    /// </summary>
+    private sealed class ProbeRow
+    {
+        public GuidId Id { get; set; }
+
+        public CharId Letter { get; set; }
+
+        public DecimalId Amount { get; set; }
+
+        public SampleStatusId Status { get; set; }
     }
 
     #endregion
@@ -197,6 +354,33 @@ public class IntegrationRuntimeTests
         json.Should().Be($"\"{id.Value:D}\"");
 
         Newtonsoft.Json.JsonConvert.DeserializeObject<IntegrationGuidId>(json, settings).Should().Be(id);
+    }
+
+    /// <summary>
+    /// 泛型容器里的 Id 是 JSON 支持唯一的缺口：转换器类照常生成，但 <c>[JsonConverter]</c> 特性引用不了含类型参数的
+    /// 转换器（CS0416），<c>AddStronglyTypedId()</c> 也会跳过它（开放泛型不能作类型实参）。因此默认序列化退化成
+    /// record 结构，只有按闭合类型手动挂上生成的转换器才回到基元形态。这条用例锁定该行为与可行的绕法。
+    /// </summary>
+    [Fact]
+    public void GenericContainerId_Should_NeedManualConverterRegistration()
+    {
+        var guid = Guid.NewGuid();
+        var id = IntegrationBox<int>.BoxedGuidId.Create(guid);
+
+        // 默认：没有特性也没有注册，走 record 的公共属性。
+        System.Text.Json.JsonSerializer.Serialize(id).Should().Be($"{{\"Value\":\"{guid:D}\"}}");
+        Newtonsoft.Json.JsonConvert.SerializeObject(id).Should().Be($"{{\"Value\":\"{guid:D}\"}}");
+
+        // 手动按闭合类型注册后与普通 Id 一致。
+        var stjOptions = new System.Text.Json.JsonSerializerOptions();
+        stjOptions.Converters.Add(new IntegrationBox<int>.BoxedGuidId.SystemTextJsonConverter());
+        System.Text.Json.JsonSerializer.Serialize(id, stjOptions).Should().Be($"\"{guid:D}\"");
+        System.Text.Json.JsonSerializer.Deserialize<IntegrationBox<int>.BoxedGuidId>($"\"{guid:D}\"", stjOptions).Should().Be(id);
+
+        var newtonsoftSettings = new Newtonsoft.Json.JsonSerializerSettings();
+        newtonsoftSettings.Converters.Add(new IntegrationBox<int>.BoxedGuidId.NewtonsoftJsonConverter());
+        Newtonsoft.Json.JsonConvert.SerializeObject(id, newtonsoftSettings).Should().Be($"\"{guid:D}\"");
+        Newtonsoft.Json.JsonConvert.DeserializeObject<IntegrationBox<int>.BoxedGuidId>($"\"{guid:D}\"", newtonsoftSettings).Should().Be(id);
     }
 
     #endregion

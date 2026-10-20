@@ -11,3 +11,9 @@ public partial record struct IntegrationGuidId(Guid Value);
 // 这两处生成器零改动，全靠 Id 的 TryParse / ToString 走文本路径。
 [StronglyTypedId(Prefix = "ord_")]
 public partial record struct PrefixedIntegrationGuidId(Guid Value);
+
+// 引用类型 Id（record class）：专门覆盖 Dapper 处理器的引用类型分支。该分支曾把整个 Id 包装对象
+// 赋给 DbParameter.Value，驱动绑定时会抛「No mapping exists from object type ...」；
+// 此前测试矩阵里全是 record struct，这条路径零覆盖。
+[StronglyTypedId]
+public partial record IntegrationReferenceId(Guid Value);

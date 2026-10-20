@@ -90,5 +90,14 @@ public class LocalizedStringTests
         localized.ToString(CultureInfo.GetCultureInfo("fr-FR")).Should().NotBe("TypeMustBePartialTitle");
     }
 
+    /// <summary>
+    /// 回退链的最后一环是内嵌的 en 资源。它一旦缺失，加载器会拿到 null 流并静默回退到资源键——不再抛异常，
+    /// 但所有诊断文案都会退化成键名。这条断言把「资源确实被打进了程序集」钉住，让那种退化能被发现。
+    /// </summary>
+    [Fact]
+    public void EmbeddedResources_Should_IncludeEnglishFallback()
+        => typeof(LocalizedString).Assembly.GetManifestResourceNames()
+            .Should().Contain(name => name.EndsWith(".Locales.en.txt", StringComparison.OrdinalIgnoreCase));
+
     #endregion
 }

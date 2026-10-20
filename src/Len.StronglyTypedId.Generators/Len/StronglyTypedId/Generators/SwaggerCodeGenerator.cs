@@ -62,34 +62,21 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             ? "global::Microsoft.OpenApi.OpenApiSchema"
             : "global::Microsoft.OpenApi.Models.OpenApiSchema";
 
+        var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
+
         // 1.x 的 Type 是字符串字面量；2.x 的 Type 是 Microsoft.OpenApi.JsonSchemaType 枚举。
-        string TypeExpression(string keyword) => useOpenApiV2
-            ? keyword == "string"
-                ? "global::Microsoft.OpenApi.JsonSchemaType.String"
-                : "global::Microsoft.OpenApi.JsonSchemaType.Integer"
-            : "\"" + keyword + "\"";
-
-        string Schema(string typeExpression, string? format) =>
-            format is null
-                ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
-                : $$"""new {{schemaTypeName}} { Type = {{typeExpression}}, Format = "{{format}}" }""";
-
-        // 有前缀时规范文本形是字符串，故 schema 一律为 string 且不带 format ——
-        // 数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
-        return idInfo.HasPrefix
-            ? Schema(TypeExpression("string"), null)
-            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
+        var typeExpression = useOpenApiV2
+            ? type switch
             {
-                "Guid" => Schema(TypeExpression("string"), "uuid"),
-                "int" => Schema(TypeExpression("integer"), "int32"),
-                "long" => Schema(TypeExpression("integer"), "int64"),
-                "uint" => Schema(TypeExpression("integer"), "uint32"),
-                "ulong" => Schema(TypeExpression("integer"), "uint64"),
-                "byte" => Schema(TypeExpression("integer"), "byte"),
-                "sbyte" => Schema(TypeExpression("integer"), "sbyte"),
-                "short" => Schema(TypeExpression("integer"), "int16"),
-                "ushort" => Schema(TypeExpression("integer"), "uint16"),
-                _ => Schema(TypeExpression("string"), null),
-            };
+                PrimitiveIdSchemaMap.String => "global::Microsoft.OpenApi.JsonSchemaType.String",
+                PrimitiveIdSchemaMap.Integer => "global::Microsoft.OpenApi.JsonSchemaType.Integer",
+                PrimitiveIdSchemaMap.Number => "global::Microsoft.OpenApi.JsonSchemaType.Number",
+                _ => "global::Microsoft.OpenApi.JsonSchemaType.String",
+            }
+            : "\"" + type + "\"";
+
+        return format is null
+            ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
+            : $$"""new {{schemaTypeName}} { Type = {{typeExpression}}, Format = "{{format}}" }""";
     }
 }

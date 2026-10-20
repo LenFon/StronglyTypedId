@@ -64,9 +64,6 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **UTF-8 interfaces** — for primitives that expose them (`Guid` from .NET 10, for example),
   `IUtf8SpanFormattable` and `IUtf8SpanParsable<TSelf>` are generated automatically, enabling
   `ReadOnlySpan<byte>` parsing and formatting.
-- **String interning** — for `string`-backed ids, equal values share a single underlying instance
-  per id type (via a per-type cache, not the process-wide `string.Intern` pool), so repeated ids
-  add almost no extra memory and can never leak for unbounded value sets.
 - **Per-type TypeConverter** — set `[StronglyTypedId(TypeConverter = true)]` to emit a nested `TypeConverter`
   that round-trips between string and the id through `TypeDescriptor`, covering config binding /
   `XmlSerializer` scenarios.
@@ -75,7 +72,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **Per-id integration filter** — `[StronglyTypedId(Integrations = ...)]` narrows which integration code an
   id gets (`None`, a whitelist, or `All`), with an assembly-level default
   (see [Turning integrations off](#integrations-filter)).
-- **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and `ApplyTo(IDbConnection)` are generated.
+- **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and a process-wide `ApplyTo()` are generated.
 - **ASP.NET Core MVC integration** — when `Microsoft.AspNetCore.Mvc` (or its `Microsoft.AspNetCore.Mvc.Core` facade) ≥ 2.0.0 is referenced, a model-binder provider and per-id route constraints are generated so `[FromRoute]`/`[FromQuery]` and `{id:OrderId}` bind correctly.
 - **Minimal API support** — nothing extra to generate: route/query parameters bind through `IParsable<T>`, and `{id:OrderId}` route constraints reuse the `RouteOptions` registration emitted by the MVC integration.
 - **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
@@ -224,7 +221,7 @@ your own declaration is never modified. What is emitted depends on what the comp
 | `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                                           | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`                   |
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`       | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                                          | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                   |
-| `Dapper` ≥ 2.0.0 is referenced                                                                                     | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`                                                                                  |
+| `Dapper` ≥ 2.0.0 is referenced                                                                                     | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`                                                                                               |
 | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                                               | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                            |
 | `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)                                                              |
 <!-- END GENERATED:generated-code -->
@@ -252,8 +249,6 @@ The core implementation adds:
   `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
   `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and
   `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
-- String-backed ids intern equal values: the storage for equal strings is shared per id type via a small
-  per-type cache (not the process-wide `string.Intern` pool), so repeated ids add almost no extra memory.
 - A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
   round-tripping between string and the id through `TypeDescriptor`; a `null` reference-type id resolves back to `default`.
 
@@ -261,6 +256,12 @@ Enum-backed ids keep `IComparable<TSelf>`, `IParsable<TSelf>` and `ISpanParsable
 `Enum.TryParse<TEnum>`), but deliberately skip `IFormattable`/`ISpanFormattable` because `Enum`'s
 `ToString(string, IFormatProvider)` is marked obsolete — their `ToString()` simply returns the
 underlying value's text.
+
+`Enum.TryParse` accepts any numeric text, so the generated `TryParse` tightens it: a plain enum must name a
+defined member (`Enum.IsDefined`), while a `[Flags]` enum may combine members but must not set a bit that no
+member occupies — `Read | Write` parses, `999` does not. The bit mask is computed at compile time from the
+members' constants and trimmed to the enum's underlying type, so it costs one bitwise-and at run time; an enum
+that defines every bit (typically `All = -1`) gets no check at all.
 
 The integration entry points are emitted into a single generated class —
 `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
@@ -316,9 +317,9 @@ OrderId.Create(Guid.Empty);   // throws DomainRuleViolationException
 
 The type must derive from `System.Exception`, must not be abstract, and must expose an accessible constructor
 taking a single `string` message; anything else is reported as [STIA0018](#diagnostics) at the declaration.
-Only `Create` uses it — `Parse` keeps throwing `ArgumentException`, because its failure also covers text that
-is not an id at all, which is a malformed-input error rather than a domain-rule violation. Like the other
-options it can be set for the whole assembly with
+Only `Create` uses it — `Parse` throws `FormatException` instead, following the `IParsable<TSelf>` convention
+(the same as `int.Parse` / `Guid.Parse`), because its failure also covers text that is not an id at all.
+Like the other options it can be set for the whole assembly with
 `[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`.
 
 <a id="value-normalization"></a>
@@ -488,15 +489,23 @@ each level must be `partial` and not a `file`-local type. Violations are reporte
 
 **Generic containers.** The containing type may be generic (for example `Outer<T>`): the generator
 reopens it with its type parameter list, so an id declared inside a generic container compiles and keeps
-every capability the core generator produces — comparison and ordering, formatting and span parsing, both
-JSON serializers, and System.Text.Json dictionary keys. The external-reference integrations — EF Core,
-Swagger, Dapper, MVC and OpenAPI — skip ids declared inside generic containers, because an open generic
-type cannot be referenced by name from the generated `StronglyTypedIds` entry points; for those, declare
-the id at namespace level or in a non-generic container.
+every capability the core generator produces — comparison and ordering, formatting and span parsing, and
+System.Text.Json dictionary keys. JSON is the one exception: the converter classes are generated, but the
+`[JsonConverter]` attribute cannot be emitted (an attribute argument may not reference a converter that
+carries the container's type parameter — CS0416), and the `AddStronglyTypedId` / `ApplyTo` entry points
+skip such ids because an open generic type cannot be passed as a type argument. Register the converter
+yourself for the closed type you use:
 
-Nesting does not affect the core capabilities: comparison and ordering, formatting and span parsing,
-both JSON serializers and System.Text.Json dictionary keys all work as usual. The EF Core, Swagger,
-Dapper, MVC and OpenAPI integrations skip ids declared inside generic containers (see above).
+```csharp
+options.Converters.Add(new Outer<int>.InnerId.SystemTextJsonConverter());
+```
+
+The external-reference integrations — EF Core, Swagger, Dapper, MVC and OpenAPI — skip ids declared
+inside generic containers for the same reason; for those, declare the id at namespace level or in a
+non-generic container.
+
+Plain (non-generic) nesting affects nothing: comparison and ordering, formatting and span parsing, both
+JSON serializers and System.Text.Json dictionary keys all work as usual.
 
 <a id="serialization"></a>
 
@@ -536,6 +545,11 @@ var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
 Keys are written as the invariant-culture text of the primitive value, so the same data always produces
 the same key no matter the current culture. A `string`-backed id uses the string itself, so an empty
 string round-trips; a key that cannot be parsed throws `JsonException`.
+
+An `enum`-backed id follows `System.Text.Json`'s own convention for enum keys: the key is the member name
+(`"Active"`), while the value is the underlying number (`1`) unless your `JsonSerializerOptions` say
+otherwise. The asymmetry is inherent to JSON — object keys can only be strings — and it is exactly what a
+plain `Dictionary<MyEnum, MyEnum>` produces, so ids and raw enums stay interchangeable in the same document.
 
 Newtonsoft.Json routes dictionary keys through `TypeConverter` / `ToString()` rather than through
 `JsonConverter`, so its keys never reach the generated converter. Enable `TypeConverter = true` on the id so
@@ -717,16 +731,28 @@ single entry point:
 ```csharp
 using Dapper;
 
-// Register TypeHandlers for all strongly typed ids on the connection.
-StronglyTypedIds.ApplyTo(connection);
+// Register TypeHandlers for all strongly typed ids. Dapper keeps them in a process-wide
+// registry, so this only needs to run once per process.
+StronglyTypedIds.ApplyTo();
 
 connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Create(Guid.NewGuid()) });
 ```
 
-Each id's `TypeHandler` writes the database value (the `Value` for value types, the id itself for reference
-types) into the parameter, and reconstructs the id through `Create` when reading. Ids with the same short name
-in different namespaces get a "namespace-underscored" prefix on their `TypeHandler` to avoid collisions (the
-same disambiguation used for EF Core converters).
+Each id's `TypeHandler` writes the wrapped primitive into the parameter, and reconstructs the id through
+`Create` when reading. Ids with the same short name in different namespaces get a "namespace-underscored"
+prefix on their `TypeHandler` to avoid collisions (the same disambiguation used for EF Core converters).
+
+Drivers rarely hand back the primitive's own CLR type — SQLite returns `long` for an enum column, `string`
+for `char` / `Guid` and `double` for `decimal`. The generated `Parse` therefore converts the incoming value
+to the primitive before calling `Create` (`System.Convert` for the numeric and date/time primitives,
+`Enum.ToObject` / `Enum.Parse` for enums, and the primitive's `IParsable` entry point for `Guid`,
+`DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Int128`, `UInt128`, `Half` and `BigInteger`). Values
+that already arrive as the primitive take a direct path, and `NULL` — either `DBNull` or a bare `null` —
+maps to `default`.
+
+> Registration is global, not per connection. `ApplyTo(IDbConnection)` is still generated for source
+> compatibility, but it ignores its argument and forwards to `ApplyTo()`. Calling either one more than once
+> is harmless: Dapper replaces the handler for each type instead of appending, so the registry does not grow.
 
 > Referencing `Dapper` with a major version below 2.0.0 emits nothing, to avoid incompatibility with the
 > older `SqlMapper.TypeHandler` API.
@@ -895,8 +921,8 @@ Every feature described above has a runnable counterpart under [`samples/`](samp
 
 | Project | Target | Demonstrates |
 |---|---|---|
-| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | Guided tour of the core surface: `Create` / `TryCreate` / `Parse`, formatting, equality and ordering, deconstruction, string interning, validators, text prefixes, `TypeConverter`, System.Text.Json and Newtonsoft.Json, nesting, generic containers, reflection helpers and the testing package. |
-| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core (`ApplyTo(ModelConfigurationBuilder)`) and Dapper (`ApplyTo(IDbConnection)`) against in-memory SQLite, plus assembly-level `StronglyTypedIdDefaults`. |
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | Guided tour of the core surface: `Create` / `TryCreate` / `Parse`, formatting, equality and ordering, deconstruction, validators, text prefixes, `TypeConverter`, System.Text.Json and Newtonsoft.Json, nesting, generic containers, reflection helpers and the testing package. |
+| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core (`ApplyTo(ModelConfigurationBuilder)`) and Dapper (`ApplyTo()`) against in-memory SQLite, plus assembly-level `StronglyTypedIdDefaults`. |
 | `Len.StronglyTypedId.Sample1` | `net8.0` | MVC model binding and `{id:OrderId}` route constraints, Newtonsoft.Json as the MVC formatter, EF Core (SQL Server) and Swashbuckle 6. Needs a reachable SQL Server to start. |
 | `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API: `IParsable` binding, `[AsParameters]`, route constraints, JSON bodies and the built-in OpenAPI transformer (`AddOpenApi(ApplyTo)`). |
 | `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10 (Microsoft.OpenApi 2.x) schema mapping. |

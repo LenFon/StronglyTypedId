@@ -69,6 +69,34 @@ public class StronglyTypedIdCapabilityTests
         GuidIdV2.Create(_lowGuid).CompareTo(nullId).Should().BePositive();
     }
 
+    /// <summary>
+    /// 比较运算符必须与 <c>CompareTo</c> 共用「null 最小」的约定：引用类型 Id 的操作数可以是 <c>null</c>，
+    /// 直接取 <c>left.Value</c> 会抛 <see cref="NullReferenceException"/>。
+    /// </summary>
+    [Fact]
+    public void ComparisonOperators_Should_TreatNullAsSmallest_ForReferenceTypeId()
+    {
+        GuidIdV2? nullId = null;
+        GuidIdV2? anotherNullId = null;
+        var id = GuidIdV2.Create(_lowGuid);
+
+        (nullId < id).Should().BeTrue();
+        (nullId <= id).Should().BeTrue();
+        (nullId > id).Should().BeFalse();
+        (nullId >= id).Should().BeFalse();
+
+        (id > nullId).Should().BeTrue();
+        (id >= nullId).Should().BeTrue();
+        (id < nullId).Should().BeFalse();
+        (id <= nullId).Should().BeFalse();
+
+        // 两个 null 互相比较时按相等处理。刻意用两个变量，避免 CS1718（与同一变量比较）。
+        (nullId < anotherNullId).Should().BeFalse();
+        (nullId <= anotherNullId).Should().BeTrue();
+        (nullId > anotherNullId).Should().BeFalse();
+        (nullId >= anotherNullId).Should().BeTrue();
+    }
+
     #endregion
 
     #region 文本形态与格式化
@@ -324,7 +352,8 @@ public class StronglyTypedIdCapabilityTests
     {
         var parse = () => NonEmptyGuidId.Parse(Guid.Empty.ToString(), CultureInfo.InvariantCulture);
 
-        parse.Should().Throw<ArgumentException>();
+        // Parse 的失败按 IParsable 惯例抛 FormatException；Create 才是 ArgumentException。
+        parse.Should().Throw<FormatException>();
     }
 
     /// <summary>

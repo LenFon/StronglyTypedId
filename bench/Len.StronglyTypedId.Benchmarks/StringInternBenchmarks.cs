@@ -14,9 +14,10 @@ namespace Len.StronglyTypedId.Benchmarks;
 /// 否则量到的就不是使用者实际跑的那条路径。
 /// </para>
 /// <para>
-/// 负载取「稳态命中」：同一批取值被反复创建，这是 Id 在真实业务里的主导形态（同一个 Id 在
-/// 反序列化、路由绑定、EF 物化里被反复重建）。全新增键的极端负载另行量化过，结论见
-/// <c>ROADMAP-ANALYSIS.md</c> 的 A5 条目。
+/// 负载取「同一批取值被反复创建」：这是 Id 在真实业务里的主导形态（同一个 Id 在反序列化、路由绑定、
+/// EF 物化里被反复重建）。取值池（<see cref="KeyCount"/>）远大于缓存上限（1024），故一轮跑下来
+/// 前 1024 个取值走命中路径、其余走「未命中即原样返回」的路径 —— 两条路径都在被测范围内。
+/// 全新增键的极端负载另行量化过，结论见 <c>ROADMAP-ANALYSIS.md</c> 的 A5 条目。
 /// </para>
 /// <para>
 /// 用 <see cref="Parallel.For(int, int, ParallelOptions, Action{int})"/> 而不是手工建线程：

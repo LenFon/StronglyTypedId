@@ -76,9 +76,10 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         {
             builder.Append(" =>").Append('\n');
 
-            if (idInfo.HasPrefix)
+            if (idInfo.HasPrefix || idInfo.IsNewtonsoftTextPrimitive)
             {
                 // 有前缀时文本形是字符串，读回一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
+                // Newtonsoft 不认识 Int128 / UInt128 / Half / DateOnly / TimeOnly，也只能按文本读。
                 builder.Append("            serializer.Deserialize<string>(reader) switch").Append('\n');
                 builder.Append("            {").Append('\n');
                 builder.Append("                { } text when ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
@@ -119,8 +120,9 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("            }").Append('\n');
         builder.Append('\n');
 
-        if (idInfo.HasPrefix)
+        if (idInfo.HasPrefix || idInfo.IsNewtonsoftTextPrimitive)
         {
+            // 同上：有前缀或基元本身不被 Newtonsoft 认识时，值都以规范文本形存放。
             builder.Append("            return valueToken.ToObject<string>() switch").Append('\n');
             builder.Append("            {").Append('\n');
             builder.Append("                { } text when ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
@@ -149,9 +151,13 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         var builder = new StringBuilder();
 
         // 有前缀时写出规范文本形（字符串），无前缀时写出基元值本身。
+        // Newtonsoft 不认识 Int128 / UInt128 / Half / DateOnly / TimeOnly，按值写会抛 JsonWriterException，
+        // 故这几个类型同样写规范文本。
         var writeValue = idInfo.HasPrefix
             ? "writer.WriteValue(value.ToString());"
-            : "writer.WriteValue(primitiveId);";
+            : idInfo.IsNewtonsoftTextPrimitive
+                ? "writer.WriteValue(primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture));"
+                : "writer.WriteValue(primitiveId);";
 
         builder.Append('\n');
         builder.Append("        {").Append('\n');

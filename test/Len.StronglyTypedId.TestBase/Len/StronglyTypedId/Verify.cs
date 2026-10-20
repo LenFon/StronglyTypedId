@@ -28,13 +28,19 @@ public static class Verify
     public static Task VerifyAnalyzerAsync(string source, params DiagnosticResult[] expected)
     {
         var test = new TestAnalyzer { TestCode = source };
+        EnableStyleHintsWhenExpected(test, expected);
         test.ExpectedDiagnostics.AddRange(expected);
         return test.RunAsync();
     }
 
     /// <summary>
-    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但会启用默认被测试基建屏蔽的两条命名风格提示（STIA0015 / STIA0016）。
+    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但无条件启用默认被测试基建屏蔽的两条命名风格提示（STIA0015 / STIA0016）。
     /// </summary>
+    /// <remarks>
+    /// 只在「期望零诊断、但源码结构足以触发风格提示」时才需要显式调用 —— 那种情形没有期望诊断可供
+    /// <see cref="EnableStyleHintsWhenExpected"/> 推断。期望里已写明 STIA0015 / STIA0016 的用例
+    /// 直接走 <see cref="VerifyAnalyzerAsync"/> 即可，两者等价。
+    /// </remarks>
     public static Task VerifyAnalyzerWithStyleHintsAsync(string source, params DiagnosticResult[] expected)
     {
         var test = new TestAnalyzer { TestCode = source };
@@ -236,6 +242,27 @@ public static class Verify
     {
         test.DisabledDiagnostics.Remove(Descriptors.TypeNameShouldEndWithIdId);
         test.DisabledDiagnostics.Remove(Descriptors.DuplicatePrimitiveTypeId);
+    }
+
+    /// <summary>
+    /// 期望的诊断里只要出现 STIA0015 / STIA0016，就自动解除它们的屏蔽。
+    /// </summary>
+    /// <remarks>
+    /// 这两条规则默认被 <see cref="ApplyDefaults"/> 关掉（理由见那里的注释）。此前验证它们的用例
+    /// 必须手工改用 <see cref="VerifyAnalyzerWithStyleHintsAsync"/>，漏改的症状是「期望有诊断、
+    /// 实际零产出」，报错信息完全指不到真正原因。按期望内容自动判定后，两种写法等价。
+    /// </remarks>
+    private static void EnableStyleHintsWhenExpected(AnalyzerTest<DefaultVerifier> test, DiagnosticResult[] expected)
+    {
+        foreach (var diagnostic in expected)
+        {
+            if (diagnostic.Id == Descriptors.TypeNameShouldEndWithIdId ||
+                diagnostic.Id == Descriptors.DuplicatePrimitiveTypeId)
+            {
+                EnableStyleHintDiagnostics(test);
+                return;
+            }
+        }
     }
 
     private static CSharpParseOptions CreateDefaultParseOptions()

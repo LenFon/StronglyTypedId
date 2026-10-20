@@ -123,7 +123,7 @@ public partial record struct ShortStringId(string Value)
 }
 
 // N3：验证失败异常类型可配。领域库希望 Create 抛自己的异常而不是 ArgumentException，
-// 故把异常类型写成 attribute 命名实参；Parse 仍抛 ArgumentException —— 它的失败还包含
+// 故把异常类型写成 attribute 命名实参；Parse 抛的是 FormatException —— 它的失败还包含
 // 「文本根本不是 Id」，与「值被领域规则拒绝」不是同一类错误。
 public sealed class DomainRuleViolationException(string message) : Exception(message);
 
@@ -205,6 +205,10 @@ public partial record struct PrefixedValidatedGuidId(Guid Value)
 [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
 public partial record struct StrictPrefixedGuidId(Guid Value);
 
+// 前缀 + 枚举：键文本含前缀，DictionaryKeyPolicy 会把前缀一起改写导致读不回，故生成器对它不应用 policy。
+[StronglyTypedId(Prefix = "pri_")]
+public partial record struct PrefixedPriorityId(SamplePriority Value);
+
 // K1：属性测试要覆盖「规范文本形有损」的时间基元。无参 ToString() 对 IFormattable 基元走
 // Value.ToString(null, InvariantCulture)，即默认格式串 —— DateTime / DateTimeOffset 的 "G" 丢亚秒、
 // TimeOnly 的 "t" 丢秒。这三个夹具把这条边界显式测出来：它们只能断言文本幂等，不能断言值往返。
@@ -216,3 +220,44 @@ public partial record struct DateTimeOffsetId(DateTimeOffset Value);
 
 [StronglyTypedId]
 public partial record struct TimeSpanId(TimeSpan Value);
+
+/// <summary>
+/// 非 <c>[Flags]</c> 枚举基元。<c>Enum.TryParse</c> 对未定义数值（<c>"999"</c>）、逗号组合与前后空白
+/// 都返回 true，生成器必须再查 <c>Enum.IsDefined</c> 才能挡住这些野值。
+/// </summary>
+public enum SampleStatus
+{
+    Active,
+    Suspended,
+}
+
+[StronglyTypedId]
+public partial record struct SampleStatusId(SampleStatus Value);
+
+/// <summary>
+/// <c>[Flags]</c> 枚举基元：位组合本身就是合法取值，<c>IsDefined</c> 会误杀，故生成器改用「未定义位掩码」校验 ——
+/// <c>Read | Write</c> 通过，<c>999</c>（含未定义位）被拒。
+/// </summary>
+[Flags]
+public enum SampleAccess
+{
+    None = 0,
+    Read = 1,
+    Write = 2,
+}
+
+[StronglyTypedId]
+public partial record struct SampleAccessId(SampleAccess Value);
+
+/// <summary>
+/// 成员名含多个单词的枚举基元：只有这种形状才能看出 <c>DictionaryKeyPolicy</c> 是否真的生效
+/// （单单词成员在 camelCase 下只差首字母大小写，容易被「恰好相等」蒙混过去）。
+/// </summary>
+public enum SamplePriority
+{
+    VeryHigh,
+    LowPriority,
+}
+
+[StronglyTypedId]
+public partial record struct SamplePriorityId(SamplePriority Value);

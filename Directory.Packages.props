@@ -29,11 +29,17 @@
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" Version="1.1.4" />
+		<!-- 集成运行时测试用真实 SQLite 验证 Dapper 的读写往返：驱动返回的 CLR 类型与基元不一致
+		     （枚举列 long、char / Guid 列 string、decimal 列 double），只有真库才能覆盖这条路径。 -->
+		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.11" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
-		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
 		<PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.5.0" />
-		<PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+		<!--
+		  不登记 Microsoft.NET.Test.Sdk / xunit.runner.visualstudio：.NET 10 SDK 起
+		  MTP 不再支持 VSTest target，这两个包会把 dotnet test 拽回 VSTest 路径并直接报错。
+		  测试工程统一由 xunit.v3 自带的 MTP in-proc runner 承载（见 test.props）。
+		-->
 		<PackageVersion Include="xunit.v3" Version="4.0.1" />
 	</ItemGroup>
 
@@ -46,7 +52,6 @@
 	<ItemGroup>
 		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
 		<PackageVersion Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.0" />
-		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.11" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.0" />

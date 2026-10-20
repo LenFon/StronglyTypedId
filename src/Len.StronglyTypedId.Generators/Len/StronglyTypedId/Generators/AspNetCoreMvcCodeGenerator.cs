@@ -132,12 +132,18 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                         global::Microsoft.AspNetCore.Routing.RouteValueDictionary values,
                         global::Microsoft.AspNetCore.Routing.RouteDirection routeDirection)
                     {
-                        if (!values.TryGetValue(routeKey, out var rawValue) || rawValue is not string text)
+                        if (!values.TryGetValue(routeKey, out var rawValue))
                         {
                             return false;
                         }
 
-                        return TId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out _);
+                        // 与框架内置约束（IntRouteConstraint 等）一致：先把路由值统一转成字符串再解析。
+                        // 链接生成（RouteDirection.UrlGeneration）阶段传进来的是 Id 实例本身，
+                        // 原来那句 `rawValue is not string` 会把它直接判死，带 {id:OrderId} 的路由
+                        // 因此永远生成不出 URL。
+                        var text = global::System.Convert.ToString(rawValue, global::System.Globalization.CultureInfo.InvariantCulture);
+
+                        return text is not null && TId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out _);
                     }
                 }
             }

@@ -61,12 +61,10 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **`TryCreate` 工厂** —— `Create` 的非抛异常版本：解析失败返回 `false`，`result` 为 `default`，而不是抛异常。
 - **UTF-8 接口** —— 对支持相应接口的基元类型（如 .NET 10 的 `Guid`）自动生成 `IUtf8SpanFormattable` 与
   `IUtf8SpanParsable<TSelf>`，可直接以 `ReadOnlySpan<byte>` 解析 / 格式化。
-- **字符串驻留** —— 以 `string` 为基元的 Id，相等字符串值会共享同一份底层实例（每 Id 类型一个缓存，
-  而非进程级的 `string.Intern` 池），因此重复 Id 几乎不额外占内存，且对取值无界的情况也绝不会内存泄漏。
 - **逐类型类型转换器** —— 用 `[StronglyTypedId(TypeConverter = true)]` 开启后，生成的嵌套 `TypeConverter`
   经 `TypeDescriptor` 在字符串与强类型 Id 间往返，覆盖配置绑定 / `XmlSerializer` 等场景。
 - **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
-- **Dapper 集成** —— 引用 `Dapper` ≥ 2.0.0 时生成 `TypeHandler` 与 `ApplyTo(IDbConnection)`。
+- **Dapper 集成** —— 引用 `Dapper` ≥ 2.0.0 时生成 `TypeHandler` 与进程级 `ApplyTo()`。
 - **ASP.NET Core MVC 集成** —— 引用 `Microsoft.AspNetCore.Mvc`（或其 `Microsoft.AspNetCore.Mvc.Core` 门面）≥ 2.0.0 时，生成模型绑定提供者与逐 Id 路由约束，使 `[FromRoute]`/`[FromQuery]` 与 `{id:OrderId}` 开箱即用。
 - **Minimal API 支持** —— 无需额外生成：路由 / 查询参数经 `IParsable<T>` 自动绑定，`{id:OrderId}` 路由约束复用 MVC 集成注册的 `RouteOptions`。
 - **ASP.NET Core OpenAPI 集成** —— 引用 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 时生成 `ApplyTo(OpenApiOptions)` 架构映射。
@@ -204,7 +202,7 @@ IFormatProvider)` 已被标记过时。
 | 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                                        | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`            |
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`    | 嵌套 `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                                       | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                |
-| 引用了 `Dapper` ≥ 2.0.0                                                                                  | 嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo(IDbConnection)` → `StronglyTypedIds.Dapper.g.cs`                                                                                 |
+| 引用了 `Dapper` ≥ 2.0.0                                                                                  | 嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`                                                                                              |
 | 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                                            | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                         |
 | 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束）                                                                    |
 <!-- END GENERATED:generated-code -->
@@ -228,8 +226,6 @@ IFormatProvider)` 已被标记过时。
 - 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
   与序列化写出的文本一致，`Parse(id.ToString())` 可往返；需要按特定文化
   格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
-- 以 `string` 为基元的 Id 会驻留相等的字符串值：相等的字符串会按 Id 类型共享同一份底层存储
-  （使用每类型的小缓存，而非进程级的 `string.Intern` 池），因此重复 Id 几乎不再额外占内存。
 - 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
 
 枚举型 Id 保留 `IComparable<TSelf>`、`IParsable<TSelf>` 与 `ISpanParsable<TSelf>`（解析走
@@ -284,9 +280,9 @@ OrderId.Create(Guid.Empty);   // 抛 DomainRuleViolationException
 ```
 
 该类型必须派生自 `System.Exception`、不能是抽象类，并且要有可访问的、接收单个 `string` 消息的构造函数；
-否则在声明处报 [STIA0018](#diagnostics)。只有 `Create` 会用它——`Parse` 仍抛 `ArgumentException`，
-因为它的失败还包含「文本根本不是 Id」，属于输入格式错误而非领域规则违规。与其他选项一样，它也可以在
-程序集级设置：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`。
+否则在声明处报 [STIA0018](#diagnostics)。只有 `Create` 会用它——`Parse` 抛的是 `FormatException`，
+遵循 `IParsable<TSelf>` 的惯例（与 `int.Parse` / `Guid.Parse` 一致），因为它的失败还包含「文本根本不是 Id」。
+与其他选项一样，它也可以在程序集级设置：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`。
 
 <a id="value-normalization"></a>
 
@@ -486,6 +482,10 @@ var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
 键以基元值的**不变文化**文本写出，因此同一份数据在任何区域设置下都会得到相同的键。以 `string` 为
 基元的 Id 直接使用该字符串，故空串也能往返；无法解析的键会抛 `JsonException`。
 
+以 `enum` 为基元的 Id 沿用 `System.Text.Json` 对枚举键的既定约定：键是成员名（`"Active"`），值是底层
+数字（`1`）——除非你的 `JsonSerializerOptions` 另有配置。这种不对称是 JSON 本身的限制（对象的键只能是
+字符串），也与原生 `Dictionary<MyEnum, MyEnum>` 的输出完全一致，因此 Id 与裸枚举可以在同一份文档里互换。
+
 Newtonsoft.Json 的字典键走的是 `TypeConverter` / `ToString()`，并不经过 `JsonConverter`，因此生成的
 转换器接管不到它。请在 Id 上开启 `TypeConverter = true`，Newtonsoft 才能在读路径还原键。键文本与转换器
 写出的一致，都是**不变文化**文本——生成的 `ToString()` 与生成的 `TypeConverter` 两个方向都按不变文化读写——
@@ -652,15 +652,17 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 ```csharp
 using Dapper;
 
-// 为连接注册所有强类型 Id 的 TypeHandler。
-StronglyTypedIds.ApplyTo(connection);
+// 注册所有强类型 Id 的 TypeHandler。Dapper 把它们放在进程级注册表里，只需调用一次。
+StronglyTypedIds.ApplyTo();
 
 connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Create(Guid.NewGuid()) });
 ```
 
-每个 Id 的 `TypeHandler` 会把数据库值（值类型取 `Value`、引用类型取自身）写入参数，并把读取到的值
-经 `Create` 还原为 Id。不同命名空间下同名 Id 的 `TypeHandler` 会以「命名空间下划线连接」前缀避免冲突
-（与 EF Core 转换器同名处理一致）。
+每个 Id 的 `TypeHandler` 会把被包裹的基元写入参数，并把读取到的值经 `Create` 还原为 Id。不同命名空间下
+同名 Id 的 `TypeHandler` 会以「命名空间下划线连接」前缀避免冲突（与 EF Core 转换器同名处理一致）。
+
+> 注册是全局的，不是按连接的。`ApplyTo(IDbConnection)` 仍会生成以保持源码兼容，但它忽略实参并转发到
+> `ApplyTo()`。两者重复调用都无害：Dapper 对同一类型是替换而非追加，注册表不会膨胀。
 
 > 引用 `Dapper` 但主版本低于 2.0.0 时不生成，避免与旧版 `SqlMapper.TypeHandler` API 不兼容。
 
@@ -821,8 +823,8 @@ OrderId orderId = fixture.Create<OrderId>();
 
 | 工程 | 目标框架 | 演示内容 |
 |---|---|---|
-| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、字符串驻留、验证器、文本前缀、`TypeConverter`、System.Text.Json 与 Newtonsoft.Json、嵌套类型、泛型容器、反射辅助、测试辅助包。 |
-| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core（`ApplyTo(ModelConfigurationBuilder)`）与 Dapper（`ApplyTo(IDbConnection)`）跑内存 SQLite，并演示程序集级 `StronglyTypedIdDefaults`。 |
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、验证器、文本前缀、`TypeConverter`、System.Text.Json 与 Newtonsoft.Json、嵌套类型、泛型容器、反射辅助、测试辅助包。 |
+| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core（`ApplyTo(ModelConfigurationBuilder)`）与 Dapper（`ApplyTo()`）跑内存 SQLite，并演示程序集级 `StronglyTypedIdDefaults`。 |
 | `Len.StronglyTypedId.Sample1` | `net8.0` | MVC 模型绑定与 `{id:OrderId}` 路由约束、把 Newtonsoft.Json 用作 MVC 格式化器、EF Core（SQL Server）与 Swashbuckle 6。启动需要可连接的 SQL Server。 |
 | `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API：`IParsable` 绑定、`[AsParameters]`、路由约束、JSON 请求体，以及内置 OpenAPI 转换器（`AddOpenApi(ApplyTo)`）。 |
 | `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10（Microsoft.OpenApi 2.x）的 schema 映射。 |

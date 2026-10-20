@@ -10,6 +10,12 @@ public sealed class AnyIdGenerator
 {
     private static readonly ConcurrentDictionary<Type, Func<AnyIdGenerator, object>> _factories = new();
 
+    /// <summary>
+    /// 每个 Id 类型在验证失败时抛出的异常类型。生成器允许用 <c>ExceptionType</c> 把它换掉，
+    /// 而重试循环必须认得这个类型，否则第一次被拒就直接冒泡。
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, Type> _rejectionTypes = new();
+
     private readonly AnyIdOptions _options;
 
     private readonly PrimitiveValueFactory _values;
@@ -140,6 +146,16 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
+    /// 解析 Id 在验证失败时抛出的异常类型：逐类型 <c>ExceptionType</c> 优先，其次程序集级
+    /// <c>StronglyTypedIdDefaults</c>，最后是 <see cref="ArgumentException"/>。优先级与生成器一致。
+    /// </summary>
+    private static Type ResolveRejectionType(Type idType)
+        => _rejectionTypes.GetOrAdd(idType, static type =>
+            type.GetCustomAttribute<StronglyTypedIdAttribute>()?.ExceptionType
+            ?? type.Assembly.GetCustomAttribute<StronglyTypedIdDefaultsAttribute>()?.ExceptionType
+            ?? typeof(ArgumentException));
+
+    /// <summary>
     /// Generates a value and wraps it, retrying while the id's validator rejects it.
     /// </summary>
     private object CreateCore<TId, TPrimitive>()
@@ -147,6 +163,10 @@ public sealed class AnyIdGenerator
         where TPrimitive : notnull, IComparable
     {
         Exception? lastFailure = null;
+
+        // 拒绝异常可能是 ArgumentException，也可能是 ExceptionType 指定的自定义类型。
+        // 只认这两种：其它异常（验证器自身的 NullReferenceException 之类）是真 bug，必须冒泡。
+        var rejectionType = ResolveRejectionType(typeof(TId));
 
         for (var attempt = 0; attempt < _options.MaxAttempts; attempt++)
         {
@@ -161,7 +181,7 @@ public sealed class AnyIdGenerator
             {
                 return TId.Create(value);
             }
-            catch (ArgumentException exception)
+            catch (Exception exception) when (rejectionType.IsInstanceOfType(exception))
             {
                 lastFailure = exception;
             }

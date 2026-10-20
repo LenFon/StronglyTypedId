@@ -156,8 +156,89 @@ public class CodeGeneratorModuleGateTests
             .And.Contain("public override global::Len.StronglyTypedId.OrderId Parse(object? value)");
 
         generated["StronglyTypedIds.Dapper.g.cs"]
-            .Should().Contain("public static void ApplyTo(global::System.Data.IDbConnection connection)")
+            .Should().Contain("public static void ApplyTo()")
+            .And.Contain("public static void ApplyTo(global::System.Data.IDbConnection connection) => ApplyTo();")
             .And.Contain("global::Dapper.SqlMapper.AddTypeHandler");
+    }
+
+    /// <summary>
+    /// 引用类型 Id（<c>partial record</c>）的 <c>SetValue</c> 也必须写出基元值。<c>DbParameter.Value</c> 只接受驱动认识的类型，
+    /// 直接把 Id 包装对象塞进去会让 SqlClient / Sqlite 在绑定时抛「No mapping exists from object type ...」。
+    /// 该分支此前正是这么写的，而测试矩阵里没有任何引用类型 Id 走过 Dapper 路径，缺陷因此长期未被发现。
+    /// </summary>
+    [Fact]
+    public void Dapper_Should_UnwrapPrimitiveValue_ForReferenceTypeId()
+    {
+        var generated = RunGenerator(
+            ClassIdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        generated["Len.StronglyTypedId.OrderClassId.Dapper.g.cs"]
+            .Should().Contain("public override void SetValue(global::System.Data.IDbDataParameter parameter, global::Len.StronglyTypedId.OrderClassId? value)")
+            .And.Contain("parameter.Value = value is null ? (object)global::System.DBNull.Value : value.Value;");
+    }
+
+    /// <summary>
+    /// <c>Parse</c> 不能把 <c>object</c> 直接拆箱成基元：驱动返回的 CLR 类型常常不是基元本身
+    /// （SQLite 下枚举列是 <c>long</c>、<c>char</c> / <c>Guid</c> 列是 <c>string</c>、<c>decimal</c> 列是 <c>double</c>），
+    /// 裸强转会在读取时抛 <see cref="InvalidCastException"/>。本用例逐个基元锁定转换分支。
+    /// </summary>
+    [Fact]
+    public void Dapper_Should_ConvertProviderShapedValues_InsteadOfUnboxing()
+    {
+        var generated = RunGenerator(
+            MixedPrimitiveIdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        // 枚举：底层整数走 Enum.ToObject，成员名文本走 Enum.Parse。
+        generated["Len.StronglyTypedId.StatusId.Dapper.g.cs"]
+            .Should().Contain("if (value is string enumText)")
+            .And.Contain("return global::Len.StronglyTypedId.StatusId.Create((global::Len.StronglyTypedId.OrderStatus)global::System.Enum.ToObject(typeof(global::Len.StronglyTypedId.OrderStatus), value!));");
+
+        // char：TEXT 列返回 string，IConvertible.ToChar 正好按「长度恰为 1」判定。
+        generated["Len.StronglyTypedId.LetterId.Dapper.g.cs"]
+            .Should().Contain("global::System.Convert.ToChar(value, global::System.Globalization.CultureInfo.InvariantCulture)");
+
+        // decimal：REAL 列返回 double。
+        generated["Len.StronglyTypedId.AmountId.Dapper.g.cs"]
+            .Should().Contain("global::System.Convert.ToDecimal(value, global::System.Globalization.CultureInfo.InvariantCulture)");
+
+        // Guid：TEXT 列返回 string，走 IParsable 的文本入口。
+        generated["Len.StronglyTypedId.OrderId.Dapper.g.cs"]
+            .Should().Contain("global::System.Guid.Parse(global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture)!, global::System.Globalization.CultureInfo.InvariantCulture)");
+
+        // 任何基元都不许再出现「拆箱强转」形态。
+        generated.Values.Should().NotContain(code => code.Contains(")value!)", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// <c>Parse</c> 方法体必须与声明同列（8 空格），语句 12 空格、嵌套块 16 空格。
+    /// 多行插值洞不会随模板重新缩进，此前产物里 <c>{</c> 在 12 列而语句在 4 列。
+    /// </summary>
+    [Fact]
+    public void Dapper_ParseBody_Should_KeepConsistentIndentation()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.Dapper.g.cs"].Replace("\r\n", "\n")
+            .Should().Contain("\n        public override global::Len.StronglyTypedId.OrderId Parse(object? value)\n        {\n            if (value is null or global::System.DBNull)\n            {\n                return default;\n            }\n");
+    }
+
+    /// <summary>
+    /// 注册入口的方法体此前用制表符缩进，与其余生成物的 4 空格风格不一致。
+    /// </summary>
+    [Fact]
+    public void Dapper_ApplyTo_Should_UseSpacesForIndentation()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        generated["StronglyTypedIds.Dapper.g.cs"].Replace("\r\n", "\n")
+            .Should().Contain("\n    {\n        global::Dapper.SqlMapper.AddTypeHandler<global::Len.StronglyTypedId.OrderId>(new OrderIdTypeHandler());\n    }")
+            .And.NotContain("\t");
     }
 
     #endregion
@@ -349,6 +430,49 @@ public class CodeGeneratorModuleGateTests
 
         [StronglyTypedId]
         public partial record struct OrderId(Guid Value);
+        """;
+
+    /// <summary>
+    /// 引用类型 Id（<c>partial record</c>）：用于验证 Dapper 处理器对引用类型分支的产物形态。
+    /// </summary>
+    private const string ClassIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
+        public partial record OrderClassId(Guid Value);
+        """;
+
+    /// <summary>
+    /// 混合基元源码：覆盖 Dapper <c>Parse</c> 的每一条转换分支 —— 枚举（底层整数 / 成员名文本）、
+    /// <c>char</c>（string）、<c>decimal</c>（double）、<c>Guid</c>（string）、<c>string</c>。
+    /// </summary>
+    private const string MixedPrimitiveIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        public enum OrderStatus
+        {
+            Unknown,
+            Active,
+        }
+
+        [StronglyTypedId]
+        public partial record struct StatusId(OrderStatus Value);
+
+        [StronglyTypedId]
+        public partial record struct LetterId(char Value);
+
+        [StronglyTypedId]
+        public partial record struct AmountId(decimal Value);
+
+        [StronglyTypedId]
+        public partial record struct OrderId(Guid Value);
+
+        [StronglyTypedId]
+        public partial record struct Sku(string Value);
         """;
 
     /// <summary>

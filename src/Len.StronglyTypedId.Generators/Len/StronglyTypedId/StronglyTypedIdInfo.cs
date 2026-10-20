@@ -103,6 +103,23 @@ internal readonly record struct StronglyTypedIdInfo
     private const string Utf8SpanFormattableName = "IUtf8SpanFormattable";
 
     /// <summary>
+    /// <c>System.Numerics.BigInteger</c> 的显示名（它不在 CoreLib，故只能按名字识别）。
+    /// </summary>
+    private const string BigIntegerTypeName = "System.Numerics.BigInteger";
+
+    /// <summary>
+    /// Newtonsoft.Json 的 <c>JsonWriter.WriteValue</c> 不认识的基元：它们没有对应的
+    /// <c>PrimitiveTypeCode</c>，写出去会抛 <c>JsonWriterException</c>。
+    /// </summary>
+    private static readonly ImmutableHashSet<string> _newtonsoftTextPrimitives = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "System.Int128",
+        "System.UInt128",
+        "System.Half",
+        "System.DateOnly",
+        "System.TimeOnly");
+
+    /// <summary>
     /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
     /// </summary>
     internal static bool IsStronglyTypedIdInterface(INamedTypeSymbol @interface)
@@ -154,6 +171,12 @@ internal readonly record struct StronglyTypedIdInfo
         IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
         CharTryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Char);
         Utf8TryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Byte);
+        // System.Text.Json 没有 BigInteger 的内置转换器：JsonSerializer 会把它当普通对象序列化成
+        // {"IsPowerOfTwo":…,"Sign":1}，读回来又是 default —— 静默丢数据。故这类基元改走规范文本形。
+        IsBigIntegerPrimitive = primitiveIdType.ToDisplayString() == BigIntegerTypeName;
+        // Newtonsoft.Json 的 JsonWriter.WriteValue 不认识这几个类型，会抛 JsonWriterException；
+        // 读侧同理。它们的转换器因此也改走规范文本形。
+        IsNewtonsoftTextPrimitive = IsNewtonsoftTextPrimitiveCore(primitiveIdType);
         // 属性只查一次：下面五项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做五遍。
         var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
         ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaultValidatorName;
@@ -175,6 +198,12 @@ internal readonly record struct StronglyTypedIdInfo
         // 命名实例在构造期一次性渲染成文本：本类型是增量缓存的键，集合成员会退化成引用比较而让缓存永久失效。
         InstancesBlock = RenderInstancesBlock(type, primitiveIdType);
     }
+
+    /// <summary>
+    /// 基元是否为 Newtonsoft.Json 无法按值写入的类型。
+    /// </summary>
+    private static bool IsNewtonsoftTextPrimitiveCore(ITypeSymbol primitiveIdType)
+        => _newtonsoftTextPrimitives.Contains(primitiveIdType.ToDisplayString());
 
     /// <summary>
     /// 强类型 Id 的命名空间，不含 <c>global::</c> 前缀。
@@ -255,6 +284,25 @@ internal readonly record struct StronglyTypedIdInfo
     /// 基元类型是否为 <c>char</c>。
     /// </summary>
     public bool IsCharPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否为 <c>System.Numerics.BigInteger</c>。
+    /// </summary>
+    /// <remarks>
+    /// System.Text.Json 没有 BigInteger 的内置转换器，<c>JsonSerializer</c> 会退化成按公开属性序列化
+    /// （<c>{"IsPowerOfTwo":false,…,"Sign":1}</c>），读回来又是 <c>default</c>。故它的转换器改走规范文本形。
+    /// </remarks>
+    public bool IsBigIntegerPrimitive { get; }
+
+    /// <summary>
+    /// 基元是否为 Newtonsoft.Json 无法按值读写的类型（<c>Int128</c> / <c>UInt128</c> / <c>Half</c> /
+    /// <c>DateOnly</c> / <c>TimeOnly</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 这些类型没有对应的 <c>PrimitiveTypeCode</c>，<c>JsonWriter.WriteValue</c> 会抛
+    /// <c>JsonWriterException</c>。它们的转换器改走规范文本形，读写都经 <c>Id.TryParse</c>。
+    /// </remarks>
+    public bool IsNewtonsoftTextPrimitive { get; }
 
     /// <summary>
     /// 基元类型是否为枚举（枚举没有带 <c>IFormatProvider</c> 的静态 <c>TryParse</c>）。

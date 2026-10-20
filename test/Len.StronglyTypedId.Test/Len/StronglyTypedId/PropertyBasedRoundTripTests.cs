@@ -160,7 +160,7 @@ public class PropertyBasedRoundTripTests
 
                     return succeeded && thrown == parsed!;
                 }
-                catch (ArgumentException)
+                catch (FormatException)
                 {
                     return !succeeded;
                 }

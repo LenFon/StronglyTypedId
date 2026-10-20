@@ -16,7 +16,9 @@ change set rather than reproducing every commit.
 
 - `Len.StronglyTypedId.Testing`: deterministic id generation for tests — `Any.Id<T>()`,
   `Any.Ids<T>(count)`, seeded sequences, `Any.Register<T>(factory)` overrides and `Any.Reset()`.
-  Values rejected by a generated validator are retried instead of surfacing as test failures.
+  Values rejected by a generated validator are retried instead of surfacing as test failures. The
+  retry recognises a custom `ExceptionType` as a rejection too, and lets any other exception from the
+  validator bubble up.
 - `Len.StronglyTypedId.Testing.AutoFixture`: `fixture.WithStronglyTypedIds()` fills strongly typed
   ids through the same generator, so AutoFixture-created object graphs respect validators.
 - `IStronglyTypedId<TSelf>` — a single-parameter view of the id contract, so generic code can
@@ -35,7 +37,7 @@ change set rather than reproducing every commit.
 - `ExceptionType` — point it at a custom exception to change what `Create` throws when the validator
   rejects a value. The type must derive from `System.Exception`, be non-abstract and expose an accessible
   constructor taking a single `string` message; anything else is reported as `STIA0018`, with a code fix
-  that drops the argument. `Parse` keeps throwing `ArgumentException`, because its failure also covers
+  that drops the argument. `Parse` throws `FormatException` instead, because its failure also covers
   text that is not an id at all. `[assembly: StronglyTypedIdDefaults(ExceptionType = ...)]` sets an
   assembly-wide default.
 - Text prefixes: `Prefix` writes a constant prefix in `ToString` and strips it in `Parse`;
@@ -64,6 +66,19 @@ change set rather than reproducing every commit.
 
 ### Changed
 
+- The generated type declaration no longer carries a `/// <summary>` comment. It restated what the
+  declaration already says, and it was the only doc comment in the file that did not come from
+  `/// <inheritdoc/>`, so it read as noise in every generated file.
+- Remaining generated doc comments now follow the C# convention of putting `<summary>` on its own
+  line, with the text on the next line and `</summary>` on a third. Previously `TryCreate`,
+  `Deconstruct`, the null-safe comparison helper, the `TypeConverter`, and every integration
+  registration method emitted a single-line `<summary>…</summary>`. Formatting only; the compiled
+  output is unchanged.
+- **Breaking:** `Parse` now throws `FormatException` instead of `ArgumentException` when the text is not
+  a valid id, matching the `IParsable<TSelf>` convention that `int.Parse` / `Guid.Parse` follow. Code
+  that caught `ArgumentException` around `Parse` must catch `FormatException`; a `catch (ArgumentException)`
+  no longer sees the failure. `Create` still throws `ArgumentException` (or the configured `ExceptionType`)
+  when a validator rejects a value, and `TryParse` is unchanged.
 - **Breaking:** diagnostic ids were renamed from `STIAO###` (letter O) to `STIA0###` (digit zero).
   Existing `dotnet_diagnostic.STIAO011.severity` entries in `.editorconfig` stop matching; the
   rename happened before the first stable release.
@@ -71,6 +86,11 @@ change set rather than reproducing every commit.
   matching what `ToString()` writes. A `null` provider used to mean the current culture, so
   `Parse(id.ToString())` silently produced wrong values under e.g. `de-DE` (`"1.5"` → `15`). An
   explicitly passed provider is still honoured.
+- Dapper registration gained a parameterless `StronglyTypedIds.ApplyTo()`. Dapper keeps type handlers in a
+  process-wide registry, so the `IDbConnection` argument never had anything to scope to; the existing
+  `ApplyTo(IDbConnection)` overload is kept for source compatibility and now forwards to the new one.
+  Calling either more than once stays harmless — Dapper replaces the handler for a type instead of
+  appending, so the registry does not grow.
 - The README reference tables (primitive types, integrations, diagnostics) are generated from the
   generator source by `tools/Len.StronglyTypedId.DocGen`; CI fails when they drift.
 - Performance: generator discovery results are reused across the pipeline, `TryFormat` no longer
@@ -86,8 +106,52 @@ change set rather than reproducing every commit.
   fail on a bypassed validator; restore the previous behaviour with
   `dotnet_diagnostic.STIA0011.severity = suggestion`.
 
+### Removed
+
+- Per-id-type string interning. `Create` / `TryCreate` / `Parse` / `TryParse` no longer route string
+  values through a per-type `ConcurrentDictionary`, so a string-backed id no longer promises that equal
+  values share one instance. The cache only paid off when a small set of values repeated heavily, while
+  charging a dictionary probe on every factory call, pinning up to 1024 strings per id type for the
+  life of the process, and — before it was capped — growing without bound for unbounded value sets.
+  Use `string.Intern` or a cache in your own layer if you need deduplication.
+
 ### Fixed
 
+- `Create` is now emitted indented like every other member. The template placeholder sits on the raw
+  string's dedent baseline, so the first line received no indentation and the expression-bodied overload
+  came out flush left while the block-bodied one (used with `Normalizer`) was fine. Cosmetic only — the
+  code compiled either way — but every generated file looked broken in the editor.
+- An enum-backed id used as a `Dictionary` key ignored `JsonSerializerOptions.DictionaryKeyPolicy`, so a
+  `CamelCase` policy wrote `{"Active":1}` where a native `Dictionary<Status, int>` writes `{"active":1}`.
+  The generated `WriteAsPropertyName` now applies the policy, and `ReadAsPropertyName` parses
+  case-insensitively so the rewritten key still round-trips. Non-enum primitives are deliberately left
+  alone: their key text *is* the value, and rewriting it would make the key unreadable.
+- Documentation: an id declared inside a generic container keeps every core capability, but **not** the
+  automatic JSON wiring. The converter classes are generated, yet the `[JsonConverter]` attribute cannot
+  be emitted (an attribute argument may not reference a converter carrying the container's type
+  parameter — CS0416), and `AddStronglyTypedId` / `ApplyTo` skip such ids because an open generic type
+  cannot be passed as a type argument. The README claimed both serializers worked out of the box; it now
+  states the manual per-closed-type registration (`new Outer<int>.InnerId.SystemTextJsonConverter()`).
+- Swagger and the built-in OpenAPI transformer now describe `decimal`, `double`, `float`, `Half`,
+  `Int128`, `UInt128`, `BigInteger`, enums and the date/time primitives with the schema type the JSON
+  actually carries. `decimal` used to be announced as `string` (Swagger) or `integer` (OpenAPI), enums
+  as `string`, and floats fell through to the string default, so generated clients deserialized the
+  wrong type. Both generators now share a single mapping table.
+- `{id:OrderId}` route constraints no longer reject link generation. During
+  `RouteDirection.UrlGeneration` the route value is the id instance rather than a string, and the
+  constraint's `is not string` guard turned that into a permanent mismatch, so a URL for such a route
+  could never be produced. The value is now coerced with `Convert.ToString(..., InvariantCulture)`
+  first, matching the framework's own constraints.
+- `Parse` / `TryParse` on an enum-backed id no longer accept undefined numeric values (`"999"`),
+  comma combinations (`"1,2"`) or any other text `Enum.TryParse` happens to accept: the parsed value is
+  additionally checked with `Enum.IsDefined`. A `[Flags]` enum cannot use that check — bit combinations
+  are legal values — so it is validated against a mask of the bits no member occupies instead: `Read | Write`
+  parses, `999` does not. Surrounding whitespace is still trimmed, as with the other BCL parsers.
+- `[StronglyTypedId(TypeConverter = true)]` on an id nested inside another type no longer emits a
+  `typeof(...)` that points at a type which does not exist. The attribute was built from the namespace
+  plus the id name, dropping the containing-type chain, so `Aggregate.NestedId` produced
+  `global::Ns.NestedId.NestedIdTypeConverter` instead of `global::Ns.Aggregate.NestedId.NestedIdTypeConverter`
+  and the consumer project failed with CS0246.
 - OpenAPI parameter schemas now carry the primitive `format` (`/orders/{id}` →
   `type: string, format: uuid`). Route and query parameters describe the primitive in
   `JsonTypeInfo`, so the schema transformer previously missed them; request and response bodies were
@@ -101,6 +165,35 @@ change set rather than reproducing every commit.
   registration class when there is nothing to register. Previously an assembly with no eligible ids
   still got a `StronglyTypedIds.*.g.cs` whose `ApplyTo` did nothing; now the file is skipped, matching
   what the JSON registration entry points already did.
+- Dapper type handlers for reference-type ids (`partial record`) now write the wrapped primitive to
+  `DbParameter.Value` instead of the id object itself. Drivers such as SqlClient and SQLite reject the
+  wrapper with "No mapping exists from object type ...", so every insert and update of a reference-type
+  id failed at parameter binding. Value-type ids were unaffected.
+- Dapper type handlers now convert the value the driver hands back instead of unboxing it. `Parse` cast
+  `object` straight to the primitive, which only works when the driver returns that exact CLR type: SQLite
+  returns `long` for an enum column, `string` for `char` and `Guid`, and `double` for `decimal`, so reading
+  any of those four threw `InvalidCastException` (writing them was fine). The handler now takes the
+  primitive directly when the driver already returns it and converts by primitive kind otherwise.
+- The `STIA0008` code fix no longer leaves a bare `Guid` behind in a file without `using System;`. It
+  writes `global::System.Guid` and lets the simplifier shorten it, so the fix no longer trades one
+  diagnostic for a `CS0246`.
+- The analyzer no longer reads the primitive type from `Constructors[0].Parameters[0]`, which assumed
+  the primary constructor comes first and has a parameter. A type whose first constructor is
+  parameterless threw `IndexOutOfRangeException`, which Roslyn surfaces as `AD0001` and which drops
+  every `STIA` diagnostic for that type. It now scans the instance constructors for the single-parameter
+  one, skipping the compiler-synthesised copy constructor.
+- A missing embedded localization resource no longer throws from the descriptor message-rendering path.
+  The loader returns an empty table and the text falls back to the resource key, so a packaging mistake
+  degrades the wording instead of crashing the analyzer.
+- The comparison operators on a reference-type id (`partial record`) no longer throw
+  `NullReferenceException` when the left operand is `null`. They dereferenced `left.Value` unconditionally,
+  while the same type's `CompareTo` already treated `null` as the smallest value; the operators now share
+  that convention, so `null < id` is `true` and `null >= id` is `false`. Value-type ids are unchanged.
+- An id declared inside a generic container no longer risks a duplicate hint name. Sanitising the full
+  name stripped `<`, `>`, `,` and spaces, so `Ns.Outer<T>.Inner` collapsed onto a real `Ns.OuterT.Inner`;
+  `AddSource` then threw on the duplicate and the whole id degraded to `STIA0012`. A name that actually
+  lost characters now gets a stable FNV-1a suffix derived from the original full name, so the two stay
+  distinct across builds and machines.
 
 ## [1.3.0] - 2026-10-07
 

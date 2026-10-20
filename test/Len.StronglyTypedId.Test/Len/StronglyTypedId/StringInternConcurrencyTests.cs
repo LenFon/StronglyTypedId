@@ -11,6 +11,10 @@ namespace Len.StronglyTypedId;
 /// string 基元 Id 的驻留缓存（每个 Id 类型一个 
 /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey, TValue}"/>）在并发下的正确性。
 /// </summary>
+/// <remarks>
+/// 缓存带硬上限，且是每 Id 类型一份的静态状态，故每个用例独占一个 Id 类型：
+/// 共用类型时，「灌满缓存」的用例会污染「必须收敛到同一引用」的用例，而执行顺序并不受控。
+/// </remarks>
 public class StringInternConcurrencyTests
 {
     private const int ThreadCount = 8;
@@ -30,7 +34,7 @@ public class StringInternConcurrencyTests
 
         // 串行预热：让每个取值先落进缓存，得到一个确定的「胜者」引用。
         // 之后无论哪个线程、哪一轮创建，都必须看到这一个引用。
-        var canonical = values.Select(value => StringId.Create(value).Value).ToArray();
+        var canonical = values.Select(value => InternSharedId.Create(value).Value).ToArray();
 
         var perThread = RunConcurrently((_, random) =>
         {
@@ -46,7 +50,7 @@ public class StringInternConcurrencyTests
 
                 // 每次都用「内容相同、引用不同」的新字符串 —— 直接复用 values[valueIndex] 的话
                 // 引用本来就相同，驻留与否无从体现，测试会假通过。
-                var id = StringId.Create(new string(values[valueIndex].AsSpan()));
+                var id = InternSharedId.Create(new string(values[valueIndex].AsSpan()));
                 observed[valueIndex].Add(id.Value);
             }
 
@@ -78,7 +82,7 @@ public class StringInternConcurrencyTests
             for (var index = 0; index < created.Length; index++)
             {
                 var value = $"distinct-{threadIndex:D2}-{index:D3}-{Guid.NewGuid():N}";
-                created[index] = (value, StringId.Create(new string(value.AsSpan())).Value);
+                created[index] = (value, InternDistinctId.Create(new string(value.AsSpan())).Value);
             }
 
             return created;
@@ -100,7 +104,7 @@ public class StringInternConcurrencyTests
     public void AllEntryPoints_Should_ConvergeToOneSharedReference_WhenThreadsRaceOnSameText()
     {
         var text = $"entry-{Guid.NewGuid():N}";
-        var canonical = StringId.Create(text).Value;
+        var canonical = InternEntryPointId.Create(text).Value;
 
         var perThread = RunConcurrently((_, random) =>
         {
@@ -113,20 +117,20 @@ public class StringInternConcurrencyTests
                 switch (random.Next(4))
                 {
                     case 0:
-                        observed.Add(StringId.Create(fresh).Value);
+                        observed.Add(InternEntryPointId.Create(fresh).Value);
                         break;
 
                     case 1:
-                        StringId.TryCreate(fresh, out var created).Should().BeTrue();
+                        InternEntryPointId.TryCreate(fresh, out var created).Should().BeTrue();
                         observed.Add(created.Value);
                         break;
 
                     case 2:
-                        observed.Add(StringId.Parse(fresh, CultureInfo.InvariantCulture).Value);
+                        observed.Add(InternEntryPointId.Parse(fresh, CultureInfo.InvariantCulture).Value);
                         break;
 
                     default:
-                        StringId.TryParse(fresh, CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
+                        InternEntryPointId.TryParse(fresh, CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
                         observed.Add(parsed.Value);
                         break;
                 }

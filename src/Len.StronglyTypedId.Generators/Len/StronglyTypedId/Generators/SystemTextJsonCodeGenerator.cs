@@ -76,7 +76,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                         {
                             if (value is { Value: var primitiveId })
                             {
-                                writer.WritePropertyName({{GetPropertyNameExpression(idInfo)}});
+                {{GetWriteAsPropertyNameBody(idInfo)}}
                             }
                             else
                             {
@@ -107,12 +107,49 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                     : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
 
     /// <summary>
+    /// 生成 <c>WriteAsPropertyName</c> 的方法体（不含外层大括号）。
+    /// </summary>
+    private static string GetWriteAsPropertyNameBody(StronglyTypedIdInfo idInfo)
+    {
+        // 原始字符串会剥掉闭合分隔符处的 16 个空格，故此处只需补足剥掉的那部分。
+        const string Indent = "                ";
+
+        if (!ShouldApplyDictionaryKeyPolicy(idInfo))
+        {
+            return $"{Indent}writer.WritePropertyName({GetPropertyNameExpression(idInfo)});";
+        }
+
+        // 枚举成员名是「名字」而非「数据」，DictionaryKeyPolicy 的语义恰好是命名风格转换，
+        // 故与 STJ 的原生枚举键一致地应用它（原生 Dictionary<Status,int> 在 CamelCase 下写出 {"active":1}）。
+        return string.Join(
+            "\n",
+            $"{Indent}var propertyName = {GetPropertyNameExpression(idInfo)};",
+            $"{Indent}writer.WritePropertyName(options.DictionaryKeyPolicy is null ? propertyName : options.DictionaryKeyPolicy.ConvertName(propertyName));");
+    }
+
+    /// <summary>
+    /// 该 Id 作字典键时是否需要应用 <c>JsonSerializerOptions.DictionaryKeyPolicy</c>。
+    /// </summary>
+    /// <remarks>
+    /// 只有枚举跟随 STJ。string / Guid 的键值是数据本身而非名字，改写它等于改写键值 ——
+    /// 写出去就读不回来（string 有损；Guid 虽可无损往返，但同样不该被当成命名风格处理）。
+    /// 带前缀时键文本含用户定义的前缀，policy 会把前缀一起改写，导致读回时前缀匹配失败，故一并排除。
+    /// </remarks>
+    private static bool ShouldApplyDictionaryKeyPolicy(StronglyTypedIdInfo idInfo)
+        => idInfo.IsEnum && !idInfo.HasPrefix;
+
+    /// <summary>
     /// 取读入基元值时用的表达式。
     /// </summary>
     private static string GetDeserializeExpression(StronglyTypedIdInfo idInfo)
         => idInfo.IsStringPrimitive
             ? "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!"
-            : $"global::System.Text.Json.JsonSerializer.Deserialize<{idInfo.PrimitiveIdTypeName}>(ref reader, options)";
+            // BigInteger 没有内置转换器，按值读会落到「按属性反序列化」而得到 default，故改读规范文本。
+            : idInfo.IsBigIntegerPrimitive
+                ? "global::System.Numerics.BigInteger.Parse(" +
+                    "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!, " +
+                    "global::System.Globalization.CultureInfo.InvariantCulture)"
+                : $"global::System.Text.Json.JsonSerializer.Deserialize<{idInfo.PrimitiveIdTypeName}>(ref reader, options)";
 
     /// <summary>
     /// 取 <c>Read</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
@@ -215,9 +252,12 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         var builder = new StringBuilder();
 
         // 有前缀时写出规范文本形（字符串），无前缀时写出基元值本身。
+        // BigInteger 例外：它没有内置转换器，按值写会退化成 {"IsPowerOfTwo":…,"Sign":1}，故也写规范文本。
         var writeValue = idInfo.HasPrefix
             ? "writer.WriteStringValue(value.ToString());"
-            : "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
+            : idInfo.IsBigIntegerPrimitive
+                ? "writer.WriteStringValue(primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture));"
+                : "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
 
         builder.Append('\n');
         builder.Append("        {").Append('\n');
@@ -263,7 +303,31 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("            global::System.Text.Json.JsonSerializerOptions options)").Append('\n');
         builder.Append("        {").Append('\n');
 
-        if (idInfo.IsStringPrimitive && !idInfo.HasPrefix)
+        if (ShouldApplyDictionaryKeyPolicy(idInfo))
+        {
+            // 键文本可能已被 DictionaryKeyPolicy 改写（camelCase 等），故必须忽略大小写解析 ——
+            // 与 STJ 的原生枚举键一致（{"ACTIVE":1} 也能读回 Active）。注意这里不能复用 Id.TryParse：
+            // 它对枚举走大小写敏感的 Enum.TryParse，那是公共 API 的既定语义，不因字典键而改变。
+            builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
+            builder.Append($"            if (global::System.Enum.TryParse<{idInfo.PrimitiveIdTypeName}>(propertyName, ignoreCase: true, out var val)").Append('\n');
+
+            if (!idInfo.IsFlagsEnum)
+            {
+                builder.Append($"                && global::System.Enum.IsDefined(typeof({idInfo.PrimitiveIdTypeName}), val)").Append('\n');
+            }
+            else if (idInfo.FlagsEnumUndefinedBitsMask is { } undefinedBits)
+            {
+                // [Flags] 的位组合合法，但未定义的位不合法；掩码与 Id.TryParse 用的是同一份。
+                builder.Append($"                && (unchecked((ulong)val) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL").Append('\n');
+            }
+
+            builder.Append($"                && {idInfo.Name}.TryCreate(val, out var id))").Append('\n');
+            builder.Append("            {").Append('\n');
+            builder.Append("                return id;").Append('\n');
+            builder.Append("            }").Append('\n').Append('\n');
+            builder.Append($"            throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{{propertyName}}' to a {idInfo.Name}.\");").Append('\n');
+        }
+        else if (idInfo.IsStringPrimitive && !idInfo.HasPrefix)
         {
             builder.Append($"            return {idInfo.Name}.Create(reader.GetString()!);").Append('\n');
         }

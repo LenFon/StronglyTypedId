@@ -579,6 +579,34 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
+    /// STIA0008：文件里没有 <c>using System;</c> 时，修复产物不能是裸 <c>Guid</c>，否则会留下新的 CS0246
+    /// ——把一条诊断换成另一条诊断，等于没修。Simplifier 在没有 using 时只削掉 <c>global::</c>，
+    /// 停在 <c>System.Guid</c>；这已足够解析，不必强求保留 <c>global::</c>。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_EmitQualifiedGuid_WhenSystemNamespaceNotImported()
+    {
+        var code = """"
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Foo Value);
+            """";
+
+        var fixedCode = """"
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(System.Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
+            .WithSpan(4, 31, 4, 34).WithArguments("Foo");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
     /// STIA0010：删掉 [StronglyTypedId] 里无效的 Validator 命名实参（唯一实参时连同括号一起删）。
     /// </summary>
     [Fact]

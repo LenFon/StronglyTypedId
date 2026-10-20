@@ -99,6 +99,51 @@ public class AnyIdGeneratorTests
             .WithMessage("*ImpossibleId*Register*");
     }
 
+    /// <summary>
+    /// 配了 <c>ExceptionType</c> 后，验证器拒绝时抛的是自定义异常而不是 <see cref="ArgumentException"/>。
+    /// 重试循环若只认 <see cref="ArgumentException"/>，<c>MaxAttempts</c> 就形同虚设——第一次被拒即冒泡。
+    /// </summary>
+    [Fact]
+    public void Validator_WithCustomExceptionType_Should_StillRetry()
+    {
+        // 前两个值都被拒（负数），第三个才通过。若重试循环不认自定义异常，
+        // 第一个值就会把 DomainRuleException 抛出来，拿不到 42。
+        var values = new Queue<int>(new[] { -1, -2, 42 });
+        var generator = new AnyIdGenerator(new AnyIdOptions
+        {
+            PrimitiveValueFactory = type => type == typeof(int) ? values.Dequeue() : null,
+        });
+
+        generator.Id<CustomExceptionPositiveIntId>().Value.Should().Be(42);
+        values.Should().BeEmpty("被拒之后必须重新取值，而不是直接放弃");
+    }
+
+    [Fact]
+    public void Validator_WithCustomExceptionType_ThatAlwaysRejects_Should_FailWithActionableMessage()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { MaxAttempts = 3 });
+
+        var act = () => generator.Id<CustomExceptionImpossibleId>();
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*CustomExceptionImpossibleId*Register*");
+    }
+
+    /// <summary>
+    /// 重试只针对「值被验证器拒绝」。验证器自身抛出的异常是真 bug，必须原样冒泡，
+    /// 不能被当成拒绝吞进重试循环。
+    /// </summary>
+    [Fact]
+    public void Validator_ThrowingUnexpectedException_Should_Bubble()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { MaxAttempts = 3 });
+
+        var act = () => generator.Id<ExplodingValidatorId>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("validator exploded");
+    }
+
     [Fact]
     public void Register_Should_OverrideGeneration()
     {

@@ -22,9 +22,10 @@ public class StronglyTypedIdAttribute : Attribute
     /// takes a single <see cref="string"/> message. Defaults to <see cref="ArgumentException"/>.
     /// </summary>
     /// <remarks>
-    /// Only the validator rejection in <c>Create</c> uses this type. <c>Parse</c> keeps throwing
-    /// <see cref="ArgumentException"/>, because its failure also covers text that is not a valid id at all —
-    /// a malformed-input error rather than a domain-rule violation.
+    /// Only the validator rejection in <c>Create</c> uses this type. <c>Parse</c> throws
+    /// <see cref="FormatException"/> instead, following the <see cref="IParsable{TSelf}"/> convention:
+    /// its failure covers text that is not a valid id at all, which is a malformed-input error rather
+    /// than a domain-rule violation.
     /// </remarks>
     public Type? ExceptionType { get; set; }
 
