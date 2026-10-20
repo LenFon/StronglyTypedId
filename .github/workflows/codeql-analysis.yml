@@ -66,13 +66,40 @@ jobs:
         languages: ${{ matrix.language }}
         # 需要更宽的查询集时在这里加 `queries: security-extended,security-and-quality`；
         # 默认查询集只报高置信度问题，误报最少。
+        #
+        # 只报 src / tools 的告警：test / bench / samples 不是攻击面（测试代码与示例从不进入
+        # 使用者的进程），把它们留在结果里只会稀释真正的信号。下面的 Build 也同步只编译
+        # src 与 tools，两处口径保持一致 —— 否则会出现「提取了却不许上报」的白费功夫。
+        paths-ignore:
+          - test/**
+          - bench/**
+          - samples/**
 
     # 顺序不可颠倒：CodeQL 的 C# 提取器挂在编译过程上，必须在 init 之后、analyze 之前完成构建。
+    #
+    # restore 走全量：restore 不编译，代价小，且能让所有工程的 assets 齐全，
+    # 避免下面按工程 build 时撞 NETSDK1047（assets 里没有对应 TFM）。
     - name: Restore dependencies
       run: dotnet restore
 
+    # 只编译 src 与 tools —— 也就是 paths-ignore 之后真正会被上报的那批代码。
+    #
+    # 为什么不直接 `dotnet build` 整个解决方案：
+    #   1. test / bench / samples 占了编译时间的大头，而它们的告警已经被 paths-ignore 滤掉，
+    #      编译它们纯粹是给提取器喂不会被上报的代码；
+    #   2. 曾尝试用 `-p:TargetFrameworks=net10.0` 把双目标收敛成单目标来减半提取量，
+    #      但该属性是全局的：src 主包被压成只剩 net10.0 后，samples 里 net8.0 的工程
+    #      引用它会直接报「net10.0 的项目不能被 net8.0 的项目引用」。故放弃收敛，改为缩范围。
+    #
+    # 逐个工程列出而不是 `dotnet build src`：src 目录下没有解决方案文件，
+    # MSBuild 不会递归查找，直接给目录会报「找不到项目」。
     - name: Build
-      run: dotnet build --no-restore
+      run: |
+        dotnet build src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj --no-restore
+        dotnet build src/Len.StronglyTypedId/Len.StronglyTypedId.csproj --no-restore
+        dotnet build src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj --no-restore
+        dotnet build src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj --no-restore
+        dotnet build tools/Len.StronglyTypedId.DocGen/Len.StronglyTypedId.DocGen.csproj --no-restore
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4

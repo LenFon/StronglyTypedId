@@ -3,6 +3,16 @@
 	<PropertyGroup>
 		<RootNamespace />
 		<!--
+		  发布物查全链：src 下这四个工程产出的包会被别人引用，它们的传递依赖同样是使用者的
+		  依赖，因此这里覆盖掉 Directory.Build.props 的 direct，改为 all（含传递依赖）。
+
+		  之所以敢开 all：实测 src 四个工程在当前锁定的版本下零漏洞。一旦将来某个传递依赖
+		  被披露漏洞，restore 会直接报 NU1902/NU1903 警告 —— 这正是我们要的信号，
+		  而不是像 test / samples / bench 那样被淹没在开发期工具链的噪音里。
+		-->
+		<NuGetAuditMode>all</NuGetAuditMode>
+
+		<!--
 		  默认不打包，只有真正要发布的两个包在自己 csproj 里显式打开 IsPackable：
 		    · src/Len.StronglyTypedId
 		    · src/Len.StronglyTypedId.Generators

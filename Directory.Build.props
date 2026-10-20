@@ -13,4 +13,27 @@
 		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 	</PropertyGroup>
 
+	<!--
+	  NuGet Audit：还原阶段就把依赖里的已知漏洞（NU1901–NU1904）报出来。
+
+	  .NET 8 起 SDK 已默认开启，这里显式声明是为了把三个开关的实际取值钉在仓库里：
+	  默认值随 SDK 版本漂移过（NuGetAuditMode 的默认值在 .NET 9 由 direct 改成 all），
+	  依赖默认值等于「换一次 SDK 就换一次行为」。
+
+	  Mode 取 direct 而不是 all，是有意的取舍：本仓现存漏洞全部落在 test / samples / bench
+	  的**传递**依赖里（EF Core 8.0.0 拉下来的 Azure.Identity、Microsoft.Data.SqlClient、
+	  System.Text.Json，以及测试栈里的 System.Security.Cryptography.Pkcs），
+	  这些不进任何发布包。把它们报成警告只会淹没真正的信号，并打破 0 警告基线。
+	  发布物的完整依赖链由 common.props 里的 all 单独把关 —— src 四个工程实测零漏洞。
+
+	  传递依赖的漏洞该由上游包作者修，我们能做的只有升级直接依赖，而那正是 Dependabot 的活。
+	  想看全量现状随时可以手动跑 `dotnet package list`，附加 vulnerable 与 include-transitive
+	  两个开关即可列出含传递依赖在内的全部已知漏洞。
+	-->
+	<PropertyGroup>
+		<NuGetAudit>true</NuGetAudit>
+		<NuGetAuditLevel>low</NuGetAuditLevel>
+		<NuGetAuditMode>direct</NuGetAuditMode>
+	</PropertyGroup>
+
 </Project>

@@ -265,6 +265,13 @@ dotnet_diagnostic.CA1859.severity = warning
 # 等于把这份缓存重建一遍，热路径上开销显著。改为 static readonly 字段（或注入的共享实例）。
 dotnet_diagnostic.CA1869.severity = warning
 
+# CA1870（缓存并复用 SearchValues 实例）：.NET 分析器的性能规则，默认只是 Info。
+# 把字符集合（`new[] { 'a', 'b' }`、常量字符串）直接传给 IndexOfAny / ContainsAnyExcept
+# 这类 Span 搜索方法时，每次调用都要重新分配数组并线性比对；改成 static readonly
+# SearchValues<char> 字段（SearchValues.Create("ab")）后，查找表在类型初始化时构建一次，
+# 搜索走向量化实现。
+dotnet_diagnostic.CA1870.severity = warning
+
 # RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
 # src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
 

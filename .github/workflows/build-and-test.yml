@@ -25,6 +25,7 @@ on:
       - "CHANGELOG.md"
       - "CHANGELOG.zh-CN.md"
       # pack 校验由本流水线的 pack job 承担，触发面需覆盖其依赖的工程 / 配置 / 工作流变更
+      - "Directory.Build.props"
       - "common.props"
       - "version.props"
       - "Directory.Packages.props"
@@ -54,6 +55,7 @@ on:
       - "README.zh-CN.md"
       - "CHANGELOG.md"
       - "CHANGELOG.zh-CN.md"
+      - "Directory.Build.props"
       - "common.props"
       - "version.props"
       - "Directory.Packages.props"
@@ -88,6 +90,25 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
+    - name: NuGet vulnerability report
+      # 非阻断，只写进 job summary。
+      #
+      # 本仓现存漏洞全部落在 test / samples / bench 的**传递**依赖里（EF Core 8.0.0 拉下来的
+      # Azure.Identity、Microsoft.Data.SqlClient、System.Text.Json，以及测试栈里的
+      # System.Security.Cryptography.Pkcs），它们不进任何发布包，由 Dependabot 逐步收敛。
+      # 若把它们做成阻断门禁，PR 会因为「示例工程的上游包还没发新版」而永久变红。
+      #
+      # 发布物那一侧不靠这一步：common.props 给 src 开了 NuGetAuditMode=all，
+      # 依赖链里一旦出现已知漏洞，restore 阶段直接报 NU1902/NU1903 警告。
+      continue-on-error: true
+      run: |
+        {
+          echo '### NuGet 已知漏洞（含传递依赖）'
+          echo ''
+          echo '```'
+          dotnet package list --project Len.StronglyTypedId.slnx --vulnerable --include-transitive || true
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
     - name: Verify generated README tables
       # 三张表（基元类型 / 集成触发条件 / 诊断）由 tools/Len.StronglyTypedId.DocGen 从生成器内部的判定数据
       # 渲染，README 里只保留 <!-- BEGIN GENERATED:… --> 标记之间的内容。改了判定却没重新生成时，

@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Testing;
+using System.Buffers;
 using System.Reflection;
 
 namespace Len.StronglyTypedId.Generators;
@@ -15,6 +16,11 @@ public class StronglyTypedIdGeneratorTests
     /// 生成代码里 <c>GeneratedCodeAttribute</c> 的版本号。
     /// </summary>
     private static readonly string _generatorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
+
+    /// <summary>
+    /// hint 名哈希段允许的小写十六进制字符集。
+    /// </summary>
+    private static readonly SearchValues<char> _lowerHexDigits = SearchValues.Create("0123456789abcdef");
 
     /// <summary>
     /// 生成代码里 <c>UnconditionalSuppressMessage</c> 的 <c>Justification</c> 文案。
@@ -131,6 +137,16 @@ public class StronglyTypedIdGeneratorTests
             ? "other is null ? 1 : Value.CompareTo(other.Value)"
             : "Value.CompareTo(other.Value)";
 
+        // 引用类型的比较运算符还要多两处差异：操作数可空，且改走 null 安全的 CompareValues。
+        var comparisonParameter = record == "record" ? "OrderId?" : "OrderId";
+        var comparisonBody = record == "record" ? "CompareValues(left, right)" : "left.Value.CompareTo(right.Value)";
+        var comparisonHelper = record == "record"
+            ? "\n\n"
+                + "                /// <summary>按「null 最小」的约定比较两个值，与 <see cref=\"CompareTo\"/> 保持一致。</summary>\n"
+                + "                private static int CompareValues(OrderId? left, OrderId? right)\n"
+                + "                    => left is null ? (right is null ? 0 : -1) : left.CompareTo(right);"
+            : string.Empty;
+
         return [
 
             $$"""
@@ -166,7 +182,7 @@ public class StronglyTypedIdGeneratorTests
                 {
                     if (!TryParse(value, provider, out var id))
                     {
-                        throw new global::System.ArgumentException("Could not parse supplied value.", nameof(value));
+                        throw new global::System.FormatException("Could not parse supplied value.");
                     }
 
                     return id;
@@ -197,7 +213,7 @@ public class StronglyTypedIdGeneratorTests
                 {
                     if (!TryParse(value, provider, out var id))
                     {
-                        throw new global::System.ArgumentException("Could not parse supplied value.", nameof(value));
+                        throw new global::System.FormatException("Could not parse supplied value.");
                     }
 
                     return id;
@@ -229,22 +245,22 @@ public class StronglyTypedIdGeneratorTests
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                 [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
-                public static bool operator <(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) < 0;
+                public static bool operator <({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} < 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                 [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
-                public static bool operator >(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) > 0;
+                public static bool operator >({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} > 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                 [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
-                public static bool operator <=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) <= 0;
+                public static bool operator <=({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} <= 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                 [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
-                public static bool operator >=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) >= 0;
+                public static bool operator >=({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} >= 0;{{comparisonHelper}}
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
@@ -286,7 +302,7 @@ public class StronglyTypedIdGeneratorTests
                 {
                     if (!TryParse(utf8Text, provider, out var id))
                     {
-                        throw new global::System.ArgumentException("Could not parse supplied value.", nameof(utf8Text));
+                        throw new global::System.FormatException("Could not parse supplied value.");
                     }
 
                     return id;
@@ -710,6 +726,69 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 增量稳定性：只改与 Id 无关的语法时，所有 <c>RegisterSourceOutput</c> 步骤都应命中缓存。
+    /// 这条用例守着 <see cref="ModuleInfo"/> 的相等性口径——它带一个可变的类型表缓存字段，
+    /// 一旦该字段混进比较，每次按键都会让全部集成生成器重跑。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReuseCachedOutputs_WhenUnrelatedSyntaxChanges()
+    {
+        const string source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var compilation = CreateCompilation(source, [], [SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0")]);
+
+        var driver = CSharpGeneratorDriver.Create(
+            [new StronglyTypedIdGenerator().AsSourceGenerator()],
+            driverOptions: new GeneratorDriverOptions(
+                IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true));
+
+        driver = (CSharpGeneratorDriver)driver.RunGenerators(compilation);
+
+        // 第一次运行会填充 ModuleInfo 的类型表缓存，这正是可能污染相等性的时刻。
+        driver.GetRunResult().Results[0].GeneratedSources.Should().NotBeEmpty();
+
+        var edited = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText("// unrelated edit"));
+
+        driver = (CSharpGeneratorDriver)driver.RunGenerators(edited);
+
+        var reasons = driver.GetRunResult().Results[0]
+            .TrackedSteps["SourceOutput"]
+            .SelectMany(step => step.Outputs)
+            .Select(output => output.Reason)
+            .ToList();
+
+        reasons.Should().NotBeEmpty();
+        // FluentAssertions 的 OnlyContain 收 Expression<Func<…>>，表达式树里不能出现 is 模式匹配。
+        reasons.Should().OnlyContain(
+            reason => reason == IncrementalStepRunReason.Cached || reason == IncrementalStepRunReason.Unchanged,
+            "只改无关语法时不应重跑任何 SourceOutput，实际：{0}",
+            string.Join(", ", reasons));
+
+        // 反证：真正改动 Id 时必须看到重跑，否则上面那句「全 Cached」可能只是观测装置失灵。
+        var renamed = compilation.ReplaceSyntaxTree(
+            compilation.SyntaxTrees.Single(),
+            CSharpSyntaxTree.ParseText(source.Replace("OrderId", "PurchaseId", StringComparison.Ordinal)));
+
+        driver = (CSharpGeneratorDriver)driver.RunGenerators(renamed);
+
+        driver.GetRunResult().Results[0]
+            .TrackedSteps["SourceOutput"]
+            .SelectMany(step => step.Outputs)
+            .Select(output => output.Reason)
+            .Should().Contain(
+                reason => reason == IncrementalStepRunReason.Modified || reason == IncrementalStepRunReason.New,
+                "改动 Id 本身必须让 SourceOutput 重跑");
+    }
+
+    /// <summary>
     /// 构造被测合成编译：先按 <see cref="ShouldReferenceAssembly"/> 过滤 AppDomain 中已加载的程序集，再并上默认种子程序集与调用方通过
     /// <paramref name="extraAssemblyTypes"/> 显式指定的程序集。
     /// </summary>
@@ -812,6 +891,25 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 判断 hint 名是否为「核心产物」：<paramref name="prefix"/> + <c>_</c> + 8 位小写十六进制哈希 + <c>.g.cs</c>。
+    /// 泛型容器里的 Id 会走到这条命名分支（见 <c>SanitizeHintName</c>）。
+    /// </summary>
+    private static bool IsHashedCoreHintName(string hintName, string prefix)
+    {
+        const string Suffix = ".g.cs";
+
+        if (!hintName.StartsWith(prefix + "_", StringComparison.Ordinal)
+            || !hintName.EndsWith(Suffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var hash = hintName.AsSpan(prefix.Length + 1, hintName.Length - prefix.Length - 1 - Suffix.Length);
+
+        return hash.Length == 8 && hash.IndexOfAnyExcept(_lowerHexDigits) < 0;
+    }
+
+    /// <summary>
     /// 生成器测试不应引用以下程序集，否则会触发 EF Core / Swagger 生成器或被 TestBase 中已实现的强类型 Id 污染发现结果。这些程序集仅在对应测试里通过
     /// <see cref="GetGeneratedCodeByHint"/> 的 <paramref name="extraAssemblyTypes"/> 显式引入。
     /// </summary>
@@ -911,7 +1009,9 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
 
         // 泛型容器里的 Id 无法被集成生成器从外部按全名引用（开放类型不能作类型实参），故跳过其 EF Core 转换器。
-        generated.Should().NotContainKey("Len.StronglyTypedId.ContainerT.OrderId.EntityFrameworkCore.g.cs");
+        generated.Keys.Should().NotContain(key =>
+            key.StartsWith("Len.StronglyTypedId.ContainerT.OrderId", StringComparison.Ordinal)
+            && key.EndsWith(".EntityFrameworkCore.g.cs", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1491,8 +1591,8 @@ public class StronglyTypedIdGeneratorTests
         generated.Should()
             .Contain("var normalized = Normalize(value);")
             .And.Contain("var normalized = Normalize(value.ToString());")
-            // 驻留的必须是归一化之后的实例，否则同一个 Id 会因大小写 / 空白差异散成多个实例。
-            .And.Contain("result = new OrderId(Intern(normalized));");
+            // 构造用的必须是归一化之后的取值，否则同一个 Id 会因大小写 / 空白差异散成多个取值。
+            .And.Contain("result = new OrderId(normalized);");
     }
 
     /// <summary>
@@ -1714,6 +1814,51 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("public override object? ConvertTo(");
     }
 
+    /// <summary>
+    /// 嵌套 Id 开启 <c>TypeConverter</c> 时，<c>[TypeConverter(typeof(...))]</c> 必须指向包含类型链下的真实转换器。
+    /// 曾用「命名空间 + Id 名」拼接，嵌套 Id 会生成 <c>global::Ns.NestedId.NestedIdTypeConverter</c>（缺
+    /// <c>Aggregate.</c> 一层）→ CS0246，消费者整个项目编译不过。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_GenerateTypeConverter_WhenIdIsNested()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Aggregate
+            {
+                [StronglyTypedId(TypeConverter = true)]
+                public partial record struct NestedId(Guid Value);
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.Aggregate.NestedId.g.cs"];
+
+        generated.Should()
+            .Contain("[global::System.ComponentModel.TypeConverter(typeof(global::Len.StronglyTypedId.Aggregate.NestedId.NestedIdTypeConverter))]")
+            .And.Contain("public sealed class NestedIdTypeConverter : global::System.ComponentModel.TypeConverter");
+
+        // 文本断言不足以证明可用：拼错的 typeof 只会在消费者侧炸成 CS0246，必须真的编译一遍。
+        var compilation = CreateDefaultCompilation(code);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: TestContext.Current.CancellationToken);
+
+        var errors = emit.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .Where(diagnostic => diagnostic.Id is not ("CS1701" or "CS1702"))
+            .Select(diagnostic => diagnostic.ToString())
+            .ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors));
+    }
+
     [Fact]
     public void Generator_Should_NotGenerateTypeConverter_WhenOptOut()
     {
@@ -1870,7 +2015,7 @@ public class StronglyTypedIdGeneratorTests
 
             public partial class Aggregate
             {
-                [StronglyTypedId]
+                [StronglyTypedId(TypeConverter = true)]
                 public partial record struct NestedId(Guid Value);
             }
             """;
@@ -2195,13 +2340,49 @@ public class StronglyTypedIdGeneratorTests
 
         var generated = GetGeneratedCodeByHint(code);
 
-        generated.Should().ContainKey("Len.StronglyTypedId.ContainerT.OrderId.g.cs");
+        // 泛型容器的 `<T>` 会被净化掉，hint 名因此带上原始全名的稳定哈希后缀（见 SanitizeHintName）。
+        // 用「前缀 + 哈希 + .g.cs」精确锚定核心产物：JSON 转换器产物也以 .g.cs 结尾，光看前缀会一并命中。
+        var hintName = generated.Keys.Should()
+            .ContainSingle(key => IsHashedCoreHintName(key, "Len.StronglyTypedId.ContainerT.OrderId"))
+            .Which;
 
-        var core = generated["Len.StronglyTypedId.ContainerT.OrderId.g.cs"];
+        var core = generated[hintName];
 
         // 容器被原样重开为带类型参数表的 partial（约束子句省略），Id 自身嵌在容器内。
         core.Should().Contain("public partial class Container<T>");
         core.Should().Contain("partial record struct OrderId :");
+    }
+
+    /// <summary>
+    /// 净化 hint 名会抹掉 <c>&lt;T&gt;</c>，<c>Outer&lt;T&gt;.Inner</c> 与真实存在的 <c>OuterT.Inner</c> 因此会塌陷到
+    /// 同一个 hint 名，<c>AddSource</c> 抛重复 hint 名后被降级成 STIA0012。两者必须各自拿到独立的 hint 名。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NotCollideHintNames_WhenGenericContainerSanitizesToExistingName()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Outer<T>
+            {
+                [StronglyTypedId]
+                public partial record struct Inner(Guid Value);
+            }
+
+            public partial class OuterT
+            {
+                [StronglyTypedId]
+                public partial record struct Inner(Guid Value);
+            }
+            """";
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        // 不带泛型的那个保持原名，带泛型的那个追加稳定哈希后缀。
+        generated.Should().ContainKey("Len.StronglyTypedId.OuterT.Inner.g.cs");
+        generated.Keys.Should().ContainSingle(key => IsHashedCoreHintName(key, "Len.StronglyTypedId.OuterT.Inner"));
     }
 
     /// <summary>
