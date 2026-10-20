@@ -975,6 +975,9 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0017 | Normalizer method must be a valid static method                       | Remove the `Normalizer` argument                          |
 | STIA0018 | Exception type must be a concrete exception with a string constructor | Remove the `ExceptionType` argument                       |
 | STIA0019 | Requested integration is not available                                | —                                                         |
+| STIA0020 | Named instance name is not usable                                     | —                                                         |
+| STIA0021 | Named instance value is not valid for the primitive type              | —                                                         |
+| STIA0022 | Named instance name should be PascalCase                              | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —

@@ -74,6 +74,9 @@ public partial class DescriptorsTests
                 case Descriptors.DuplicatePrimitiveTypeId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0016 是命名风格提示");
                     break;
+                case Descriptors.InstanceNameNotPascalCaseId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0022 是命名风格提示");
+                    break;
                 default:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Error);
                     break;

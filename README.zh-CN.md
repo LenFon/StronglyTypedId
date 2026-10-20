@@ -437,13 +437,21 @@ var id = OrderAggregate.OrderId.Create(value);   // 按嵌套名使用，与普�
 报错，并附带补 `partial` 的代码修复。
 
 **泛型容器。** 包含类型可以是泛型（例如 `Outer<T>`）：生成器会带着它的类型参数表把声明重开，
-因此声明在泛型容器里的 Id 能正常编译，并保留核心生成器产出的全部能力——比较与排序、格式化与 span
-解析、两种 JSON 序列化、System.Text.Json 字典键。但需要从外部按名字引用 Id 类型的集成（EF Core、
-Swagger、Dapper、MVC、OpenAPI）会跳过声明在泛型容器里的 Id，因为开放泛型类型无法在生成的
-`StronglyTypedIds` 入口里按名字引用；对于这些集成，请把 Id 声明在命名空间层级或非泛型容器里。
+因此声明在泛型容器里的 Id 能正常编译，并保留核心生成器产出的能力——比较与排序、格式化与 span
+解析、System.Text.Json 字典键。**JSON 是唯一的例外**：转换器类照常生成，但挂不上
+`[JsonConverter]` 特性（特性实参不能引用携带容器类型参数的转换器，会 CS0416），
+`AddStronglyTypedId` / `ApplyTo` 入口也会跳过它（开放泛型不能作类型实参）。请按实际使用的闭合类型
+手动注册：
 
-嵌套不影响核心能力：比较与排序、格式化与 span 解析、两种 JSON 序列化、System.Text.Json 字典键
-都照常工作。EF Core、Swagger、Dapper、MVC、OpenAPI 等集成会跳过声明在泛型容器里的 Id（见上）。
+```csharp
+options.Converters.Add(new Outer<int>.InnerId.SystemTextJsonConverter());
+```
+
+需要从外部按名字引用 Id 类型的集成（EF Core、Swagger、Dapper、MVC、OpenAPI）出于同样的原因会跳过
+声明在泛型容器里的 Id；对于这些集成，请把 Id 声明在命名空间层级或非泛型容器里。
+
+非泛型的普通嵌套不受影响：比较与排序、格式化与 span 解析、两种 JSON 序列化、System.Text.Json 字典键
+都照常工作。
 
 <a id="serialization"></a>
 
@@ -875,6 +883,9 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 | STIA0017 | 归一化方法必须是合法的静态方法             | 删掉 `Normalizer` 实参                 |
 | STIA0018 | 异常类型必须是带字符串构造函数的非抽象异常 | 删掉 `ExceptionType` 实参              |
 | STIA0019 | 请求的集成不可用                           | —                                      |
+| STIA0020 | 命名实例的名字不可用                       | —                                      |
+| STIA0021 | 命名实例的值不是该基元类型的合法取值       | —                                      |
+| STIA0022 | 命名实例的名字应为 PascalCase              | —                                      |
 <!-- END GENERATED:diagnostics -->
 
 报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIA0003` 仅在 Id 自身是泛型时提供

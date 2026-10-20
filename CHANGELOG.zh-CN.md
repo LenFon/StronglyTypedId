@@ -44,11 +44,17 @@
   `[assembly: StronglyTypedIdDefaults(Integrations = ...)]` 设置默认值，且引用程序集里的 Id 会尊重
   **它自己所在程序集**的默认值。`TypeConverter` 有意不在掩码内。请求了未引用程序集的集成时报告
   `STIA0019`。
+- `[StronglyTypedIdInstance]` 声明命名静态实例（`Unknown` / `Unspecified` / `System` 之类），生成为
+  `public static readonly` 字段。值以基元的不变文化文本形书写，在编译期校验并翻译成字面量，再经
+  `Create` 构造——因此实例必然经过归一化与验证器，且 `Parse(instance.ToString())` 一定读得回来。
+  被验证器拒绝的值会在首次使用时抛 `TypeInitializationException`，而不是悄悄产出一个不可能存在的 Id。
 - `STIA0012`–`STIA0019` 诊断，其中包括 `STIA0013`（`Prefix` 为空串或纯空白）、`STIA0014`（带验证器
   或归一化器的 Id 被声明为 `public`，主构造函数仍可直达——`Info` 级别，默认关闭）、`STIA0015`
   （Id 名称应遵循 `...Id` 约定）、`STIA0016`（同一程序集内有两个 Id 使用同一基元）、`STIA0017`
   （`Normalizer` 引用不合法）、`STIA0018`（`ExceptionType` 不可用）与 `STIA0019`（请求的集成未被
   引用）。
+- 命名实例的三条诊断：`STIA0020`（名字不是合法标识符、与其他实例重名，或与既有/生成的成员撞名）、
+  `STIA0021`（值不是该基元的合法取值）与 `STIA0022`（名字不是 PascalCase，`Info` 级别）。
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
   OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。
@@ -95,6 +101,9 @@
 - `Create` 现在与其他成员一样带缩进。模板里的占位符落在原始字符串的去缩进基准列上，首行拿不到缩进，
   于是表达式体重载顶格输出，而块体重载（配置 `Normalizer` 时）是正常的。纯排版问题 —— 两种形态都能
   编译 —— 但每个生成文件在编辑器里看着都是坏的。
+- 又有三处生成块的缩进统一了。引用类型 Id 的 `CompareValues` 辅助方法缩进 20 空格，而同级成员是 4 空格；
+  EF Core 与 Swagger 的 `ApplyTo` 方法体用制表符缩进（Swagger 的左大括号后还多一个尾随空格），而其余
+  生成行一律 4 空格。纯排版问题 —— 两种形态都能编译。
 - 枚举 Id 作 `Dictionary` 键时忽略 `JsonSerializerOptions.DictionaryKeyPolicy`：`CamelCase` 策略下写出
   `{"Active":1}`，而原生 `Dictionary<Status, int>` 写出的是 `{"active":1}`。生成的 `WriteAsPropertyName`
   现在应用该策略，`ReadAsPropertyName` 相应改为忽略大小写解析，被改写的键仍能读回。非枚举基元刻意不动：

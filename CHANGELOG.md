@@ -55,11 +55,20 @@ change set rather than reproducing every commit.
   sets the default, and an id declared in a referenced assembly honours **its own** assembly default.
   `TypeConverter` is deliberately not part of the mask. Requesting an integration whose assembly is not
   referenced is reported as `STIA0019`.
+- `[StronglyTypedIdInstance]` declares named static instances — `Unknown`, `Unspecified`, `System` —
+  as `public static readonly` fields. The value is written as the primitive's invariant text, validated
+  and translated into a literal at compile time, and constructed through `Create`, so an instance always
+  honours the normalizer and validator and `Parse(instance.ToString())` always reads back. A value the
+  validator rejects surfaces as a `TypeInitializationException` on first use rather than silently
+  producing an id that cannot exist.
 - `STIA0012`–`STIA0019` diagnostics, including `STIA0013` (blank `Prefix`), `STIA0014` (an id with a
   validator or normalizer declared `public`, leaving the primary constructor reachable — `Info`, off by
   default), `STIA0015` (id name should follow the `...Id` convention), `STIA0016` (two ids over the same
   primitive in one assembly), `STIA0017` (malformed `Normalizer` reference), `STIA0018` (unusable
   `ExceptionType`) and `STIA0019` (requested integration not referenced).
+- `STIA0020`–`STIA0022` diagnostics for named instances: `STIA0020` (a name that is not a valid
+  identifier, repeats another instance, or collides with an existing or generated member), `STIA0021`
+  (a value that is not a valid primitive value) and `STIA0022` (a name that is not PascalCase, `Info`).
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
   `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).
@@ -121,6 +130,10 @@ change set rather than reproducing every commit.
   string's dedent baseline, so the first line received no indentation and the expression-bodied overload
   came out flush left while the block-bodied one (used with `Normalizer`) was fine. Cosmetic only — the
   code compiled either way — but every generated file looked broken in the editor.
+- Three more generated blocks are indented consistently. The `CompareValues` helper on a reference-type
+  id sat at 20 spaces while its siblings were at 4, and the EF Core / Swagger `ApplyTo` bodies were
+  indented with tabs (Swagger's opening brace also carried a trailing space) while every other generated
+  line uses four spaces. Cosmetic only — the code compiled either way.
 - An enum-backed id used as a `Dictionary` key ignored `JsonSerializerOptions.DictionaryKeyPolicy`, so a
   `CamelCase` policy wrote `{"Active":1}` where a native `Dictionary<Status, int>` writes `{"active":1}`.
   The generated `WriteAsPropertyName` now applies the policy, and `ReadAsPropertyName` parses

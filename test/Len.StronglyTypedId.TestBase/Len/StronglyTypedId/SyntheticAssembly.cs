@@ -55,12 +55,8 @@ public static class SyntheticAssembly
                 $"合成程序集 {assemblyName} {version} 生成失败：{string.Join("\n", emit.Diagnostics)}");
         }
 
-        var directory = Path.Combine(Path.GetTempPath(), "StiSyntheticAssemblies");
-        Directory.CreateDirectory(directory);
-
-        var path = Path.Combine(directory, $"{assemblyName}.{version}.dll");
-        File.WriteAllBytes(path, stream.ToArray());
-
-        return MetadataReference.CreateFromFile(path);
+        // 直接从内存映像建引用，不落盘：net8.0 与 net10.0 两个测试进程会并行跑，
+        // 共用同一个临时文件路径时 Roslyn 打开文件会撞「being used by another process」。
+        return MetadataReference.CreateFromImage(stream.ToArray());
     }
 }

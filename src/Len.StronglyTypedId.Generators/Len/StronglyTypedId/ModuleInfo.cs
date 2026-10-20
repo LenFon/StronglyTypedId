@@ -22,7 +22,12 @@ internal sealed record ModuleInfo
     public IAssemblySymbol? Assembly { get; }
 
     // 类型表在同一编译里完全稳定，而 4 个集成生成器各会遍历一次；实例级懒缓存把重复枚举收敛为一次。
-    // 字段不参与 record 的相等性比较，不影响去重。
+    //
+    // 注意：record 合成的 Equals 会比较「本类型声明的全部实例字段」，这个缓存字段也在其中 —— 于是
+    // 「缓存已填充」与「缓存为空」的两个实例并不相等。增量管线不受影响，因为它用的是 ModuleInfo.Comparer
+    // （见 StronglyTypedIdGenerator.Initialize 里的 WithComparer），只比程序集名与版本号；
+    // 但别处若对 ModuleInfo 直接用默认相等性（Distinct / HashSet / Contains），就会踩到这个坑。
+    // Generator_Should_ReuseCachedOutputs_WhenUnrelatedSyntaxChanges 守着管线的这一行为。
     private ImmutableArray<ITypeSymbol>? _typesCache;
 
     public ImmutableArray<ITypeSymbol> GetTypes()

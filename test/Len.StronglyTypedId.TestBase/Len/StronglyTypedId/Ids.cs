@@ -261,3 +261,68 @@ public enum SamplePriority
 
 [StronglyTypedId]
 public partial record struct SamplePriorityId(SamplePriority Value);
+
+// N2：命名实例。值以「基元的不变文化文本形」声明，编译期校验并翻译成字面量，运行期经 Create 构造 ——
+// 因此实例必然满足验证器，Parse(id.ToString()) 一定读得回来。
+// int 覆盖负值与零：零值实例与 default 相等是值语义的必然结果，不是缺陷。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Unspecified", "-1")]
+[StronglyTypedIdInstance("Anonymous", "0")]
+public partial record struct InstanceInt32Id(int Value);
+
+// long.MinValue：字面量发射要依赖 C# 对最小值的一元负号特例，是最容易写错的一个边界。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Min", "-9223372036854775808")]
+public partial record struct InstanceInt64Id(long Value);
+
+// 最常见的哨兵值：Guid.Empty。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Empty", "00000000-0000-0000-0000-000000000000")]
+public partial record struct InstanceGuidId(Guid Value);
+
+// 引用类型 record：static readonly 字段保证 ReferenceEquals，且实例与 default(null) 不相等。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Empty", "00000000-0000-0000-0000-000000000000")]
+public partial record InstanceGuidRefId(Guid Value);
+
+// string 基元：文本即值，空串是合法取值（Parse 的「非空」条件只约束读入，不约束实例声明）。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Unknown", "unknown")]
+[StronglyTypedIdInstance("Blank", "")]
+public partial record StringInstanceId(string Value);
+
+// 枚举：非 flags 走 Enum.IsDefined 同源的成员名解析。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Active", "Active")]
+public partial record struct InstanceStatusId(SampleStatus Value);
+
+// 归一化 + 实例：声明的文本先归一化再校验，故 Value 是 "ABC" 而不是 "abc"。
+[StronglyTypedId(Normalizer = nameof(Normalize))]
+[StronglyTypedIdInstance("Upper", "abc")]
+public partial record struct NormalizedInstanceStringId(string Value)
+{
+    private static string Normalize(string value) => value.ToUpperInvariant();
+}
+
+// 前缀 + 实例：实例声明的是基元值，不带前缀；ToString() 照常带前缀。
+[StronglyTypedId(Prefix = "ord_")]
+[StronglyTypedIdInstance("Empty", "00000000-0000-0000-0000-000000000000")]
+public partial record struct PrefixedInstanceGuidId(Guid Value);
+
+// 时间基元：DateTime 必须透出 Kind，DateTimeOffset 必须带偏移，否则往返后不再相等。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Epoch", "1970-01-01T00:00:00Z")]
+public partial record struct InstanceDateTimeId(DateTime Value);
+
+[StronglyTypedId]
+[StronglyTypedIdInstance("PlusEight", "2020-01-01T00:00:00+08:00")]
+public partial record struct InstanceDateTimeOffsetId(DateTimeOffset Value);
+
+// N2：实例必须通过验证器。哨兵值被业务规则拒绝时，类型初始化器会抛 TypeInitializationException ——
+// 这是刻意的取舍：宁可第一次触碰就失败，也不要让一个「不可能存在」的 Id 悄悄流进领域模型。
+[StronglyTypedId(Validator = nameof(Validate))]
+[StronglyTypedIdInstance("Zero", "0")]
+public partial record struct RejectedInstanceInt32Id(int Value)
+{
+    private static bool Validate(int value) => value > 0;
+}
