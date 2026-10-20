@@ -30,9 +30,10 @@ var parsed = OrderId.Parse("...", null);           // IParsable<TSelf>; a null p
 OrderId.TryParse("...", null, out var alsoParsed); // false instead of throwing
 ```
 
-Supported primitive types: `Guid`, `string`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`,
-`long`, `ulong`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, and any `enum`. Use
-`record struct` for a value type, `record` for a reference type.
+Supported primitive types: `Guid`, `string`, `char`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`,
+`long`, `ulong`, `Int128`, `UInt128`, `decimal`, `Half`, `float`, `double`, `DateTime`, `DateTimeOffset`,
+`TimeSpan`, `DateOnly`, `TimeOnly`, `BigInteger`, and any `enum`. Use `record struct` for a value type,
+`record` for a reference type.
 
 Point `Validator` at a static method to reject invalid values:
 
@@ -59,9 +60,35 @@ public partial record struct EmailAddress(string Value)
 EmailAddress.Create("  Alice@Example.COM  ").Value; // "alice@example.com"
 ```
 
+Swap the exception `Create` throws when the validator rejects a value, and declare named static instances:
+
+```csharp
+[StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainRuleViolationException))]
+[StronglyTypedIdInstance("Unspecified", "-1")]
+public partial record struct TenantId(int Value)
+{
+    private static bool Validate(int value) => value != 0;
+}
+
+var tenant = TenantId.Unspecified;   // public static readonly, built through Create
+```
+
+Instances are constructed through `Create`, so they honour the normalizer and validator and
+`Parse(instance.ToString())` always reads back.
+
+Give an id a canonical text form with `Prefix` (`"ord_3f2c…"`), choose the JSON shape with `JsonShape`,
+and narrow the generated integrations per id with `Integrations`:
+
+```csharp
+[StronglyTypedId(Prefix = "ord_", JsonShape = JsonShape.Object,
+                 Integrations = StronglyTypedIdIntegrations.Dapper | StronglyTypedIdIntegrations.SystemTextJson)]
+public partial record struct OrderId(Guid Value);
+```
+
 ## Integrations
 
-All opt-in, generated only when the matching package is referenced:
+Generated only when the matching package is referenced; `Integrations` can narrow the set per id, and
+`[assembly: StronglyTypedIdDefaults(...)]` sets assembly-wide defaults:
 
 - **Serialization** — System.Text.Json and Newtonsoft.Json converters via a generated `[JsonConverter]`.
 - **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` from `ConfigureConventions`, plus a
@@ -72,6 +99,12 @@ All opt-in, generated only when the matching package is referenced:
   ignores its argument.
 - **Swashbuckle / OpenAPI** — `StronglyTypedIds.ApplyTo(options)` for `AddSwaggerGen` / `AddOpenApi`.
 - **ASP.NET Core MVC** — `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id` and `{id:OrderId}`.
+
+## Testing
+
+`Len.StronglyTypedId.Testing` builds ids for arrange blocks (`Any.Id<OrderId>()`, `Any.Ids<OrderId>(10)`),
+and `Len.StronglyTypedId.Testing.AutoFixture` wires the same generator into AutoFixture
+(`fixture.WithStronglyTypedIds()`). Both respect generated validators.
 
 ## Native AOT & trimming
 

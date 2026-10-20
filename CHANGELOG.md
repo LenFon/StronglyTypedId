@@ -24,11 +24,10 @@ change set rather than reproducing every commit.
 - `IStronglyTypedId<TSelf>` — a single-parameter view of the id contract, so generic code can
   constrain on "some strongly typed id" without naming the primitive. `IFormattableStronglyTypedId<TSelf>`
   is generated when the primitive implements `IFormattable`.
-- Eight more primitives: `Int128`, `UInt128`, `Half`, `float`, `double`, `DateOnly`, `TimeOnly` and
-  `BigInteger` (23 supported types including `enum`).
-- `char` as a supported primitive, bringing the total to 24 types including `enum`. Its parsing and
-  formatting members are explicit interface implementations, so the generator emits a length check
-  and an interface call instead of `char.TryParse` / `char.ToString(format, provider)`.
+- Nine more primitives — `char`, `Int128`, `UInt128`, `Half`, `float`, `double`, `DateOnly`, `TimeOnly`
+  and `BigInteger` — bringing the total to 24 types including `enum`. `char`'s parsing and formatting
+  members are explicit interface implementations, so the generator emits a length check and an interface
+  call instead of `char.TryParse` / `char.ToString(format, provider)`.
 - `Normalizer` — point it at a `static TPrimitiveId Normalize(TPrimitiveId value)` member to repair
   incoming values (trim, case-fold, drop separators) before they are validated and stored. Every
   entry point runs normalize → validate → construct, and `[assembly: StronglyTypedIdDefaults(Normalizer = ...)]`
@@ -44,9 +43,9 @@ change set rather than reproducing every commit.
   `PrefixReadMode` chooses between accepting a bare value (`Lenient`) and rejecting it (`Strict`).
 - `JsonShape` selects the serialized shape: the bare primitive (`Primitive`) or
   `{ "value": ... }` (`Object`).
-- Registration entry points for System.Text.Json (`AddStronglyTypedId`) and Newtonsoft.Json
-  (`AddStronglyTypedId`), for callers that configure converters explicitly instead of relying on the
-  generated `[JsonConverter]` attribute.
+- Registration entry points for System.Text.Json (`StronglyTypedIds.ApplyTo(JsonSerializerOptions)`) and
+  Newtonsoft.Json (`settings.AddStronglyTypedId()`), for callers that configure converters explicitly
+  instead of relying on the generated `[JsonConverter]` attribute.
 - A refactoring provider that turns an existing `record` into a strongly typed id.
 - `Integrations` — narrows which integration code an id gets. It is a **filter, not a switch**: it can only
   remove integrations whose packages are already referenced. `None` suppresses every integration while
@@ -126,6 +125,15 @@ change set rather than reproducing every commit.
 
 ### Fixed
 
+- A `BigInteger`-backed id lost its value under System.Text.Json. `BigInteger` ships no built-in
+  converter, so the generated converter fell back to `JsonSerializer.Serialize(writer, primitiveId, options)`,
+  which serialized the struct's public properties (`{"IsPowerOfTwo":false,…,"Sign":1}`) and read back as
+  `default` — silent data loss on every round trip. It now writes and reads the invariant-culture text,
+  the same text `ToString()` produces.
+- `Int128`, `UInt128`, `Half`, `DateOnly` and `TimeOnly` ids threw `JsonWriterException: Unsupported type`
+  under Newtonsoft.Json. `JsonWriter.WriteValue` has no `PrimitiveTypeCode` for these types, so writing the
+  raw value failed outright. Their converters now write the invariant-culture text and read it back through
+  `Id.TryParse`, which is what a prefixed id already did.
 - `Create` is now emitted indented like every other member. The template placeholder sits on the raw
   string's dedent baseline, so the first line received no indentation and the expression-bodied overload
   came out flush left while the block-bodied one (used with `Normalizer`) was fine. Cosmetic only — the
@@ -139,12 +147,6 @@ change set rather than reproducing every commit.
   The generated `WriteAsPropertyName` now applies the policy, and `ReadAsPropertyName` parses
   case-insensitively so the rewritten key still round-trips. Non-enum primitives are deliberately left
   alone: their key text *is* the value, and rewriting it would make the key unreadable.
-- Documentation: an id declared inside a generic container keeps every core capability, but **not** the
-  automatic JSON wiring. The converter classes are generated, yet the `[JsonConverter]` attribute cannot
-  be emitted (an attribute argument may not reference a converter carrying the container's type
-  parameter — CS0416), and `AddStronglyTypedId` / `ApplyTo` skip such ids because an open generic type
-  cannot be passed as a type argument. The README claimed both serializers worked out of the box; it now
-  states the manual per-closed-type registration (`new Outer<int>.InnerId.SystemTextJsonConverter()`).
 - Swagger and the built-in OpenAPI transformer now describe `decimal`, `double`, `float`, `Half`,
   `Int128`, `UInt128`, `BigInteger`, enums and the date/time primitives with the schema type the JSON
   actually carries. `decimal` used to be announced as `string` (Swagger) or `integer` (OpenAPI), enums
@@ -171,13 +173,19 @@ change set rather than reproducing every commit.
   already correct.
 - Ids declared inside a generic container no longer emit `[JsonConverter(typeof(...))]`, which is
   illegal in an attribute argument (CS0416). The converter type is still generated and can be
-  registered manually for a closed instantiation.
+  registered manually for a closed instantiation, and `AddStronglyTypedId` / `ApplyTo` skip such ids
+  for the same reason (an open generic type cannot be passed as a type argument). The README previously
+  claimed both serializers worked out of the box; it now documents the manual registration
+  (`new Outer<int>.InnerId.SystemTextJsonConverter()`).
 - JSON registration entry points are no longer generated for ids whose declaring assembly does not
   reference the JSON library, removing CS0426 in consumer projects.
 - The EF Core, Dapper, Swagger, MVC and OpenAPI generators no longer emit an empty `StronglyTypedIds`
   registration class when there is nothing to register. Previously an assembly with no eligible ids
   still got a `StronglyTypedIds.*.g.cs` whose `ApplyTo` did nothing; now the file is skipped, matching
   what the JSON registration entry points already did.
+- Dapper type handlers now override the non-nullable `SqlMapper.TypeHandler<TId>` signatures
+  (`SetValue(IDbDataParameter, TId)` and `Parse(object?)`). The previous `TId?` signatures resolved to
+  `Nullable<TId>` for struct ids and failed to compile with CS0115 / CS0508.
 - Dapper type handlers for reference-type ids (`partial record`) now write the wrapped primitive to
   `DbParameter.Value` instead of the id object itself. Drivers such as SqlClient and SQLite reject the
   wrapper with "No mapping exists from object type ...", so every insert and update of a reference-type

@@ -21,6 +21,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [生成器会生成什么](#what-gets-generated)
 - [值校验](#value-validation)
 - [值归一化](#value-normalization)
+- [命名实例](#named-instances)
 - [TryCreate 与 UTF-8 接口](#trycreate-and-utf8)
 - [类型转换器（TypeConverter）](#type-converter)
 - [程序集级默认设置](#assembly-defaults)
@@ -47,7 +48,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，20 条规则大多附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，23 条规则大多附带代码修复，
   可一键修好声明（见[诊断与代码修复](#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并为具备相应接口的基元类型（除 `string` 外的全部）
@@ -56,8 +57,12 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
   `SortedSet<T>` 与区间判断都无需自定义比较器。
 - **值校验** —— 把 `Validator` 指向 Id 自身的静态方法，即可让 `Create` 与 `TryParse` 拒绝非法取值
   （见[值校验](#value-validation)）。
+- **自定义失败异常** —— `ExceptionType` 可以把验证器拒绝取值时 `Create` 抛出的 `ArgumentException`
+  换成你自己的异常类型。
 - **值归一化** —— 把 `Normalizer` 指向 Id 自身的静态方法，即可在校验与构造之前修正取值（去空白、
   统一大小写、去分隔符），见[值归一化](#value-normalization)。
+- **命名实例** —— `[StronglyTypedIdInstance("Unspecified", "-1")]` 生成 `public static readonly` 字段，
+  且一律经 `Create` 构造，因此同样经过归一化与验证器，`Parse` 一定读得回来（见[命名实例](#named-instances)）。
 - **`TryCreate` 工厂** —— `Create` 的非抛异常版本：解析失败返回 `false`，`result` 为 `default`，而不是抛异常。
 - **UTF-8 接口** —— 对支持相应接口的基元类型（如 .NET 10 的 `Guid`）自动生成 `IUtf8SpanFormattable` 与
   `IUtf8SpanParsable<TSelf>`，可直接以 `ReadOnlySpan<byte>` 解析 / 格式化。
@@ -219,6 +224,7 @@ IFormatProvider)` 已被标记过时。
 - 基元类型具备时的 `IUtf8SpanFormattable`（net8.0+ 即可用）与 `IUtf8SpanParsable<TSelf>`（`Guid` 自 .NET 10 起才实现，故按基元类型条件生成）—— 提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
 - 静态的 `Create(TPrimitiveId value)` 工厂。
 - 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂——解析失败返回 `false`，`result` 为 `default`。
+- 每个 `[StronglyTypedIdInstance]` 对应一个 `public static readonly TSelf` 字段，经 `Create` 初始化。
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。`provider` 传 `null` 时按
   **不变文化**解析（而非当前文化），因此 `Parse(id.ToString())` 在任何区域设置下都能往返；需要按特定文化
   解析时显式传 provider。对于以 `string` 为基元的 Id，`TryParse` 不接受 `null` 与空字符串。
@@ -226,11 +232,18 @@ IFormatProvider)` 已被标记过时。
 - 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
   与序列化写出的文本一致，`Parse(id.ToString())` 可往返；需要按特定文化
   格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+  注意字符串插值**不等同于** `ToString()`：`$"{id}"` 走 `IFormattable.ToString(null, CultureInfo.CurrentCulture)`，
+  会跟随当前区域（de-DE 下 `decimal` 基元写成 `1234,5`），而 `id.ToString()` 不会。
 - 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
 
 枚举型 Id 保留 `IComparable<TSelf>`、`IParsable<TSelf>` 与 `ISpanParsable<TSelf>`（解析走
 `Enum.TryParse<TEnum>`），但刻意省略 `IFormattable`/`ISpanFormattable`，因为 `Enum` 的
 `ToString(string, IFormatProvider)` 已被标记过时——其 `ToString()` 直接返回底层值的文本。
+
+`Enum.TryParse` 会接受任意数字文本，因此生成的 `TryParse` 把它收紧了：普通枚举必须命中已定义的成员
+（`Enum.IsDefined`），`[Flags]` 枚举允许成员组合，但不许出现没有任何成员占用的位——`Read | Write` 能解析，
+`999` 不能。掩码在编译期由各成员常量算出并按枚举底层类型宽度裁剪，运行期只剩一次按位与；若某个枚举
+定义了全部位（典型是 `All = -1`），则完全不生成校验。
 
 各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
 `internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，两个 `ApplyTo`
@@ -312,6 +325,34 @@ EmailAddress.Create("  Alice@Example.COM  ").Value;  // "alice@example.com"
 
 不设置 `Normalizer` 时完全不生成归一化代码。与 `Validator` 一样，它也可以用
 `[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]` 在程序集级统一设置。
+
+<a id="named-instances"></a>
+
+## 命名实例 <a href="#top" style="float:right">↑ 返回目录</a>
+
+有些 Id 的取值在领域里是「有名字」的——未指定的租户、系统账号、匿名用户。用 `[StronglyTypedIdInstance]`
+（可重复标注）声明它们，生成器会为每个实例产出一个 `public static readonly` 字段：
+
+```csharp
+[StronglyTypedId]
+[StronglyTypedIdInstance("Unspecified", "-1")]
+[StronglyTypedIdInstance("Anonymous", "0")]
+public partial record struct TenantId(int Value);
+
+TenantId.Unspecified.Value;                     // -1
+TenantId.Unspecified == TenantId.Create(-1);    // true
+```
+
+取值是**基元值**的不变文化文本形——也就是 `Parse` 接受的那种文本，但**不带** `Prefix`：前缀装饰的是
+规范文本形，而实例承载的是基元值。它在编译期就被校验并翻译成字面量（或构造函数调用），运行期不再解析。
+
+每个实例都经 `Create` 构造，这正是保证成立的原因：实例不是特权值，它与任何其它取值一样经过
+`Normalizer` 与 `Validator`，因此 `Parse(instance.ToString())` 必定读得回来。被验证器拒绝的取值不会在
+编译期被发现——而是在首次使用时由类型初始化抛 `TypeInitializationException`，这比悄悄交出一个
+「不可能存在」的 Id 更响亮。
+
+名字必须是合法标识符、在同一个 Id 内唯一，且不能与 Id 类型本身、既有成员或生成成员撞名（`STIA0020`）；
+取值必须是该基元类型的合法值（`STIA0021`）；名字不是 PascalCase 时报 `STIA0022`（`Info`）。
 
 <a id="trycreate-and-utf8"></a>
 
@@ -475,6 +516,24 @@ var json = JsonConvert.SerializeObject(new OrderId(Guid.NewGuid()));
 var id   = JsonConvert.DeserializeObject<OrderId>(json);
 ```
 
+### 序列化器不认识的基元
+
+有六个基元在其中一方库里没有原生 JSON 表示，它们的转换器改为写出不变文化文本——也就是 `ToString()`
+产出的那段文本：
+
+| 基元                                          | 库               | 按值写会怎样                                                   |
+| --------------------------------------------- | ---------------- | -------------------------------------------------------------- |
+| `BigInteger`                                  | System.Text.Json | 退化成 `{"IsPowerOfTwo":false,…,"Sign":1}`，读回来是 `default`  |
+| `Int128`、`UInt128`、`Half`、`DateOnly`、`TimeOnly` | Newtonsoft.Json | 抛 `JsonWriterException: Unsupported type`                     |
+
+```csharp
+JsonSerializer.Serialize(BigIntegerId.Create(42));       // "42"
+JsonConvert.SerializeObject(HalfId.Create((Half)1.5));   // "1.5"
+```
+
+读写两侧走同一段规范文本，往返无损；唯一的差别是这些 Id 在 JSON 里呈现为字符串而不是数字。其余基元
+保持自然形态（数字仍是数字、`Guid` 仍是字符串、枚举仍是数字）。
+
 ### 字典键
 
 默认情况下 `JsonConverter<T>` 看不到字典键——`System.Text.Json` 只认得内建的键类型，其余一律抛
@@ -635,21 +694,31 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 
 | 基元类型          | OpenAPI `type` | `format` |
 | ---------------- | -------------- | -------- |
-| `Guid`           | `string`       | `uuid`   |
-| `string`         | `string`       | —        |
-| `byte`           | `integer`      | `byte`   |
-| `sbyte`          | `integer`      | `sbyte`  |
-| `short`          | `integer`      | `int16`  |
-| `ushort`         | `integer`      | `uint16` |
-| `int`            | `integer`      | `int32`  |
-| `uint`           | `integer`      | `uint32` |
-| `long`           | `integer`      | `int64`  |
-| `ulong`          | `integer`      | `uint64` |
-| `decimal`        | `string`       | —        |
-| `DateTime`       | `string`       | —        |
-| `DateTimeOffset` | `string`       | —        |
-| `TimeSpan`       | `string`       | —        |
-| 任意 `enum`      | `string`       | —        |
+| `Guid`           | `string`       | `uuid`      |
+| `string`、`char` | `string`       | —           |
+| `byte`           | `integer`      | `byte`      |
+| `sbyte`          | `integer`      | `sbyte`     |
+| `short`          | `integer`      | `int16`     |
+| `ushort`         | `integer`      | `uint16`    |
+| `int`            | `integer`      | `int32`     |
+| `uint`           | `integer`      | `uint32`    |
+| `long`           | `integer`      | `int64`     |
+| `ulong`          | `integer`      | `uint64`    |
+| `Int128`、`UInt128`、`BigInteger` | `integer` | —     |
+| `decimal`        | `number`       | —           |
+| `double`         | `number`       | `double`    |
+| `float`          | `number`       | `float`     |
+| `Half`           | `number`       | —           |
+| `DateTime`、`DateTimeOffset` | `string` | `date-time` |
+| `DateOnly`       | `string`       | `date`      |
+| `TimeOnly`       | `string`       | `time`      |
+| `TimeSpan`       | `string`       | —           |
+| 任意 `enum`      | `integer`      | —           |
+
+这张表描述的是转换器**实际写出**的形态，而不是 CLR 类型叫什么：`decimal` 与各浮点基元是 JSON number，
+枚举是其底层数字，`Int128` / `UInt128` / `BigInteger` 没有 `int64` / `uint64` 那样的定长范围可标注，
+因此只给裸 `integer` 而不带 `format`。带 `Prefix` 的 Id 一律是 `string` 且不带 `format`，因为它的规范
+文本形就是文本。
 
 <a id="dapper"></a>
 
@@ -768,6 +837,10 @@ public class Repository<TId>
 }
 ```
 
+每个 Id 同时实现了单参数的 `IStronglyTypedId<TSelf>`，因此约束可以只表达「某个强类型 Id」而不必指明
+基元类型——日志、缓存、校验辅助方法这类把 Id 当作不透明值处理的场景很合用。
+`IFormattableStronglyTypedId<TSelf>` 在此基础上进一步收窄到「基元可格式化」的 Id。
+
 <a id="reflection-helpers"></a>
 
 ## 运行时反射 <a href="#top" style="float:right">↑ 返回目录</a>
@@ -831,7 +904,7 @@ OrderId orderId = fixture.Create<OrderId>();
 
 | 工程 | 目标框架 | 演示内容 |
 |---|---|---|
-| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、验证器、文本前缀、`TypeConverter`、System.Text.Json 与 Newtonsoft.Json、嵌套类型、泛型容器、反射辅助、测试辅助包。 |
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、验证器、命名实例、文本前缀、`TypeConverter`、System.Text.Json 与 Newtonsoft.Json、嵌套类型、泛型容器、反射辅助、测试辅助包。 |
 | `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core（`ApplyTo(ModelConfigurationBuilder)`）与 Dapper（`ApplyTo()`）跑内存 SQLite，并演示程序集级 `StronglyTypedIdDefaults`。 |
 | `Len.StronglyTypedId.Sample1` | `net8.0` | MVC 模型绑定与 `{id:OrderId}` 路由约束、把 Newtonsoft.Json 用作 MVC 格式化器、EF Core（SQL Server）与 Swashbuckle 6。启动需要可连接的 SQL Server。 |
 | `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API：`IParsable` 绑定、`[AsParameters]`、路由约束、JSON 请求体，以及内置 OpenAPI 转换器（`AddOpenApi(ApplyTo)`）。 |
@@ -851,8 +924,8 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 
 分析器会强制以下规则；`STIA0012` 是唯一的例外，由生成器在代码产出本身失败时报告。大多数规则作为
 **编译错误**报告，因此不合法的声明无法通过编译；`STIA0011`、`STIA0013` 与 `STIA0019` 是警告，建议性规则
-（`STIA0014`、`STIA0015`、`STIA0016`）级别更低。各级别均可按项目在 `.editorconfig` 中调整。诊断文案
-会按编译器区域设置输出英文或中文。
+（`STIA0014`、`STIA0015`、`STIA0016`、`STIA0022`）为提示级别。各级别均可按项目在 `.editorconfig` 中调整。
+诊断文案会按编译器区域设置输出英文或中文。
 
 有几条规则的触发条件比标题看上去更窄：`STIA0011` 要求该 Id 声明了 `Validator` 或 `Normalizer`
 （两者都没有时直接构造并不构成绕过），且同时覆盖 `new Xxx(...)`、目标类型化的 `new(...)` 与
@@ -959,8 +1032,11 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 
 **问：`ToString()` 输出什么？**
 
-答：输出被包装基元值的文本（`"42"`、`"3f2c…"`），而不是 record 默认的 `OrderId { Value = 42 }`
-形式，因此在日志与字符串内插里更易读。
+答：输出被包装基元值的**不变文化**文本（`"42"`、`"3f2c…"`、`"1.5"`），而不是 record 默认的
+`OrderId { Value = 42 }` 形式，因此在日志里更易读。它刻意与区域设置无关，从而与序列化写出的形态一致，
+并且 `Parse(id.ToString())` 必定往返——`Parse` / `TryParse` 把 `null` provider 当作不变文化，正是为了这一点。
+需要按特定文化输出时，请调用 `ToString(string?, IFormatProvider?)`。注意字符串插值不走 `ToString()`：
+`$"{id}"` 走 `IFormattable.ToString(null, CurrentCulture)`，会跟随当前区域。
 
 **问：设置了 `Validator`，但 `new OrderId(...)` 仍能传入非法值？**
 

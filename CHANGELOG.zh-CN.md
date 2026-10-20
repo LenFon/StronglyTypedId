@@ -20,9 +20,8 @@
   强类型 Id，因此 AutoFixture 创建的对象图同样遵守验证器。
 - `IStronglyTypedId<TSelf>` —— Id 契约的单参数视图，泛型代码可以用「某个强类型 Id」作约束，而不必
   指明基元类型。当基元实现 `IFormattable` 时会生成 `IFormattableStronglyTypedId<TSelf>`。
-- 新增八种基元类型：`Int128`、`UInt128`、`Half`、`float`、`double`、`DateOnly`、`TimeOnly` 与
-  `BigInteger`（连同 `enum` 共 23 种受支持类型）。
-- 新增 `char` 基元，连同 `enum` 共 24 种受支持类型。它的解析与格式化成员都是显式接口实现，
+- 新增九种基元类型——`char`、`Int128`、`UInt128`、`Half`、`float`、`double`、`DateOnly`、`TimeOnly`
+  与 `BigInteger`——连同 `enum` 共 24 种受支持类型。`char` 的解析与格式化成员都是显式接口实现，
   故生成器改为发射长度判定与接口调用，而不是 `char.TryParse` / `char.ToString(format, provider)`。
 - `Normalizer` —— 指向 `static TPrimitiveId Normalize(TPrimitiveId value)` 成员，即可在校验与落库
   之前修正传入值（去空白、统一大小写、去分隔符）。每个入口都按「归一化 → 校验 → 构造」执行，
@@ -35,8 +34,9 @@
 - 文本前缀：`Prefix` 在 `ToString` 中写入固定前缀、在 `Parse` 中将其剥离；`PrefixReadMode` 选择
   接受裸值（`Lenient`）还是拒绝裸值（`Strict`）。
 - `JsonShape` 选择序列化形态：裸基元（`Primitive`）或 `{ "value": ... }`（`Object`）。
-- System.Text.Json（`AddStronglyTypedId`）与 Newtonsoft.Json（`AddStronglyTypedId`）的注册入口，
-  供显式配置转换器、不依赖生成的 `[JsonConverter]` 特性的调用方使用。
+- System.Text.Json（`StronglyTypedIds.ApplyTo(JsonSerializerOptions)`）与 Newtonsoft.Json
+  （`settings.AddStronglyTypedId()`）的注册入口，供显式配置转换器、不依赖生成的 `[JsonConverter]`
+  特性的调用方使用。
 - 把现有 `record` 转成强类型 Id 的重构（refactoring）提供程序。
 - `Integrations` —— 收窄单个 Id 生成哪些集成代码。它是**过滤器**而非开关：只能在「已引用对应包」的
   基础上做减法。`None` 关掉全部集成但保留核心实现，`Dapper | SystemTextJson` 只保留这两类，`All`
@@ -98,6 +98,14 @@
 
 ### 修复
 
+- `BigInteger` 基元的 Id 在 System.Text.Json 下会丢值。`BigInteger` 没有内置转换器，生成的转换器落到
+  `JsonSerializer.Serialize(writer, primitiveId, options)`，把结构体的公开属性序列化成
+  `{"IsPowerOfTwo":false,…,"Sign":1}`，读回来则是 `default` —— 每次往返都静默丢数据。现在读写都走
+  不变文化文本，即 `ToString()` 产出的那段文本。
+- `Int128`、`UInt128`、`Half`、`DateOnly`、`TimeOnly` 基元的 Id 在 Newtonsoft.Json 下抛
+  `JsonWriterException: Unsupported type`。`JsonWriter.WriteValue` 对这些类型没有对应的
+  `PrimitiveTypeCode`，按值写直接失败。它们的转换器现在写不变文化文本、经 `Id.TryParse` 读回，
+  与带前缀的 Id 一致。
 - `Create` 现在与其他成员一样带缩进。模板里的占位符落在原始字符串的去缩进基准列上，首行拿不到缩进，
   于是表达式体重载顶格输出，而块体重载（配置 `Normalizer` 时）是正常的。纯排版问题 —— 两种形态都能
   编译 —— 但每个生成文件在编辑器里看着都是坏的。
@@ -108,10 +116,6 @@
   `{"Active":1}`，而原生 `Dictionary<Status, int>` 写出的是 `{"active":1}`。生成的 `WriteAsPropertyName`
   现在应用该策略，`ReadAsPropertyName` 相应改为忽略大小写解析，被改写的键仍能读回。非枚举基元刻意不动：
   它们的键文本**就是**值本身，改写等于让键读不回来。
-- 文档订正：声明在泛型容器里的 Id 保留全部核心能力，但**没有**自动的 JSON 接线。转换器类照常生成，
-  却挂不上 `[JsonConverter]` 特性（特性实参不能引用携带容器类型参数的转换器，CS0416），
-  `AddStronglyTypedId` / `ApplyTo` 也会跳过它（开放泛型不能作类型实参）。README 此前声称两种序列化
-  开箱即用，现已改为说明按闭合类型手动注册（`new Outer<int>.InnerId.SystemTextJsonConverter()`）。
 - Swagger 与内置 OpenAPI 转换器现在按 JSON 的真实形态描述 `decimal`、`double`、`float`、`Half`、
   `Int128`、`UInt128`、`BigInteger`、枚举与日期时间基元。此前 `decimal` 被声明成 `string`（Swagger）
   或 `integer`（OpenAPI），枚举被声明成 `string`，浮点落到字符串默认分支，导致生成的客户端按错误类型
@@ -131,7 +135,9 @@
   路由与查询参数在 `JsonTypeInfo` 中描述的是基元，此前的 schema 转换器会漏掉它们；请求体与响应体
   本来就是正确的。
 - 声明在泛型容器内的 Id 不再发出 `[JsonConverter(typeof(...))]` —— 特性实参中出现类型参数是非法的
-  （CS0416）。转换器类型仍会生成，可为封闭构造手动注册。
+  （CS0416）。转换器类型仍会生成，可为封闭构造手动注册；`AddStronglyTypedId` / `ApplyTo` 出于同样的
+  原因（开放泛型不能作类型实参）会跳过它。README 此前声称两种序列化开箱即用，现已改为说明按闭合类型
+  手动注册（`new Outer<int>.InnerId.SystemTextJsonConverter()`）。
 - 对于声明程序集未引用 JSON 库的 Id，不再生成 JSON 注册入口，消除了消费者项目中的 CS0426。
 - Dapper 类型处理器改为重写 `SqlMapper.TypeHandler<TId>` 的非可空签名（`SetValue(IDbDataParameter, TId)`
   与 `Parse(object?)`）。此前的 `TId?` 签名对 struct Id 会解析成 `Nullable<TId>`，编译时报

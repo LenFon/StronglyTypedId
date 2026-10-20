@@ -22,6 +22,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [What gets generated](#what-gets-generated)
 - [Value validation](#value-validation)
 - [Value normalization](#value-normalization)
+- [Named instances](#named-instances)
 - [TryCreate & UTF-8 interfaces](#trycreate-and-utf8)
 - [TypeConverter](#type-converter)
 - [Assembly-level defaults](#assembly-defaults)
@@ -49,7 +50,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
 - **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and most of the
-  twenty rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+  twenty-three rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` for every primitive that has them (all but `string`).
@@ -57,8 +58,13 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   so `OrderBy`, `SortedSet<T>` and ranges work without a custom comparer.
 - **Value validation** — point `Validator` at a static method of the id to make `Create` and `TryParse`
   reject invalid values (see [Value validation](#value-validation)).
+- **Custom failure type** — `ExceptionType` swaps the `ArgumentException` that `Create` throws when the
+  validator rejects a value for an exception of your own.
 - **Value normalization** — point `Normalizer` at a static method to repair incoming values (trim, case-fold,
   strip separators) before they are validated and stored (see [Value normalization](#value-normalization)).
+- **Named instances** — `[StronglyTypedIdInstance("Unspecified", "-1")]` declares `public static readonly`
+  fields that are built through `Create`, so they honour the normalizer and validator and always parse
+  back (see [Named instances](#named-instances)).
 - **`TryCreate` factory** — the non-throwing counterpart of `Create`: on a failed parse it returns `false`
   and sets `result` to `default` instead of throwing.
 - **UTF-8 interfaces** — for primitives that expose them (`Guid` from .NET 10, for example),
@@ -240,6 +246,7 @@ The core implementation adds:
   from .NET 10, so it is emitted per primitive) — providing `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
 - A static `Create(TPrimitiveId value)` factory.
 - A static `TryCreate(TPrimitiveId value, out TSelf result)` factory — on a failed parse it returns `false` and sets `result` to `default`.
+- A `public static readonly TSelf` field per `[StronglyTypedIdInstance]`, initialized through `Create`.
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
   `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
   round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
@@ -249,6 +256,9 @@ The core implementation adds:
   `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
   `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and
   `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
+  String interpolation is **not** `ToString()`: `$"{id}"` goes through
+  `IFormattable.ToString(null, CultureInfo.CurrentCulture)` and therefore follows the ambient culture
+  (a `decimal`-backed id prints `1234,5` under de-DE), while `id.ToString()` does not.
 - A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
   round-tripping between string and the id through `TypeDescriptor`; a `null` reference-type id resolves back to `default`.
 
@@ -352,6 +362,39 @@ normalizer that appends a prefix cannot apply it twice.
 
 Leaving `Normalizer` unset emits no normalization code at all. Like `Validator`, it can also be set for the
 whole assembly with `[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]`.
+
+<a id="named-instances"></a>
+
+## Named instances <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+Some ids have values the domain talks about by name — an unspecified tenant, a system account, an
+anonymous user. Declare them with `[StronglyTypedIdInstance]` (repeatable) and the generator emits one
+`public static readonly` field per instance:
+
+```csharp
+[StronglyTypedId]
+[StronglyTypedIdInstance("Unspecified", "-1")]
+[StronglyTypedIdInstance("Anonymous", "0")]
+public partial record struct TenantId(int Value);
+
+TenantId.Unspecified.Value;                     // -1
+TenantId.Unspecified == TenantId.Create(-1);    // true
+```
+
+The value is the **primitive** value in its invariant text form — the same text `Parse` accepts, but
+**without** the `Prefix`, because a prefix decorates the canonical text form while an instance carries a
+primitive value. It is checked at compile time and translated into a literal (or a constructor call), so
+nothing is parsed at run time.
+
+Every instance is built through `Create`, and that is what makes the guarantee hold: an instance is never
+a privileged value, so it goes through the same `Normalizer` and `Validator` as any other value, and
+`Parse(instance.ToString())` always reads back. A value the validator rejects is not caught at compile
+time — the type initializer throws `TypeInitializationException` on first use instead, which is
+deliberately louder than quietly handing out an id that cannot exist.
+
+Names must be valid identifiers, unique within the id, and must not collide with the id type itself or
+with an existing or generated member (`STIA0020`); values must be valid for the primitive (`STIA0021`);
+a name that is not PascalCase is reported as `STIA0022` (`Info`).
 
 <a id="trycreate-and-utf8"></a>
 
@@ -529,6 +572,25 @@ var json = JsonConvert.SerializeObject(new OrderId(Guid.NewGuid()));
 var id   = JsonConvert.DeserializeObject<OrderId>(json);
 ```
 
+### Primitives the serializers do not know
+
+Six primitives have no native JSON representation in one of the two libraries, so their converters write
+the invariant-culture text instead of the raw value — the same text `ToString()` produces:
+
+| Primitive                                     | Library          | Raw value would…                                              |
+| --------------------------------------------- | ---------------- | ------------------------------------------------------------- |
+| `BigInteger`                                  | System.Text.Json | serialize as `{"IsPowerOfTwo":false,…,"Sign":1}` and read back as `default` |
+| `Int128`, `UInt128`, `Half`, `DateOnly`, `TimeOnly` | Newtonsoft.Json | throw `JsonWriterException: Unsupported type`                  |
+
+```csharp
+JsonSerializer.Serialize(BigIntegerId.Create(42));       // "42"
+JsonConvert.SerializeObject(HalfId.Create((Half)1.5));   // "1.5"
+```
+
+Both directions go through the same canonical text, so the round trip is lossless; the only consequence
+is that these ids appear as JSON strings rather than numbers. Every other primitive keeps its natural
+shape (numbers stay numbers, `Guid` stays a string, enums stay numbers).
+
 ### Dictionary keys
 
 A `JsonConverter<T>` does not see dictionary keys by default — `System.Text.Json` only knows the built-in
@@ -705,21 +767,32 @@ with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.
 
 | Primitive  | OpenAPI `type` | `format` |
 | ---------- | -------------- | -------- |
-| `Guid`            | `string`       | `uuid`   |
-| `string`          | `string`       | —        |
-| `byte`            | `integer`      | `byte`   |
-| `sbyte`           | `integer`      | `sbyte`  |
-| `short`           | `integer`      | `int16`  |
-| `ushort`          | `integer`      | `uint16` |
-| `int`             | `integer`      | `int32`  |
-| `uint`            | `integer`      | `uint32` |
-| `long`            | `integer`      | `int64`  |
-| `ulong`           | `integer`      | `uint64` |
-| `decimal`         | `string`       | —        |
-| `DateTime`        | `string`       | —        |
-| `DateTimeOffset`  | `string`       | —        |
-| `TimeSpan`        | `string`       | —        |
-| any `enum`        | `string`       | —        |
+| `Guid`            | `string`       | `uuid`      |
+| `string`, `char`  | `string`       | —           |
+| `byte`            | `integer`      | `byte`      |
+| `sbyte`           | `integer`      | `sbyte`     |
+| `short`           | `integer`      | `int16`     |
+| `ushort`          | `integer`      | `uint16`    |
+| `int`             | `integer`      | `int32`     |
+| `uint`            | `integer`      | `uint32`    |
+| `long`            | `integer`      | `int64`     |
+| `ulong`           | `integer`      | `uint64`    |
+| `Int128`, `UInt128`, `BigInteger` | `integer` | —     |
+| `decimal`         | `number`       | —           |
+| `double`          | `number`       | `double`    |
+| `float`           | `number`       | `float`     |
+| `Half`            | `number`       | —           |
+| `DateTime`, `DateTimeOffset` | `string` | `date-time` |
+| `DateOnly`        | `string`       | `date`      |
+| `TimeOnly`        | `string`       | `time`      |
+| `TimeSpan`        | `string`       | —           |
+| any `enum`        | `integer`      | —           |
+
+The table describes what the converters actually write, not what the CLR type is called: `decimal` and
+the floating-point primitives are JSON numbers, an enum is its underlying number, and `Int128` /
+`UInt128` / `BigInteger` have no bounded `int64` / `uint64` range to advertise, so they get a bare
+`integer` with no `format`. An id with a `Prefix` is always `string` with no `format`, because its
+canonical text form is text.
 
 <a id="dapper"></a>
 
@@ -857,6 +930,11 @@ public class Repository<TId>
 }
 ```
 
+Every id also implements the single-parameter `IStronglyTypedId<TSelf>`, so a constraint can say "some
+strongly typed id" without naming the primitive — useful for logging, caching and validation helpers that
+treat the id as an opaque value. `IFormattableStronglyTypedId<TSelf>` narrows that to ids whose primitive
+can be formatted.
+
 <a id="reflection-helpers"></a>
 
 ## Reflection helpers <a href="#table-of-contents" style="float:right">↑ Back to top</a>
@@ -921,7 +999,7 @@ Every feature described above has a runnable counterpart under [`samples/`](samp
 
 | Project | Target | Demonstrates |
 |---|---|---|
-| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | Guided tour of the core surface: `Create` / `TryCreate` / `Parse`, formatting, equality and ordering, deconstruction, validators, text prefixes, `TypeConverter`, System.Text.Json and Newtonsoft.Json, nesting, generic containers, reflection helpers and the testing package. |
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | Guided tour of the core surface: `Create` / `TryCreate` / `Parse`, formatting, equality and ordering, deconstruction, validators, named instances, text prefixes, `TypeConverter`, System.Text.Json and Newtonsoft.Json, nesting, generic containers, reflection helpers and the testing package. |
 | `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core (`ApplyTo(ModelConfigurationBuilder)`) and Dapper (`ApplyTo()`) against in-memory SQLite, plus assembly-level `StronglyTypedIdDefaults`. |
 | `Len.StronglyTypedId.Sample1` | `net8.0` | MVC model binding and `{id:OrderId}` route constraints, Newtonsoft.Json as the MVC formatter, EF Core (SQL Server) and Swashbuckle 6. Needs a reachable SQL Server to start. |
 | `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API: `IParsable` binding, `[AsParameters]`, route constraints, JSON bodies and the built-in OpenAPI transformer (`AddOpenApi(ApplyTo)`). |
@@ -941,9 +1019,9 @@ The console samples print each step and exit. The web samples publish their docu
 
 The analyzer enforces the following rules; `STIA0012` is the one exception, reported by the generator
 when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
-will not compile; `STIA0011`, `STIA0013` and `STIA0019` are warnings, and the advisory ones (`STIA0014`, `STIA0015`,
-`STIA0016`) sit at a lower severity. Every level can be tuned per project in `.editorconfig`. Diagnostics
-are localized for English and Chinese according to the compiler culture.
+will not compile; `STIA0011`, `STIA0013` and `STIA0019` are warnings, and the advisory ones (`STIA0014`,
+`STIA0015`, `STIA0016`, `STIA0022`) are informational. Every level can be tuned per project in
+`.editorconfig`. Diagnostics are localized for English and Chinese according to the compiler culture.
 
 A few rules fire in narrower circumstances than their titles suggest: `STIA0011` needs the id to declare
 a `Validator` or a `Normalizer` (without either, constructing it directly is not a bypass) and covers

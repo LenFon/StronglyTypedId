@@ -17,3 +17,11 @@ public partial record struct PrefixedIntegrationGuidId(Guid Value);
 // 此前测试矩阵里全是 record struct，这条路径零覆盖。
 [StronglyTypedId]
 public partial record IntegrationReferenceId(Guid Value);
+
+// 泛型容器里的 Id：转换器类照常生成，但 [JsonConverter] 特性无法引用含类型参数的转换器（CS0416），
+// 且集成注册入口会跳过它（开放泛型不能作类型实参）。JSON 支持因此只能按闭合类型手动注册。
+public partial class IntegrationBox<T>
+{
+    [StronglyTypedId]
+    public partial record struct BoxedGuidId(Guid Value);
+}
