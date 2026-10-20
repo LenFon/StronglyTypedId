@@ -142,11 +142,11 @@ public class StronglyTypedIdGeneratorTests
         var comparisonBody = record == "record" ? "CompareValues(left, right)" : "left.Value.CompareTo(right.Value)";
         var comparisonHelper = record == "record"
             ? "\n\n"
-                + "                /// <summary>\n"
-                + "                /// 按「null 最小」的约定比较两个值，与 <see cref=\"CompareTo\"/> 保持一致。\n"
-                + "                /// </summary>\n"
-                + "                private static int CompareValues(OrderId? left, OrderId? right)\n"
-                + "                    => left is null ? (right is null ? 0 : -1) : left.CompareTo(right);"
+                + "    /// <summary>\n"
+                + "    /// 按「null 最小」的约定比较两个值，与 <see cref=\"CompareTo\"/> 保持一致。\n"
+                + "    /// </summary>\n"
+                + "    private static int CompareValues(OrderId? left, OrderId? right)\n"
+                + "        => left is null ? (right is null ? 0 : -1) : left.CompareTo(right);"
             : string.Empty;
 
         return [

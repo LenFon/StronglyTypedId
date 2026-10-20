@@ -30,7 +30,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
             {
-                /// <summary>Employ strongly typed IDs in ASP.NET Core MVC model binding.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs in ASP.NET Core MVC model binding.
+                /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.Mvc.MvcOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
@@ -39,7 +41,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                     options.ModelBinderProviders.Insert(0, new StronglyTypedIdModelBinderProvider());
                 }
 
-                /// <summary>Employ strongly typed IDs as ASP.NET Core route constraints.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs as ASP.NET Core route constraints.
+                /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.Routing.RouteOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
@@ -48,7 +52,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
             {{string.Join("\n", constraintRegistrations)}}
                 }
 
-                /// <summary>把「实现了 <see cref="global::Len.StronglyTypedId.IStronglyTypedId{TSelf, TPrimitiveId}"/> 的强类型 Id」路由到 <see cref="StronglyTypedIdModelBinder{TSelf}"/>；其余类型交还 MVC 默认绑定链路。</summary>
+                /// <summary>
+                /// 把「实现了 <see cref="global::Len.StronglyTypedId.IStronglyTypedId{TSelf, TPrimitiveId}"/> 的强类型 Id」路由到 <see cref="StronglyTypedIdModelBinder{TSelf}"/>；其余类型交还 MVC 默认绑定链路。
+                /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 private sealed class StronglyTypedIdModelBinderProvider : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinderProvider
@@ -77,7 +83,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                     }
                 }
 
-                /// <summary>通用强类型 Id 模型绑定器：以静态 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/> 把字符串值还原为强类型 Id（每个强类型 Id 都经 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 间接实现 <see cref="global::System.IParsable{TSelf}"/>）。</summary>
+                /// <summary>
+                /// 通用强类型 Id 模型绑定器：以静态 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/> 把字符串值还原为强类型 Id（每个强类型 Id 都经 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 间接实现 <see cref="global::System.IParsable{TSelf}"/>）。
+                /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 private sealed class StronglyTypedIdModelBinder<TId> : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinder where TId : global::System.IParsable<TId>
@@ -117,7 +125,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                     }
                 }
 
-                /// <summary>通用强类型 Id 路由约束：分段值能经 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/> 还原即视为通过，使 <c>{id:OrderId}</c> 这类模板命中强类型 Id 的解析规则。</summary>
+                /// <summary>
+                /// 通用强类型 Id 路由约束：分段值能经 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/> 还原即视为通过，使 <c>{id:OrderId}</c> 这类模板命中强类型 Id 的解析规则。
+                /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 private sealed class StronglyTypedIdRouteConstraint<TId> : global::Microsoft.AspNetCore.Routing.IRouteConstraint where TId : global::System.IParsable<TId>

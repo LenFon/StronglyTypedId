@@ -104,7 +104,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             registrations.Append($"\n{_registrationIndent}global::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
         }
 
-            var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
+        var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>

@@ -7,6 +7,11 @@ namespace Len.StronglyTypedId.Generators;
 /// </summary>
 internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 {
+    /// <summary>
+    /// <c>ApplyTo</c> 方法体内语句的缩进（产物中为 8 空格）。
+    /// </summary>
+    private static readonly string _registrationIndent = new(' ', 8);
+
     internal static readonly IIntegrationCodeGenerator Instance = new EfCoreCodeGenerator();
 
     public int Order { get; } = 3;
@@ -48,21 +53,27 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
                     class {{converterName}} : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<{{idInfo.FullyQualifiedName}}, {{idInfo.PrimitiveIdTypeName}}>
                     {
-                        /// <summary>Default constructor.</summary>
+                        /// <summary>
+                        /// Default constructor.
+                        /// </summary>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
                         public {{converterName}}() : base(v => v.Value, val => {{idInfo.FullyQualifiedName}}.Create(val))
                         {
                         }
 
-                        /// <summary>Apply the {{idInfo.Name}} converter to the Entity Framework Core via conventions. Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.</summary>
+                        /// <summary>
+                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core via conventions. Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
+                        /// </summary>
                         /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
                         public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder) =>
                             configurationBuilder.Properties<{{idInfo.FullyQualifiedName}}>().HaveConversion(typeof({{converterName}}));
 
-                        /// <summary>Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>).</summary>
+                        /// <summary>
+                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>).
+                        /// </summary>
                         /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
@@ -85,14 +96,16 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 
             context.AddSource($"{idInfo.HintName}.EntityFrameworkCore.g.cs", GeneratedCode.NormalizeLineEndings(converterCode));
 
-            registrations.Append($"\n\t\t{converterName}.ApplyTo(configurationBuilder);");
-            modelBuilderRegistrations.Append($"\n\t\t{converterName}.ApplyTo(modelBuilder);");
+            registrations.Append($"\n{_registrationIndent}{converterName}.ApplyTo(configurationBuilder);");
+            modelBuilderRegistrations.Append($"\n{_registrationIndent}{converterName}.ApplyTo(modelBuilder);");
         }
 
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
             {
-                /// <summary>Employ strongly typed IDs in Entity Framework Core via conventions.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs in Entity Framework Core via conventions.
+                /// </summary>
                 /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
@@ -100,7 +113,9 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 {{{registrations}}
                 }
 
-                /// <summary>Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when the context does not override <c>ConfigureConventions(ModelConfigurationBuilder)</c>.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when the context does not override <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
+                /// </summary>
                 /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}

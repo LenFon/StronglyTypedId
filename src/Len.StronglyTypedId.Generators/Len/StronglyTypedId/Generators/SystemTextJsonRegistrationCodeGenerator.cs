@@ -32,7 +32,9 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
             {
-                /// <summary>Employ strongly typed IDs in System.Text.Json.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs in System.Text.Json.
+                /// </summary>
                 /// <param name="options"><see cref="global::System.Text.Json.JsonSerializerOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonRegistrationCodeGenerator), version)}}

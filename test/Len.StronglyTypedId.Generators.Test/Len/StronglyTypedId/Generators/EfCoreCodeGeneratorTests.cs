@@ -189,6 +189,24 @@ public class EfCoreCodeGeneratorTests
             .And.Contain("OrderIdConverter.ApplyTo(modelBuilder);");
     }
 
+    /// <summary>
+    /// 注册入口的方法体此前用制表符缩进，与其余生成物的 4 空格风格不一致。
+    /// </summary>
+    /// <remarks>
+    /// 断言里带上换行与空白：<c>Contain("OrderIdConverter.ApplyTo(configurationBuilder);")</c> 这类子串匹配
+    /// 对缩进完全免疫，正是该缺陷此前没被发现的原因。
+    /// </remarks>
+    [Fact]
+    public void EfCore_ApplyTo_Should_UseSpacesForIndentation()
+    {
+        var generated = GetGeneratedCode(EfCoreSource);
+
+        generated["StronglyTypedIds.EntityFrameworkCore.g.cs"].Replace("\r\n", "\n")
+            .Should().Contain("\n    {\n        OrderIdConverter.ApplyTo(configurationBuilder);\n    }")
+            .And.Contain("\n    {\n        OrderIdConverter.ApplyTo(modelBuilder);\n    }")
+            .And.NotContain("\t");
+    }
+
     [Fact]
     public void EfCore_Should_GenerateConverterForEveryId()
     {
