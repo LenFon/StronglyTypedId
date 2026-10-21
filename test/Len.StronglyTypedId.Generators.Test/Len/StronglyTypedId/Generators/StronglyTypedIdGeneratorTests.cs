@@ -1,7 +1,11 @@
-﻿using FluentAssertions;
+﻿// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
+// 统一在此文件禁用该测试框架分析器警告。
+#pragma warning disable xUnit1051
+using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Testing;
+using System.Buffers;
 using System.Reflection;
 
 namespace Len.StronglyTypedId.Generators;
@@ -11,12 +15,18 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 生成代码里 <c>GeneratedCodeAttribute</c> 的版本号。
     /// </summary>
-    /// <remarks>
-    /// 生成器写进产物的版本取自<b>自身程序集</b>的版本（见 <c>StronglyTypedIdGenerator._version</c>），
-    /// 而该版本由根 <c>version.props</c> 决定。因此期望快照必须按同一来源取值 ——
-    /// 写死字面量会让整套快照在每次改版本号（也就是每次发版）时集体失效。
-    /// </remarks>
-    private static readonly string GeneratorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
+    private static readonly string _generatorVersion = typeof(StronglyTypedIdGenerator).Assembly.GetName().Version!.ToString(3);
+
+    /// <summary>
+    /// hint 名哈希段允许的小写十六进制字符集。
+    /// </summary>
+    private static readonly SearchValues<char> _lowerHexDigits = SearchValues.Create("0123456789abcdef");
+
+    /// <summary>
+    /// 生成代码里 <c>UnconditionalSuppressMessage</c> 的 <c>Justification</c> 文案。
+    /// </summary>
+    private const string AotJustification =
+        "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
 
     [Theory]
     [InlineData("record")]
@@ -31,7 +41,7 @@ public class StronglyTypedIdGeneratorTests
             [StronglyTypedId]
             public partial {record} OrderId(Guid Value);
             """";
-        List<string> expectedCodes = GetExpectedCodes(record);
+        var expectedCodes = GetExpectedCodes(record);
 
         // Act
         var actualCodes = GetGeneratedCode(code).ToList()!;
@@ -51,39 +61,29 @@ public class StronglyTypedIdGeneratorTests
 
         core.Should().Contain("[global::System.Diagnostics.DebuggerDisplay(\"{Value}\")]");
         core.Should().Contain("global::System.IUtf8SpanFormattable");
-        core.Should().Contain("public static OrderId Create(global::System.Guid value) => new OrderId(value);");
+        core.Should().Contain("    public static OrderId Create(global::System.Guid value) => new OrderId(value);");
         core.Should().Contain("public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)");
-        core.Should().Contain("public override string ToString() => Value.ToString() ?? string.Empty;");
+        core.Should().Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;");
 
         if (utf8Parsable)
         {
             core.Should().Contain("global::System.IUtf8SpanParsable<OrderId>");
             core.Should().Contain("public static OrderId Parse(global::System.ReadOnlySpan<byte> utf8Text, global::System.IFormatProvider? provider)");
             core.Should().Contain("public static bool TryParse(");
-            core.Should().Contain("nameof(utf8Text)");
+            // Parse 的失败按 IParsable 惯例抛 FormatException（FormatException 没有 paramName 重载）。
+            core.Should().Contain("throw new global::System.FormatException(\"Could not parse supplied value.\");");
         }
     }
 
     /// <summary>
     /// 目标框架的 <see cref="System.Guid"/> 是否实现 <see cref="System.IUtf8SpanParsable{T}"/>。
     /// </summary>
-    /// <remarks>
-    /// 该接口由生成器按「编译引用的 BCL 符号」判定，而测试合成编译引用的是宿主运行时自身的
-    /// <c>System.Guid</c>，二者一致。.NET 8 的 Guid 实现 <see cref="System.IUtf8SpanFormattable"/> 但不实现
-    /// <see cref="System.IUtf8SpanParsable{T}"/>，.NET 10 两者皆实现 —— 此探测决定核心产物基线里
-    /// 是否出现 UTF-8 解析成员。
-    /// </remarks>
     private static bool GuidSupportsUtf8Parsing()
         => typeof(global::System.Guid).GetInterface("System.IUtf8SpanParsable`1") is not null;
 
     /// <summary>
     /// 嵌套类型的 Id：声明必须逐层嵌回包含类型，hint 名带上包含类型链。
     /// </summary>
-    /// <remarks>
-    /// 这里只断言骨架（hint 名、包装开头、收尾括号）而不是整份快照：嵌套包装是纯文本变换，
-    /// 逐字符的缩进与括号层级已由 <c>NestInContainingTypes</c> 自己的用例钉住，
-    /// 再抄一份百行快照只会让「改个成员」也要同步两处。
-    /// </remarks>
     [Fact]
     public void Generator_Should_NestGeneratedDeclaration_WhenIdIsNested()
     {
@@ -137,6 +137,18 @@ public class StronglyTypedIdGeneratorTests
             ? "other is null ? 1 : Value.CompareTo(other.Value)"
             : "Value.CompareTo(other.Value)";
 
+        // 引用类型的比较运算符还要多两处差异：操作数可空，且改走 null 安全的 CompareValues。
+        var comparisonParameter = record == "record" ? "OrderId?" : "OrderId";
+        var comparisonBody = record == "record" ? "CompareValues(left, right)" : "left.Value.CompareTo(right.Value)";
+        var comparisonHelper = record == "record"
+            ? "\n\n"
+                + "    /// <summary>\n"
+                + "    /// 按「null 最小」的约定比较两个值，与 <see cref=\"CompareTo\"/> 保持一致。\n"
+                + "    /// </summary>\n"
+                + "    private static int CompareValues(OrderId? left, OrderId? right)\n"
+                + "        => left is null ? (right is null ? 0 : -1) : left.CompareTo(right);"
+            : string.Empty;
+
         return [
 
             $$"""
@@ -154,24 +166,24 @@ public class StronglyTypedIdGeneratorTests
                 global::System.IComparable<OrderId>,
                 global::System.Numerics.IEqualityOperators<OrderId, OrderId, bool>,
                 global::System.Numerics.IComparisonOperators<OrderId, OrderId, bool>,
-                global::System.IFormattable,
+                global::Len.StronglyTypedId.IFormattableStronglyTypedId<OrderId>,
                 global::System.ISpanFormattable,
                 global::System.IUtf8SpanParsable<OrderId>,
                 global::System.IUtf8SpanFormattable
             {
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Create(global::System.Guid value) => new OrderId(value);
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Parse(string value, global::System.IFormatProvider? provider)
                 {
                     if (!TryParse(value, provider, out var id))
                     {
-                        throw new global::System.ArgumentException("Could not parse supplied value.", nameof(value));
+                        throw new global::System.FormatException("Could not parse supplied value.");
                     }
 
                     return id;
@@ -179,13 +191,13 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryParse(
                     [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value,
                     global::System.IFormatProvider? provider,
                     [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
-                    if (global::System.Guid.TryParse(value, provider, out var val))
+                    if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val))
                     {
                         result = new OrderId(val);
                         return true;
@@ -197,12 +209,12 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
                 {
                     if (!TryParse(value, provider, out var id))
                     {
-                        throw new global::System.ArgumentException("Could not parse supplied value.", nameof(value));
+                        throw new global::System.FormatException("Could not parse supplied value.");
                     }
 
                     return id;
@@ -210,13 +222,13 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryParse(
                     global::System.ReadOnlySpan<char> value,
                     global::System.IFormatProvider? provider,
                     [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
-                    if (global::System.Guid.TryParse(value, provider, out var val))
+                    if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val))
                     {
                         result = new OrderId(val);
                         return true;
@@ -228,40 +240,42 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public int CompareTo({{compareToParameter}}) => {{compareToBody}};
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
-                public static bool operator <(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) < 0;
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
+                public static bool operator <({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} < 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
-                public static bool operator >(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) > 0;
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
+                public static bool operator >({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} > 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
-                public static bool operator <=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) <= 0;
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
+                public static bool operator <=({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} <= 0;
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
-                public static bool operator >=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) >= 0;
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
+                public static bool operator >=({{comparisonParameter}} left, {{comparisonParameter}} right) => {{comparisonBody}} >= 0;{{comparisonHelper}}
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
-                public override string ToString() => Value.ToString() ?? string.Empty;
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
+                public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
 
-                /// <summary>Attempts to create a new strongly typed id that wraps the specified primitive value.</summary>
+                /// <summary>
+                /// Attempts to create a new strongly typed id that wraps the specified primitive value.
+                /// </summary>
                 /// <param name="value">The primitive value to wrap.</param>
                 /// <param name="result">The created id when this method returns <see langword="true"/>.</param>
                 /// <returns><see langword="true"/> when <paramref name="value"/> is acceptable; otherwise, <see langword="false"/>.</returns>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
                     result = new OrderId(value);
@@ -270,28 +284,28 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>
                     Value.ToString(format, formatProvider);
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public bool TryFormat(
                     global::System.Span<char> destination,
                     out int charsWritten,
                     global::System.ReadOnlySpan<char> format,
                     global::System.IFormatProvider? provider) =>
-                    ((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);
+                    Value.TryFormat(destination, out charsWritten, format);
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static OrderId Parse(global::System.ReadOnlySpan<byte> utf8Text, global::System.IFormatProvider? provider)
                 {
                     if (!TryParse(utf8Text, provider, out var id))
                     {
-                        throw new global::System.ArgumentException("Could not parse supplied value.", nameof(utf8Text));
+                        throw new global::System.FormatException("Could not parse supplied value.");
                     }
 
                     return id;
@@ -299,13 +313,13 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryParse(
                     global::System.ReadOnlySpan<byte> utf8Text,
                     global::System.IFormatProvider? provider,
                     [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
                 {
-                    if (global::System.Guid.TryParse(utf8Text, provider, out var val))
+                    if (global::System.Guid.TryParse(utf8Text, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val))
                     {
                         result = new OrderId(val);
                         return true;
@@ -317,13 +331,13 @@ public class StronglyTypedIdGeneratorTests
 
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{GeneratorVersion}}")]
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public bool TryFormat(
                     global::System.Span<byte> utf8Destination,
                     out int bytesWritten,
                     global::System.ReadOnlySpan<char> format,
                     global::System.IFormatProvider? provider) =>
-                    ((global::System.IUtf8SpanFormattable)Value).TryFormat(utf8Destination, out bytesWritten, format, provider);
+                    Value.TryFormat(utf8Destination, out bytesWritten, format);
             }
             """,
             $$"""
@@ -338,25 +352,32 @@ public class StronglyTypedIdGeneratorTests
             {
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
-                class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<OrderId>
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
+                public class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<OrderId>
                 {
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotJustification}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotJustification}}")]
                     public override OrderId Read(
                         ref global::System.Text.Json.Utf8JsonReader reader, 
                         global::System.Type typeToConvert, 
-                        global::System.Text.Json.JsonSerializerOptions options) =>
-                        global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid?>(ref reader, options) switch
+                        global::System.Text.Json.JsonSerializerOptions options)
+                    {
+                        if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)
                         {
-                            { } value => OrderId.Create(value),
-                            _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
-                        };
-            
+                            throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.");
+                        }
+
+                        return OrderId.Create(global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options));
+                    }
+
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotJustification}}")]
+                    [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotJustification}}")]
                     public override void Write(
                         global::System.Text.Json.Utf8JsonWriter writer, 
                         OrderId value, 
@@ -374,7 +395,7 @@ public class StronglyTypedIdGeneratorTests
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override void WriteAsPropertyName(
                         global::System.Text.Json.Utf8JsonWriter writer,
                         OrderId value,
@@ -392,7 +413,7 @@ public class StronglyTypedIdGeneratorTests
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("SystemTextJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override OrderId ReadAsPropertyName(
                         ref global::System.Text.Json.Utf8JsonReader reader,
                         global::System.Type typeToConvert,
@@ -422,12 +443,12 @@ public class StronglyTypedIdGeneratorTests
             {
                 /// <inheritdoc/>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{GeneratorVersion}}")]
-                class NewtonsoftJsonConverter : global::Newtonsoft.Json.JsonConverter<OrderId?>
+                [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{_generatorVersion}}")]
+                public class NewtonsoftJsonConverter : global::Newtonsoft.Json.JsonConverter<OrderId?>
                 {
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override OrderId? ReadJson(
                         global::Newtonsoft.Json.JsonReader reader,
                         global::System.Type objectType,
@@ -438,12 +459,12 @@ public class StronglyTypedIdGeneratorTests
                         {
                             { } value => OrderId.Create(value),
                             null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,
-                            _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
+                            _ => throw new global::Newtonsoft.Json.JsonSerializationException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.")
                         };
             
                     /// <inheritdoc/>
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
-                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{GeneratorVersion}}")]
+                    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("NewtonsoftJsonCodeGenerator", "{{_generatorVersion}}")]
                     public override void WriteJson(
                         global::Newtonsoft.Json.JsonWriter writer,
                         OrderId? value,
@@ -557,10 +578,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：与 BCL 基元同名、却不在 <c>System</c> 命名空间下的类型不是基元类型，生成器不得产出代码。
     /// </summary>
-    /// <remarks>
-    /// 判据曾只比简单名，于是 <c>Probe.Fake.Guid</c> 被当成 <see cref="System.Guid"/> 写进生成代码，
-    /// 使用者拿到的是报在生成文件里的 CS0315。
-    /// </remarks>
     [Fact]
     public void Generator_Should_ReturnEmpty_WhenPrimitiveTypeSharesSimpleNameWithBclType()
     {
@@ -587,11 +604,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：<c>[StronglyTypedId]</c> 标在不承载主构造函数的那一段上时，仍必须产出代码。
     /// </summary>
-    /// <remarks>
-    /// 生成器的语法谓词只对「带 attribute 的那一段」被调用。若它要求该段自身形如 <c>(Value)</c>，
-    /// 这种把主构造函数写在另一段的分段写法就会既没有任何产物、也不报任何诊断 ——
-    /// 而分析器是按「类型」判定的，同样不会报错，于是问题彻底静默。
-    /// </remarks>
     [Fact]
     public void Generator_Should_GenerateCode_WhenAttributeIsOnSegmentWithoutPrimaryConstructor()
     {
@@ -610,7 +622,7 @@ public class StronglyTypedIdGeneratorTests
 
         actualCodes.Should().NotBeEmpty();
         actualCodes.Should().Contain(c => c!.Contains("global::Len.StronglyTypedId.IStronglyTypedId<OrderId, global::System.Guid>"));
-        actualCodes.Should().Contain(c => c!.Contains("public static OrderId Create(global::System.Guid value)"));
+        actualCodes.Should().Contain(c => c!.Contains("    public static OrderId Create(global::System.Guid value)"));
     }
 
     [Fact]
@@ -652,6 +664,10 @@ public class StronglyTypedIdGeneratorTests
     [InlineData("record struct", "uint")]
     [InlineData("record", "long")]
     [InlineData("record struct", "ulong")]
+    [InlineData("record struct", "DateTime")]
+    [InlineData("record", "DateTimeOffset")]
+    [InlineData("record struct", "TimeSpan")]
+    [InlineData("record", "decimal")]
     public void Generator_Should_GenerateCode_ForNonGuidPrimitive(string record, string primitive)
     {
         var code = $""""
@@ -669,27 +685,128 @@ public class StronglyTypedIdGeneratorTests
         actualCodes.Should().NotBeEmpty();
         actualCodes.Should().Contain(c => c!.Contains("global::System.IParsable<OrderId>"));
         actualCodes.Should().Contain(c => c!.Contains("public static OrderId Create"));
-        actualCodes.Should().Contain(c => c!.Contains($"Create({primitive} value)"));
+        // 生成代码使用 PrimitiveIdTypeName：特型基元（int/decimal）渲染为短名，BCL 类型（DateTime）带 global::System. 前缀。
+        // 用「基元名 + " value)"」做前缀无关匹配，两种形态都能命中。
+        actualCodes.Should().Contain(c => c!.Contains($"{primitive} value)"));
     }
 
     /// <summary>
-    /// 构造被测合成编译：先按 <see cref="ShouldReferenceAssembly"/> 过滤 AppDomain 中已加载的程序集，
-    /// 再并上默认种子程序集与调用方通过 <paramref name="extraAssemblyTypes"/> 显式指定的程序集。
+    /// 枚举基元：生成逻辑须走 <c>Enum.TryParse&lt;TEnum&gt;</c> 而非基元的 <c>TryParse(value, provider, …)</c>，且核心 Id 仍实现
+    /// <c>IParsable</c>、提供 <c>Create</c>。
+    /// </summary>
+    [Theory]
+    [InlineData("record")]
+    [InlineData("record struct")]
+    public void Generator_Should_GenerateCode_ForEnumPrimitive(string record)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status
+            {
+                Active,
+                Inactive
+            }
+
+            [StronglyTypedId]
+            public partial {{record}} OrderId(Status Value);
+            """;
+
+        var actualCodes = GetGeneratedCode(code);
+
+        actualCodes.Should().NotBeEmpty();
+        actualCodes.Should().Contain(c => c!.Contains("global::System.IParsable<OrderId>"));
+        // 枚举基元不具备 ISpanParsable，但生成代码自行经 Enum.TryParse 实现 span 解析，
+        // 故 ISpanParsable<OrderId> 与 span 重载仍无条件生成（回归防线）。
+        actualCodes.Should().Contain(c => c!.Contains("global::System.ISpanParsable<OrderId>"));
+        actualCodes.Should().Contain(c => c!.Contains("public static OrderId Parse(global::System.ReadOnlySpan<char> value"));
+        actualCodes.Should().Contain(c => c!.Contains("public static OrderId Create"));
+        actualCodes.Should().Contain(c => c!.Contains("Create(global::Len.StronglyTypedId.Status value)"));
+        // 枚举没有带 IFormatProvider 的 TryParse 静态入口，必须改走 Enum.TryParse<TEnum>。
+        actualCodes.Should().Contain(c => c!.Contains("global::System.Enum.TryParse<global::Len.StronglyTypedId.Status>(value, out var val)"));
+    }
+
+    /// <summary>
+    /// 增量稳定性：只改与 Id 无关的语法时，所有 <c>RegisterSourceOutput</c> 步骤都应命中缓存。
+    /// 这条用例守着 <see cref="ModuleInfo"/> 的相等性口径——它带一个可变的类型表缓存字段，
+    /// 一旦该字段混进比较，每次按键都会让全部集成生成器重跑。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReuseCachedOutputs_WhenUnrelatedSyntaxChanges()
+    {
+        const string source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var compilation = CreateCompilation(source, [], [SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0")]);
+
+        var driver = CSharpGeneratorDriver.Create(
+            [new StronglyTypedIdGenerator().AsSourceGenerator()],
+            driverOptions: new GeneratorDriverOptions(
+                IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true));
+
+        driver = (CSharpGeneratorDriver)driver.RunGenerators(compilation);
+
+        // 第一次运行会填充 ModuleInfo 的类型表缓存，这正是可能污染相等性的时刻。
+        driver.GetRunResult().Results[0].GeneratedSources.Should().NotBeEmpty();
+
+        var edited = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText("// unrelated edit"));
+
+        driver = (CSharpGeneratorDriver)driver.RunGenerators(edited);
+
+        var reasons = driver.GetRunResult().Results[0]
+            .TrackedSteps["SourceOutput"]
+            .SelectMany(step => step.Outputs)
+            .Select(output => output.Reason)
+            .ToList();
+
+        reasons.Should().NotBeEmpty();
+        // FluentAssertions 的 OnlyContain 收 Expression<Func<…>>，表达式树里不能出现 is 模式匹配。
+        reasons.Should().OnlyContain(
+            reason => reason == IncrementalStepRunReason.Cached || reason == IncrementalStepRunReason.Unchanged,
+            "只改无关语法时不应重跑任何 SourceOutput，实际：{0}",
+            string.Join(", ", reasons));
+
+        // 反证：真正改动 Id 时必须看到重跑，否则上面那句「全 Cached」可能只是观测装置失灵。
+        var renamed = compilation.ReplaceSyntaxTree(
+            compilation.SyntaxTrees.Single(),
+            CSharpSyntaxTree.ParseText(source.Replace("OrderId", "PurchaseId", StringComparison.Ordinal)));
+
+        driver = (CSharpGeneratorDriver)driver.RunGenerators(renamed);
+
+        driver.GetRunResult().Results[0]
+            .TrackedSteps["SourceOutput"]
+            .SelectMany(step => step.Outputs)
+            .Select(output => output.Reason)
+            .Should().Contain(
+                reason => reason == IncrementalStepRunReason.Modified || reason == IncrementalStepRunReason.New,
+                "改动 Id 本身必须让 SourceOutput 重跑");
+    }
+
+    /// <summary>
+    /// 构造被测合成编译：先按 <see cref="ShouldReferenceAssembly"/> 过滤 AppDomain 中已加载的程序集，再并上默认种子程序集与调用方通过
+    /// <paramref name="extraAssemblyTypes"/> 显式指定的程序集。
     /// </summary>
     private static CSharpCompilation CreateDefaultCompilation(string sourceCode, params Type[] extraAssemblyTypes)
         => CreateCompilation(sourceCode, extraAssemblyTypes, []);
 
     /// <summary>
-    /// 同 <see cref="CreateDefaultCompilation(string, Type[])"/>，但额外接受任意 <see cref="MetadataReference"/>，
-    /// 用于构造「引用程序集里已有生成产物」这类多程序集消费者画像。
+    /// 同 <see cref="CreateDefaultCompilation(string, Type[])"/>，但额外接受任意 <see
+    /// cref="MetadataReference"/>，用于构造「引用程序集里已有生成产物」这类多程序集消费者画像。
     /// </summary>
-    /// <remarks>
-    /// 项目引用（<c>CompilationReference</c>）无法用 <see cref="Type"/> 表达，只能以引用实例传入。
-    /// </remarks>
     private static CSharpCompilation CreateCompilation(
         string sourceCode,
         Type[] extraAssemblyTypes,
-        MetadataReference[] extraReferences)
+        MetadataReference[] extraReferences,
+        CSharpCompilationOptions? options = null)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
@@ -697,7 +814,15 @@ public class StronglyTypedIdGeneratorTests
         {
             typeof(StronglyTypedIdAttribute).Assembly,
             typeof(System.Text.Json.JsonSerializer).Assembly,
-            typeof(Newtonsoft.Json.JsonSerializer).Assembly
+            typeof(Newtonsoft.Json.JsonSerializer).Assembly,
+            // TypeConverter 产物用到 System.ComponentModel 命名空间下的 TypeConverterAttribute（特性）、
+            // TypeConverter（基类）与 ITypeDescriptorContext，三者分散在 Primitives 与 TypeConverter 两个程序集。
+            // 真实消费者总有它们，合成编译必须显式引用，否则产物会 CS1069 / CS0616。
+            typeof(System.ComponentModel.TypeConverterAttribute).Assembly,
+            typeof(System.ComponentModel.TypeConverter).Assembly,
+            // EF Core 生成的 ValueConverter 构造函数接收 Expression<Func<…>>，合成编译必须显式引用
+            // System.Linq.Expressions，否则会因 AppDomain 加载顺序而偶发 CS0012（类型在未引用的程序集中定义）。
+            typeof(System.Linq.Expressions.Expression<>).Assembly
         };
 
         // ShouldReferenceAssembly 只过滤来自 AppDomain 的程序集（防止 TestBase / EF Core / Swagger 等
@@ -710,7 +835,7 @@ public class StronglyTypedIdGeneratorTests
             .Where(assembly => !assembly.IsDynamic)
             .Where(ShouldReferenceAssembly)
             .Union(extraAssemblyTypes.Select(type => type.Assembly).Where(assembly => !assembly.IsDynamic))
-            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Cast<MetadataReference>()
             .Concat(extraReferences);
 
@@ -718,7 +843,7 @@ public class StronglyTypedIdGeneratorTests
             "Len.StronglyTypedId.Generator.Test",
             [syntaxTree],
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            options ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
     }
 
@@ -738,17 +863,17 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 与 <see cref="GetGeneratedCode"/> 类似，但按 hint 名称返回所有生成的源文件，便于针对单个生成器产物断言。
-    /// 额外程序集（EF Core / Swashbuckle 等）通过 <paramref name="extraAssemblyTypes"/> 显式引入，
-    /// 避免被 AppDomain 中已加载的其它测试程序集污染，导致 EF Core / Swagger 生成器意外触发。
+    /// 与 <see cref="GetGeneratedCode"/> 类似，但按 hint 名称返回所有生成的源文件，便于针对单个生成器产物断言。额外程序集（EF Core / Swashbuckle
+    /// 等）通过 <paramref name="extraAssemblyTypes"/> 显式引入，避免被 AppDomain 中已加载的其它测试程序集污染，导致 EF Core / Swagger
+    /// 生成器意外触发。
     /// </summary>
-    private static IReadOnlyDictionary<string, string> GetGeneratedCodeByHint(string sourceCode, params Type[] extraAssemblyTypes)
+    private static Dictionary<string, string> GetGeneratedCodeByHint(string sourceCode, params Type[] extraAssemblyTypes)
         => GetGeneratedCodeByHint(sourceCode, extraAssemblyTypes, []);
 
     /// <summary>
     /// 同 <see cref="GetGeneratedCodeByHint(string, Type[])"/>，但额外接受任意 <see cref="MetadataReference"/>。
     /// </summary>
-    private static IReadOnlyDictionary<string, string> GetGeneratedCodeByHint(
+    private static Dictionary<string, string> GetGeneratedCodeByHint(
         string sourceCode,
         Type[] extraAssemblyTypes,
         MetadataReference[] extraReferences)
@@ -769,8 +894,27 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 生成器测试不应引用以下程序集，否则会触发 EF Core / Swagger 生成器或被 TestBase 中已实现的强类型 Id 污染发现结果。
-    /// 这些程序集仅在对应测试里通过 <see cref="GetGeneratedCodeByHint"/> 的 <paramref name="extraAssemblyTypes"/> 显式引入。
+    /// 判断 hint 名是否为「核心产物」：<paramref name="prefix"/> + <c>_</c> + 8 位小写十六进制哈希 + <c>.g.cs</c>。
+    /// 泛型容器里的 Id 会走到这条命名分支（见 <c>SanitizeHintName</c>）。
+    /// </summary>
+    private static bool IsHashedCoreHintName(string hintName, string prefix)
+    {
+        const string Suffix = ".g.cs";
+
+        if (!hintName.StartsWith(prefix + "_", StringComparison.Ordinal)
+            || !hintName.EndsWith(Suffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var hash = hintName.AsSpan(prefix.Length + 1, hintName.Length - prefix.Length - 1 - Suffix.Length);
+
+        return hash.Length == 8 && hash.IndexOfAnyExcept(_lowerHexDigits) < 0;
+    }
+
+    /// <summary>
+    /// 生成器测试不应引用以下程序集，否则会触发 EF Core / Swagger 生成器或被 TestBase 中已实现的强类型 Id 污染发现结果。这些程序集仅在对应测试里通过
+    /// <see cref="GetGeneratedCodeByHint"/> 的 <paramref name="extraAssemblyTypes"/> 显式引入。
     /// </summary>
     private static bool ShouldReferenceAssembly(Assembly assembly)
         => assembly.GetName().Name is not
@@ -810,6 +954,67 @@ public class StronglyTypedIdGeneratorTests
 
         generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
             .Should().Contain("OrderIdConverter.ApplyTo(configurationBuilder);");
+    }
+
+    [Theory]
+    [InlineData("record struct")]
+    [InlineData("record")]
+    public void EfCore_Should_GenerateModelBuilderApplyTo_WhenReferenced(string record)
+    {
+        var template = """
+            using System;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial {0} OrderId(Guid Value);
+
+            public class TestDbContext : DbContext
+            {{
+                protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) {{ }}
+            }}
+            """;
+        var code = string.Format(template, record);
+
+        var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
+
+        var converter = generated["Len.StronglyTypedId.OrderId.EntityFrameworkCore.g.cs"];
+        converter.Should().Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)");
+        converter.Should().Contain("property.SetValueConverter(new OrderIdConverter());");
+
+        generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
+            .Should().Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
+            .And.Contain("OrderIdConverter.ApplyTo(modelBuilder);");
+    }
+
+    [Fact]
+    public void EfCore_Should_SkipConverter_WhenIdIsInGenericContainer()
+    {
+        var code = """
+            using System;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+
+            public class TestDbContext : DbContext
+            {
+                protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) { }
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
+
+        // 泛型容器里的 Id 无法被集成生成器从外部按全名引用（开放类型不能作类型实参），故跳过其 EF Core 转换器。
+        generated.Keys.Should().NotContain(key =>
+            key.StartsWith("Len.StronglyTypedId.ContainerT.OrderId", StringComparison.Ordinal)
+            && key.EndsWith(".EntityFrameworkCore.g.cs", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -855,13 +1060,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 回归用例：不同命名空间下的同名强类型 Id 都生成进同一个 <c>StronglyTypedIds</c> 类，
-    /// 转换器类名必须区分，否则相互冲突（CS0102 等）。
+    /// 回归用例：不同命名空间下的同名强类型 Id 都生成进同一个 <c>StronglyTypedIds</c> 类，转换器类名必须区分，否则相互冲突（CS0102 等）。
     /// </summary>
-    /// <remarks>
-    /// 只有确实出现同名时才给类名加命名空间前缀，无冲突场景下既有的 <c>OrderIdConverter</c>
-    /// 命名保持不变（见上方 <c>EfCore_Should_GenerateConverter_WhenReferencedAndConfigureConventions</c>）。
-    /// </remarks>
     [Fact]
     public void EfCore_Should_DisambiguateConverterNames_WhenSameNameInDifferentNamespaces()
     {
@@ -910,8 +1110,7 @@ public class StronglyTypedIdGeneratorTests
     #region Swagger 生成器（SwaggerCodeGenerator）
 
     /// <summary>
-    /// 嵌套之后，同一命名空间里「同名但容器不同」的 Id 也会落进同一个 <c>StronglyTypedIds</c> 类：
-    /// 消歧名必须带上包含类型链，只用命名空间 + 短名仍会撞名（CS0102）。
+    /// 嵌套之后，同一命名空间里「同名但容器不同」的 Id 也会落进同一个 <c>StronglyTypedIds</c> 类：消歧名必须带上包含类型链，只用命名空间 + 短名仍会撞名（CS0102）。
     /// </summary>
     [Fact]
     public void EfCore_Should_DisambiguateConverterNames_WhenNestedIdsShareName()
@@ -1041,18 +1240,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：全部生成产物在「<c>ImplicitUsings=disable</c> 的消费者」里必须能编译。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// using 指令的作用域是文件级：合成编译的源码里虽有 <c>using System;</c>，但生成出来的每个文件
-    /// 都得自带（或用全限定名写明）它依赖的每一个类型。这与
-    /// <c>&lt;ImplicitUsings&gt;disable&lt;/ImplicitUsings&gt;</c>（且非 Web SDK）的消费者等价。
-    /// </para>
-    /// <para>
-    /// 曾如此暴露过 Newtonsoft 产物里的裸 <c>Nullable</c>（<c>System.Nullable</c> 的短名）：开启
-    /// ImplicitUsings 的消费者因为隐式 <c>global using System;</c> 而侥幸通过，关闭后即 CS0103。
-    /// 断言放在此处而非某个具体生成器的测试里，是因为它守护的是全部生成器共有的契约。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_Compile_WithoutImplicitUsings()
     {
@@ -1084,15 +1271,91 @@ public class StronglyTypedIdGeneratorTests
 
     #endregion
 
+    /// <summary>
+    /// 扩展基元类型（DateTime / DateTimeOffset / TimeSpan / decimal）的生成产物必须零警告 Emit。
+    /// </summary>
+    [Theory]
+    [InlineData("DateTime")]
+    [InlineData("DateTimeOffset")]
+    [InlineData("TimeSpan")]
+    [InlineData("decimal")]
+    public void GeneratedCode_Should_Compile_ForExtendedPrimitives(string primitive)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId({{primitive}} Value);
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _, cancellationToken);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: cancellationToken);
+
+        var failures = emit.Diagnostics
+            .Where(d => d.Severity >= DiagnosticSeverity.Warning)
+            .Where(d => d.Id is not ("CS1701" or "CS1702"))
+            .ToArray();
+
+        failures.Should().BeEmpty(string.Join("\n", failures.Select(failure => failure.ToString())));
+    }
+
+    /// <summary>
+    /// 枚举基元的生成产物必须零警告 Emit：验证 <c>Enum.TryParse&lt;TEnum&gt;</c> 解析分支在真实编译里成立，且枚举显式关掉了 <c>IFormattable</c> /
+    /// <c>ISpanFormattable</c>（其 <c>ToString(string, IFormatProvider)</c> 已 [Obsolete]）后既不会 CS0535 也不会
+    /// CS0618，<c>IComparable</c> / <c>IParsable</c> 等能力仍正常透出。
+    /// </summary>
+    [Theory]
+    [InlineData("record")]
+    [InlineData("record struct")]
+    public void GeneratedCode_Should_Compile_ForEnumPrimitive(string record)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status
+            {
+                Active,
+                Inactive
+            }
+
+            [StronglyTypedId]
+            public partial {{record}} OrderId(Status Value);
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _, cancellationToken);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: cancellationToken);
+
+        var failures = emit.Diagnostics
+            .Where(d => d.Severity >= DiagnosticSeverity.Warning)
+            .Where(d => d.Id is not ("CS1701" or "CS1702"))
+            .ToArray();
+
+        failures.Should().BeEmpty(string.Join("\n", failures.Select(failure => failure.ToString())));
+    }
+
     #region 生成器侧能力断言：校验、字典键、比较与格式化
 
     /// <summary>
     /// 指定 <c>Validator</c> 时，<c>Create</c> 以内联条件表达式拒绝非法值。
     /// </summary>
-    /// <remarks>
-    /// 断言的是「校验确实接在 <c>Create</c> 与两个 <c>TryParse</c> 重载上」这一形态，而不是某个实现细节：
-    /// 三者是使用者可能用到的全部构造入口，漏掉任何一个都会让非法值从对应路径溜进 Id。
-    /// </remarks>
     [Fact]
     public void Generator_Should_EmitValidationGuard_WhenValidatorIsConfigured()
     {
@@ -1111,12 +1374,280 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(code);
 
         generated["Len.StronglyTypedId.OrderId.g.cs"]
-            .Should().Contain("public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::System.ArgumentException($\"The value '{value}' is not a valid OrderId.\", nameof(value));")
-            .And.Contain("if (global::System.Guid.TryParse(value, provider, out var val) && Validate(val))");
+            .Should().Contain("    public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::System.ArgumentException($\"The value '{value}' is not a valid OrderId.\", nameof(value));")
+            .And.Contain("if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val) && Validate(val))");
     }
 
     /// <summary>
-    /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹 —— 无验证器的形态必须与加入该能力之前逐字符一致。
+    /// 配置 <c>ExceptionType</c> 后，表达式体 <c>Create</c> 抛出该类型而不是 <see cref="ArgumentException"/>。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ThrowConfiguredException_WhenExceptionTypeIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainException))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("    public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::Len.StronglyTypedId.DomainException($\"The value '{value}' is not a valid OrderId.\");")
+            .And.NotContain("global::System.ArgumentException($\"The value");
+    }
+
+    /// <summary>
+    /// 带 <c>Normalizer</c> 时 <c>Create</c> 退化为块体，异常类型同样要生效。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ThrowConfiguredException_InBlockBodiedCreate()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), Normalizer = nameof(Normalize), ExceptionType = typeof(DomainException))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::Len.StronglyTypedId.DomainException($\"The value '{value}' is not a valid OrderId.\");")
+            .And.NotContain("global::System.ArgumentException($\"The value");
+    }
+
+    /// <summary>
+    /// <c>RedactValidationMessage</c> 打开后，拒绝消息不再内插被拒绝的原文。
+    /// </summary>
+    /// <remarks>
+    /// 原文会随异常消息进入日志、APM 与错误上报；对 <c>string</c> 基元的 Id 来说那往往是用户输入。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_OmitRejectedValue_WhenRedactValidationMessageIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), RedactValidationMessage = true)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::System.ArgumentException(\"The value is not a valid OrderId.\", nameof(value))")
+            .And.NotContain("The value '{value}'");
+    }
+
+    /// <summary>
+    /// 脱敏与 <c>Normalizer</c>、<c>ExceptionType</c> 叠加时，块体 <c>Create</c> 的拒绝分支同样不内插原文。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_OmitRejectedValue_InBlockBodiedCreate_WhenRedactValidationMessageIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), Normalizer = nameof(Normalize), ExceptionType = typeof(DomainException), RedactValidationMessage = true)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::Len.StronglyTypedId.DomainException(\"The value is not a valid OrderId.\");")
+            .And.NotContain("The value '{value}'");
+    }
+
+    /// <summary>
+    /// 装配级 <c>StronglyTypedIdDefaults(RedactValidationMessage = true)</c> 在没有逐类型配置时生效。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_UseAssemblyDefaultRedactValidationMessage_WhenTypeOmitsIt()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(RedactValidationMessage = true)]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::System.ArgumentException(\"The value is not a valid OrderId.\", nameof(value))")
+            .And.NotContain("The value '{value}'");
+    }
+
+    /// <summary>
+    /// 逐类型的 <c>false</c> 不能撤销装配级脱敏——脱敏是安全策略，不是逐类型偏好。
+    /// </summary>
+    /// <remarks>
+    /// 属性是 <c>bool</c>，未写时读到的同样是 <c>false</c>，生成器无法区分「没写」与「写了 false」；
+    /// 因此逐类型只能单向打开。这条断言把这个取舍固定下来，避免日后被当成缺陷「修正」。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_KeepAssemblyRedaction_WhenTypeSetsFalse()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(RedactValidationMessage = true)]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), RedactValidationMessage = false)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().NotContain("The value '{value}'");
+    }
+    /// <summary>
+    /// <c>Create</c> 必须缩进一层。
+    /// </summary>
+    /// <remarks>
+    /// 模板里的占位符落在原始字符串的去缩进基准列上：首行拿不到模板缩进，多行内容更是逐行原样插入，
+    /// 所以缩进只能由生成端补齐。表达式体分支曾漏补，产物里该行顶格；这类缺陷不影响编译，
+    /// 只有逐字符断言才拦得住（此前全是 <c>Contain</c> 子串断言，天然看不见行首空白）。
+    /// </remarks>
+    [Theory]
+    [InlineData("")]
+    [InlineData(", Validator = nameof(Validate)")]
+    [InlineData(", Normalizer = nameof(Normalize)")]
+    [InlineData(", Normalizer = nameof(Normalize), Validator = nameof(Validate)")]
+    public void Generator_Should_IndentCreateMember_UnderEveryConfiguration(string configuration)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId{{configuration}}]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var lines = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"].Split('\n');
+
+        lines.Should().Contain(line => line.StartsWith("    public static OrderId Create(", StringComparison.Ordinal));
+
+        // 类型体内的成员声明一律缩进一层；顶格的只允许文件头、namespace、#nullable、类型级特性与两级大括号。
+        lines.Should().NotContain(line => line.StartsWith("public ", StringComparison.Ordinal)
+            || line.StartsWith("private ", StringComparison.Ordinal)
+            || line.StartsWith("protected ", StringComparison.Ordinal)
+            || line.StartsWith("internal ", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 产物里的 XML 文档注释必须遵循 C# 惯例：<c>&lt;summary&gt;</c> 独占一行，正文另起一行。
+    /// </summary>
+    /// <remarks>
+    /// 单行写法既能编译，也能被 <c>Contain</c> 子串断言命中，所以只能按「行首形状」断言：
+    /// 任何以 <c>/// &lt;summary&gt;</c> 开头却不是纯 <c>/// &lt;summary&gt;</c> 的行都算违规。
+    /// 用引用类型 Id 是为了同时覆盖 <c>CompareValues</c> 与 <c>TypeConverter</c> 两处注释。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_EmitMultiLineSummaryComments()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(TypeConverter = true)]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        foreach (var (hint, text) in generated)
+        {
+            text.Split('\n').Should().NotContain(
+                line => line.TrimStart().StartsWith("/// <summary>", StringComparison.Ordinal)
+                    && line.Trim() != "/// <summary>",
+                $"{hint} 里的 <summary> 必须换行书写");
+        }
+    }
+
+    /// <summary>
+    /// 装配级 <c>StronglyTypedIdDefaults(ExceptionType = …)</c> 在没有逐类型配置时生效。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_UseAssemblyDefaultExceptionType_WhenTypeOmitsIt()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(ExceptionType = typeof(Len.StronglyTypedId.DomainException))]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::Len.StronglyTypedId.DomainException($\"The value '{value}' is not a valid OrderId.\");");
+    }
+
+    /// <summary>
+    /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹——无验证器的形态必须与加入该能力之前逐字符一致。
     /// </summary>
     [Fact]
     public void Generator_Should_NotEmitValidationGuard_WhenValidatorIsAbsent()
@@ -1124,8 +1655,9 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(IdSource);
 
         generated["Len.StronglyTypedId.OrderId.g.cs"]
-            .Should().Contain("public static OrderId Create(global::System.Guid value) => new OrderId(value);")
-            .And.NotContain("Validate(");
+            .Should().Contain("    public static OrderId Create(global::System.Guid value) => new OrderId(value);")
+            .And.NotContain("Validate(")
+            .And.NotContain("Normalize(");
     }
 
     /// <summary>
@@ -1154,13 +1686,159 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// System.Text.Json 的字典键走 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>，
-    /// 两者都必须生成，否则 <c>Dictionary&lt;OrderId, TValue&gt;</c> 在运行期直接抛 <c>NotSupportedException</c>。
+    /// 配置 <c>Normalizer</c> 后，四个构造入口都必须「先归一化、再校验、最后构造」。
     /// </summary>
-    /// <remarks>
-    /// 写键一律取不变文化下的文本形式：<c>string</c> 基元的属性名就是取值本身，其余基元经
-    /// <c>ToString(null, InvariantCulture)</c>，避免键名随当前区域性漂移。
-    /// </remarks>
+    [Fact]
+    public void Generator_Should_NormalizeBeforeValidating_WhenNormalizerIsConfigured()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            // Create 从表达式体退化为块体：归一化后的值要同时喂给校验与构造，不能重复调用归一化方法。
+            .Contain("    public static OrderId Create(global::System.Guid value)")
+            .And.Contain("value = Normalize(value);")
+            .And.Contain("if (!Validate(value))")
+            .And.Contain("return new OrderId(value);")
+            // TryParse 里校验必须挪到归一化之后，故不再并入解析条件。
+            .And.NotContain("&& Validate(val)")
+            .And.Contain("var normalized = Normalize(val);")
+            .And.Contain("if (!Validate(normalized))")
+            .And.Contain("result = new OrderId(normalized);");
+
+        // TryCreate 单独切出来断言：它与 Create 共用同一句 `value = Normalize(value);`，
+        // 全局 Contain 无法区分「Create 归一化了」与「TryCreate 也归一化了」。
+        var tryCreate = generated[generated.IndexOf("public static bool TryCreate", StringComparison.Ordinal)..];
+
+        tryCreate.Should()
+            .Contain("value = Normalize(value);")
+            .And.Contain("if (!Validate(value))")
+            .And.Contain("result = new OrderId(value);");
+    }
+
+    /// <summary>
+    /// 只配 <c>Normalizer</c> 时不生成任何校验代码：归一化是「修正」，不是「拒绝」。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NormalizeWithoutValidating_WhenOnlyNormalizerIsConfigured()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("var normalized = Normalize(val);")
+            .And.Contain("result = new OrderId(normalized);")
+            .And.NotContain("Validate(");
+    }
+
+    /// <summary>
+    /// 字符串基元的 span 重载以 <c>value.ToString()</c> 派生归一化入参，属归一化入参来源的另一条分支。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NormalizeSpanDerivedValue_ForStringPrimitive()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(string Value)
+            {
+                private static string Normalize(string value) => value.Trim();
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("var normalized = Normalize(value);")
+            .And.Contain("var normalized = Normalize(value.ToString());")
+            // 构造用的必须是归一化之后的取值，否则同一个 Id 会因大小写 / 空白差异散成多个取值。
+            .And.Contain("result = new OrderId(normalized);");
+    }
+
+    /// <summary>
+    /// UTF-8 的 <c>TryParse</c> 同样要先归一化：同一份数据走文本路径与二进制路径必须得到相同的 Id。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NormalizeUtf8Value()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("public static bool TryParse(")
+            .And.Contain("var normalized = Normalize(val);")
+            .And.Contain("result = new OrderId(normalized);");
+    }
+
+    /// <summary>
+    /// <c>[assembly: StronglyTypedIdDefaults(Normalizer = "Normalize")]</c> 成为本程序集内所有强类型 Id 的默认归一化方法。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_UseAssemblyDefaultNormalizer_WhenTypeHasNoOwnNormalizer()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Normalizer = "Normalize")]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("value = Normalize(value);")
+            .And.Contain("var normalized = Normalize(val);");
+    }
+
+    /// <summary>
+    /// System.Text.Json 的字典键走 <c>ReadAsPropertyName</c> / <c>WriteAsPropertyName</c>，两者都必须生成，否则
+    /// <c>Dictionary&lt;OrderId, TValue&gt;</c> 在运行期直接抛 <c>NotSupportedException</c>。
+    /// </summary>
     [Theory]
     [InlineData("Guid", "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)")]
     [InlineData("int", "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)")]
@@ -1176,23 +1854,68 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// <c>string</c> 基元的属性名直接构造，不经解析。
+    /// 枚举 Id 作字典键时应用 <c>DictionaryKeyPolicy</c>，与 STJ 对原生枚举键的处理保持一致
+    /// （原生 <c>Dictionary&lt;Status, int&gt;</c> 在 CamelCase 下写出 <c>{"active":1}</c>）；
+    /// 读取侧相应忽略大小写，否则被改写的键读不回来。
     /// </summary>
     [Fact]
-    public void SystemTextJson_Should_CreateDirectly_WhenReadingStringPropertyName()
+    public void SystemTextJson_Should_ApplyDictionaryKeyPolicy_WhenPrimitiveIsEnum()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Unknown, Active }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        var converter = GetGeneratedCodeByHint(source)["Len.StronglyTypedId.StatusId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("var propertyName = primitiveId.ToString();")
+            .And.Contain("writer.WritePropertyName(options.DictionaryKeyPolicy is null ? propertyName : options.DictionaryKeyPolicy.ConvertName(propertyName));")
+            .And.Contain("if (global::System.Enum.TryParse<global::Len.StronglyTypedId.Status>(propertyName, ignoreCase: true, out var val)")
+            .And.Contain("&& global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), val)")
+            .And.Contain("&& StatusId.TryCreate(val, out var id))");
+    }
+
+    /// <summary>
+    /// 非枚举基元的键值是数据本身而非名字，不能被 <c>DictionaryKeyPolicy</c> 改写 ——
+    /// 改写 string 键等于损坏数据（写出去读不回来），Guid 同理不该被当作命名风格处理。
+    /// </summary>
+    [Theory]
+    [InlineData("Guid")]
+    [InlineData("string")]
+    [InlineData("int")]
+    public void SystemTextJson_Should_NotApplyDictionaryKeyPolicy_ForNonEnumPrimitives(string primitive)
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource(primitive))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should().NotContain("DictionaryKeyPolicy");
+    }
+
+    /// <summary>
+    /// <c>string</c> 基元的属性名经 <c>TryCreate</c> 构造（验证器拒绝时不能抛 <c>ArgumentException</c>），
+    /// 失败统一抛 <c>JsonException</c>。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_TryCreate_WhenReadingStringPropertyName()
     {
         var converter = GetGeneratedCodeByHint(OrderIdSource("string"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
 
-        converter.Should().Contain("return OrderId.Create(reader.GetString()!);");
+        converter.Should()
+            .Contain("var propertyName = reader.GetString();")
+            .And.Contain("return propertyName is not null && OrderId.TryCreate(propertyName, out var id)")
+            .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{propertyName}' to a OrderId.\");")
+            .And.NotContain("OrderId.Create(reader.GetString()!)");
     }
 
     /// <summary>
     /// 其余基元的属性名按不变文化解析，解析失败抛 <c>JsonException</c>。
     /// </summary>
-    /// <remarks>
-    /// 此处不能转调 <c>Read</c>：方法名路径上 <c>TokenType</c> 是 <c>PropertyName</c> 而非 <c>String</c>，
-    /// 内层转换器会失败。
-    /// </remarks>
     [Fact]
     public void SystemTextJson_Should_ParsePropertyName_WithInvariantCulture()
     {
@@ -1205,11 +1928,84 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// D1：token 类型不符时必须抛 <c>JsonException</c>。抛 <c>InvalidOperationException</c> 会让按契约
+    /// <c>catch (JsonException)</c> 的调用方漏掉这条路径，且拿不到 JSON path。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_ThrowJsonException_WhenTokenCannotBecomeValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.\");")
+            .And.NotContain("InvalidOperationException");
+    }
+
+    /// <summary>
+    /// D1（Newtonsoft 侧）：同一契约，抛 <c>JsonSerializationException</c>，与同文件的结构性错误保持一致。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJson_Should_ThrowJsonSerializationException_WhenTokenCannotBecomeValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
+
+        converter.Should()
+            .Contain("_ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.\")")
+            .And.NotContain("InvalidOperationException");
+    }
+
+    /// <summary>
+    /// <c>JsonShape = JsonShape.Object</c> 时，System.Text.Json 产物改为读写 <c>{ "value": …
+    /// }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。
+    /// </summary>
+    [Fact]
+    public void JsonShape_Object_Should_GenerateObjectShape_ForSystemTextJson()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSourceWithJsonShape("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("if (reader.TokenType != global::System.Text.Json.JsonTokenType.StartObject)")
+            .And.Contain("if (reader.ValueTextEquals(\"value\"))")
+            .And.Contain("writer.WriteStartObject();")
+            .And.Contain("writer.WritePropertyName(\"value\");")
+            .And.Contain("writer.WriteEndObject();");
+    }
+
+    /// <summary>
+    /// 默认（基元形态）下产物不含任何对象形态痕迹——引入本开关不改变既有产物，是「不破坏既有契约」的前提。
+    /// </summary>
+    [Fact]
+    public void JsonShape_Primitive_Should_NotGenerateObjectShape_ForSystemTextJson()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .NotContain("WriteStartObject")
+            .And.NotContain("ValueTextEquals");
+    }
+
+    /// <summary>
+    /// 对象形态只作用于「值」的位置：字典键本就是字符串，读写键的路径不受影响。
+    /// </summary>
+    [Fact]
+    public void JsonShape_Object_Should_KeepDictionaryKeyAccessors_ForSystemTextJson()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSourceWithJsonShape("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("public override void WriteAsPropertyName(")
+            .And.Contain("writer.WritePropertyName(primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture));")
+            .And.Contain("public override OrderId ReadAsPropertyName(");
+    }
+
+    /// <summary>
     /// 比较、span 解析与格式化成员按基元能力条件生成。
     /// </summary>
     [Theory]
     [InlineData("Guid")]
     [InlineData("int")]
+    [InlineData("DateTime")]
+    [InlineData("decimal")]
     public void Generator_Should_EmitComparisonAndFormattingCapabilities(string primitive)
     {
         var generated = GetGeneratedCodeByHint(OrderIdSource(primitive))["Len.StronglyTypedId.OrderId.g.cs"];
@@ -1218,19 +2014,17 @@ public class StronglyTypedIdGeneratorTests
             .Contain("global::System.IComparable<OrderId>")
             .And.Contain("global::System.Numerics.IComparisonOperators<OrderId, OrderId, bool>")
             .And.Contain("global::System.ISpanParsable<OrderId>")
-            .And.Contain("global::System.IFormattable")
+            .And.Contain("global::Len.StronglyTypedId.IFormattableStronglyTypedId<OrderId>")
             .And.Contain("global::System.ISpanFormattable")
-            .And.Contain("public override string ToString() => Value.ToString() ?? string.Empty;")
-            .And.Contain("((global::System.ISpanFormattable)Value).TryFormat(destination, out charsWritten, format, provider);");
+            .And.Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;")
+            // 直呼基元的 TryFormat（Guid 走 3 参公开重载、其余走 4 参），不再经 ISpanFormattable 接口装箱。
+            .And.Contain("Value.TryFormat(destination, out charsWritten, format")
+            .And.NotContain("(global::System.ISpanFormattable)Value");
     }
 
     /// <summary>
     /// <c>string</c> 未实现 <c>IFormattable</c> / <c>ISpanFormattable</c>，因此 string 基元的 Id 也不实现它们。
     /// </summary>
-    /// <remarks>
-    /// 这两个接口若照抄到所有基元上，消费者代码能编译但运行期语义是错的（<c>Value.ToString(format, provider)</c> 对
-    /// <c>string</c> 不存在）—— 实际后果是生成文件根本编译不过，属运行时之前就会暴露的一类。
-    /// </remarks>
     [Fact]
     public void Generator_Should_OmitFormattingInterfaces_ForStringPrimitive()
     {
@@ -1241,6 +2035,116 @@ public class StronglyTypedIdGeneratorTests
             .And.NotContain("TryFormat")
             .And.Contain("public override string ToString() => Value.ToString() ?? string.Empty;");
     }
+
+    /// <summary>
+    /// 每个强类型 Id 都应生成单参数 <c>Deconstruct</c>，让用户以 <c>(var value) = id;</c> 解构出基元值。
+    /// </summary>
+    [Theory]
+    [InlineData("Guid", "global::System.Guid")]
+    [InlineData("int", "int")]
+    public void Generator_Should_EmitDeconstruct_ForPrimitive(string primitive, string primitiveType)
+    {
+        var generated = GetGeneratedCodeByHint(OrderIdSource(primitive))["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should().Contain($"public void Deconstruct(out {primitiveType} value) => value = Value;");
+    }
+
+    #region 枚举基元的 TryParse 校验
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举不能用 <c>Enum.IsDefined</c> 收紧（位组合本身就是合法取值），改成「不许出现未定义的位」：
+    /// 掩码由全部成员的常量在编译期算出，产物里只剩一次按位与。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ValidateFlagsEnumBits_InTryParse()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [Flags]
+            public enum Access
+            {
+                None = 0,
+                Read = 1,
+                Write = 2,
+            }
+
+            [StronglyTypedId]
+            public partial record struct AccessId(Access Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(source);
+
+        generated["Len.StronglyTypedId.AccessId.g.cs"].Should()
+            // None=0 | Read=1 | Write=2 → 已定义位 0b11，未定义位 0xFFFFFFFC（int 底层类型）。
+            .Contain("&& (unchecked((ulong)val) & 0x00000000FFFFFFFCUL) == 0UL")
+            .And.NotContain("Enum.IsDefined");
+
+        // 字典键走的是另一条解析路径（忽略大小写），位校验必须同样生效，否则两条路径的接受集合不一致。
+        generated["Len.StronglyTypedId.AccessId.SystemTextJson.g.cs"]
+            .Should().Contain("&& (unchecked((ulong)val) & 0x00000000FFFFFFFCUL) == 0UL");
+    }
+
+    /// <summary>
+    /// 掩码按枚举底层类型的宽度裁剪：<c>byte</c> 底层类型只保留低 8 位，否则高位会被当成「未定义」而误杀全部取值。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_TrimFlagsEnumMask_ToUnderlyingTypeWidth()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [Flags]
+            public enum NarrowAccess : byte
+            {
+                None = 0,
+                Read = 1,
+                Write = 2,
+            }
+
+            [StronglyTypedId]
+            public partial record struct NarrowAccessId(NarrowAccess Value);
+            """;
+
+        GetGeneratedCodeByHint(source)["Len.StronglyTypedId.NarrowAccessId.g.cs"]
+            .Should().Contain("&& (unchecked((ulong)val) & 0x00000000000000FCUL) == 0UL");
+    }
+
+    /// <summary>
+    /// 全部位都已定义时（<c>All = -1</c> 是最常见的写法）不生成任何校验，产物与加入位校验之前逐字符一致。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_SkipFlagsEnumBitCheck_WhenEveryBitIsDefined()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [Flags]
+            public enum Permission
+            {
+                None = 0,
+                Read = 1,
+                Write = 2,
+                Everything = -1,
+            }
+
+            [StronglyTypedId]
+            public partial record struct PermissionId(Permission Value);
+            """;
+
+        GetGeneratedCodeByHint(source)["Len.StronglyTypedId.PermissionId.g.cs"].Should()
+            .Contain("if (global::System.Enum.TryParse<global::Len.StronglyTypedId.Permission>(value, out var val))")
+            .And.NotContain("unchecked((ulong)val)")
+            .And.NotContain("Enum.IsDefined");
+    }
+
+    #endregion
 
     #region P1：TypeConverter opt-in / P4：装配级默认验证器
 
@@ -1270,6 +2174,51 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("public override object? ConvertTo(");
     }
 
+    /// <summary>
+    /// 嵌套 Id 开启 <c>TypeConverter</c> 时，<c>[TypeConverter(typeof(...))]</c> 必须指向包含类型链下的真实转换器。
+    /// 曾用「命名空间 + Id 名」拼接，嵌套 Id 会生成 <c>global::Ns.NestedId.NestedIdTypeConverter</c>（缺
+    /// <c>Aggregate.</c> 一层）→ CS0246，消费者整个项目编译不过。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_GenerateTypeConverter_WhenIdIsNested()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Aggregate
+            {
+                [StronglyTypedId(TypeConverter = true)]
+                public partial record struct NestedId(Guid Value);
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.Aggregate.NestedId.g.cs"];
+
+        generated.Should()
+            .Contain("[global::System.ComponentModel.TypeConverter(typeof(global::Len.StronglyTypedId.Aggregate.NestedId.NestedIdTypeConverter))]")
+            .And.Contain("public sealed class NestedIdTypeConverter : global::System.ComponentModel.TypeConverter");
+
+        // 文本断言不足以证明可用：拼错的 typeof 只会在消费者侧炸成 CS0246，必须真的编译一遍。
+        var compilation = CreateDefaultCompilation(code);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: TestContext.Current.CancellationToken);
+
+        var errors = emit.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .Where(diagnostic => diagnostic.Id is not ("CS1701" or "CS1702"))
+            .Select(diagnostic => diagnostic.ToString())
+            .ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors));
+    }
+
     [Fact]
     public void Generator_Should_NotGenerateTypeConverter_WhenOptOut()
     {
@@ -1281,8 +2230,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 成为本程序集内所有强类型 Id 的默认验证器，
-    /// 生成器据此在 <c>Create</c> 与 <c>TryParse</c> 上挂校验，与逐类型 <c>Validator</c> 形态逐字符一致。
+    /// <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 成为本程序集内所有强类型 Id 的默认验证器，生成器据此在
+    /// <c>Create</c> 与 <c>TryParse</c> 上挂校验，与逐类型 <c>Validator</c> 形态逐字符一致。
     /// </summary>
     [Fact]
     public void Generator_Should_EmitValidationGuard_WhenAssemblyDefaultValidatorIsSet()
@@ -1304,13 +2253,12 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
 
         generated.Should()
-            .Contain("public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::System.ArgumentException($\"The value '{value}' is not a valid OrderId.\", nameof(value));")
-            .And.Contain("if (global::System.Guid.TryParse(value, provider, out var val) && Validate(val))");
+            .Contain("    public static OrderId Create(global::System.Guid value) => Validate(value) ? new OrderId(value) : throw new global::System.ArgumentException($\"The value '{value}' is not a valid OrderId.\", nameof(value));")
+            .And.Contain("if (global::System.Guid.TryParse(value, provider ?? global::System.Globalization.CultureInfo.InvariantCulture, out var val) && Validate(val))");
     }
 
     /// <summary>
-    /// 装配级默认验证器与逐类型 <c>Validator</c> 同名时，逐类型优先级更高——但这里两者一致，
-    /// 仅确认装配级默认值在「Id 自身未声明 Validator」时确实生效。
+    /// 装配级默认验证器与逐类型 <c>Validator</c> 同名时，逐类型优先级更高——但这里两者一致，仅确认装配级默认值在「Id 自身未声明 Validator」时确实生效。
     /// </summary>
     [Fact]
     public void Generator_Should_UseAssemblyDefaultValidator_WhenTypeHasNoOwnValidator()
@@ -1341,16 +2289,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 全部生成器同时启用、且消费者的编译引用只含必要程序集时，产物必须能做到「零警告」Emit。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 上一个用例只断言「无错误」。生成器产物里的可疑签名（例如少一个可空标注、接口实现与声明不一致）
-    /// 往往只产生警告，消费者若开了 <c>TreatWarningsAsErrors</c> 就会在下载包之后才发现。
-    /// </para>
-    /// <para>
-    /// 断言取 <c>Severity &gt;= Warning</c> 而非仅 <c>Warning</c>：错误也一并拦下，无需分开两次检查。
-    /// 程序集统一性告警（CS1701/CS1702）来自合成编译拼装引用程序集的方式，与被测产物无关，故排除。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_EmitWithoutWarnings_WhenEveryGeneratorIsEnabled()
     {
@@ -1376,8 +2314,8 @@ public class StronglyTypedIdGeneratorTests
             code,
             [typeof(Microsoft.EntityFrameworkCore.DbContext), typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -1399,6 +2337,88 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 生成产物在「<c>Nullable=enable</c> + <c>TreatWarningsAsErrors</c> + 最高警告级别」的消费者下必须零诊断。
+    /// </summary>
+    [Fact]
+    public void GeneratedCode_Should_EmitWithoutDiagnostics_UnderNullableAndWarningsAsErrors()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Active, Suspended }
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record CustomerId(string Value);
+
+            [StronglyTypedId]
+            public partial record struct QuantityId(decimal Value);
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+
+            [StronglyTypedId(TypeConverter = true)]
+            public partial record struct ConvertibleId(double Value);
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct PositiveId(int Value)
+            {
+                private static bool Validate(int value) => value > 0;
+            }
+
+            [StronglyTypedId]
+            public readonly partial record struct ReadonlyId(long Value);
+
+            public partial class Aggregate
+            {
+                [StronglyTypedId(TypeConverter = true)]
+                public partial record struct NestedId(Guid Value);
+            }
+            """;
+
+        var compilation = CreateCompilation(code, [], [], _strictCompilationOptions);
+
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics, cancellationToken);
+
+        // 生成器自身的诊断（RS1035 禁用 API、RS2008 发布跟踪缺失等）只会出现在这一步，Emit 看不到。
+        var generatorFailures = generatorDiagnostics
+            .Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning)
+            .Select(diagnostic => diagnostic.ToString())
+            .ToArray();
+
+        generatorFailures.Should().BeEmpty(string.Join("\n", generatorFailures));
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: cancellationToken);
+
+        var diagnostics = emit.Diagnostics
+            .Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning)
+            .Where(diagnostic => diagnostic.Id is not ("CS1701" or "CS1702"))
+            .Select(diagnostic => diagnostic.ToString())
+            .ToArray();
+
+        diagnostics.Should().BeEmpty(string.Join("\n", diagnostics));
+    }
+
+    /// <summary>
+    /// 严格档编译选项：等价于消费者的 <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> +
+    /// <c>&lt;TreatWarningsAsErrors&gt;true&lt;/TreatWarningsAsErrors&gt;</c> + 最高警告级别。
+    /// </summary>
+    private static readonly CSharpCompilationOptions _strictCompilationOptions = new(
+        OutputKind.DynamicallyLinkedLibrary,
+        nullableContextOptions: NullableContextOptions.Enable,
+        generalDiagnosticOption: ReportDiagnostic.Error,
+        warningLevel: 9999);
+
+    /// <summary>
     /// 按基元类型构造单 Id 的消费者源码。
     /// </summary>
     private static string OrderIdSource(string primitive)
@@ -1415,6 +2435,23 @@ public class StronglyTypedIdGeneratorTests
         return source;
     }
 
+    /// <summary>
+    /// 按基元类型构造「对象 JSON 形态」（<c>JsonShape = JsonShape.Object</c>）的单 Id 消费者源码。
+    /// </summary>
+    private static string OrderIdSourceWithJsonShape(string primitive)
+    {
+        var source = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record struct OrderId({{primitive}} Value);
+            """;
+
+        return source;
+    }
+
     #endregion
 
     #region 消费者画像：多程序集 / 多段 partial / 全部生成器同时启用
@@ -1422,11 +2459,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 引用程序集里已由生成器补齐接口的强类型 Id，必须与本次编译声明的 Id 一起被纳入 EF Core 转换器。
     /// </summary>
-    /// <remarks>
-    /// 两类 Id 走的是不同发现路径：本次声明的由 <c>ForAttributeWithMetadataName</c> 直接提供，
-    /// 引用程序集里的则要靠 <see cref="StronglyTypedIdDiscovery"/> 枚举模块类型。只有把两者合并进
-    /// 同一份注册文件，跨程序集使用强类型 Id 才开箱可用。
-    /// </remarks>
     [Fact]
     public void EfCore_Should_IncludeConverters_ForIdsDeclaredInReferencedAssembly()
     {
@@ -1452,7 +2484,7 @@ public class StronglyTypedIdGeneratorTests
             IdSource,
             [typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions), typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
                 CreateReferencedDomainReference(),
             ]);
 
@@ -1464,10 +2496,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 强类型 Id 跨多个 partial 声明段拆分时，同一类型仍只应产出一份生成文件。
     /// </summary>
-    /// <remarks>
-    /// 生成器的语法谓词只匹配带主构造函数的那一段，但类型符号是唯一的，因此
-    /// 无论声明了几段，产物数量都必须与单段声明一致。
-    /// </remarks>
     [Theory]
     [InlineData("record struct")]
     [InlineData("record")]
@@ -1499,17 +2527,15 @@ public class StronglyTypedIdGeneratorTests
             "Len.StronglyTypedId.OrderId.g.cs",
             "Len.StronglyTypedId.OrderId.SystemTextJson.g.cs",
             "Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs",
+            // STJ / Newtonsoft 的全局注册入口：与各自核心生成器同一门控，故只要引用了对应程序集就会出现。
+            "StronglyTypedIds.SystemTextJson.g.cs",
+            "StronglyTypedIds.NewtonsoftJson.g.cs",
         ]);
     }
 
     /// <summary>
     /// 全部生成器同时启用时，所有产物必须能在同一编译里一起通过 Emit。
     /// </summary>
-    /// <remarks>
-    /// 逐个生成器单独测只能发现各自的问题，产物之间还会相互作用：EF Core 与 Swagger 都把
-    /// <c>StronglyTypedIds</c> 写成 <c>partial</c> 类并要求合并到同一命名空间，核心生成器又在同一命名空间下
-    /// 声明 Id 类型。本用例把「同一编译里同时出现全部产物」这一真实场景整体编译一遍。
-    /// </remarks>
     [Fact]
     public void GeneratedCode_Should_Compile_WhenEveryGeneratorIsEnabled()
     {
@@ -1533,8 +2559,8 @@ public class StronglyTypedIdGeneratorTests
             code,
             [typeof(Microsoft.EntityFrameworkCore.DbContext), typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -1554,18 +2580,6 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 嵌套类型的强类型 Id 同样要能在「全部生成器同时启用」的消费者编译里零警告 Emit。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 嵌套包装是纯文本变换，正确与否只能由真实编译裁判：容器链要按种类重新开成 <c>class</c> / <c>struct</c> /
-    /// <c>record</c>，凭印象多补一个修饰符就是 CS0106（接口补 <c>abstract</c>、值类型补 <c>sealed</c> 都不行），
-    /// 少一层大括号则会把后续声明挤到容器外。
-    /// </para>
-    /// <para>
-    /// 同一编译里刻意放入「同名但不同容器」（<c>OrderAggregate.OrderId</c> 与 <c>ShipmentBatch.OrderId</c>）以及
-    /// 「一级与二级嵌套同名」（<c>Inventory.SkuId</c> 与 <c>Inventory.Bin.SkuId</c>）的 Id：EF Core 转换器类名因此
-    /// 必须靠包含类型链消歧，只用命名空间 + 短名会让两个转换器落到同一个类名上，撞 CS0102。
-    /// </para>
-    /// </remarks>
     [Fact]
     public void NestedIds_Should_Compile_WhenEveryGeneratorIsEnabled()
     {
@@ -1615,11 +2629,11 @@ public class StronglyTypedIdGeneratorTests
             code,
             [typeof(Microsoft.EntityFrameworkCore.DbContext), typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
                 // EF Core 的 ValueConverter 签名里带 Expression<>，而合成编译的引用集由 AppDomain 里「已加载」的
                 // 程序集拼出（见 ShouldReferenceAssembly），单跑本用例时它可能尚未加载 —— 显式引入，让结果与运行顺序无关。
-                MetadataReference.CreateFromFile(typeof(System.Linq.Expressions.Expression).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(System.Linq.Expressions.Expression).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -1659,6 +2673,190 @@ public class StronglyTypedIdGeneratorTests
             .ToArray();
 
         failures.Should().BeEmpty(string.Join("\n", failures.Select(failure => failure.ToString())));
+    }
+
+    #endregion
+
+    #region 生成器入口的语法闸门与防御分支
+
+    /// <summary>
+    /// 嵌套在泛型容器里的强类型 Id 也应正常生成：<see cref="StronglyTypedIdGenerator.CouldBeStronglyTypedId"/>
+    /// 不再在容器链上拦截泛型容器，且生成代码会把声明逐层嵌回带类型参数表的容器。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_GenerateCode_WhenContainerIsGeneric()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        // 泛型容器的 `<T>` 会被净化掉，hint 名因此带上原始全名的稳定哈希后缀（见 SanitizeHintName）。
+        // 用「前缀 + 哈希 + .g.cs」精确锚定核心产物：JSON 转换器产物也以 .g.cs 结尾，光看前缀会一并命中。
+        var hintName = generated.Keys.Should()
+            .ContainSingle(key => IsHashedCoreHintName(key, "Len.StronglyTypedId.ContainerT.OrderId"))
+            .Which;
+
+        var core = generated[hintName];
+
+        // 容器被原样重开为带类型参数表的 partial（约束子句省略），Id 自身嵌在容器内。
+        core.Should().Contain("public partial class Container<T>");
+        core.Should().Contain("partial record struct OrderId :");
+    }
+
+    /// <summary>
+    /// 泛型容器里的 Id：两个 JSON 转换器类照常生成，但类型上不能挂 <c>[JsonConverter]</c> —— 特性实参引用含类型参数的
+    /// 转换器会 CS0416。使用者只能按闭合类型手动注册（运行时行为见集成测试
+    /// <c>GenericContainerId_Should_NeedManualConverterRegistration</c>）。
+    /// </summary>
+    [Fact]
+    public void JsonConverters_Should_SkipAttribute_WhenIdIsInGenericContainer()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        var systemTextJson = generated.Single(pair => pair.Key.EndsWith(".SystemTextJson.g.cs", StringComparison.Ordinal)).Value;
+        var newtonsoftJson = generated.Single(pair => pair.Key.EndsWith(".NewtonsoftJson.g.cs", StringComparison.Ordinal)).Value;
+
+        systemTextJson.Should().Contain("public class SystemTextJsonConverter")
+            .And.NotContain("[global::System.Text.Json.Serialization.JsonConverter(");
+        newtonsoftJson.Should().Contain("public class NewtonsoftJsonConverter")
+            .And.NotContain("[global::Newtonsoft.Json.JsonConverter(");
+    }
+
+    /// <summary>
+    /// 净化 hint 名会抹掉 <c>&lt;T&gt;</c>，<c>Outer&lt;T&gt;.Inner</c> 与真实存在的 <c>OuterT.Inner</c> 因此会塌陷到
+    /// 同一个 hint 名，<c>AddSource</c> 抛重复 hint 名后被降级成 STIA0012。两者必须各自拿到独立的 hint 名。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_NotCollideHintNames_WhenGenericContainerSanitizesToExistingName()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Outer<T>
+            {
+                [StronglyTypedId]
+                public partial record struct Inner(Guid Value);
+            }
+
+            public partial class OuterT
+            {
+                [StronglyTypedId]
+                public partial record struct Inner(Guid Value);
+            }
+            """";
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        // 不带泛型的那个保持原名，带泛型的那个追加稳定哈希后缀。
+        generated.Should().ContainKey("Len.StronglyTypedId.OuterT.Inner.g.cs");
+        generated.Keys.Should().ContainSingle(key => IsHashedCoreHintName(key, "Len.StronglyTypedId.OuterT.Inner"));
+    }
+
+    /// <summary>
+    /// 核心生成器集合为空时 <see cref="StronglyTypedIdGenerator.GenerateCoreCode"/> 必须提前返回，而不是对空集合做无意义遍历或抛
+    /// <see cref="NullReferenceException"/>。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenNoCoreGeneratorModuleReferenced()
+    {
+        var fakeAttributeReference = EmitFakeStronglyTypedIdAttributeAssembly();
+
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        var compilation = CreateCompilationWithoutCoreGenerators(code, fakeAttributeReference);
+
+        var result = CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGenerators(compilation)
+            .GetRunResult();
+
+        result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+        // 没有任何核心生成器 → 不产出任何文件，但生成器本身不应崩溃。
+        result.Results[0].GeneratedSources.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 构造「只提供 [StronglyTypedId] 属性、但不引用任何核心生成器依赖程序集」的编译，使 
+    /// <see cref="StronglyTypedIdGenerator.GetCodeGenerators"/> 返回空集。
+    /// </summary>
+    private static CSharpCompilation CreateCompilationWithoutCoreGenerators(string sourceCode, MetadataReference fakeAttributeReference)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+
+        var references = new MetadataReference[]
+        {
+            fakeAttributeReference,
+            AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
+        };
+
+        return CSharpCompilation.Create(
+            "Len.StronglyTypedId.Defensive.Test",
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    /// <summary>
+    /// 合成一个「名为 FakeSti、含 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c> 但没有任何真实 API」的程序集。
+    /// </summary>
+    private static PortableExecutableReference EmitFakeStronglyTypedIdAttributeAssembly()
+    {
+        var source = """
+            namespace Len.StronglyTypedId
+            {
+                public class StronglyTypedIdAttribute : System.Attribute
+                {
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            "FakeSti",
+            [CSharpSyntaxTree.ParseText(source)],
+            [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emit = compilation.Emit(stream);
+        emit.Success.Should().BeTrue(string.Join("\n", emit.Diagnostics));
+
+        var path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "FakeSti." + System.Guid.NewGuid().ToString("N") + ".dll");
+        System.IO.File.WriteAllBytes(path, stream.ToArray());
+
+        return MetadataReference.CreateFromFile(path);
     }
 
     #region 消费者画像测试源码
@@ -1721,14 +2919,14 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 把 <see cref="ReferencedDomainSource"/> 编译成一个项目引用（<c>CompilationReference</c>）。
     /// </summary>
-    private static MetadataReference CreateReferencedDomainReference()
+    private static CompilationReference CreateReferencedDomainReference()
     {
         var compilation = CSharpCompilation.Create(
             "ReferencedDomain",
             [CSharpSyntaxTree.ParseText(ReferencedDomainSource)],
             [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(StronglyTypedIdAttribute).Assembly),
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 

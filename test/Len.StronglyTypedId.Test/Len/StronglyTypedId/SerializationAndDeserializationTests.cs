@@ -18,6 +18,8 @@ public class SerializationAndDeserializationTests
     [InlineData("Len", typeof(StringId), "\"Len\"")]
     [InlineData("Len", typeof(StringIdV2), "\"Len\"")]
     [InlineData("Len", typeof(StringIdV3), "\"Len\"")]
+    // char 在 JSON 里是单字符串，与 string 同形；这条同时守住「字典键写入不经 IFormattable」的分支。
+    [InlineData('L', typeof(CharId), "\"L\"")]
     [InlineData("D8AC85D4-ED76-4974-B055-8EF3508743F3", typeof(GuidId), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
     [InlineData("D8AC85D4-ED76-4974-B055-8EF3508743F3", typeof(GuidIdV2), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
     [InlineData("d8ac85d4-ed76-4974-b055-8ef3508743f3", typeof(GuidId), "\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"")]
@@ -49,6 +51,7 @@ public class SerializationAndDeserializationTests
     [InlineData("\"Len\"", typeof(StringId), "Len")]
     [InlineData("\"Len\"", typeof(StringIdV2), "Len")]
     [InlineData("\"Len\"", typeof(StringIdV3), "Len")]
+    [InlineData("\"L\"", typeof(CharId), 'L')]
     [InlineData("\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"", typeof(GuidId), "D8AC85D4-ED76-4974-B055-8EF3508743F3")]
     [InlineData("\"d8ac85d4-ed76-4974-b055-8ef3508743f3\"", typeof(GuidIdV2), "D8AC85D4-ED76-4974-B055-8EF3508743F3")]
     [InlineData("12", typeof(SByteId), (sbyte)12)]
@@ -71,4 +74,156 @@ public class SerializationAndDeserializationTests
         id2.Should().NotBeNull();
         Assert.True(((dynamic)id2!).Value.Equals(value));
     }
+
+    /// <summary>
+    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": … }</c>，
+    /// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_SerializeAsObject_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string guidJson = """{"value":"d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Serialize(ObjectShapeGuidId.Create(guid)).Should().Be(guidJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(ObjectShapeGuidId.Create(guid)).Should().Be(guidJson);
+
+        const string stringJson = """{"value":"Len"}""";
+
+        System.Text.Json.JsonSerializer.Serialize(ObjectShapeStringId.Create("Len")).Should().Be(stringJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(ObjectShapeStringId.Create("Len")).Should().Be(stringJson);
+    }
+
+    /// <summary>
+    /// C4：对象形态的反序列化往返。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_DeserializeFromObject_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string guidJson = """{"value":"d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(guidJson).Value.Should().Be(guid);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeGuidId>(guidJson).Value.Should().Be(guid);
+
+        const string stringJson = """{"value":"Len"}""";
+
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
+        Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
+    }
+
+    /// <summary>
+    /// C4：对象形态只作用于「值」的位置 —— 字典键本就是字符串，读写键的路径不受影响。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_KeepPrimitiveDictionaryKey_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var dictionary = new Dictionary<ObjectShapeGuidId, int> { [ObjectShapeGuidId.Create(guid)] = 1 };
+
+        const string expectedJson = """{"d8ac85d4-ed76-4974-b055-8ef3508743f3":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<ObjectShapeGuidId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(ObjectShapeGuidId.Create(guid));
+    }
+
+    /// <summary>
+    /// C1：char 基元的字典键走 <c>WriteAsPropertyName</c> / <c>ReadAsPropertyName</c>。
+    /// </summary>
+    /// <remarks>
+    /// 这条路径在生成器里用的是 <c>primitiveId.ToString()</c> 而非 <c>ToString(null, InvariantCulture)</c>
+    /// —— char 的后者是显式接口实现（CS1501）。用例同时守住「键能写出去、也能读回来」。
+    /// </remarks>
+    [Fact]
+    public void CharId_Should_RoundTripAsDictionaryKey_When()
+    {
+        var dictionary = new Dictionary<CharId, int> { [CharId.Create('k')] = 1 };
+
+        const string expectedJson = """{"k":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<CharId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(CharId.Create('k'));
+    }
+
+    #region C10 文本前缀：JSON 走规范文本形
+
+    /// <summary>
+    /// C10：有前缀时，值位置的 JSON 变为字符串（数字 / 枚举 / 日期基元由 number 变 string），
+    /// 内容为规范文本形（含前缀）；两种序列化器行为一致。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_SerializeAsPrefixedString_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+
+        const string guidJson = "\"ord_d8ac85d4-ed76-4974-b055-8ef3508743f3\"";
+
+        System.Text.Json.JsonSerializer.Serialize(PrefixedGuidId.Create(guid)).Should().Be(guidJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(PrefixedGuidId.Create(guid)).Should().Be(guidJson);
+
+        const string stringJson = "\"ord_x\"";
+
+        System.Text.Json.JsonSerializer.Serialize(PrefixedStringId.Create("x")).Should().Be(stringJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(PrefixedStringId.Create("x")).Should().Be(stringJson);
+    }
+
+    /// <summary>
+    /// C10：有前缀时的反序列化往返（宽松读入，前缀可选）。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_DeserializeFromPrefixedString_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string guidJson = "\"ord_d8ac85d4-ed76-4974-b055-8ef3508743f3\"";
+
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedGuidId>(guidJson).Value.Should().Be(guid);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<PrefixedGuidId>(guidJson).Value.Should().Be(guid);
+
+        const string stringJson = "\"ord_x\"";
+
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedStringId>(stringJson).Value.Should().Be("x");
+        Newtonsoft.Json.JsonConvert.DeserializeObject<PrefixedStringId>(stringJson).Value.Should().Be("x");
+    }
+
+    /// <summary>
+    /// C10：前缀 + 对象形态 —— <c>{ "value": "ord_x" }</c>。
+    /// </summary>
+    [Fact]
+    public void Prefix_WithObjectShape_Should_SerializeAsObject_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string guidJson = """{"value":"ord_d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Serialize(PrefixedObjectGuidId.Create(guid)).Should().Be(guidJson);
+        Newtonsoft.Json.JsonConvert.SerializeObject(PrefixedObjectGuidId.Create(guid)).Should().Be(guidJson);
+
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedObjectGuidId>(guidJson).Value.Should().Be(guid);
+        Newtonsoft.Json.JsonConvert.DeserializeObject<PrefixedObjectGuidId>(guidJson).Value.Should().Be(guid);
+    }
+
+    /// <summary>
+    /// C10：字典键走规范文本形（含前缀），读写一致。
+    /// </summary>
+    [Fact]
+    public void Prefix_Should_UsePrefixedDictionaryKey_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        var dictionary = new Dictionary<PrefixedGuidId, int> { [PrefixedGuidId.Create(guid)] = 1 };
+
+        const string expectedJson = """{"ord_d8ac85d4-ed76-4974-b055-8ef3508743f3":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<PrefixedGuidId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(PrefixedGuidId.Create(guid));
+    }
+
+    #endregion
 }

@@ -7,27 +7,40 @@ internal static class Descriptors
 {
     private const string Category = "StronglyTypedIdAnalyzer";
 
-    public const string ContainingTypeMustBePartialId = "STIAO009";
-    public const string ParameterCannotBeNullableId = "STIAO006";
-    public const string ParameterNameMustBeValueId = "STIAO007";
-    public const string ParameterTypeIsInvalidId = "STIAO008";
-    public const string ValidatorReferenceInvalidId = "STIAO010";
-    public const string BypassCreateId = "STIAO011";
-    public const string TypeCannotBeAbstractId = "STIAO002";
-    public const string TypeCannotBeGenericId = "STIAO003";
-    public const string TypeMustHaveNamespaceId = "STIAO004";
-    public const string TypeMustBePartialId = "STIAO001";
-    public const string TypeMustBeRecordId = "STIAO000";
-    public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIAO005";
+    /// <summary>
+    /// 生成器侧诊断的类别。与 <see cref="Category"/> 分开，便于使用者按类别整体调级。
+    /// </summary>
+    private const string GeneratorCategory = "StronglyTypedIdGenerator";
+
+    public const string ContainingTypeMustBePartialId = "STIA0009";
+    public const string ParameterCannotBeNullableId = "STIA0006";
+    public const string ParameterNameMustBeValueId = "STIA0007";
+    public const string ParameterTypeIsInvalidId = "STIA0008";
+    public const string ValidatorReferenceInvalidId = "STIA0010";
+    public const string BypassCreateId = "STIA0011";
+    public const string TypeCannotBeAbstractId = "STIA0002";
+    public const string TypeCannotBeGenericId = "STIA0003";
+    public const string TypeMustHaveNamespaceId = "STIA0004";
+    public const string TypeMustBePartialId = "STIA0001";
+    public const string TypeMustBeRecordId = "STIA0000";
+    public const string TypeMustHaveSingleParameterPrimaryConstructorId = "STIA0005";
+    public const string GeneratorFailureId = "STIA0012";
+    public const string InvalidPrefixId = "STIA0013";
+    public const string ValidatorCanBeBypassedId = "STIA0014";
+    public const string TypeNameShouldEndWithIdId = "STIA0015";
+    public const string DuplicatePrimitiveTypeId = "STIA0016";
+    public const string NormalizerReferenceInvalidId = "STIA0017";
+    public const string ExceptionTypeInvalidId = "STIA0018";
+    public const string IntegrationUnavailableId = "STIA0019";
+    public const string InvalidInstanceNameId = "STIA0020";
+    public const string InvalidInstanceValueId = "STIA0021";
+    public const string InstanceNameNotPascalCaseId = "STIA0022";
+    public const string AmbiguousPrefixId = "STIA0023";
+    public const string UnknownIntegrationId = "STIA0024";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
     /// </summary>
-    /// <remarks>
-    /// 两种情况同一条规则，因为要求同出一源：生成代码要新增的是嵌套 Id 自身的成员，而 partial 的各段
-    /// 必须处于同一容器内，所以只能把这个容器在生成的文件里重新打开一次。缺 partial 的容器做不到；
-    /// <c>file</c> 本地类型则连「在另一个文件里重开」这条路本身都不存在。
-    /// </remarks>
     public static readonly DiagnosticDescriptor ContainingTypeMustBePartial
         = new(ContainingTypeMustBePartialId,
             new LocalizedString("ContainingTypeMustBePartialTitle"),
@@ -109,14 +122,9 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法不存在、非静态、返回类型不是 <see cref="bool"/>，
-    /// 或形参类型不等于基元 Id 类型。
+    /// <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法不存在、非静态、返回类型不是 <see cref="bool"/>，或形参类型不等于基元
+    /// Id 类型。
     /// </summary>
-    /// <remarks>
-    /// 这是结构性缺口：一旦写错，错误会跑到生成代码里变成 CS0103 / CS0117 / CS1503，位置和原因都极难理解，
-    /// 且踩在 CS8785（生成器整段产出被丢弃、全项目生成归零）的风险链上。在分析器里提前校验，
-    /// 错误直接落在 attribute 上，属于纯新增诊断、不改任何生成逻辑，风险最低。
-    /// </remarks>
     public static readonly DiagnosticDescriptor ValidatorReferenceInvalid
         = new(ValidatorReferenceInvalidId,
             new LocalizedString("ValidatorReferenceInvalidTitle"),
@@ -126,25 +134,187 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// 直接 <c>new OrderId(...)</c> 构造强类型 Id，绕过了 <c>Create</c> / <c>TryParse</c> 强制的验证器。
+    /// <c>[StronglyTypedId(Normalizer = nameof(Foo))]</c> 指向的方法不存在、非静态、返回类型不是基元 Id 类型，或形参类型不等于基元 Id 类型。
     /// </summary>
-    /// <remarks>
-    /// 仅当该 Id 设了 <c>Validator</c> 时才提示：无验证器时主构造函数本就可无校验地构造，不构成问题。
-    /// 严重级别默认 <see cref="DiagnosticSeverity.Info"/>（建议性），且各项目可在 <c>.editorconfig</c> 里
-    /// 通过 <c>dotnet_diagnostic.STIAO011.severity</c> 调整为 warning / error / none，避免噪声。
-    /// 生成代码里的 <c>new Xxx(...)</c>（位于生成的 <c>Create</c> / <c>TryParse</c> 内）由分析器对生成代码的
-    /// 豁免配置自动忽略，不会误报。
-    /// </remarks>
+    public static readonly DiagnosticDescriptor NormalizerReferenceInvalid
+        = new(NormalizerReferenceInvalidId,
+            new LocalizedString("NormalizerReferenceInvalidTitle"),
+            new LocalizedString("NormalizerReferenceInvalidMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedId(ExceptionType = typeof(…))]</c> 指向的类型不是派生自 <see cref="System.Exception"/>
+    /// 的非抽象类，或不具备可访问的单字符串参数构造函数。
+    /// </summary>
+    public static readonly DiagnosticDescriptor ExceptionTypeInvalid
+        = new(ExceptionTypeInvalidId,
+            new LocalizedString("ExceptionTypeInvalidTitle"),
+            new LocalizedString("ExceptionTypeInvalidMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 直接构造强类型 Id（<c>new OrderId(...)</c> / <c>new(...)</c>）或用 <c>default</c> 取零值实例，绕过了 <c>Create</c> /
+    /// <c>TryParse</c> 强制的归一化与校验。
+    /// </summary>
     public static readonly DiagnosticDescriptor BypassCreate
         = new(BypassCreateId,
             new LocalizedString("BypassCreateTitle"),
             new LocalizedString("BypassCreateMessage"),
             Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
+    /// 代码生成阶段抛出了未预期的异常。
+    /// </summary>
+    public static readonly DiagnosticDescriptor GeneratorFailure
+        = new(GeneratorFailureId,
+            new LocalizedString("GeneratorFailureTitle"),
+            new LocalizedString("GeneratorFailureMessage"),
+            GeneratorCategory,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Prefix = …)]</c> 的前缀为空串或纯空白。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidPrefix
+        = new(InvalidPrefixId,
+            new LocalizedString("InvalidPrefixTitle"),
+            new LocalizedString("InvalidPrefixMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
+    /// 配了归一化或验证器的强类型 Id 被声明为 <c>public</c>，其主构造函数因而对外可见，这些约束可被绕过。
+    /// </summary>
+    public static readonly DiagnosticDescriptor ValidatorCanBeBypassed
+        = new(ValidatorCanBeBypassedId,
+            new LocalizedString("ValidatorCanBeBypassedTitle"),
+            new LocalizedString("ValidatorCanBeBypassedMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            false);
+
+    /// <summary>
+    /// 强类型 Id 的类型名不以 <c>Id</c> 结尾。
+    /// </summary>
+    public static readonly DiagnosticDescriptor TypeNameShouldEndWithId
+        = new(TypeNameShouldEndWithIdId,
+            new LocalizedString("TypeNameShouldEndWithIdTitle"),
+            new LocalizedString("TypeNameShouldEndWithIdMessage"),
+            Category,
             DiagnosticSeverity.Info,
             true);
 
     /// <summary>
-    /// 全部诊断描述符，顺序与规则 ID 的语义分组一致。
+    /// 同一命名空间下多个强类型 Id 共用同一基元类型。
+    /// </summary>
+    public static readonly DiagnosticDescriptor DuplicatePrimitiveType
+        = new(DuplicatePrimitiveTypeId,
+            new LocalizedString("DuplicatePrimitiveTypeTitle"),
+            new LocalizedString("DuplicatePrimitiveTypeMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
+    /// 显式启用了某个集成，但当前编译没有引用其程序集，该集成不会生成任何代码。
+    /// </summary>
+    /// <remarks>
+    /// 按集成聚合后只能在编译结束时上报（要等所有 Id 的请求都到齐），故必须带上
+    /// <see cref="WellKnownDiagnosticTags.CompilationEnd"/>，否则 RS1037 会报错。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor IntegrationUnavailable
+        = new(IntegrationUnavailableId,
+            new LocalizedString("IntegrationUnavailableTitle"),
+            new LocalizedString("IntegrationUnavailableMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            description: null,
+            helpLinkUri: null,
+            WellKnownDiagnosticTags.CompilationEnd);
+
+    /// <summary>
+    /// <c>[StronglyTypedIdInstance]</c> 的名字不是合法标识符、与另一条实例重名，或与类型自身 / 既有成员 /
+    /// 即将生成的成员撞名。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidInstanceName
+        = new(InvalidInstanceNameId,
+            new LocalizedString("InvalidInstanceNameTitle"),
+            new LocalizedString("InvalidInstanceNameMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedIdInstance]</c> 的值文本无法解析为该 Id 的基元类型（含越界、<c>char</c> 长度不为 1、
+    /// 枚举未定义值）。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidInstanceValue
+        = new(InvalidInstanceValueId,
+            new LocalizedString("InvalidInstanceValueTitle"),
+            new LocalizedString("InvalidInstanceValueMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 命名实例的名字不是 PascalCase。
+    /// </summary>
+    public static readonly DiagnosticDescriptor InstanceNameNotPascalCase
+        = new(InstanceNameNotPascalCaseId,
+            new LocalizedString("InstanceNameNotPascalCaseTitle"),
+            new LocalizedString("InstanceNameNotPascalCaseMessage"),
+            Category,
+            DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Prefix = …)]</c> 的前缀与基元类型的文本形式重叠，读回时会被静默剥掉。
+    /// </summary>
+    public static readonly DiagnosticDescriptor AmbiguousPrefix
+        = new(AmbiguousPrefixId,
+            new LocalizedString("AmbiguousPrefixTitle"),
+            new LocalizedString("AmbiguousPrefixMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Integrations = …)]</c> 的取值含有未定义的位。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 越界位既不匹配任何集成、也不会被任何生成器读到：不报就是「写了却什么都没发生」，而使用者
+    /// 会以为自己打开了某个集成。级别取 Warning 而非 Error —— 这段代码本身合法，只是不生效。
+    /// </para>
+    /// <para>
+    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/>：逐类型的越界位在符号回调里就能报，但
+    /// 程序集级默认值（<c>[assembly: StronglyTypedIdDefaults]</c>）只能等到编译结束才知道，而同一个
+    /// 描述符不能按调用点换标签（RS1037 要求「用于上报编译结束诊断的描述符」必须带该标签）。代价是
+    /// IDE 里的波浪线要等整轮编译结束才出现，与 STIA0019 一致。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnknownIntegration
+        = new(UnknownIntegrationId,
+            new LocalizedString("UnknownIntegrationTitle"),
+            new LocalizedString("UnknownIntegrationMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            description: null,
+            helpLinkUri: null,
+            WellKnownDiagnosticTags.CompilationEnd);
+
+    /// <summary>
+    /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
     [
@@ -159,6 +329,26 @@ internal static class Descriptors
         ParameterTypeIsInvalid,
         ContainingTypeMustBePartial,
         ValidatorReferenceInvalid,
+        NormalizerReferenceInvalid,
+        ExceptionTypeInvalid,
         BypassCreate,
+        InvalidPrefix,
+        AmbiguousPrefix,
+        UnknownIntegration,
+        ValidatorCanBeBypassed,
+        TypeNameShouldEndWithId,
+        DuplicatePrimitiveType,
+        IntegrationUnavailable,
+        InvalidInstanceName,
+        InvalidInstanceValue,
+        InstanceNameNotPascalCase,
+    ];
+
+    /// <summary>
+    /// 全部生成器诊断描述符。
+    /// </summary>
+    public static readonly DiagnosticDescriptor[] GeneratorDiagnostics =
+    [
+        GeneratorFailure,
     ];
 }

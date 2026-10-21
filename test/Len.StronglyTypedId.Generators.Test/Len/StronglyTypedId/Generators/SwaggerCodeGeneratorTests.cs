@@ -91,10 +91,7 @@ public class SwaggerCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void Swagger_Should_HaveOrderFour()
-    {
-        SwaggerCodeGenerator.Instance.Order.Should().Be(4);
-    }
+    public void Swagger_Should_HaveOrderFour() => SwaggerCodeGenerator.Instance.Order.Should().Be(4);
 
     #endregion
 
@@ -158,7 +155,8 @@ public class SwaggerCodeGeneratorTests
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.ProductId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" });");
         // 两个调用之间应有换行 + 缩进分隔（string.Join 的分隔符）。
-        generated.Should().Contain("\r\n\t\t");
+        // 断言写 \n 而非 \r\n：产物行尾随检出（CRLF / LF）而定，而 \n 在两种检出的产物里都成立。
+        generated.Should().Contain("\n\t\t");
     }
 
     /// <summary>
@@ -375,6 +373,53 @@ public class SwaggerCodeGeneratorTests
         var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
 
         errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
+    }
+
+    #endregion
+
+    #region C10：文本前缀使 schema 变为无 format 的 string
+
+    /// <summary>
+    /// 有前缀时规范文本形是字符串，故 schema 一律为 <c>string</c> 且不带 format ——
+    /// 数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
+    /// </summary>
+    [Fact]
+    public void Swagger_V1_Should_UsePlainStringSchema_WhenIdHasPrefix()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Prefix = "ord_")]
+            public partial record OrderId(int Value);
+            """;
+
+        var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
+
+        generated.Should().Contain(
+            """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string" });""");
+    }
+
+    [Fact]
+    public void Swagger_V2_Should_UsePlainStringSchema_WhenIdHasPrefix()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Prefix = "ord_")]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var generated = GetSwaggerGeneratedCode(
+            code,
+            Swagger6Reference,
+            SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
+
+        generated.Should().Contain(
+            "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String });");
     }
 
     #endregion

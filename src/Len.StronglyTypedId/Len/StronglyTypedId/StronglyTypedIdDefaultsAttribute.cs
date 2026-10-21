@@ -1,14 +1,8 @@
-namespace Len.StronglyTypedId;
+﻿namespace Len.StronglyTypedId;
 
 /// <summary>
 /// 在程序集级别为 <see cref="StronglyTypedIdAttribute"/> 提供默认值，消掉逐类型的重复声明。
 /// </summary>
-/// <remarks>
-/// 目前支持 <see cref="Validator"/>：声明
-/// <c>[assembly: StronglyTypedIdDefaults(Validator = "Validate")]</c> 后，本程序集内所有强类型 Id 都默认
-/// 把名为 <c>Validate</c> 的静态方法当作验证器，除非某个类型用 <c>[StronglyTypedId(Validator = ...)]</c>
-/// 显式覆盖。默认值只作用于当前程序集声明的类型，不影响所引用的程序集。
-/// </remarks>
 [AttributeUsage(AttributeTargets.Assembly, Inherited = false, AllowMultiple = false)]
 public class StronglyTypedIdDefaultsAttribute : Attribute
 {
@@ -16,4 +10,37 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     /// 获取或设置本程序集内强类型 Id 默认采用的验证器方法名。
     /// </summary>
     public string? Validator { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 默认采用的归一化方法名。
+    /// </summary>
+    public string? Normalizer { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 在验证失败时默认抛出的异常类型。该类型必须派生自
+    /// <see cref="Exception"/>、不能是抽象类，且必须具有接收单个 <see cref="string"/> 消息的构造函数。
+    /// </summary>
+    public Type? ExceptionType { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 默认是否在验证失败消息中隐去被拒绝的原始值。默认值为
+    /// <see langword="false"/>，即保留原始值。
+    /// </summary>
+    /// <remarks>
+    /// 原始值会随异常消息进入日志、APM 与错误上报。对 <see cref="string"/> 基元的 Id 来说，那往往是
+    /// 用户输入（邮箱、手机号、token 片段）—— 常常正因为不合法才被拒，但它依然是个人信息。整库统一
+    /// 脱敏时用本属性；单个 Id 需要例外时在类型上显式写 <see cref="StronglyTypedIdAttribute.RedactValidationMessage"/>。
+    /// </remarks>
+    public bool RedactValidationMessage { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 默认生成哪些集成代码。默认值为
+    /// <see cref="StronglyTypedIdIntegrations.Default"/>，即「引用了就生成」。
+    /// </summary>
+    /// <remarks>
+    /// 逐类型上的 <see cref="StronglyTypedIdAttribute.Integrations"/> 只要不是
+    /// <see cref="StronglyTypedIdIntegrations.Default"/> 就覆盖此处的设置；想在被本属性关掉之后
+    /// 为单个 Id 重新打开，写 <see cref="StronglyTypedIdIntegrations.All"/>。
+    /// </remarks>
+    public StronglyTypedIdIntegrations Integrations { get; set; }
 }

@@ -1,0 +1,309 @@
+# StronglyTypedId 的编辑器配置
+#
+# 本文件有三个目的：
+#   1. 固化「0 警告」基线 —— 把仓库实际遵守的严重级别显式写下来。默认严重级别不构成约束，
+#      一次 NoWarn 或 WarningsNotAsErrors 就能绕过去；写在这里的才是可评审的承诺。
+#   2. 固化 STIA0011 的严重级别 —— 该规则默认已是 warning，这里显式重申，并给出降级写法。
+#   3. 固化代码风格 —— 让新代码与既有代码同形，减少与内容无关的评审噪声。
+#
+# 本文件只声明「仓库实际已经在做的」约定，不引入新的强制项。
+# 未声明 charset：仓库现存 .cs 的 BOM 并不统一（多数有、少数无），一旦声明 charset，
+# 编辑器保存时会批量增删 BOM，产生与内容无关的巨大 diff。
+#
+# 关于行尾：.gitattributes 是 `* text=auto`（仓库内统一存 LF），本地 core.autocrlf=true
+# 使工作树为 CRLF。此处按工作树的实际形态声明 crlf；提交时仍会被规范化为 LF，
+# 因此在 Linux / macOS 上检出也不受影响。
+
+root = true
+
+[*]
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# C# 代码风格
+# ---------------------------------------------------------------------------
+
+[*.{cs,csx}]
+
+# 命名空间：全仓库一律用文件范围声明（`namespace X;`）。
+csharp_style_namespace_declarations = file_scoped:warning
+
+# using 指令：置于命名空间之外，System.* 排在前面。
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# 大括号：Allman 风格。
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+
+# 空格。
+csharp_space_around_binary_operators = before_and_after
+csharp_space_after_cast = false
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_parentheses = false
+
+# var：仓库通篇使用 var。
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+
+# 表达式体：单行时优先 `=>`（生成器模板与运行时类型大量使用）。
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_expression_bodied_accessors = when_on_single_line:suggestion
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion
+csharp_style_expression_bodied_indexers = when_on_single_line:suggestion
+csharp_style_expression_bodied_lambdas = when_on_single_line:suggestion
+
+# 其它常用偏好。
+csharp_prefer_braces = true:suggestion
+csharp_prefer_simple_default_expression = true:suggestion
+csharp_style_implicit_object_creation_when_type_is_apparent = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_deconstructed_variable_declaration = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+csharp_style_prefer_extended_property_pattern = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_throw_expression = true:suggestion
+csharp_style_conditional_delegate_call = true:suggestion
+csharp_style_unused_value_assignment_preference = discard_variable:suggestion
+csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
+
+# 限定与修饰符。
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:suggestion
+dotnet_style_readonly_field = true:suggestion
+
+# 对象 / 集合初始化与空值处理。
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_prefer_collection_expression = true:suggestion
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
+dotnet_style_explicit_tuple_names = true:suggestion
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:suggestion
+dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
+dotnet_style_prefer_conditional_expression_over_return = true:suggestion
+dotnet_style_prefer_compound_assignment = true:suggestion
+dotnet_style_prefer_simplified_interpolation = true:suggestion
+dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
+dotnet_style_prefer_inferred_tuple_names = true:suggestion
+dotnet_style_prefer_inferred_anonymous_type_member_names = true:suggestion
+
+# 命名：私有字段 `_camelCase`（如 SupportedPrimitiveTypes._typeNames），常量 PascalCase。
+#
+# 两条规则的符号组有重叠（`private const` 字段同时命中两者），但不会互相打架：
+# Roslyn 取「约束更多」的那条 —— `const_fields` 带 required_modifiers，比只限定
+# 可访问性的 `private_fields` 更具体，故 `private const` 一律走 PascalCase。
+# 因此 IDE1006 只会落在「非 const 的私有字段」上，命名规则本身无需再收紧。
+dotnet_naming_rule.private_fields_underscore_camel_case.severity = suggestion
+dotnet_naming_rule.private_fields_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore_camel_case.style = underscore_camel_case
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+
+dotnet_naming_rule.const_fields_pascal_case.severity = suggestion
+dotnet_naming_rule.const_fields_pascal_case.symbols = const_fields
+dotnet_naming_rule.const_fields_pascal_case.style = pascal_case
+dotnet_naming_symbols.const_fields.applicable_kinds = field
+dotnet_naming_symbols.const_fields.applicable_accessibilities = *
+dotnet_naming_symbols.const_fields.required_modifiers = const
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# ---------------------------------------------------------------------------
+# 诊断严重级别：把「0 警告」基线写死
+# ---------------------------------------------------------------------------
+# STIA0000–STIA0010、STIA0012 默认即为 Error，这里显式重申，使其成为可评审的承诺
+# （默认值可以被一次 NoWarn 悄悄绕过，写在这里的不行）。
+dotnet_diagnostic.STIA0000.severity = error
+dotnet_diagnostic.STIA0001.severity = error
+dotnet_diagnostic.STIA0002.severity = error
+dotnet_diagnostic.STIA0003.severity = error
+dotnet_diagnostic.STIA0004.severity = error
+dotnet_diagnostic.STIA0005.severity = error
+dotnet_diagnostic.STIA0006.severity = error
+dotnet_diagnostic.STIA0007.severity = error
+dotnet_diagnostic.STIA0008.severity = error
+dotnet_diagnostic.STIA0009.severity = error
+dotnet_diagnostic.STIA0010.severity = error
+dotnet_diagnostic.STIA0012.severity = error
+
+# STIA0011：`new XxxId(...)` / 目标类型化的 `new(...)` / `default` 都会绕过 Create / TryParse，
+# 验证器不运行。默认级别已是 warning，这里显式重申，使其与上面的 Error 组一样成为可评审的承诺。
+# 本仓库自身一律经 Create / TryParse 构造，不会因此产生告警。
+# 若你的项目里确有必须直接构造的场景，改成 suggestion 或 none 即可。
+dotnet_diagnostic.STIA0011.severity = warning
+
+# IDE1006（命名规则）：默认 suggestion，在 VS 里只是灰色建议、不进错误列表。
+# 提升为 warning，让「私有字段少了 `_` 前缀」这类偏差在错误列表里可见、可评审。
+# 仓库当前无非 const 私有字段违规，故不产生告警。
+# 注意：IDE 分析器不参与 dotnet build，除非显式开 -p:EnforceCodeStyleInBuild=true。
+dotnet_diagnostic.IDE1006.severity = warning
+
+# IDE0022（方法体）：`csharp_style_expression_bodied_methods` 只给了 suggestion，
+# 单行方法写成块体在 VS 里仅是灰色建议。提升为 warning，让「单行方法该用 `=>`」这条
+# 仓库既有的书写习惯在错误列表里可见、可评审。
+# 与上面的风格声明是同一条规则的两种表达：`dotnet_diagnostic.*` 只管严重级别，
+# 不改变偏好方向（仍是 when_on_single_line）。
+# 提升后暴露 23 处块体单行方法（src 2 / samples 3 / test 18），已全部改写为表达式体，
+# 故不产生告警。
+dotnet_diagnostic.IDE0022.severity = warning
+
+# 下面这批 IDE 规则同样默认是 suggestion（VS 里灰色建议、不进错误列表）。
+# 它们各自对应的风格选项在上面的「C# 代码风格」段里已声明为 suggestion，
+# 此处只提升严重级别，不改变偏好方向。
+#
+# IDE0007（用 var 代替显式类型）：对应 csharp_style_var_*。
+dotnet_diagnostic.IDE0007.severity = warning
+
+# IDE0305（集合初始化可简化为集合表达式）：对应 dotnet_style_prefer_collection_expression。
+dotnet_diagnostic.IDE0305.severity = warning
+
+# IDE0301（空集合可简化为集合表达式）：同属 dotnet_style_prefer_collection_expression。
+# `Array.Empty<T>()` / `Enumerable.Empty<T>()` / `ImmutableArray<T>.Empty` 等可写成 `[]`。
+dotnet_diagnostic.IDE0301.severity = warning
+
+# IDE0053（lambda 用表达式体）：对应 csharp_style_expression_bodied_lambdas。
+dotnet_diagnostic.IDE0053.severity = warning
+
+# IDE0034（简化 default 表达式）：对应 csharp_prefer_simple_default_expression。
+dotnet_diagnostic.IDE0034.severity = warning
+
+# IDE0032（用自动属性代替带后备字段的属性）：对应 dotnet_style_prefer_auto_properties。
+dotnet_diagnostic.IDE0032.severity = warning
+
+# IDE0290（用主构造函数）：对应 csharp_style_prefer_primary_constructors。
+dotnet_diagnostic.IDE0290.severity = warning
+
+# IDE0017（简化对象初始化）：对应 dotnet_style_object_initializer。
+dotnet_diagnostic.IDE0017.severity = warning
+
+# IDE0090（简化 new 表达式）：对应 csharp_style_implicit_object_creation_when_type_is_apparent。
+# 目标类型已知时 `new Foo(...)` 可写成 `new(...)`，省掉重复的类型名。
+dotnet_diagnostic.IDE0090.severity = warning
+
+# IDE0046（用条件表达式简化 return）：对应 dotnet_style_prefer_conditional_expression_over_return。
+# `if (c) { return a; } else { return b; }` 可写成 `return c ? a : b;`。
+dotnet_diagnostic.IDE0046.severity = warning
+
+# IDE0066（用 switch 表达式）：对应 csharp_style_prefer_switch_expression。
+# `switch (x) { case A: return 1; default: return 2; }` 可写成 `x switch { A => 1, _ => 2 };`。
+dotnet_diagnostic.IDE0066.severity = warning
+
+# IDE0060（删除未使用的参数）：对应 dotnet_code_quality_unused_parameters（默认 all）。
+# 该规则只对「签名可自由更改」的成员生效 —— 接口实现、override、虚/抽象成员、
+# partial 定义、事件处理器等一律豁免，故提升后不会波及必须保留的形参。
+dotnet_diagnostic.IDE0060.severity = warning
+
+# ---------------------------------------------------------------------------
+# 编译器 / 分析器诊断（非 IDE 风格规则，参与 dotnet build，不受 EnforceCodeStyleInBuild 影响）
+# ---------------------------------------------------------------------------
+
+# SYSLIB1045（用 GeneratedRegex 生成正则实现）：由 System.Text.RegularExpressions.Generator
+# 报出，默认只是 Info。`new Regex("常量模式", …)` 在 net7.0+ 上可改为
+# `[GeneratedRegex("常量模式")] private static partial Regex X();`，编译期生成匹配代码，
+# 省掉运行时的解析与 RegexOptions.Compiled 的反射发射。
+dotnet_diagnostic.SYSLIB1045.severity = warning
+
+# CA1822（成员可标记为 static）：.NET 分析器的性能规则，默认只是 Info。
+# 不触碰实例状态、也不被当作虚方法覆写的成员应改 static —— 省掉每个实例上的
+# 隐式 this 传递，也让「这个方法不依赖实例」这件事在签名上就看得出来。
+dotnet_diagnostic.CA1822.severity = warning
+
+# CA2263（能用泛型重载就别传 Type）：.NET 分析器的用法规则，默认只是 Info。
+# `Enum.Parse(typeof(T), …)` / `Activator.CreateInstance(typeof(T))` /
+# `JsonSerializer.Deserialize(json, typeof(T))` 这类「把类型当参数传」的旧式重载，
+# 在类型可由上下文推断时应改用泛型重载 —— 泛型版本省掉装箱与运行时类型校验，
+# 返回值也是强类型的，不必再强转。
+dotnet_diagnostic.CA2263.severity = warning
+
+# CA1859（尽可能用具体类型以提升性能）：.NET 分析器的性能规则，默认只是 Info。
+# 形参 / 字段 / 返回类型声明成接口（IEnumerable<T>、IList<T>…）而实际只会拿到某一种
+# 具体类型时，改用该具体类型 —— 接口调用要走接口分发、且装箱后取值要多一次间接寻址。
+# 只在「类型完全由本程序集掌控」时才会报，故不会波及对外暴露的公开契约。
+dotnet_diagnostic.CA1859.severity = warning
+
+# RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
+# src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
+
+# IDE0058（永远不会使用表达式值）：本仓库整体忽略。
+# 触发它的两类写法都是「语句式 API」，丢弃返回值正是其设计，不是漏用了值：
+#   - FluentAssertions 的 `x.Should().Be(y);`（测试断言链，占绝大多数）
+#   - StringBuilder 的 `builder.Append(…).Append(…);`（生成器拼代码）与 EF / DI 的副作用调用
+# 逐处补 `_ = ` 只是噪声，故不改代码，直接关闭该规则。
+dotnet_diagnostic.IDE0058.severity = none
+
+# ---------------------------------------------------------------------------
+# xUnit 分析器诊断（非 IDE 风格规则，参与 dotnet build，不受 EnforceCodeStyleInBuild 影响）
+# ---------------------------------------------------------------------------
+
+# xUnit1044（TheoryData 的类型实参不可序列化）：由 xunit.analyzers 报出。
+# 类型实参不可序列化时 Test Explorer 无法逐行枚举理论数据 —— 每行数据会塌成
+# 一个用例，跑挂了也看不出是哪一行。把数据换成可序列化的类型即可（如把
+# DiagnosticDescriptor 换成其规则 ID 字符串，在用例内按 ID 取回描述符）。
+dotnet_diagnostic.xUnit1044.severity = warning
+
+# IDE0042（解构变量声明）：本仓库整体忽略。
+# 对应 csharp_style_deconstructed_variable_declaration。该偏好仍保留为 suggestion，
+# 但不希望「把 `var a = t.Item1; var b = t.Item2;` 改写成 `var (a, b) = t;`」这类建议
+# 进入错误列表，故关闭该规则。
+dotnet_diagnostic.IDE0042.severity = none
+
+# ---------------------------------------------------------------------------
+# 其它文件类型
+# ---------------------------------------------------------------------------
+
+# 测试夹具与示例刻意违反两条风格提示（均为 Info 级，不影响构建）：
+#   - test/.../Ids.cs 用 `GuidIdV2` 这类带版本后缀的名字，为的是在同一命名空间里
+#     造出多个同基元 Id 来覆盖生成器的分支；
+#   - samples 的领域模型本来就有多个 string 基元的 Id（UserId / SellerId）。
+# 这两处都不是「命名失误」，留着只会给仓库自身的错误列表添噪，故按目录关闭。
+[test/**/*.cs]
+dotnet_diagnostic.STIA0015.severity = none
+dotnet_diagnostic.STIA0016.severity = none
+
+[samples/**/*.cs]
+dotnet_diagnostic.STIA0015.severity = none
+dotnet_diagnostic.STIA0016.severity = none
+
+# MSBuild 工程文件沿用 Tab 缩进（与现存 .csproj / .props 一致）。
+[*.{csproj,props,targets,proj,vcxproj}]
+indent_style = tab
+
+# 解决方案文件（XML）用 2 空格。
+[*.slnx]
+indent_size = 2
+
+[*.{json,yml,yaml,xml,config,xaml}]
+indent_size = 2
+
+# Markdown 的行尾双空格是有意义的硬换行，不裁剪。
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+# 生成器产物（若开启 EmitCompilerGeneratedFiles 落到磁盘）：不参与风格检查。
+[**/*.g.cs]
+generated_code = true

@@ -8,32 +8,79 @@ internal readonly record struct StronglyTypedIdInfo
     private const string GlobalPrefix = "global::";
 
     /// <summary>
-    /// 运行时程序集中 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的简单名。
+    /// 运行时 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的简单名（生成器不引用运行时程序集，只能按名字匹配）。
     /// </summary>
-    /// <remarks>
-    /// 生成器项目不引用运行时程序集，因此只能以字符串字面量匹配符号名。
-    /// </remarks>
     internal const string InterfaceName = "IStronglyTypedId";
 
     /// <summary>
-    /// 运行时程序集中 <c>Len.StronglyTypedId</c> 命名空间的显示名（含 <c>global::</c> 前缀）。
+    /// 运行时 <c>Len.StronglyTypedId</c> 命名空间的显示名（含 <c>global::</c> 前缀）。
     /// </summary>
     internal const string InterfaceNamespace = "global::Len.StronglyTypedId";
 
     /// <summary>
-    /// 运行时程序集中 <c>StronglyTypedIdAttribute</c> 的显示名（含 <c>global::</c> 前缀）。
+    /// System.Text.Json 转换器的内嵌类型名。
     /// </summary>
-    internal const string AttributeName = "global::Len.StronglyTypedId.StronglyTypedIdAttribute";
+    private const string SystemTextJsonConverterTypeName = "SystemTextJsonConverter";
 
     /// <summary>
-    /// attribute 中用于指定验证器方法的命名实参名。
+    /// Newtonsoft.Json 转换器的内嵌类型名。
+    /// </summary>
+    private const string NewtonsoftJsonConverterTypeName = "NewtonsoftJsonConverter";
+
+    /// <summary>
+    /// attribute 中验证器方法的命名实参名。
     /// </summary>
     internal const string ValidatorArgumentName = "Validator";
 
     /// <summary>
-    /// attribute 中用于开启 <c>System.ComponentModel.TypeConverter</c> 生成的命名实参名。
+    /// attribute 中归一化方法的命名实参名。
+    /// </summary>
+    internal const string NormalizerArgumentName = "Normalizer";
+
+    /// <summary>
+    /// attribute 中 <c>TypeConverter</c> 开关的命名实参名。
     /// </summary>
     internal const string TypeConverterArgumentName = "TypeConverter";
+
+    /// <summary>
+    /// attribute 中验证失败异常类型的命名实参名。
+    /// </summary>
+    internal const string ExceptionTypeArgumentName = "ExceptionType";
+
+    /// <summary>
+    /// attribute 中 JSON 形态的命名实参名。
+    /// </summary>
+    internal const string JsonShapeArgumentName = "JsonShape";
+
+    /// <summary>
+    /// attribute 中规范文本形前缀的命名实参名。
+    /// </summary>
+    internal const string PrefixArgumentName = "Prefix";
+
+    /// <summary>
+    /// attribute 中前缀读入策略的命名实参名。
+    /// </summary>
+    internal const string PrefixReadModeArgumentName = "PrefixReadMode";
+
+    /// <summary>
+    /// attribute 中集成开关的命名实参名。
+    /// </summary>
+    internal const string IntegrationsArgumentName = "Integrations";
+
+    /// <summary>
+    /// attribute 中「验证失败消息是否隐去原始值」的命名实参名。
+    /// </summary>
+    internal const string RedactValidationMessageArgumentName = "RedactValidationMessage";
+
+    /// <summary>
+    /// <c>PrefixReadMode.Strict</c> 的底层值；命名实参在元数据里存的是枚举值而非成员名。
+    /// </summary>
+    private const int StrictPrefixReadModeValue = 1;
+
+    /// <summary>
+    /// <c>JsonShape.Object</c> 的底层值；命名实参在元数据里存的是枚举值而非成员名。
+    /// </summary>
+    private const int ObjectJsonShapeValue = 1;
 
     /// <summary>
     /// BCL 接口所属命名空间的显示名（含 <c>global::</c> 前缀）。
@@ -61,22 +108,58 @@ internal readonly record struct StronglyTypedIdInfo
     private const string Utf8SpanFormattableName = "IUtf8SpanFormattable";
 
     /// <summary>
-    /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
+    /// <c>System.Numerics.BigInteger</c> 的显示名（它不在 CoreLib，故只能按名字识别）。
+    /// </summary>
+    private const string BigIntegerTypeName = "System.Numerics.BigInteger";
+
+    /// <summary>
+    /// Newtonsoft.Json 的 <c>JsonWriter.WriteValue</c> 不认识的基元：它们没有对应的
+    /// <c>PrimitiveTypeCode</c>，写出去会抛 <c>JsonWriterException</c>。
+    /// </summary>
+    private static readonly ImmutableHashSet<string> _newtonsoftTextPrimitives = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "System.Int128",
+        "System.UInt128",
+        "System.Half",
+        "System.DateOnly",
+        "System.TimeOnly");
+
+    /// <summary>
+    /// 二进制序列化（MessagePack / BSON）没有可靠原生表示的基元。
     /// </summary>
     /// <remarks>
-    /// 简单名、命名空间与类型实参个数三者必须同时校验。只比简单名会把使用者或第三方程序集里恰好
-    /// 同名（例如只带一个类型实参）的接口一并纳入，随后解析基元类型失败并抛出异常，令整个生成器的
-    /// 产出被丢弃 —— 而编译器只报一条 CS8785 警告，使用者看到的是「生成代码全部消失」。
+    /// <para>
+    /// 实测 MessagePack 2.5.302 缺 <c>Int128</c> / <c>UInt128</c> 的格式化器（默认解析器会抛
+    /// <c>FormatterNotRegisteredException</c>）；MongoDB.Bson 3.2.1 除这两个之外还缺 <c>BigInteger</c>。
+    /// </para>
+    /// <para>
+    /// 三个类型在两种二进制格式里统一改走规范文本形，而不是各维护一份例外清单：差异只在于「谁缺」，
+    /// 而两种格式的载荷本来就不互通，统一之后产物更容易核对。
+    /// </para>
     /// </remarks>
+    private static readonly ImmutableHashSet<string> _binaryTextPrimitives = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "System.Numerics.BigInteger",
+        "System.Int128",
+        "System.UInt128");
+
+    /// <summary>
+    /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
+    /// </summary>
     internal static bool IsStronglyTypedIdInterface(INamedTypeSymbol @interface)
         => @interface.Name == InterfaceName
             && @interface.TypeArguments.Length == 2
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == InterfaceNamespace;
 
-    public StronglyTypedIdInfo(ITypeSymbol type, string? defaultValidatorName = null)
+    public StronglyTypedIdInfo(
+        ITypeSymbol type,
+        string? defaultValidatorName = null,
+        string? defaultNormalizerName = null,
+        string? defaultExceptionTypeName = null,
+        int? defaultIntegrations = null,
+        bool defaultRedactValidationMessage = false)
     {
-        // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace，直接解引用会抛
-        // NullReferenceException。这里与「基元类型解析失败」保持同一异常语义，便于定位问题。
+        // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace。
         var containingNamespace = type.ContainingNamespace
             ?? throw new InvalidOperationException($"无法从类型“{type.ToDisplayString()}”解析强类型 Id 信息：该类型不是具名类型。");
 
@@ -85,78 +168,103 @@ internal readonly record struct StronglyTypedIdInfo
         Name = type.Name;
         FullyQualifiedName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         FullName = type.ToDisplayString();
-        // readonly 修饰符只作用在 struct 形态的强类型 Id 上（引用类型 record 无 readonly 概念），
-        // 且必须作为「出现在 record 关键字之前的修饰符」透出（写作 partial readonly record struct），
-        // 否则 C# 报错「readonly 必须位于成员类型和名称之前」。各 partial 段对「是否 readonly struct」一致，
-        // 漏写会让使用者原本的 readonly record struct 在合并生成段后编译失败。
+        // readonly 必须写在 record 关键字之前，且各 partial 段必须一致，否则合并后编译失败。
         TypeKindSuffix = type.TypeKind == TypeKind.Struct ? " struct" : null;
         ReadOnlyRecordModifier = type.TypeKind == TypeKind.Struct && type.IsReadOnly ? "readonly " : string.Empty;
 
         var containingTypes = GetContainingTypeDeclarations(type);
         ContainingTypeDeclarations = containingTypes.Declarations;
         NestingDepth = containingTypes.Depth;
+        IsInGenericContainer = containingTypes.IsInGenericContainer;
+        HintName = SanitizeHintName(FullName);
 
         var primitiveIdType = GetPrimitiveIdType(type);
 
         PrimitiveIdTypeName = primitiveIdType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-        // 各项能力都由基元类型的符号判定，而非按类型名硬编码分支：与 SupportedPrimitiveTypes 保持同一取向
-        // —— 判据落在符号上，类型名只用于展示。
         IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
-        IsFormattable = ImplementsInterface(primitiveIdType, FormattableName);
-        IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName);
-        IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName);
+        IsCharPrimitive = primitiveIdType.SpecialType == SpecialType.System_Char;
+        IsEnum = primitiveIdType.TypeKind == TypeKind.Enum;
+        IsFlagsEnum = IsEnum && HasFlagsAttribute(primitiveIdType);
+        FlagsEnumUndefinedBitsMask = IsFlagsEnum ? GetFlagsEnumUndefinedBitsMask(primitiveIdType) : null;
+        // 枚举继承的 IFormattable / ISpanFormattable 已被标记 [Obsolete]：透出会 CS0618，不透出又会 CS0535。
+        IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
+        IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName) && !IsEnum;
+        // BigInteger 实现了 IUtf8SpanParsable 却把 TryParse 做成显式接口实现，按类型名调用会 CS1501。
+        IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName)
+            && HasPublicStaticTryParse(primitiveIdType, SpecialType.System_Byte);
         IsUtf8SpanFormattable = ImplementsInterface(primitiveIdType, Utf8SpanFormattableName);
-        ValidatorName = GetValidatorName(type) ?? defaultValidatorName;
-        HasTypeConverter = GetBooleanArgument(type, TypeConverterArgumentName);
+        CharTryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Char);
+        Utf8TryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Byte);
+        // System.Text.Json 没有 BigInteger 的内置转换器：JsonSerializer 会把它当普通对象序列化成
+        // {"IsPowerOfTwo":…,"Sign":1}，读回来又是 default —— 静默丢数据。故这类基元改走规范文本形。
+        IsBigIntegerPrimitive = primitiveIdType.ToDisplayString() == BigIntegerTypeName;
+        // Newtonsoft.Json 的 JsonWriter.WriteValue 不认识这几个类型，会抛 JsonWriterException；
+        // 读侧同理。它们的转换器因此也改走规范文本形。
+        IsNewtonsoftTextPrimitive = IsNewtonsoftTextPrimitiveCore(primitiveIdType);
+        // MessagePack / BSON 同理：缺原生表示时改走规范文本形（见 _binaryTextPrimitives）。
+        IsBinaryTextPrimitive = _binaryTextPrimitives.Contains(primitiveIdType.ToDisplayString());
+        // 属性只查一次：下面五项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做五遍。
+        var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
+        ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaultValidatorName;
+        NormalizerName = AttributeReader.GetString(attribute, NormalizerArgumentName) ?? defaultNormalizerName;
+        // 存显示名而非符号：本类型是增量缓存的键，符号跨编译不稳定，显示名才是稳定值。
+        ExceptionTypeName = AttributeReader.GetType(attribute, ExceptionTypeArgumentName)
+                ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            ?? defaultExceptionTypeName;
+        HasTypeConverter = AttributeReader.GetBoolean(attribute, TypeConverterArgumentName);
+        // 逐类型优先，其次程序集默认。属性是 bool，未写时读到的就是 false，无法区分「没写」与「写了 false」——
+        // 因此逐类型只能单向打开：程序集默认打开后，单个 Id 无法再关回去。这是有意的：脱敏是安全策略，
+        // 允许逐类型放宽等于把「整库不泄露用户输入」变成一句空话。
+        RedactsValidationMessage = AttributeReader.GetBoolean(attribute, RedactValidationMessageArgumentName)
+            || defaultRedactValidationMessage;
+        IsObjectJsonShape = AttributeReader.GetEnumFlag(attribute, JsonShapeArgumentName, ObjectJsonShapeValue);
+        Prefix = NormalizePrefix(AttributeReader.GetString(attribute, PrefixArgumentName));
+        IsStrictPrefixRead = AttributeReader.GetEnumFlag(attribute, PrefixReadModeArgumentName, StrictPrefixReadModeValue);
+        // 逐类型优先，其次程序集默认，最后「引用了就生成」。存整数而非枚举：本类型是增量缓存的键。
+        Integrations = IntegrationFlags.Normalize(AttributeReader.GetEnumValue(attribute, IntegrationsArgumentName))
+            ?? defaultIntegrations
+            ?? IntegrationFlags.All;
+        HasSystemTextJsonConverter = WillHaveNestedType(type, SystemTextJsonConverterTypeName);
+        HasNewtonsoftJsonConverter = WillHaveNestedType(type, NewtonsoftJsonConverterTypeName);
+        // 命名实例在构造期一次性渲染成文本：本类型是增量缓存的键，集合成员会退化成引用比较而让缓存永久失效。
+        InstancesBlock = RenderInstancesBlock(type, primitiveIdType);
     }
 
     /// <summary>
-    /// The namespace of a strongly typed id, without the <c>global::</c> prefix.
+    /// 基元是否为 Newtonsoft.Json 无法按值写入的类型。
     /// </summary>
-    /// <remarks>
-    /// This is the form emitted right after the generated <c>namespace</c> keyword.
-    /// </remarks>
+    private static bool IsNewtonsoftTextPrimitiveCore(ITypeSymbol primitiveIdType)
+        => _newtonsoftTextPrimitives.Contains(primitiveIdType.ToDisplayString());
+
+    /// <summary>
+    /// 强类型 Id 的命名空间，不含 <c>global::</c> 前缀。
+    /// </summary>
     public string Namespace { get; }
 
     /// <summary>
-    /// The namespace of a strongly typed id, prefixed with <c>global::</c>.
+    /// 强类型 Id 的命名空间，含 <c>global::</c> 前缀。
     /// </summary>
     public string FullyQualifiedNamespace { get; }
 
     /// <summary>
-    /// The name of a strongly typed id.
+    /// 强类型 Id 的类型名，不含命名空间。
     /// </summary>
-    /// <remarks>
-    /// This is a short strongly typed id type name that does not include a namespace.
-    /// </remarks>
     public string Name { get; }
 
     /// <summary>
-    /// The fully qualified name of a strongly typed id, prefixed with <c>global::</c>.
+    /// 强类型 Id 的全限定名，含 <c>global::</c> 前缀。
     /// </summary>
-    /// <remarks>
-    /// This is the form used when emitting type references into generated code, where the
-    /// <c>global::</c> prefix shields the name from any namespace that happens to be in scope.
-    /// </remarks>
     public string FullyQualifiedName { get; }
 
     /// <summary>
-    /// The display name of a strongly typed id, also used as the generated hint name.
+    /// 强类型 Id 的显示名，同时用作生成源的 hint 名。
     /// </summary>
-    /// <remarks>
-    /// Unlike <see cref="FullyQualifiedName"/>, this form carries no <c>global::</c> prefix,
-    /// which makes it a legal hint name but unsuitable for use inside generated code.
-    /// </remarks>
     public string FullName { get; }
 
     /// <summary>
     /// 包含类型链的重开声明，最外层在前、每层一行；顶层类型为空串。
     /// </summary>
-    /// <remarks>
-    /// 形如 <c>public partial class Outer</c>。生成代码要补的是嵌套类型自身的成员，而 partial 的各段
-    /// 必须处于同一容器内，故只能把声明逐层放回原本的包含类型中 —— 每一层都得被原样重开一次。
-    /// </remarks>
     public string ContainingTypeDeclarations { get; }
 
     /// <summary>
@@ -165,40 +273,100 @@ internal readonly record struct StronglyTypedIdInfo
     public int NestingDepth { get; }
 
     /// <summary>
-    /// The type kind suffix appended right after the <c>record</c> keyword, e.g. <c>" struct"</c>.
+    /// 可作为生成源 hint 名的类型显示名：剔除尖括号、逗号与空格。
     /// </summary>
-    /// <remarks>
-    /// A <see langword="null"/> value means the strongly typed id is declared as a reference type record.
-    /// </remarks>
+    public string HintName { get; }
+
+    /// <summary>
+    /// 强类型 Id 是否声明在泛型包含类型内部（外部集成生成器会跳过此类 Id）。
+    /// </summary>
+    public bool IsInGenericContainer { get; }
+
+    /// <summary>
+    /// 该 Id 是否带有（或本次生成即将产出）内嵌的 <c>SystemTextJsonConverter</c>。
+    /// </summary>
+    public bool HasSystemTextJsonConverter { get; }
+
+    /// <summary>
+    /// 该 Id 是否带有（或本次生成即将产出）内嵌的 <c>NewtonsoftJsonConverter</c>。
+    /// </summary>
+    public bool HasNewtonsoftJsonConverter { get; }
+
+    /// <summary>
+    /// 紧跟在 <c>record</c> 关键字之后的类型种类后缀，如 <c>" struct"</c>；<see langword="null"/> 表示引用类型 record。
+    /// </summary>
     public string? TypeKindSuffix { get; }
 
     /// <summary>
-    /// 当强类型 Id 是 <c>readonly record struct</c> 时，在 <c>partial</c> 与 <c>record</c> 之间插入的
-    /// <c> readonly</c> 修饰符；否则为空串。引用类型 record 无 readonly 概念，恒为空串。
+    /// <c>readonly record struct</c> 时插在 <c>partial</c> 与 <c>record</c> 之间的修饰符；否则为空串。
     /// </summary>
     public string ReadOnlyRecordModifier { get; }
 
     /// <summary>
-    /// The fully qualified name of the primitive type wrapped by the strongly typed id.
+    /// 强类型 Id 所包装基元类型的全限定名。
     /// </summary>
     public string PrimitiveIdTypeName { get; }
 
     /// <summary>
     /// 基元类型是否为 <c>string</c>。
     /// </summary>
-    /// <remarks>
-    /// 仅用于选择生成模板的形态（<c>string</c> 基元的解析、格式化与字典键路径都与其它基元不同）。
-    /// 判据取自符号的 <see cref="ITypeSymbol.SpecialType"/>，不比较 <see cref="PrimitiveIdTypeName"/> 的字面量。
-    /// </remarks>
     public bool IsStringPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否为 <c>char</c>。
+    /// </summary>
+    public bool IsCharPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否为 <c>System.Numerics.BigInteger</c>。
+    /// </summary>
+    /// <remarks>
+    /// System.Text.Json 没有 BigInteger 的内置转换器，<c>JsonSerializer</c> 会退化成按公开属性序列化
+    /// （<c>{"IsPowerOfTwo":false,…,"Sign":1}</c>），读回来又是 <c>default</c>。故它的转换器改走规范文本形。
+    /// </remarks>
+    public bool IsBigIntegerPrimitive { get; }
+
+    /// <summary>
+    /// 基元是否为 Newtonsoft.Json 无法按值读写的类型（<c>Int128</c> / <c>UInt128</c> / <c>Half</c> /
+    /// <c>DateOnly</c> / <c>TimeOnly</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 这些类型没有对应的 <c>PrimitiveTypeCode</c>，<c>JsonWriter.WriteValue</c> 会抛
+    /// <c>JsonWriterException</c>。它们的转换器改走规范文本形，读写都经 <c>Id.TryParse</c>。
+    /// </remarks>
+    public bool IsNewtonsoftTextPrimitive { get; }
+
+    /// <summary>
+    /// 基元是否缺少 MessagePack / BSON 的原生表示（<c>BigInteger</c> / <c>Int128</c> / <c>UInt128</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 为 <see langword="true"/> 时，这两种二进制格式的序列化器改走 Id 的规范文本形（读写都经
+    /// <c>ToString()</c> / <c>TryParse</c>），否则会在运行期抛「格式化器未注册」。
+    /// </remarks>
+    public bool IsBinaryTextPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否为枚举（枚举没有带 <c>IFormatProvider</c> 的静态 <c>TryParse</c>）。
+    /// </summary>
+    public bool IsEnum { get; }
+
+    /// <summary>
+    /// 基元枚举是否标注了 <c>[System.Flags]</c>。位组合本身就是合法取值，故 <c>TryParse</c> 不能对它做
+    /// <c>Enum.IsDefined</c> 收紧，改用 <see cref="FlagsEnumUndefinedBitsMask"/> 做位校验。
+    /// </summary>
+    public bool IsFlagsEnum { get; }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举里没有任何成员占用的位。运行期只要 <c>(value &amp; mask) != 0</c> 就说明出现了未定义的位。
+    /// </summary>
+    /// <remarks>
+    /// 全部位都已定义时（典型是 <c>All = -1</c>）为 <see langword="null"/>，调用方据此跳过校验、产物与加入该能力之前一致。
+    /// </remarks>
+    public ulong? FlagsEnumUndefinedBitsMask { get; }
 
     /// <summary>
     /// 基元类型是否实现 <c>System.IFormattable</c>。
     /// </summary>
-    /// <remarks>
-    /// 只有为 <see langword="true"/> 时生成的强类型 Id 才会一并实现 <c>IFormattable</c>：
-    /// 该接口要求 <c>ToString(string?, IFormatProvider?)</c>，而受支持基元里的 <c>string</c> 并不具备它。
-    /// </remarks>
     public bool IsFormattable { get; }
 
     /// <summary>
@@ -207,71 +375,166 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsSpanFormattable { get; }
 
     /// <summary>
-    /// 基元类型是否实现 <c>System.IUtf8SpanParsable&lt;TSelf&gt;</c>。
+    /// 基元类型是否实现 <c>IUtf8SpanParsable&lt;TSelf&gt;</c> 且暴露公开的 <c>TryParse(ReadOnlySpan&lt;byte&gt;, …)</c>。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 与 <see cref="IsFormattable"/> 同样是「基元本就具备才透出」。这条判据必须在符号上做，
-    /// 不能按类型名硬编码：<c>Guid</c> 自 <b>.NET 10</b> 起才实现该接口，在 net8.0 消费者下生成的
-    /// <c>Parse(ReadOnlySpan&lt;byte&gt;…)</c> 会因为 <c>IUtf8SpanParsable&lt;Guid&gt;</c> 不存在而编译失败。
-    /// 因此同一份源码在 net8.0 与 net10.0 消费者下的产物本就<b>允许不同</b>，
-    /// 这与模块闸门（按引用程序集决定生成什么）是同一种设计。
-    /// </para>
-    /// </remarks>
     public bool IsUtf8SpanParsable { get; }
 
     /// <summary>
     /// 基元类型是否实现 <c>System.IUtf8SpanFormattable</c>。
     /// </summary>
-    /// <remarks>
-    /// net8.0 与 net10.0 下 <c>Guid</c> 与全部数值基元均为 <see langword="true"/>，<c>string</c> 为
-    /// <see langword="false"/>（<c>string</c> 连 <c>ISpanFormattable</c> 都不具备）。
-    /// </remarks>
     public bool IsUtf8SpanFormattable { get; }
+
+    /// <summary>
+    /// 基元 UTF-16 <c>TryFormat</c> 的直呼形态（决定是否经接口调用、是否装箱）。
+    /// </summary>
+    public TryFormatKind CharTryFormatKind { get; }
+
+    /// <summary>
+    /// 基元 UTF-8 <c>TryFormat</c> 的直呼形态（决定是否经接口调用、是否装箱）。
+    /// </summary>
+    public TryFormatKind Utf8TryFormatKind { get; }
 
     /// <summary>
     /// <c>[StronglyTypedId]</c> 上 <c>Validator</c> 指定的验证器方法名；未指定时为 <see langword="null"/>。
     /// </summary>
-    /// <remarks>
-    /// 验证器是强类型 Id 类型自身的静态方法，签名形如 <c>static bool Validate(TPrimitiveId value)</c>，
-    /// 返回 <see langword="true"/> 表示取值合法。生成代码只在 <c>Create</c> 与两个 <c>TryParse</c> 重载里调用它，
-    /// 因此「直接 new 主构造函数」绕不过验证 —— 该限制由生成器无法改写使用者声明的主构造函数所致。
-    /// </remarks>
     public string? ValidatorName { get; }
 
     /// <summary>
-    /// <c>[StronglyTypedId]</c> 是否要求为该类型生成 <c>System.ComponentModel.TypeConverter</c>。
+    /// <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 指定的归一化方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    public string? NormalizerName { get; }
+
+    /// <summary>
+    /// 验证失败时抛出的异常类型全限定名（含 <c>global::</c> 前缀）；未配置时为 <see langword="null"/>，
+    /// 表示沿用 <c>System.ArgumentException</c>。
+    /// </summary>
+    public string? ExceptionTypeName { get; }
+
+    /// <summary>
+    /// <c>[StronglyTypedId]</c> 是否要求生成 <c>System.ComponentModel.TypeConverter</c>。
+    /// </summary>
+    public bool HasTypeConverter { get; }
+
+    /// <summary>
+    /// <c>[StronglyTypedId]</c> 是否要求 JSON 采用对象形态（<c>{ "value": … }</c>）。
+    /// </summary>
+    public bool IsObjectJsonShape { get; }
+
+    /// <summary>
+    /// <c>[StronglyTypedId]</c> 上 <c>Prefix</c> 指定的前缀；未指定或为空 / 纯空白时为 <see langword="null"/>。
+    /// </summary>
+    public string? Prefix { get; }
+
+    /// <summary>
+    /// 强类型 Id 的规范文本形是否携带前缀。
+    /// </summary>
+    public bool HasPrefix => Prefix is { Length: > 0 };
+
+    /// <summary>
+    /// 读回带前缀的文本时是否要求前缀必须存在（<c>PrefixReadMode.Strict</c>）。
+    /// </summary>
+    public bool IsStrictPrefixRead { get; }
+
+    /// <summary>
+    /// 生效的集成掩码（见 <see cref="IntegrationFlags"/>）。已剔除 <c>None</c> 标记位，
+    /// 未指定时等于 <see cref="IntegrationFlags.All"/>。
+    /// </summary>
+    public int Integrations { get; }
+
+    /// <summary>
+    /// 验证失败消息是否隐去被拒绝的原始值。
+    /// </summary>
+    /// <remarks>
+    /// 打开后 <c>Create</c> 抛出的消息是 <c>The value is not a valid OrderId.</c>，不再内插原始值 ——
+    /// 后者会随异常消息进入日志与 APM，而它往往是用户输入。
+    /// </remarks>
+    public bool RedactsValidationMessage { get; }
+
+    /// <summary>
+    /// 判断给定集成是否被选中。仍须由调用方另外确认「当前编译确实引用了对应程序集」。
+    /// </summary>
+    public bool Supports(int integration) => (Integrations & integration) == integration;
+
+    /// <summary>
+    /// 命名实例的渲染块：每条实例的文档注释、生成器标注与 <c>public static readonly</c> 字段，
+    /// 自带产物中的绝对缩进（成员级 4 空格），块首是两个换行。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 这是一项<b>逐类型显式开启</b>的能力，不随引用程序集自动打开。理由：<c>[TypeConverter]</c> 会改变类型的
-    /// 全局语义（<c>TypeDescriptor</c> 是 <c>XmlSerializer</c>、<c>ConfigurationBinder</c>、XAML / DataGrid
-    /// 等老 API 的公共入口），而使用者完全可能已经自标了一个同名特性 —— 自动生成会直接与之相撞。
-    /// 这与 <c>Validator</c> 一样，属于「不侵占使用者声明的语义」。
+    /// 存渲染后的文本而非实例集合，是因为本类型是 <c>readonly record struct</c>，成员级相等性就是增量缓存的键：
+    /// <see cref="ImmutableArray{T}"/> 的相等性是引用比较，放进来会让该 Id 的缓存永久失效。
     /// </para>
     /// <para>
-    /// 打开后还可一并补上 Newtonsoft.Json 字典键的<b>读</b>路径：Newtonsoft 还原键文本走的是
-    /// <c>TypeDescriptor</c>，<c>JsonConverter.ReadJson</c> 接管不到，只有类型自带转换器时才通。
+    /// 未声明任何实例、或声明的全部非法时为空串，此时生成产物与加入该能力之前逐字节一致。
     /// </para>
     /// </remarks>
-    public bool HasTypeConverter { get; }
+    public string InstancesBlock { get; }
+
+    /// <summary>
+    /// 渲染全部合法命名实例的成员块；没有合法实例时为空串。
+    /// </summary>
+    /// <remarks>
+    /// 非法项静默跳过：分析器会为它们报 <c>STIA0020</c> / <c>STIA0021</c>（Error，构建必然失败）。
+    /// 生成器绝不能为此抛异常 —— 那会降级成 <c>STIA0012</c>，把真正的原因盖掉。
+    /// </remarks>
+    private static string RenderInstancesBlock(ITypeSymbol type, ITypeSymbol primitiveType)
+    {
+        // 非具名类型在构造函数开头就已抛异常，这里只是让签名不必依赖调用点的静态类型。
+        if (type is not INamedTypeSymbol namedType)
+        {
+            return string.Empty;
+        }
+
+        var instances = InstanceDeclaration.Read(namedType, primitiveType);
+
+        if (instances.IsDefaultOrEmpty)
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+
+        foreach (var instance in instances)
+        {
+            if (instance.Issue != InstanceIssue.None)
+            {
+                continue;
+            }
+
+            // 块经插值洞注入模板，洞写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
+            builder.Append('\n').Append('\n');
+            builder.Append("    /// <summary>").Append('\n');
+            builder.Append("    /// Gets the <c>").Append(instance.Name).Append("</c> instance of <c>").Append(type.Name).Append("</c>.").Append('\n');
+            builder.Append("    /// </summary>").Append('\n');
+            builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
+            builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append('\n');
+            builder.Append("    public static readonly ").Append(type.Name).Append(' ').Append(instance.Name).Append(" = Create(").Append(instance.Expression).Append(");");
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(RedactValidationMessage = …)]</c>；未声明时为
+    /// <see langword="false"/>。
+    /// </summary>
+    public static bool GetAssemblyDefaultRedactValidationMessage(IAssemblySymbol assembly)
+        => AttributeReader.GetBoolean(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            RedactValidationMessageArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Integrations = …)]</c> 并规范化；未声明时为
+    /// <see langword="null"/>。
+    /// </summary>
+    public static int? GetAssemblyDefaultIntegrations(IAssemblySymbol assembly)
+        => IntegrationFlags.Normalize(AttributeReader.GetEnumValue(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            IntegrationsArgumentName));
 
     /// <summary>
     /// 解析强类型 Id 所包装的基元类型符号。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 优先读取 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的第二个类型实参：它是基元类型的权威来源，
-    /// 既不需要类型具备任何特定形状的构造函数，也不会被其它构造函数干扰。引用程序集中已生成的强类型 Id
-    /// 走这条路径。
-    /// </para>
-    /// <para>
-    /// 本次编译新声明的强类型 Id 尚未实现该接口（实现由生成代码补充），因此回退到按单参数构造函数推断。
-    /// 判断顺序不能颠倒：所有具名类型都满足 <see cref="INamedTypeSymbol"/>，若让构造函数分支先行，
-    /// 会同时引入两类缺陷——类型没有单参数构造函数时取首个元素直接抛异常；引用类型 <c>record</c> 会额外
-    /// 生成 <c>Foo(Foo original)</c> 复制构造函数，主构造函数参数多于一个时会把该记录自身误判为基元类型。
-    /// </para>
-    /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// 该类型既未实现 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>，也不具备单参数构造函数。
     /// </exception>
@@ -300,48 +563,29 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 自内向外取出包含类型链，反转成最外层在前，并逐层渲染为可重开该类型的 partial 声明。
     /// </summary>
-    /// <remarks>
-    /// 这里刻意返回「拼接好的字符串 + 层数」而不是集合：本类型是 <see langword="readonly"/> record struct，
-    /// 描述符靠成员级相等性去重（<see cref="StronglyTypedIdDiscovery.Discover"/> 的 <c>Distinct</c>），
-    /// 而集合类型（如 <c>ImmutableArray&lt;T&gt;</c>）只按底层数组引用比较 —— 一旦相等性失效，同一个
-    /// hint name 会被 <c>AddSource</c> 两次，生成器整个产出被丢弃，而编译器只报一条 CS8785 警告。
-    /// </remarks>
-    private static (string Declarations, int Depth) GetContainingTypeDeclarations(ITypeSymbol type)
+    private static (string Declarations, int Depth, bool IsInGenericContainer) GetContainingTypeDeclarations(ITypeSymbol type)
     {
         var levels = new List<string>();
+        var isInGenericContainer = false;
 
         for (var container = type.ContainingType; container is not null; container = container.ContainingType)
         {
+            if (container.TypeParameters.Length > 0)
+            {
+                isInGenericContainer = true;
+            }
+
             levels.Add(GetContainingTypeDeclaration(container));
         }
 
-        // 向上取到的是最内层在前，而生成代码要从最外层开始逐层包进去。
         levels.Reverse();
 
-        return (string.Join("\n", levels), levels.Count);
+        return (string.Join("\n", levels), levels.Count, isInGenericContainer);
     }
 
     /// <summary>
     /// 把包含类型渲染成可重开它的 partial 声明，形如 <c>public partial class Outer</c>。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 只写可访问性与类型种类关键字，其余修饰符（<c>static</c> / <c>abstract</c> / <c>sealed</c> /
-    /// <c>readonly</c> / <c>ref</c> / <c>new</c>）一律不写 —— 实测 partial 各段只要「没说」就不冲突
-    /// （逐项省略均不报错），而「说错」才是错误：<c>abstract</c> 不能加在接口上、<c>sealed</c> 不能加在
-    /// 值类型上，两者都是 CS0106。写全套修饰符反而会在接口容器与结构容器上直接生成非法代码。
-    /// </para>
-    /// <para>
-    /// 可访问性必须照抄：嵌套类型省略可访问性时隐式为 <c>private</c>，与使用者写下的 <c>public</c> /
-    /// <c>internal</c> 相冲会 CS0262，而显式写出真实的可访问性则必然一致。
-    /// </para>
-    /// <para>
-    /// 种类关键字不能只看 <see cref="ITypeSymbol.TypeKind"/>：<c>record</c> 与 <c>class</c>
-    /// 的 <see cref="TypeKind"/> 同为 <see cref="TypeKind.Class"/>，必须结合
-    /// <see cref="ITypeSymbol.IsRecord"/> 才能区分，否则 <c>record Outer</c> 会被重开成
-    /// <c>partial class Outer</c>，种类不一致报错。
-    /// </para>
-    /// </remarks>
     private static string GetContainingTypeDeclaration(INamedTypeSymbol type)
     {
         var keyword = type switch
@@ -353,7 +597,74 @@ internal readonly record struct StronglyTypedIdInfo
             _ => "class",
         };
 
-        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {type.Name}";
+        // 必须复现类型参数表（否则 CS0693），但约束子句只需在任一 partial 上声明一次，故省略 where。
+        var typeParameterList = type.TypeParameters.Length > 0
+            ? "<" + string.Join(", ", type.TypeParameters.Select(parameter => parameter.Name)) + ">"
+            : string.Empty;
+
+        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {type.Name}{typeParameterList}";
+    }
+
+    /// <summary>
+    /// 判断该 Id 是否带有（或本次生成即将产出）指定的内嵌转换器类型。
+    /// </summary>
+    private static bool WillHaveNestedType(ITypeSymbol type, string nestedTypeName)
+        => type is INamedTypeSymbol namedType
+            && (namedType.GetTypeMembers(nestedTypeName).Length > 0
+                || !namedType.Interfaces.Any(IsStronglyTypedIdInterface));
+
+    /// <summary>
+    /// 把基元类型的显示名归一化为不含命名空间限定的短名。
+    /// </summary>
+    internal static string GetPrimitiveIdTypeShortName(string primitiveIdTypeName)
+    {
+        var separatorIndex = primitiveIdTypeName.LastIndexOf('.');
+
+        return separatorIndex < 0 ? primitiveIdTypeName : primitiveIdTypeName[(separatorIndex + 1)..];
+    }
+
+    /// <summary>
+    /// 把类型显示名净化成合法的 hint 名：剔除尖括号、逗号与空格。
+    /// </summary>
+    /// <remarks>
+    /// 剔除会让不同的全名塌陷到同一个 hint 名（<c>Ns.Outer&lt;T&gt;.Inner</c> 与 <c>Ns.OuterT.Inner</c> 都会变成
+    /// <c>Ns.OuterT.Inner</c>），撞名时 <c>AddSource</c> 抛重复 hint 名，最终降级成 STIA0012。因此只要确实剔掉了字符，
+    /// 就在末尾追加原始全名的稳定哈希，把塌陷的两个名字重新分开。
+    /// </remarks>
+    private static string SanitizeHintName(string fullName)
+    {
+        var sanitized = fullName
+            .Replace("<", string.Empty)
+            .Replace(">", string.Empty)
+            .Replace(",", string.Empty)
+            .Replace(" ", string.Empty);
+
+        // 净化只会删字符，长度不变即代表一个字符都没动，此时保持 hint 名原样。
+        return sanitized.Length == fullName.Length
+            ? sanitized
+            : $"{sanitized}_{ComputeStableHash(fullName)}";
+    }
+
+    /// <summary>
+    /// 计算与进程无关的 32 位 FNV-1a 哈希，用作 hint 名的消歧后缀。
+    /// </summary>
+    /// <remarks>
+    /// 不能用 <see cref="string.GetHashCode()"/>：它按进程随机化，会让同一份源码在不同构建之间产出不同的 hint 名。
+    /// </remarks>
+    private static string ComputeStableHash(string value)
+    {
+        const uint OffsetBasis = 2166136261;
+        const uint Prime = 16777619;
+
+        var hash = OffsetBasis;
+
+        foreach (var character in value)
+        {
+            hash ^= character;
+            hash *= Prime;
+        }
+
+        return hash.ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -373,38 +684,160 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 判断给定类型是否实现了指定的 BCL 接口。
     /// </summary>
-    /// <remarks>
-    /// 判据是「简单名 + 所属命名空间为 <c>System</c>」，不能改回比较完整显示名：
-    /// <c>IUtf8SpanParsable&lt;TSelf&gt;</c> 是泛型接口，实现侧带类型实参
-    /// （<c>global::System.IUtf8SpanParsable&lt;global::System.Guid&gt;</c>），与字面量永远不相等。
-    /// 命名空间必须一并校验，否则使用者自定义的同名接口会被误判为具备该能力，
-    /// 进而在生成代码里调用并不存在的成员。
-    /// </remarks>
     private static bool ImplementsInterface(ITypeSymbol type, string interfaceName)
         => type.AllInterfaces.Any(@interface => @interface.Name == interfaceName
             && @interface.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == SystemNamespace);
 
     /// <summary>
-    /// 读取 <c>[StronglyTypedId]</c> 上指定命名实参的布尔值，未指定时返回 <see langword="false"/>。
+    /// 判断枚举是否标注了 <c>[System.Flags]</c>。
     /// </summary>
-    private static bool GetBooleanArgument(ITypeSymbol type, string argumentName)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == argumentName)
-            .Value.Value is true;
+    internal static bool HasFlagsAttribute(ITypeSymbol type)
+        => type.GetAttributes().Any(attribute =>
+            attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.FlagsAttribute");
 
     /// <summary>
-    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参指向的方法名。
+    /// 计算 <c>[Flags]</c> 枚举里「没有任何成员占用」的位，供 <c>TryParse</c> 做位校验。
     /// </summary>
     /// <remarks>
-    /// 命名实参会被写入程序集元数据，因此引用程序集里的强类型 Id 与本次编译新声明的走同一条读取路径，
-    /// 无需在生成器入口处另行传递。
+    /// <para>
+    /// <c>Enum.TryParse</c> 对任意数值文本都返回 <see langword="true"/>，<c>[Flags]</c> 枚举又不能用
+    /// <c>Enum.IsDefined</c> 收紧（位组合本身就是合法取值），于是改成「不许出现未定义的位」：
+    /// 掩码由全部成员的常量按位或取反得出，编译期算好，运行期只剩一次按位与。
+    /// </para>
+    /// <para>
+    /// 掩码按底层类型的宽度裁剪。<c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，不裁剪就会把整个掩码
+    /// 吃掉；裁剪后 <c>All = -1</c> 这类「全位已定义」的枚举得到 0，调用方据此跳过校验。
+    /// </para>
     /// </remarks>
-    private static string? GetValidatorName(ITypeSymbol type)
-        => type.GetAttributes()
-            .FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == AttributeName)
-            ?.NamedArguments
-            .FirstOrDefault(argument => argument.Key == ValidatorArgumentName)
-            .Value.Value as string;
+    /// <returns>未定义位的掩码；全部位都已定义（或无法确定底层类型）时为 <see langword="null"/>。</returns>
+    internal static ulong? GetFlagsEnumUndefinedBitsMask(ITypeSymbol enumType)
+    {
+        if (enumType is not INamedTypeSymbol { EnumUnderlyingType: { } underlying } namedEnum)
+        {
+            return null;
+        }
+
+        var width = GetIntegralBitWidth(underlying.SpecialType);
+
+        if (width == 0)
+        {
+            return null;
+        }
+
+        var widthMask = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
+        var definedBits = 0UL;
+
+        foreach (var member in namedEnum.GetMembers())
+        {
+            if (member is IFieldSymbol { HasConstantValue: true, ConstantValue: { } constant })
+            {
+                definedBits |= ToBits(constant);
+            }
+        }
+
+        var undefinedBits = ~definedBits & widthMask;
+
+        return undefinedBits == 0 ? null : undefinedBits;
+    }
+
+    /// <summary>
+    /// 取整型基元类型的位宽；非整型返回 0。
+    /// </summary>
+    internal static int GetIntegralBitWidth(SpecialType type)
+        => type switch
+        {
+            SpecialType.System_SByte or SpecialType.System_Byte => 8,
+            SpecialType.System_Int16 or SpecialType.System_UInt16 => 16,
+            SpecialType.System_Int32 or SpecialType.System_UInt32 => 32,
+            SpecialType.System_Int64 or SpecialType.System_UInt64 => 64,
+            _ => 0,
+        };
+
+    /// <summary>
+    /// 把枚举成员的常量值按位展开成 <see cref="ulong"/>（负数按补码展开，随后由宽度掩码裁掉高位）。
+    /// </summary>
+    internal static ulong ToBits(object constant)
+        => constant switch
+        {
+            sbyte value => unchecked((ulong)value),
+            byte value => value,
+            short value => unchecked((ulong)value),
+            ushort value => value,
+            int value => unchecked((ulong)value),
+            uint value => value,
+            long value => unchecked((ulong)value),
+            ulong value => value,
+            _ => 0UL,
+        };
+
+    /// <summary>
+    /// 判断给定类型是否暴露了公开的静态 <c>TryParse(ReadOnlySpan&lt;TElement&gt;, IFormatProvider, out T)</c> 重载。
+    /// </summary>
+    internal static bool HasPublicStaticTryParse(ITypeSymbol type, SpecialType spanElementType)
+        => type.GetMembers("TryParse").Any(member =>
+            member is IMethodSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 3 } method
+            && method.Parameters[0].Type is INamedTypeSymbol spanType
+            && spanType.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.ReadOnlySpan<T>"
+            && spanType.TypeArguments.Length == 1
+            && spanType.TypeArguments[0].SpecialType == spanElementType
+            && method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.IFormatProvider"
+            && method.Parameters[2].RefKind == RefKind.Out);
+
+    /// <summary>
+    /// 判定基元 <c>TryFormat</c> 的直呼形态，用于避免值类型基元在格式化时装箱。
+    /// </summary>
+    /// <param name="type">基元类型。</param>
+    /// <param name="spanElementType">目标缓冲区元素类型：UTF-16 为 <c>char</c>，UTF-8 为 <c>byte</c>。</param>
+    internal static TryFormatKind GetTryFormatKind(ITypeSymbol type, SpecialType spanElementType)
+    {
+        var hasProviderOverload = false;
+        var hasPlainOverload = false;
+
+        // 沿基类链取成员：GetMembers 只返回声明成员。当前 24 种基元都是 sealed 值类型或 string，
+        // 没有继承来的 TryFormat，但这条判定是「按成员名 + 参数形状」猜的 —— 将来若加入某个自带
+        // TryFormat 的自定义结构体基元，漏看基类会静默落到 Interface 分支（每次格式化都装箱）。
+        var members = new List<ISymbol>();
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            members.AddRange(current.GetMembers("TryFormat"));
+        }
+
+        foreach (var member in members)
+        {
+            if (member is not IMethodSymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 3 or 4 } method
+                || method.Parameters[0].Type is not INamedTypeSymbol spanType
+                || spanType.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != "global::System.Span<T>"
+                || spanType.TypeArguments.Length != 1
+                || spanType.TypeArguments[0].SpecialType != spanElementType
+                || method.Parameters[1].RefKind != RefKind.Out
+                || method.Parameters[2].Type is not INamedTypeSymbol formatType
+                || formatType.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != "global::System.ReadOnlySpan<T>"
+                || formatType.TypeArguments.Length != 1
+                || formatType.TypeArguments[0].SpecialType != SpecialType.System_Char)
+            {
+                continue;
+            }
+
+            if (method.Parameters.Length == 4)
+            {
+                hasProviderOverload = true;
+            }
+            else
+            {
+                hasPlainOverload = true;
+            }
+        }
+
+        return hasProviderOverload
+            ? TryFormatKind.Direct
+            : hasPlainOverload
+                ? TryFormatKind.DirectWithoutProvider
+                : TryFormatKind.Interface;
+    }
+
+    /// <summary>
+    /// 把前缀归一化：空串与纯空白一律视为「未设置」（<see langword="null"/>）。
+    /// </summary>
+    private static string? NormalizePrefix(string? prefix)
+        => string.IsNullOrWhiteSpace(prefix) ? null : prefix;
 }

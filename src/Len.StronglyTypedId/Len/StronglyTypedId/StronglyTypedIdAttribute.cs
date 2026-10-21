@@ -3,70 +3,78 @@
 /// <summary>
 /// Marks a partial record (or record struct) as a strongly typed id.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The annotated type must declare exactly one primary constructor parameter, and that parameter
-/// must be named <c>Value</c>. The source generator then emits the strongly typed id implementation,
-/// the <c>IParsable&lt;TSelf&gt;</c> support and the JSON / Entity Framework Core / Swagger integrations.
-/// </para>
-/// <para>
-/// The generator constrains the <em>shape</em> of a strongly typed id, not its <em>values</em>. Set
-/// <see cref="Validator"/> to reject invalid values at the construction entry points.
-/// </para>
-/// </remarks>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false, AllowMultiple = false)]
 public class StronglyTypedIdAttribute : Attribute
 {
     /// <summary>
     /// Gets or sets the name of a static validator method declared on the strongly typed id type itself.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The method must be a static member of the annotated type with the signature
-    /// <c>static bool Validate(TPrimitiveId value)</c>, returning <see langword="true"/> when
-    /// <paramref name="value"/> is acceptable:
-    /// </para>
-    /// <code>
-    /// [StronglyTypedId(Validator = nameof(Validate))]
-    /// public partial record struct OrderId(Guid Value)
-    /// {
-    ///     private static bool Validate(Guid value) =&gt; value != Guid.Empty;
-    /// }
-    /// </code>
-    /// <para>
-    /// The generated <c>Create</c> and <c>TryParse</c> members call the method named here, so the JSON and
-    /// Entity Framework Core integrations — which all construct through <c>Create</c> — reject invalid values
-    /// too. Constructing the record through its primary constructor directly is <em>not</em> intercepted:
-    /// the primary constructor is declared by you, and a source generator cannot inject code into it.
-    /// </para>
-    /// <para>
-    /// When this property is left unset, no validator code is emitted at all and the generated members behave
-    /// exactly as if the property did not exist.
-    /// </para>
-    /// </remarks>
     public string? Validator { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is generated
-    /// for the strongly typed id.
+    /// Gets or sets the name of a static normalizer method declared on the strongly typed id type itself.
+    /// </summary>
+    public string? Normalizer { get; set; }
+
+    /// <summary>
+    /// Gets or sets the exception type thrown by <c>Create</c> when the validator rejects a value. The type
+    /// must derive from <see cref="Exception"/>, must not be abstract, and must expose a constructor that
+    /// takes a single <see cref="string"/> message. Defaults to <see cref="ArgumentException"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This is off by default, and it is <em>not</em> turned on automatically when an integration is referenced.
-    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> changes the global semantics of the type:
-    /// <see cref="System.ComponentModel.TypeDescriptor"/> is the landing point of <c>XmlSerializer</c>,
-    /// <c>IConfiguration</c> binding, XAML and the WinForms/WPF design-time surfaces, and a type may already
-    /// carry its own <c>[TypeConverter]</c> — generating one on top of that would collide.
-    /// </para>
-    /// <para>
-    /// Turning it on also closes the read half of Newtonsoft.Json dictionary keys: restoring a key from its text
-    /// goes through <c>TypeDescriptor</c> rather than <c>JsonConverter.ReadJson</c>, so a custom
-    /// <c>JsonConverter</c> cannot take over that path.
-    /// </para>
-    /// <code>
-    /// [StronglyTypedId(TypeConverter = true)]
-    /// public partial record struct OrderId(Guid Value);
-    /// </code>
+    /// Only the validator rejection in <c>Create</c> uses this type. <c>Parse</c> throws
+    /// <see cref="FormatException"/> instead, following the <see cref="IParsable{TSelf}"/> convention:
+    /// its failure covers text that is not a valid id at all, which is a malformed-input error rather
+    /// than a domain-rule violation.
     /// </remarks>
+    public Type? ExceptionType { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a validator rejection leaves the rejected value out of the
+    /// exception message. The default is <see langword="false"/>, which keeps the value in the message.
+    /// </summary>
+    /// <remarks>
+    /// The rejected text travels with the exception message into logs, APM traces and error reports. For an
+    /// id wrapping <see cref="string"/> that text is user input — an e-mail address, a phone number, a token
+    /// fragment — often rejected precisely because it is malformed, but still personal data. Turning this on
+    /// yields <c>The value is not a valid OrderId.</c> instead of
+    /// <c>The value '...' is not a valid OrderId.</c>.
+    /// </remarks>
+    public bool RedactValidationMessage { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is
+    /// generated for the strongly typed id.
+    /// </summary>
     public bool TypeConverter { get; set; }
+
+    /// <summary>
+    /// Gets or sets which integration code is generated for the strongly typed id. The default is
+    /// <see cref="StronglyTypedIdIntegrations.Default"/>, which means "generate whatever the compilation
+    /// references".
+    /// </summary>
+    /// <remarks>
+    /// This is a filter, not a switch: an integration is only generated when the compilation references its
+    /// assembly <em>and</em> the corresponding flag is set. <see cref="StronglyTypedIdIntegrations.None"/>
+    /// suppresses every integration but leaves the core implementation untouched, and does not affect an
+    /// explicitly enabled <see cref="TypeConverter"/>.
+    /// </remarks>
+    public StronglyTypedIdIntegrations Integrations { get; set; }
+
+    /// <summary>
+    /// Gets or sets the shape the strongly typed id takes in JSON. The default is
+    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>.
+    /// </summary>
+    public JsonShape JsonShape { get; set; }
+
+    /// <summary>
+    /// Gets or sets a literal prefix carried by the canonical text form of the strongly typed id.
+    /// </summary>
+    public string? Prefix { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the canonical text form is read back when <see cref="Prefix"/> is configured. The
+    /// default is <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/>.
+    /// </summary>
+    public PrefixReadMode PrefixReadMode { get; set; }
 }

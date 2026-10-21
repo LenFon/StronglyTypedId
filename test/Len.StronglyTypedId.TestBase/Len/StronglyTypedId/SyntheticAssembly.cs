@@ -38,7 +38,7 @@ public static class SyntheticAssembly
                 () => Emit(assemblyName, version),
                 LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
-    private static MetadataReference Emit(string assemblyName, string version)
+    private static PortableExecutableReference Emit(string assemblyName, string version)
     {
         var source = $$"""
             using System.Reflection;
