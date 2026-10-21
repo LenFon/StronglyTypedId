@@ -140,8 +140,10 @@ jobs:
       # 会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的工程会解析出并不存在的
       # bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1 让整步失败
       # （--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。
+      # 下面这份清单必须与 test/ 下所有双目标工程保持一致：漏登记不会报错，只会静默少跑一条腿
+      # （Testing.Test 就漏过一次 —— 它的 net8.0 目标自加入起从未在 CI 上执行）。
       #
-      # dotnet-coverage 一次只包一条命令，故用 bash -c 把三个工程串起来共享同一个采集会话。
+      # dotnet-coverage 一次只包一条命令，故用 bash -c 把四个工程串起来共享同一个采集会话。
       # 内层必须自行累积退出码：没有 set -e 时 bash -c 的返回值取自最后一条命令，若前两个工程失败
       # 而 Generators 通过，整条腿会被误判为成功。
       run: |
@@ -152,6 +154,7 @@ jobs:
             rc=0
             dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal || rc=1
             dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal || rc=1
+            dotnet test --project test/Len.StronglyTypedId.Testing.Test --framework net8.0 --no-build --verbosity normal || rc=1
             dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal || rc=1
             exit $rc
           '
