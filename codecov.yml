@@ -4,12 +4,17 @@
 # 以及 Dapper / Microsoft.CodeAnalysis.Testing 这些测试依赖。它们把总覆盖率稀释到 40% 左右
 # （实测 6207/15491 行），于是「跌 1%」这种阈值永远不会被触发 —— 门槛形同虚设。
 #
-# 所以先用 ignore 把它们剔出去，只留四个随包发布的程序集：
-#   Len.StronglyTypedId / .Generators / .Testing / .Testing.AutoFixture
-# 剔除后本机实测（2026-10-21，42 个文件 / 4064 行）：net8.0 单腿 94.65%、net10.0 单腿 95.05%、
-# 两者并集 95.05%。net8.0 腿只跑四个测试工程，是 net10.0 的子集，所以并集与 net10.0 单腿一致 ——
+# 所以先用 ignore 把它们剔出去，只留真正发布到 nuget.org 的两个包：
+#   Len.StronglyTypedId / Len.StronglyTypedId.Generators
+# Testing 与 Testing.AutoFixture 尚未发布（common.props 里 IsPackable 默认 false，只有这两个包打开），
+# 把它们算进来只会稀释真实信号 —— 覆盖率应该衡量「发出去的东西」，而不是仓库里所有能编译的代码。
+#
+# 剔除后本机实测（2026-10-21，合并单报告口径，35 个文件 / 3919 行）：95.00%。
+# 拆开看：主包 18/21（85.71%）、生成器包 3705/3898（95.05%）。主包行数极少（几乎全是接口与特性），
+# 一个未覆盖的分支就能拉动 4 个百分点，看趋势时以生成器包为准。
+#
+# CI 是一次 dotnet test 跑完两个 TFM、只上传一份不带 flag 的报告（见 build-and-test.yml）：
 # 分 TFM 的报告没带来额外信息，却要多付一次 dotnet-coverage 启动、一次上传和一次 Codecov 结算。
-# 故 CI 改为一次 dotnet test 跑完两个 TFM、只上传一份不带 flag 的报告（见 build-and-test.yml）。
 # （旧注释里的 96.83% / 3056 行是 2026-10-19 的口径，代码此后增长，已不适用。）
 
 coverage:
@@ -40,12 +45,16 @@ comment:
   # 覆盖率没变化就不发评论，避免每个 PR 都刷一条「0% 变化」。
   require_changes: true
 
-# 只统计随包发布的程序集。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
+# 只统计真正发布出去的两个包。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
 ignore:
   - "test/**"
   - "tools/**"
   - "samples/**"
   - "bench/**"
+  # 尚未发布的两个 Testing 包（见文件头）。它们有自己的测试，覆盖率很高，但既然不发出去，
+  # 就不该出现在发布物的覆盖率里 —— 否则「主包覆盖率」会被这两个包的行数摊薄。
+  - "src/Len.StronglyTypedId.Testing/**"
+  - "src/Len.StronglyTypedId.Testing.AutoFixture/**"
   # 下面两条是保险：这两个依赖的源码路径来自嵌入 PDB 的虚拟路径（`/_/Dapper/...`），
   # Codecov 通常无法映射回仓库而自动丢弃；显式写上，免得哪天映射规则变了又被算进来。
   - "**/Dapper/**"
