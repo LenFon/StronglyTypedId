@@ -135,29 +135,23 @@ jobs:
       # dotnet-coverage 采集会话，而两个会话并发是否互相干扰无法在本机验证（本机 bash 不可用），
       # 与其在 CI 上赌偶发失败，不如用确定性换这二十来秒。测试提速后两条腿合计约一分钟。
       #
-      # 为什么 net8.0 腿要逐工程调用而不是解决方案级：Packaging.Test 只目标 net10.0（包内容断言与
-      # 测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），而 MTP 模式的 dotnet test 在解决方案级
-      # 会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的工程会解析出并不存在的
-      # bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1 让整步失败
-      # （--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。
-      # 下面这份清单必须与 test/ 下所有双目标工程保持一致：漏登记不会报错，只会静默少跑一条腿
-      # （Testing.Test 就漏过一次 —— 它的 net8.0 目标自加入起从未在 CI 上执行）。
+      # 为什么 net8.0 腿用 --test-modules 通配而不是 --framework：Packaging.Test 只目标 net10.0
+      # （包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），而 MTP 模式的
+      # dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的工程
+      # 会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1
+      # 让整步失败。--test-modules 反过来按「已构建产物」挑模块，Packaging.Test 没有 net8.0 产物
+      # 就自然落选，不必维护工程清单（上一版逐工程列举，Testing.Test 加入时漏登记，它的 net8.0
+      # 目标有一段时间没在 CI 上跑过）。注意 --test-modules 与 --solution / --project / --framework
+      # 互斥，只能在仓库根裸跑。
       #
-      # dotnet-coverage 一次只包一条命令，故用 bash -c 把四个工程串起来共享同一个采集会话。
-      # 内层必须自行累积退出码：没有 set -e 时 bash -c 的返回值取自最后一条命令，若前两个工程失败
-      # 而 Generators 通过，整条腿会被误判为成功。
+      # 代价是 glob 少匹配（改了 OutputPath、工程改名、TFM 变化）不会报错，只会静默少跑几个模块：
+      # 动到构建输出布局或测试工程集合时，要回头核对这条通配仍能匹配到全部双目标工程。
       run: |
         mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net8.cobertura.xml \
-          bash -c '
-            rc=0
-            dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal || rc=1
-            dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal || rc=1
-            dotnet test --project test/Len.StronglyTypedId.Testing.Test --framework net8.0 --no-build --verbosity normal || rc=1
-            dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal || rc=1
-            exit $rc
-          '
+          dotnet test --test-modules "**/bin/Debug/net8.0/*Test.dll" \
+            --no-build --verbosity normal
     - name: Test + coverage (net10.0)
       # 解决方案级调用即可：所有测试工程都有 net10.0 目标，MTP 会并行调度各模块。
       # 用 dotnet-coverage 直接包住测试进程采集覆盖率 —— MTP 原生扩展在本仓库只产出空数据
