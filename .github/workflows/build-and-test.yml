@@ -67,6 +67,12 @@ on:
       - ".github/workflows/publish-nuget.yml"
   workflow_dispatch:
 
+# 同一分支连推多次时，旧运行已经没有意义：取消它能把 runner 让给最新提交。
+# 只对 PR 取消 —— push 到 dev/main 的运行保留完整记录，便于回溯某次合并对应的结果。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
 
@@ -118,22 +124,56 @@ jobs:
       # 每个 tag 都必须有对应小节、日期与 tag 提交日期一致、文末链接不缺。发布前忘了写变更说明时，
       # 这一步会点名是哪个 tag 没有小节，而不是等使用者去 NuGet 页面上猜。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-changelog
-    - name: Test (net8.0 行为校验)
-      # Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），
-      # 而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的
-      # 工程会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1 让整步失败
-      # （--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。故与 pack 步骤同理，逐工程调用，
-      # 只跑真正双目标的三个测试工程。
-      run: |
-        dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal
-        dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal
-        dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal
     - name: Restore coverage tool
+      # 必须排在下面的合并测试步骤之前：覆盖率那条腿要用 dotnet-coverage。
       run: dotnet tool restore
-    - name: Test + coverage (net10.0)
-      # 用 dotnet-coverage 直接包住测试进程采集覆盖率：MTP 原生扩展在本仓库只产出空数据（10 字节空壳），故改用此方式。
-      # 仅 net10.0 参与覆盖率；net8.0 仅做行为校验（见上一步）。
-      run: dotnet tool run dotnet-coverage -- collect -f cobertura -o TestResults/coverage.net10.cobertura.xml dotnet test --framework net10.0 --no-build --verbosity normal
+    - name: Test (net8.0 行为校验 + net10.0 覆盖率，两腿并行)
+      # 两腿互不依赖，串行跑合计约 6m52s（net8 3m33s + net10 3m19s），占整个 job 的 80%，
+      # 是这条流水线唯一的瓶颈。实测这套测试几乎不吃多核（同一份 Generators.Test 在 24 核上 167s、
+      # 在 4 核 runner 上约 200s，只差 20% —— Roslyn 编译链本身偏串行），因此并发重叠接近线性。
+      # GitHub Actions 无法并行同一 job 内的 step，而拆成 matrix job 会改变 check 名称（可能让分支保护
+      # 里登记的必需检查失配），故在同一个 step 内用后台进程并发，各自写独立日志、最后统一聚合退出码。
+      #
+      # net8.0 腿：Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack
+      # 重复一遍），而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含
+      # 该 TFM 的工程会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1
+      # 让整步失败（--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。故与 pack 步骤同理，
+      # 逐工程调用，只跑真正双目标的三个测试工程。
+      # net10.0 腿：用 dotnet-coverage 直接包住测试进程采集覆盖率 —— MTP 原生扩展在本仓库只产出空数据
+      # （10 字节空壳），故改用此方式。仅 net10.0 参与覆盖率，统计范围与阈值仍由 codecov.yml 决定。
+      run: |
+        set -uo pipefail
+        mkdir -p TestResults
+
+        # 注意：函数内必须自行累积退出码。没有 set -e 时函数的返回值取自最后一条命令，
+        # 若前两个工程失败而 Generators 通过，整条腿会被误判为成功。
+        run_net8() {
+          local rc=0
+          dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal || rc=1
+          dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal || rc=1
+          dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal || rc=1
+          return $rc
+        }
+
+        run_net8 > TestResults/net8.log 2>&1 &
+        net8_pid=$!
+
+        dotnet tool run dotnet-coverage -- collect -f cobertura \
+          -o TestResults/coverage.net10.cobertura.xml \
+          dotnet test --framework net10.0 --no-build --verbosity normal \
+          > TestResults/net10.log 2>&1 &
+        net10_pid=$!
+
+        # 两条腿都等完再判，避免一条腿失败时另一条的日志被截断。
+        status=0
+        wait "$net8_pid" || status=1
+        wait "$net10_pid" || status=1
+
+        echo "===== net8.0（行为校验）====="
+        cat TestResults/net8.log
+        echo "===== net10.0（覆盖率）====="
+        cat TestResults/net10.log
+        exit $status
     - name: Codecov
       # v5 起 action 只是 Codecov Wrapper 的外壳（CLI 由它自己下载并做 PGP 校验），入参沿用
       # `files` / `token` 不变；v3 及以下走的是已废弃的 uploader，迟早会被服务端拒绝。
