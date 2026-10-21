@@ -39,6 +39,15 @@ change set rather than reproducing every commit.
   that drops the argument. `Parse` throws `FormatException` instead, because its failure also covers
   text that is not an id at all. `[assembly: StronglyTypedIdDefaults(ExceptionType = ...)]` sets an
   assembly-wide default.
+- `RedactValidationMessage` — drop the rejected value from the validator rejection message, so it reads
+  `The value is not a valid OrderId.` instead of `The value '...' is not a valid OrderId.` That text
+  otherwise travels with the exception into logs, APM traces and error reports, and for an id wrapping
+  `string` it is user input. `[assembly: StronglyTypedIdDefaults(RedactValidationMessage = true)]` turns
+  it on for a whole assembly; a type-level `false` cannot undo that, because redaction is a safety
+  policy rather than a per-type preference.
+- `STIA0023` — a `Prefix` whose first character can also start the primitive's own text, so `Parse`
+  cannot tell the prefix from the value. `STIA0024` — bits set in `Integrations` that match no known
+  flag; they were silently ignored before.
 - Text prefixes: `Prefix` writes a constant prefix in `ToString` and strips it in `Parse`;
   `PrefixReadMode` chooses between accepting a bare value (`Lenient`) and rejecting it (`Strict`).
 - `JsonShape` selects the serialized shape: the bare primitive (`Primitive`) or
@@ -54,6 +63,10 @@ change set rather than reproducing every commit.
   sets the default, and an id declared in a referenced assembly honours **its own** assembly default.
   `TypeConverter` is deliberately not part of the mask. Requesting an integration whose assembly is not
   referenced is reported as `STIA0019`.
+- MessagePack and MongoDB BSON integrations — a generated `IMessagePackFormatter<TId>` /
+  `IBsonSerializer<TId>`, wired up by `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` and
+  `StronglyTypedIds.RegisterBsonSerializers()`. Both write the primitive value itself: the text prefix
+  belongs to the text form (`ToString()` / JSON) and never reaches the payload.
 - `[StronglyTypedIdInstance]` declares named static instances — `Unknown`, `Unspecified`, `System` —
   as `public static readonly` fields. The value is written as the primitive's invariant text, validated
   and translated into a literal at compile time, and constructed through `Create`, so an instance always
@@ -113,6 +126,16 @@ change set rather than reproducing every commit.
   against (`id == default`) is not reported. Projects building with `TreatWarningsAsErrors` will now
   fail on a bypassed validator; restore the previous behaviour with
   `dotnet_diagnostic.STIA0011.severity = suggestion`.
+- **Breaking for prefixed ids:** `ToString(string?, IFormatProvider?)` and `TryFormat(...)` now keep the
+  text prefix for a non-empty `format` too. They used to fall back to the bare primitive, so
+  `$"{id:N}"` printed `d8ac85d4…` while `id.ToString()` printed `ord_d8ac85d4…` — the same id in two
+  shapes, and the prefixed one lost wherever a format string was involved. The prefix is part of the
+  canonical text form, so it is now unconditional and `format` only reaches the primitive. Ids without
+  a prefix are byte-for-byte unchanged.
+- Generator discovery skips referenced assemblies that do not reference `Len.StronglyTypedId`. Such an
+  assembly cannot declare an id (that needs `IStronglyTypedId<,>`), yet every module used to have its
+  whole type tree walked — `System.Private.CoreLib` alone contributes tens of thousands of symbols.
+  The check reads `ReferencedAssemblyNames`, which is pure metadata.
 
 ### Removed
 
@@ -125,6 +148,14 @@ change set rather than reproducing every commit.
 
 ### Fixed
 
+- A JSON token of the wrong type now raises the serializer's own exception instead of
+  `InvalidOperationException`. The generated converters threw `InvalidOperationException` from the
+  `switch` arm that handles an unexpected token — a `string`-backed id read from a number, or
+  (Newtonsoft.Json) a `null` handed to a value-type id — while every structural error in the same file
+  already threw `JsonException` / `JsonSerializationException`. A caller following the documented
+  contract, `catch (JsonException)`, therefore missed this path, and the exception arrived without the
+  JSON path the serializer attaches to its own exception types. Both now throw `JsonException` /
+  `JsonSerializationException`.
 - A `BigInteger`-backed id lost its value under System.Text.Json. `BigInteger` ships no built-in
   converter, so the generated converter fell back to `JsonSerializer.Serialize(writer, primitiveId, options)`,
   which serialized the struct's public properties (`{"IsPowerOfTwo":false,…,"Sign":1}`) and read back as
@@ -215,6 +246,25 @@ change set rather than reproducing every commit.
   `AddSource` then threw on the duplicate and the whole id degraded to `STIA0012`. A name that actually
   lost characters now gets a stable FNV-1a suffix derived from the original full name, so the two stay
   distinct across builds and machines.
+- A string-backed id used as a `Dictionary` key threw `ArgumentException` instead of `JsonException`
+  when its validator rejected the key. `ReadAsPropertyName` called `Create`, so a rejected value escaped
+  `JsonSerializer.Deserialize` as the raw `ArgumentException` (or the configured `ExceptionType`),
+  breaking the converter contract that every failure is a `JsonException`. It now goes through
+  `TryCreate` and throws `JsonException`, like the prefixed and non-string branches already did.
+- A `Half`-backed id rejected named-instance values that `Half.Parse` accepts. The compile-time check ran
+  through `float` and refused `NaN`, `±Infinity` and anything above `65504`, while `(65504, 65520)` merely
+  rounds back to the largest finite value (`65519.9` → `65504`). `NaN` and `±Infinity` now emit the
+  matching `Half` constants, and the range check uses the real overflow midpoint `65520`, so only values
+  that would round to infinity are rejected.
+- `Len.StronglyTypedId.Testing` never produced a negative `int` / `long` or a `ulong` above
+  `long.MaxValue`: the built-in factory used the non-negative `Random.Next()` / `NextInt64()` overloads.
+  Samples now span the full range, so the negative-value paths (formatting, ordering, database round
+  trips) are actually exercised by `Any.Id<T>()`.
+- The `STIA0005` code fix silently dropped parameters. Its title promised a single-parameter primary
+  constructor, but the fix replaced the whole parameter list with `(Guid Value)`, so
+  `record OrderId(Guid Value, string Name)` lost `Name` without a word. The fix still has to drop them —
+  the diagnostic demands exactly one parameter — but the title now says so and names the replacement:
+  "Replace with a single-parameter primary constructor (Guid Value); other parameters are removed".
 
 ## [1.3.0] - 2026-10-07
 

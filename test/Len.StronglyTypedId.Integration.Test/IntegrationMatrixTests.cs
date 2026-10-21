@@ -1,6 +1,5 @@
 using System.Data;
 using System.Diagnostics.CodeAnalysis;
-using System.Numerics;
 using System.Reflection;
 using Dapper;
 using FluentAssertions;
@@ -22,42 +21,14 @@ public class IntegrationMatrixTests
     /// <summary>
     /// 每个基元取一个「普通」值：非默认、非边界，避免把断言变成边界测试。
     /// </summary>
-    private static readonly Dictionary<Type, object> _sampleValues = new()
-    {
-        [typeof(Guid)] = Guid.Parse("3f2c1b4e-0000-4000-8000-000000000001"),
-        [typeof(string)] = "abc",
-        [typeof(char)] = 'A',
-        [typeof(byte)] = (byte)42,
-        [typeof(sbyte)] = (sbyte)-42,
-        [typeof(short)] = (short)-1234,
-        [typeof(ushort)] = (ushort)1234,
-        [typeof(int)] = 42,
-        [typeof(uint)] = 42u,
-        [typeof(long)] = 42L,
-        [typeof(ulong)] = 42UL,
-        [typeof(Int128)] = (Int128)42,
-        [typeof(UInt128)] = (UInt128)42,
-        [typeof(decimal)] = 1.5m,
-        [typeof(Half)] = (Half)1.5,
-        [typeof(float)] = 1.5f,
-        [typeof(double)] = 1.5,
-        [typeof(DateTime)] = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc),
-        [typeof(DateTimeOffset)] = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.FromHours(8)),
-        [typeof(TimeSpan)] = TimeSpan.FromMinutes(90),
-        [typeof(DateOnly)] = new DateOnly(2020, 1, 2),
-        [typeof(TimeOnly)] = new TimeOnly(3, 4, 0),
-        [typeof(BigInteger)] = new BigInteger(42),
-        [typeof(SampleStatus)] = SampleStatus.Active,
-        [typeof(SampleAccess)] = SampleAccess.Read | SampleAccess.Write,
-        [typeof(SamplePriority)] = SamplePriority.VeryHigh,
-    };
+    private static IReadOnlyDictionary<Type, object> SampleValues => IntegrationSampleValues.ByPrimitive;
 
     [Fact]
     public void Dapper_Should_GenerateHandler_ForEveryPrimitive()
     {
         var covered = DapperHandlers().Select(handler => handler.PrimitiveType).ToHashSet();
 
-        covered.Should().Contain(_sampleValues.Keys, "每种基元都必须有 Dapper 处理器");
+        covered.Should().Contain(SampleValues.Keys, "每种基元都必须有 Dapper 处理器");
     }
 
     [Fact]
@@ -65,14 +36,14 @@ public class IntegrationMatrixTests
     {
         var covered = EfCoreConverters().Select(converter => converter.PrimitiveType).ToHashSet();
 
-        covered.Should().Contain(_sampleValues.Keys, "每种基元都必须有 EF Core 转换器");
+        covered.Should().Contain(SampleValues.Keys, "每种基元都必须有 EF Core 转换器");
     }
     [Fact]
     public void Dapper_Handler_Should_RoundTripEveryPrimitive()
     {
         foreach (var (idType, primitiveType, handler) in DapperHandlers())
         {
-            var value = _sampleValues[primitiveType];
+            var value = SampleValues[primitiveType];
             var expected = CreateId(idType, value);
             var parse = handler.GetType().GetMethod("Parse", BindingFlags.Public | BindingFlags.Instance)!;
 
@@ -95,7 +66,7 @@ public class IntegrationMatrixTests
     {
         foreach (var (idType, primitiveType, handler) in DapperHandlers())
         {
-            var id = CreateId(idType, _sampleValues[primitiveType]);
+            var id = CreateId(idType, SampleValues[primitiveType]);
             var setValue = handler.GetType().GetMethod("SetValue", BindingFlags.Public | BindingFlags.Instance)!;
             var parameter = new StubParameter();
 
@@ -129,7 +100,7 @@ public class IntegrationMatrixTests
     {
         foreach (var (idType, primitiveType, converter) in EfCoreConverters())
         {
-            var id = CreateId(idType, _sampleValues[primitiveType]);
+            var id = CreateId(idType, SampleValues[primitiveType]);
 
             // 同上：写出的必须是 Id 实际持有的值，归一化器可能已经改写过样本值。
             converter.ConvertToProvider(id).Should().Be(ValueOf(id), $"{idType.Name}：ConvertToProvider 必须写出基元值");

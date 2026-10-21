@@ -20,6 +20,9 @@
 		<PackageReference Include="Microsoft.EntityFrameworkCore" />
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+		<!-- 二进制序列化集成：使 MessagePackCodeGenerator / MongoDbCodeGenerator 在本编译里被门控触发。 -->
+		<PackageReference Include="MessagePack" />
+		<PackageReference Include="MongoDB.Bson" />
 		<!-- 测试断言库。 -->
 		<PackageReference Include="FluentAssertions" />
 		<!-- 显式钉定 Roslyn 版本，与生成器/CodeFix 程序集保持一致（5.9.0）。

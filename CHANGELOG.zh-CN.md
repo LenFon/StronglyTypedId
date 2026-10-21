@@ -31,6 +31,13 @@
   `System.Exception`、不能是抽象类，并具有可访问的、接收单个 `string` 消息的构造函数；否则报告
   `STIA0018`，代码修复可删掉该实参。`Parse` 抛的是 `FormatException`，因为它的失败还包含「文本根本
   不是 Id」。可用 `[assembly: StronglyTypedIdDefaults(ExceptionType = ...)]` 设置程序集级默认。
+- `RedactValidationMessage` —— 在校验拒绝消息中去掉被拒绝的原始值，消息变为
+  `The value is not a valid OrderId.` 而不是 `The value '...' is not a valid OrderId.`。那段原文会随
+  异常进入日志、APM 与错误上报，而对 `string` 基元的 Id 来说它就是用户输入。可用
+  `[assembly: StronglyTypedIdDefaults(RedactValidationMessage = true)]` 整库打开；逐类型写 `false`
+  无法撤销，因为脱敏是安全策略而非逐类型偏好。
+- `STIA0023` —— `Prefix` 的首字符也能开启基元自身的文本，导致 `Parse` 分不清前缀与取值。
+  `STIA0024` —— `Integrations` 里设置了不匹配任何已知标志的位；此前这些位被静默忽略。
 - 文本前缀：`Prefix` 在 `ToString` 中写入固定前缀、在 `Parse` 中将其剥离；`PrefixReadMode` 选择
   接受裸值（`Lenient`）还是拒绝裸值（`Strict`）。
 - `JsonShape` 选择序列化形态：裸基元（`Primitive`）或 `{ "value": ... }`（`Object`）。
@@ -44,6 +51,9 @@
   `[assembly: StronglyTypedIdDefaults(Integrations = ...)]` 设置默认值，且引用程序集里的 Id 会尊重
   **它自己所在程序集**的默认值。`TypeConverter` 有意不在掩码内。请求了未引用程序集的集成时报告
   `STIA0019`。
+- MessagePack 与 MongoDB BSON 集成 —— 生成 `IMessagePackFormatter<TId>` / `IBsonSerializer<TId>`，分别由
+  `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` 与 `StronglyTypedIds.RegisterBsonSerializers()`
+  接上。两者写入的都是基元值本身：文本前缀属于文本形（`ToString()` / JSON），不会进入载荷。
 - `[StronglyTypedIdInstance]` 声明命名静态实例（`Unknown` / `Unspecified` / `System` 之类），生成为
   `public static readonly` 字段。值以基元的不变文化文本形书写，在编译期校验并翻译成字面量，再经
   `Create` 构造——因此实例必然经过归一化与验证器，且 `Parse(instance.ToString())` 一定读得回来。
@@ -88,6 +98,13 @@
   `Normalizer` 的 Id 同样会触发该规则——直接构造出来的 Id 不是规范形。仅用于比较的 `default`
   （`id == default`）不报告。开启 `TreatWarningsAsErrors` 的项目将因绕过验证器而构建失败；如需恢复
   原有行为，设置 `dotnet_diagnostic.STIA0011.severity = suggestion`。
+- **对带前缀的 Id 属破坏性变更：** `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)` 在
+  `format` 非空时也保留文本前缀。此前会退回裸基元，于是 `$"{id:N}"` 打出 `d8ac85d4…`，而
+  `id.ToString()` 打出 `ord_d8ac85d4…` —— 同一个 Id 两种形态，凡涉及格式串的地方前缀就丢了。
+  前缀是规范文本形的一部分，现在无条件加上，`format` 只作用于基元。无前缀的 Id 产物逐字节不变。
+- 生成器的发现流程会跳过「没有引用 `Len.StronglyTypedId`」的被引用程序集。这类程序集不可能声明 Id
+  （那需要写 `IStronglyTypedId<,>`），但此前每个模块都要走一遍完整类型树 —— 光
+  `System.Private.CoreLib` 就贡献上万个符号。该判定读 `ReferencedAssemblyNames`，是纯元数据。
 
 ### 移除
 
@@ -98,6 +115,11 @@
 
 ### 修复
 
+- JSON 令牌类型不符时现在抛序列化库自己的异常，而不是 `InvalidOperationException`。生成的转换器在处理
+  意外令牌的 `switch` 分支里抛 `InvalidOperationException` —— 例如从数字读 `string` 基元的 Id，或
+  （Newtonsoft.Json）把 `null` 交给值类型 Id —— 而同文件里所有结构性错误抛的都是 `JsonException` /
+  `JsonSerializationException`。按文档契约 `catch (JsonException)` 的调用方因此漏掉这条路径，且异常不带
+  序列化库给自己异常类型补的 JSON 路径。两处现在都抛 `JsonException` / `JsonSerializationException`。
 - `BigInteger` 基元的 Id 在 System.Text.Json 下会丢值。`BigInteger` 没有内置转换器，生成的转换器落到
   `JsonSerializer.Serialize(writer, primitiveId, options)`，把结构体的公开属性序列化成
   `{"IsPowerOfTwo":false,…,"Sign":1}`，读回来则是 `default` —— 每次往返都静默丢数据。现在读写都走
@@ -167,6 +189,21 @@
   `Ns.Outer<T>.Inner` 会塌陷到真实存在的 `Ns.OuterT.Inner` 上；`AddSource` 因重复 hint 名抛异常，
   整个 Id 降级成 `STIA0012`。现在只要确实剔掉了字符，就在末尾追加由原始全名算出的稳定 FNV-1a 后缀，
   两者在不同构建、不同机器上都保持区分。
+- string 基元的 Id 作字典键、且键值被验证器拒绝时，抛的是 `ArgumentException` 而不是 `JsonException`。
+  `ReadAsPropertyName` 走的是 `Create`，于是被拒的值以原始 `ArgumentException`（或配置的 `ExceptionType`）
+  直接从 `JsonSerializer.Deserialize` 里逃出来，违反「转换器失败一律抛 `JsonException`」的契约。
+  现在改走 `TryCreate` 并抛 `JsonException`，与带前缀、非 string 两条分支一致。
+- `Half` 基元的 Id 会拒绝 `Half.Parse` 明明接受的命名实例取值。编译期校验借 `float` 代判，
+  把 `NaN`、`±Infinity` 以及一切大于 `65504` 的文本都判成非法，而 `(65504, 65520)` 只是舍入回
+  最大有限值（`65519.9` → `65504`）。现在 `NaN` 与 `±Infinity` 发射对应的 `Half` 常量，
+  范围判定改用真正的溢出中点 `65520` —— 只有会舍入成无穷的值才被拒。
+- `Len.StronglyTypedId.Testing` 从不生成负数 `int` / `long`，也不会生成大于 `long.MaxValue` 的
+  `ulong`：内置工厂用的是非负的 `Random.Next()` / `NextInt64()` 重载。现在采样覆盖完整取值范围，
+  `Any.Id<T>()` 才真正走到负数相关的分支（格式化、排序、数据库往返）。
+- `STIA0005` 的代码修复会静默丢掉参数。标题只说「需要一个单参数主构造函数」，修复却把整张参数表
+  换成 `(Guid Value)`，于是 `record OrderId(Guid Value, string Name)` 里的 `Name` 无声消失。
+  参数确实必须删（诊断要求恰好一个参数），但现在标题把这件事说清楚并写明替换结果：
+  「改为单参数主构造函数 (Guid Value)，其余参数将被移除」。
 
 ## [1.3.0] - 2026-10-07
 

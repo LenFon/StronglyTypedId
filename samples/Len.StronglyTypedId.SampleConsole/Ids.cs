@@ -113,3 +113,12 @@ public partial record struct PlainGuidId(Guid Value);
 // 文化敏感基元：无参 ToString 与 Parse 恒按不变文化，与当前区域无关。
 [StronglyTypedId]
 public partial record struct PriceId(decimal Value);
+
+// N3 的隐私开关：验证器拒绝时不把被拒的原文写进异常消息。
+// 对 string 基元尤其重要 —— 那段文本往往就是用户输入的邮箱、手机号或 token 片段，
+// 而被拒绝的原因恰恰是它不合规，却仍然是个人信息。默认关闭（消息里带原文）。
+[StronglyTypedId(Validator = nameof(IsEmail), RedactValidationMessage = true)]
+public partial record struct RedactedEmailId(string Value)
+{
+    private static bool IsEmail(string value) => value.Contains('@');
+}

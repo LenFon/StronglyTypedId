@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<!-- 内置 OpenAPI 的 schema 转换器要求 Microsoft.AspNetCore.OpenApi ≥ 9.0.0，而 9.x 起只面向 net9.0+。
+		     本示例专门锁定 8.0 线的最低版本（8.0.0）下的行为：包能正常引用、应用能正常启动、
+		     Id 的 schema 映射由 Swashbuckle 产出。 -->
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 中心版本 8.0.32 服务于其余 net8.0 示例；这里钉到 8.0 线的最低版本，
+		     用来证明「8.0.0 起就能正常运行」。 -->
+		<PackageReference Include="Microsoft.AspNetCore.OpenApi" VersionOverride="8.0.0" />
+		<PackageReference Include="Swashbuckle.AspNetCore" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Len.StronglyTypedId.Domain\Len.StronglyTypedId.Domain.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+</Project>

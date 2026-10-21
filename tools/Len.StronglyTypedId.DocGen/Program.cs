@@ -14,6 +14,7 @@ namespace Len.StronglyTypedId.DocGen;
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen                          # 重新生成两张 README 的表格
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify              # CI 门禁：README 与源码不一致则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-changelog    # CI 门禁：tag 与两份 CHANGELOG 的小节对不上则退出码 1
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-package-readme  # CI 门禁：PACKAGE.md 与源码不一致则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --draft-changelog     # 打印 [Unreleased] 草稿（按 Conventional Commits 分类）
 /// </code>
 /// <para>
@@ -45,14 +46,18 @@ internal static class Program
         var verify = args.Contains("--verify", StringComparer.Ordinal);
         var verifyChangelog = args.Contains("--verify-changelog", StringComparer.Ordinal);
         var draftChangelog = args.Contains("--draft-changelog", StringComparer.Ordinal);
+        var verifyPackageReadme = args.Contains("--verify-package-readme", StringComparer.Ordinal);
 
         try
         {
             var root = ResolveRepositoryRoot(args);
 
+            // 必须写成单个 return 表达式：拆成一串 if + return 会被 IDE0046 判为「可简化的 if 语句」。
             return draftChangelog
                 ? ChangelogDrafter.Draft(root)
-                : verifyChangelog ? ChangelogVerifier.Verify(root) : Run(root, verify);
+                : verifyChangelog
+                    ? ChangelogVerifier.Verify(root)
+                    : verifyPackageReadme ? PackageReadmeVerifier.Verify(root) : Run(root, verify);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {

@@ -908,6 +908,37 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
+    /// 多个 Id 请求同一个未引用的集成时只报一条：逐 Id 各报一条会在 N 个 Id 时炸出成百条同义诊断。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenSeveralIdsRequestTheSameUnavailableIntegration()
+    {
+        // 四个 Id 刻意用四种基元：同命名空间同基元会额外触发 STIA0016，干扰「只报一条」的判定。
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper)]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper)]
+            public partial record struct InvoiceId(int Value);
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper)]
+            public partial record struct ProductId(string Value);
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper)]
+            public partial record struct ReceiptId(long Value);
+            """";
+        // 请求方超过三个时截断并附总数，避免一条消息里堆几十个类型名。
+        var expected = Verify.Diagnostic(Descriptors.IntegrationUnavailable)
+            .WithArguments("OrderId, InvoiceId, ProductId … (4)", "Dapper", "Dapper")
+            .WithSpan(5, 18, 5, 67);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
     /// 请求了确实已引用的集成（<c>System.Text.Json</c> 属于基础共享框架）时不报告。
     /// </summary>
     [Fact]
@@ -984,6 +1015,53 @@ public class StronglyTypedIdAnalyzerTests
             .WithSpan(3, 12, 3, 126);
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
+
+    #endregion
+
+    #region 集成掩码含未定义的位（STIA0024）
+
+    /// <summary>
+    /// 掩码里超出已知标志的位既不匹配任何集成、也不会被生成器读到 —— 不报就是「写了却什么都没发生」。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenIntegrationsHasUndefinedBits()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = (StronglyTypedIdIntegrations)2048)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.UnknownIntegration)
+            .WithArguments("OrderId", 2048, 1022)
+            .WithSpan(5, 18, 5, 66);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 程序集级默认值走的是编译结束回调，是另一条上报路径，同样要能报出来。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyDefaultHasUndefinedBits()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Integrations = (Len.StronglyTypedId.StronglyTypedIdIntegrations)2048)]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.UnknownIntegration)
+            .WithArguments("TestProject", 2048, 1022)
+            .WithSpan(3, 12, 3, 125);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
 
     #endregion
 
@@ -1250,10 +1328,11 @@ public class StronglyTypedIdAnalyzerTests
     #region 空前缀（STIA0013）
 
     /// <summary>
-    /// <c>Prefix = ""</c> 没有任何语义，应报告 STIA0013。
+    /// <c>Prefix = ""</c> 不报告 STIA0013：生成器侧 <c>NormalizePrefix</c> 把它等同于「未设置」，
+    /// 产物与不写这个实参逐字符相同。报了只会让人以为必须删掉，实际删不删都一样。
     /// </summary>
     [Fact]
-    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixIsEmpty()
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenPrefixIsEmpty()
     {
         var code = """"
             using System;
@@ -1263,9 +1342,7 @@ public class StronglyTypedIdAnalyzerTests
             [StronglyTypedId(Prefix = "")]
             public partial record struct OrderId(Guid Value);
             """";
-        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
-            .WithSpan(5, 18, 5, 29);
-        await Verify.VerifyAnalyzerAsync(code, expected);
+        await Verify.VerifyAnalyzerAsync(code);
     }
 
     /// <summary>
@@ -1288,10 +1365,43 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
-    /// 常量引用的空前缀同样能判定：取值走符号级命名实参，而非只看字符串字面量。
+    /// 第三方命名空间下的同名特性不能被当成自家的：诊断位置必须落在真正的 <c>[StronglyTypedId]</c> 上，
+    /// 而不是 <c>Acme.StronglyTypedIdAttribute</c> 的同名实参上（按名字后缀匹配就会指错地方）。
     /// </summary>
     [Fact]
-    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenPrefixConstantIsEmpty()
+    public async Task AnalyzingCode_Should_IgnoreForeignAttribute_WhenLocatingNamedArgument()
+    {
+        var code = """"
+            using System;
+
+            namespace Acme
+            {
+                [AttributeUsage(AttributeTargets.All)]
+                public sealed class StronglyTypedIdAttribute : Attribute
+                {
+                    public string? Prefix { get; set; }
+                }
+            }
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [Acme.StronglyTypedIdAttribute(Prefix = "x")]
+                [StronglyTypedId(Prefix = "   ")]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
+            .WithSpan(15, 22, 15, 36);
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 常量引用的空串同样不报：取值走符号级命名实参，判定口径必须与字面量一致。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenPrefixConstantIsEmpty()
     {
         var code = """"
             using System;
@@ -1304,9 +1414,7 @@ public class StronglyTypedIdAnalyzerTests
                 private const string Empty = "";
             }
             """";
-        var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
-            .WithSpan(5, 18, 5, 32);
-        await Verify.VerifyAnalyzerAsync(code, expected);
+        await Verify.VerifyAnalyzerAsync(code);
     }
 
     /// <summary>
@@ -1339,6 +1447,204 @@ public class StronglyTypedIdAnalyzerTests
 
             [StronglyTypedId]
             public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    #endregion
+
+    #region 前缀与基元文本重叠（STIA0023）
+
+    /// <summary>
+    /// <c>Prefix = "-"</c> + <c>int</c>：<c>Parse("-5")</c> 会剥掉前缀得到 5，无前缀的负数被静默读成相反数。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNumericPrefixIsSign()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "-")]
+            public partial record struct OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("-", "int")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>Prefix = "1"</c> + <c>int</c>：无前缀的 123 与「值 23 带前缀」的文本完全相同。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNumericPrefixIsDigit()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "1")]
+            public partial record struct OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("1", "int")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>Prefix = "NaN"</c> + <c>double</c>：浮点的特殊值文本同样是合法取值。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNumericPrefixIsNaNAndTypeIsDouble()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "NaN")]
+            public partial record struct RatioId(double Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("NaN", "double")
+            .WithSpan(5, 18, 5, 32);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>Prefix = "2"</c> + <c>DateTime</c>：不变文化下日期以数字开头，前缀会啃掉年份首位。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenTemporalPrefixIsDigit()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "2")]
+            public partial record struct BookingId(DateTime Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("2", "System.DateTime")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>Prefix = "a"</c> + <c>Guid</c>：十六进制字符能开启一个 Guid 文本。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenGuidPrefixIsHexDigit()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "a")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("a", "System.Guid")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>Prefix = "A"</c> + <c>char</c>：单字符前缀本身就是一个合法取值。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenCharPrefixIsSingleCharacter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "A")]
+            public partial record struct GradeId(char Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("A", "char")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 字母开头且不是 <c>NaN</c> / <c>Infinity</c> 的前缀不误伤：<c>"INV-"</c> 不可能开启一个数值文本。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNumericPrefixStartsLetter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "INV-")]
+            public partial record struct InvoiceId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 日期基元的字母前缀同样安全：<c>"DT-"</c> 不会与任何日期文本重叠。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenTemporalPrefixStartsLetter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "DT-")]
+            public partial record struct BookingId(DateTime Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>string</c> 基元不判定：取值可以是任意文本，任何前缀都可能与之重叠，没有可枚举的文法。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenStringPrefixIsDigit()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "1")]
+            public partial record struct AccountId(string Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 枚举基元不判定：成员名由用户定义，分析器无从得知其文本集合。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenEnumPrefixIsDigit()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public enum Level
+            {
+                Low,
+                High,
+            }
+
+            [StronglyTypedId(Prefix = "1")]
+            public partial record struct LevelId(Level Value);
             """";
         await Verify.VerifyAnalyzerAsync(code);
     }
@@ -1624,6 +1930,63 @@ public class StronglyTypedIdAnalyzerTests
     }
 
     /// <summary>
+    /// 嵌套类型与顶层类型同处一个命名空间，规范文本形同样无法区分，因此一并参与分组。
+    /// （此前按「嵌套 Id 的作用域由包含类型界定」排除嵌套类型，但那只是声明位置的差别，
+    /// 落到存储与传输层面两者仍然同形。）
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenNestedIdSharesPrimitiveWithTopLevelId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct CustomerId(Guid Value);
+
+            public partial class Orders
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.DuplicatePrimitiveType)
+            .WithArguments("CustomerId", "System.Guid", 1, "Len.StronglyTypedId.Tests")
+            .WithSpan(5, 1, 6, 53);
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 两层嵌套也要被扫到：只递归一层同样会漏。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnSingleDiagnostic_WhenDeeplyNestedIdSharesPrimitive()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct CustomerId(Guid Value);
+
+            public partial class Outer
+            {
+                public partial class Inner
+                {
+                    [StronglyTypedId]
+                    public partial record struct OrderId(Guid Value);
+                }
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.DuplicatePrimitiveType)
+            .WithArguments("CustomerId", "System.Guid", 1, "Len.StronglyTypedId.Tests")
+            .WithSpan(5, 1, 6, 53);
+        await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
+    }
+
+    /// <summary>
     /// 基元类型不同时不存在「同形」问题，不报告。
     /// </summary>
     [Fact]
@@ -1662,29 +2025,6 @@ public class StronglyTypedIdAnalyzerTests
             {
                 [StronglyTypedId]
                 public partial record struct InvoiceId(Guid Value);
-            }
-            """";
-        await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
-    }
-
-    /// <summary>
-    /// 嵌套 Id 的作用域由包含类型界定，不属于命名空间级重复，不参与分组。
-    /// </summary>
-    [Fact]
-    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNestedIdSharesPrimitiveWithTopLevelId()
-    {
-        var code = """"
-            using System;
-
-            namespace Len.StronglyTypedId.Tests;
-
-            [StronglyTypedId]
-            public partial record struct OrderId(Guid Value);
-
-            public partial class Aggregate
-            {
-                [StronglyTypedId]
-                public partial record struct AggregateId(Guid Value);
             }
             """";
         await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
@@ -1820,6 +2160,52 @@ public class StronglyTypedIdAnalyzerTests
             .WithArguments("OrderId", "OrderId")
             .WithSpan(6, 2, 6, 41);
         await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 引用类型 Id 会额外生成私有的 <c>CompareValues</c> 比较辅助方法，实例取这个名字会撞 CS0102，
+    /// 必须报告 STIA0020。
+    /// </summary>
+    /// <remarks>
+    /// 这条用例守着一个具体的回归：撞名判定原先靠「滤掉带 <c>[GeneratedCode]</c> 的成员」来避免
+    /// 「实例撞上自己刚生成的字段」，但那个过滤把生成器产出的**方法**也一并放过了 —— 于是
+    /// <c>CompareValues</c> 被当成「不撞名」，分析器沉默，直到生成代码里冒出 CS0102。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInstanceNameCollidesWithGeneratedComparisonHelper()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("CompareValues", "0")]
+            public partial record OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidInstanceName)
+            .WithArguments("CompareValues", "OrderId")
+            .WithSpan(6, 2, 6, 47);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>CompareValues</c> 只属于引用类型 Id：值类型直连基元比较，不生成该辅助方法，
+    /// 因此值类型上的同名实例合法，不应报告任何诊断。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValueTypeInstanceNameIsCompareValues()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("CompareValues", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
     }
 
     /// <summary>

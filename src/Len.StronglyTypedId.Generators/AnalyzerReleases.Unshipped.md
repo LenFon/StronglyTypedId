@@ -9,10 +9,12 @@ STIA0015 | StronglyTypedIdAnalyzer | Info | Reported when the id type name does 
 STIA0016 | StronglyTypedIdAnalyzer | Info | Reported once per namespace/primitive group when several ids in the same namespace wrap the same primitive type.
 STIA0017 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(Normalizer = ...)] points at a method that is not a static `static TPrimitiveId Name(TPrimitiveId value)`.
 STIA0018 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(ExceptionType = ...)] points at a type that is not a non-abstract System.Exception subclass with an accessible single-string constructor.
-STIA0019 | StronglyTypedIdAnalyzer | Warning | Reported when an integration is explicitly enabled via [StronglyTypedId(Integrations = ...)] but the compilation does not reference that integration's assembly.
+STIA0019 | StronglyTypedIdAnalyzer | Warning | Reported once per missing integration per compilation when an integration is explicitly enabled via [StronglyTypedId(Integrations = ...)] but the compilation does not reference that integration's assembly; every requester is listed in the message.
 STIA0020 | StronglyTypedIdAnalyzer | Error | Reported when a [StronglyTypedIdInstance] name is not a valid identifier, repeats an earlier instance, or collides with the id type itself, an existing member, or a generated member.
 STIA0021 | StronglyTypedIdAnalyzer | Error | Reported when a [StronglyTypedIdInstance] value cannot be parsed as the id's primitive type.
 STIA0022 | StronglyTypedIdAnalyzer | Info | Reported when a [StronglyTypedIdInstance] name is not in PascalCase.
+STIA0023 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(Prefix = ...)] can also begin the text form of the id's primitive type, so unprefixed text is silently stripped and read as a different value.
+STIA0024 | StronglyTypedIdAnalyzer | Warning | Reported when [StronglyTypedId(Integrations = ...)] (or the assembly-level default) sets bits that no integration uses; those bits are ignored and generate nothing.
 
 ### Changed Rules
 

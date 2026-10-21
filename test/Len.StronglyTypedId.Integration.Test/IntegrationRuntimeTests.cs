@@ -240,6 +240,45 @@ public class IntegrationRuntimeTests
         options.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// 8.0 环境下的等价路径：内置 OpenAPI 没有可用的 schema 转换器，映射由 Swashbuckle 的
+    /// <c>MapType</c> 提供。这里把注册进 <c>CustomTypeMappings</c> 的工厂取出来执行，锁定
+    /// 「Id → 基元 schema」的实际结果，而不是只断言「调用不抛」。
+    /// </summary>
+    [Fact]
+    public void Swagger_ApplyTo_MapsGuidIdToUuidSchema()
+    {
+        var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+
+        options.SchemaGeneratorOptions.CustomTypeMappings.Should().ContainKey(typeof(IntegrationGuidId));
+
+        var schema = options.SchemaGeneratorOptions.CustomTypeMappings[typeof(IntegrationGuidId)]();
+
+        schema.Type.Should().Be("string");
+        schema.Format.Should().Be("uuid");
+    }
+
+    /// <summary>
+    /// 带文本前缀的 Id 在 OpenAPI 里退化成纯 <c>string</c>：文本形是 <c>ORD-&lt;guid&gt;</c>，
+    /// 已经不是合法的 uuid，继续标 <c>format: uuid</c> 会让生成的客户端按 uuid 校验而全部失败。
+    /// </summary>
+    [Fact]
+    public void Swagger_ApplyTo_MapsPrefixedIdToPlainStringSchema()
+    {
+        var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+
+        options.SchemaGeneratorOptions.CustomTypeMappings.Should().ContainKey(typeof(PrefixedIntegrationGuidId));
+
+        var schema = options.SchemaGeneratorOptions.CustomTypeMappings[typeof(PrefixedIntegrationGuidId)]();
+
+        schema.Type.Should().Be("string");
+        schema.Format.Should().BeNull("文本形带前缀，不再是合法 uuid，不能标 format");
+    }
+
     #endregion
 
     #region 内置 OpenApi：门控判据已核实（≥9 正确，8.0 包引用下产物必须不生成）
@@ -258,6 +297,23 @@ public class IntegrationRuntimeTests
             .FirstOrDefault(t => t.Name.Contains("OpenApiSchemaTransformer", StringComparison.Ordinal));
 
         transformerType.Should().BeNull("Microsoft.AspNetCore.OpenApi 8.0 包引用下，内置 OpenApi 门控（主版本 ≥ 9）必须关闭，产物类不应生成");
+    }
+
+    /// <summary>
+    /// 8.0 包引用下也不能留下 <c>ApplyTo(OpenApiOptions)</c> 重载：8.0 里没有 <c>OpenApiOptions</c>，
+    /// 一旦生成就是消费者侧的 CS0246。按参数类型名判定，避免直接引用该类型。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_Should_NotExposeApplyToOverload_WhenPackageVersionIsEight()
+    {
+        var openApiOverloads = typeof(Len.StronglyTypedId.StronglyTypedIds)
+            .GetMethods()
+            .Where(method => method.Name == "ApplyTo")
+            .Where(method => method.GetParameters().Any(parameter =>
+                parameter.ParameterType.Name.Contains("OpenApiOptions", StringComparison.Ordinal)))
+            .ToArray();
+
+        openApiOverloads.Should().BeEmpty("8.0 包引用下不应生成 ApplyTo(OpenApiOptions)，否则消费者编译会 CS0246");
     }
 
     #endregion
@@ -304,6 +360,89 @@ public class IntegrationRuntimeTests
         };
         constraint.Match(null, null, "IntegrationGuidId", invalidValues, Microsoft.AspNetCore.Routing.RouteDirection.IncomingRequest)
             .Should().BeFalse("非法文本必须被路由约束拒绝");
+    }
+
+    /// <summary>
+    /// 可空强类型 Id（<c>[FromQuery] IntegrationGuidId?</c>）必须同样由生成的绑定器接管。
+    /// <para>
+    /// <c>Nullable&lt;T&gt;</c> 不实现任何接口（<c>typeof(IntegrationGuidId?).GetInterfaces()</c> 长度为 0），
+    /// provider 若不先拆出底层类型就会返回 <c>null</c>，MVC 随即退回框架的 <c>TryParseModelBinder</c>。
+    /// 那条链路按 <c>CurrentCulture</c> 解析，与强类型 Id 的不变文化契约不一致：同一条路由上，
+    /// 可空参数与非可空参数会对同一份载荷得出不同的值，非法值的错误消息也不同。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Mvc_NullableId_RoutesToGeneratedBinder()
+    {
+        var mvcOptions = new Microsoft.AspNetCore.Mvc.MvcOptions();
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+
+        var metadataProvider = new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider();
+        var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var factory = new Microsoft.AspNetCore.Mvc.ModelBinding.ModelBinderFactory(
+            metadataProvider,
+            Microsoft.Extensions.Options.Options.Create(mvcOptions),
+            services);
+
+        var metadata = metadataProvider.GetMetadataForType(typeof(IntegrationGuidId?));
+        var binder = factory.CreateBinder(new Microsoft.AspNetCore.Mvc.ModelBinding.ModelBinderFactoryContext
+        {
+            Metadata = metadata,
+            CacheToken = metadata,
+        });
+
+        binder.GetType().Name.Should().StartWith(
+            "StronglyTypedIdModelBinder",
+            "可空强类型 Id 必须由生成的绑定器接管，不能退回框架的 TryParseModelBinder");
+
+        var expected = IntegrationGuidId.Create(Guid.NewGuid());
+
+        var validContext = CreateBindingContext("id", expected.Value.ToString("D"));
+
+        await binder.BindModelAsync(validContext);
+
+        validContext.Result.IsModelSet.Should().BeTrue("合法文本必须绑定成功");
+        validContext.Result.Model.Should().Be(expected);
+
+        var invalidContext = CreateBindingContext("id", "not-a-guid");
+
+        await binder.BindModelAsync(invalidContext);
+
+        invalidContext.Result.IsModelSet.Should().BeFalse("非法文本不得写入模型");
+        invalidContext.ModelState["id"]!.Errors.Should().ContainSingle()
+            .Which.ErrorMessage.Should().Be(
+                "The value 'not-a-guid' is not a valid strongly typed id.",
+                "错误消息来自生成的绑定器；退回 TryParseModelBinder 时是框架的 \"is not valid.\"");
+
+        // 缺省（查询串里根本没有该键）应保持「未绑定且无错误」，交由可空类型表达 null。
+        var missingContext = CreateBindingContext("id", null);
+
+        await binder.BindModelAsync(missingContext);
+
+        missingContext.Result.IsModelSet.Should().BeFalse("缺省值不得被当成绑定失败");
+        missingContext.ModelState.Should().BeEmpty("缺省值不得产生模型错误");
+    }
+
+    private static Microsoft.AspNetCore.Mvc.ModelBinding.DefaultModelBindingContext CreateBindingContext(string name, string? rawValue) =>
+        new()
+        {
+            ModelName = name,
+            ModelState = new Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary(),
+            ValueProvider = new SingleValueProvider(name, rawValue),
+        };
+
+    /// <summary>只为绑定器测试提供单个键值的最小 <see cref="Microsoft.AspNetCore.Mvc.ModelBinding.IValueProvider"/>。</summary>
+    private sealed class SingleValueProvider(string name, string? rawValue) : Microsoft.AspNetCore.Mvc.ModelBinding.IValueProvider
+    {
+        /// <inheritdoc/>
+        public bool ContainsPrefix(string prefix) => string.Equals(prefix, name, StringComparison.Ordinal);
+
+        /// <inheritdoc/>
+        public Microsoft.AspNetCore.Mvc.ModelBinding.ValueProviderResult GetValue(string key) =>
+            rawValue is not null && string.Equals(key, name, StringComparison.Ordinal)
+                ? new Microsoft.AspNetCore.Mvc.ModelBinding.ValueProviderResult(rawValue)
+                : Microsoft.AspNetCore.Mvc.ModelBinding.ValueProviderResult.None;
     }
 
     #endregion

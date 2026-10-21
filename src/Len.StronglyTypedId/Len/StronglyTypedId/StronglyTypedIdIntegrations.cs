@@ -76,7 +76,25 @@ public enum StronglyTypedIdIntegrations
     AspNetCoreMvc = 1 << 7,
 
     /// <summary>
+    /// MessagePack 的 <c>IMessagePackFormatter&lt;TId&gt;</c>、<c>[MessagePackFormatter]</c> 特性与
+    /// <c>ApplyTo(MessagePackSerializerOptions)</c>。需要引用 <c>MessagePack</c> 2.0.0 及以上。
+    /// </summary>
+    /// <remarks>
+    /// 二进制格式存放的是基元值本身，文本前缀只作用于文本形（<c>ToString()</c> / JSON），不进入二进制载荷。
+    /// </remarks>
+    MessagePack = 1 << 8,
+
+    /// <summary>
+    /// MongoDB BSON 的 <c>IBsonSerializer&lt;TId&gt;</c>、<c>[BsonSerializer]</c> 特性与
+    /// <c>ApplyTo()</c>。需要引用 <c>MongoDB.Bson</c> 3.0.0 及以上。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="MessagePack"/> 同理：二进制格式存放基元值本身，文本前缀不进入载荷。
+    /// </remarks>
+    MongoDb = 1 << 9,
+
+    /// <summary>
     /// 全部集成。仍受「是否引用了对应程序集」这一道门控约束。
     /// </summary>
-    All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc,
+    All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb,
 }

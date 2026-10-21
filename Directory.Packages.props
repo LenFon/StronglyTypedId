@@ -30,9 +30,16 @@
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" Version="1.1.4" />
 		<!-- 集成运行时测试用真实 SQLite 验证 Dapper 的读写往返：驱动返回的 CLR 类型与基元不一致
-		     （枚举列 long、char / Guid 列 string、decimal 列 double），只有真库才能覆盖这条路径。 -->
-		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+		     （枚举列 long、char / Guid 列 string、decimal 列 double），只有真库才能覆盖这条路径。
+		     版本必须与 EF Core 同一条 8.0.x 补丁线：驱动落后 21 个补丁会掩盖类型映射的行为差异。 -->
+		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.32" />
+		<!-- 二进制序列化集成：MessagePack 与 BSON 的格式化器/序列化器都在「引用了才有」的门控之下，
+		     集成测试工程必须真的引用它们，才能让 MessagePackCodeGenerator / MongoDbCodeGenerator 触发。
+		     两个版本都是 2026-10 的稳定版；MessagePack 2.5.302 缺 Int128 / UInt128 的格式化器，
+		     MongoDB.Bson 3.2.1 另外还缺 BigInteger —— 这正是 IsBinaryTextPrimitive 的由来。 -->
+		<PackageVersion Include="MessagePack" Version="2.5.302" />
+		<PackageVersion Include="MongoDB.Bson" Version="3.2.1" />
 		<PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.5.0" />
 		<!--
@@ -50,8 +57,10 @@
 
 	<!-- samples：示例项目 -->
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
-		<PackageVersion Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.0" />
+		<!-- 与 EF Core / Data.Sqlite 统一在 8.0.32：示例是使用者照抄的对象，不能停在 8.0.0 首发版。
+		     Sample2 面向 net10.0，通过 VersionOverride 单独抬到 10.x。 -->
+		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.32" />
+		<PackageVersion Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.32" />

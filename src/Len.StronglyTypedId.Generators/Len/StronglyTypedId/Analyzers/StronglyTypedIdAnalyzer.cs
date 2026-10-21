@@ -1,5 +1,6 @@
 ﻿using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
+using System.Collections.Concurrent;
 
 namespace Len.StronglyTypedId.Analyzers;
 
@@ -17,10 +18,18 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSymbolAction(AnalyzeNamedType, SymbolKind.NamedType);
-        // 程序集级默认值只校验一次：若放到逐类型里，程序集默认写错会为每个 Id 各报一条。
-        // 符号操作不支持 SymbolKind.Assembly（RS1003），故走整编译回调。
-        context.RegisterCompilationAction(ReportAssemblyIntegrationProblems);
+        // 集成请求（STIA0019）先攒起来，到编译结束再按「集成」聚合上报。逐类型各报一条时，
+        // 「N 个 Id 都写了 Integrations = All」会炸出 7N 条同义诊断，把真正缺失的那几个包淹掉。
+        context.RegisterCompilationStartAction(startContext =>
+        {
+            var requests = new ConcurrentBag<IntegrationRequest>();
+
+            startContext.RegisterSymbolAction(context => AnalyzeNamedType(context, requests), SymbolKind.NamedType);
+
+            // 程序集级默认值也走同一条聚合路径：符号操作不支持 SymbolKind.Assembly（RS1003），
+            // 只能在整编译回调里读。
+            startContext.RegisterCompilationEndAction(context => ReportIntegrationProblems(context, requests));
+        });
         context.RegisterSyntaxNodeAction(
             AnalyzeObjectCreation,
             SyntaxKind.ObjectCreationExpression,
@@ -28,7 +37,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
     }
 
-    private static void AnalyzeNamedType(SymbolAnalysisContext context)
+    private static void AnalyzeNamedType(SymbolAnalysisContext context, ConcurrentBag<IntegrationRequest> integrationRequests)
     {
         if (context.Symbol is not INamedTypeSymbol type || !HasStronglyTypedIdAttribute(type))
         {
@@ -156,11 +165,12 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             ValidateExceptionType(context, type, exceptionType, records);
         }
 
-        // 前缀校验与形状 / 验证器无关，独立于上面的早退分支。
-        ValidatePrefix(context, type, records);
+        // 前缀校验与形状 / 验证器无关，独立于上面的早退分支；但要判定「前缀是否与基元文本重叠」，
+        // 必须知道基元类型，故把已算出的 constructorParameterType 一并传入。
+        ValidatePrefix(context, type, constructorParameterType, records);
 
-        // 集成开关同样独立：只校验逐类型显式写出的那一份，程序集默认值由 AnalyzeAssembly 负责。
-        ValidateIntegrations(context, type, records);
+        // 集成开关同样独立：只登记逐类型显式写出的那一份，程序集默认值由 ReportIntegrationProblems 负责。
+        ValidateIntegrations(context, type, records, integrationRequests);
 
         // 命名实例的名字与取值：与生成器共用同一份读取逻辑，保证「报错的那条」就是「跳过不生成的那条」。
         ValidateInstances(context, type, constructorParameterType, records);
@@ -286,19 +296,133 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 校验 <c>[StronglyTypedId(Prefix = …)]</c> 的前缀是否为非空、非纯空白字符串（STIA0013）。
+    /// 校验 <c>[StronglyTypedId(Prefix = …)]</c>：纯空白前缀报 STIA0013，与基元文本重叠的前缀报 STIA0023。
     /// </summary>
-    private static void ValidatePrefix(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
+    /// <remarks>
+    /// <para>
+    /// 空串<b>不</b>报：生成器侧 <c>NormalizePrefix</c> 把空串与纯空白一并视为「未设置」，产物与不写
+    /// <c>Prefix</c> 逐字符相同。既然删掉实参和不删完全等价，报出来只会让人以为必须动它（D10）。
+    /// 纯空白才是笔误，仍然报。
+    /// </para>
+    /// <para>
+    /// 前缀直接参与 <c>ToString()</c> 拼接与 <c>Parse</c> 剥离，中间没有分隔符。若前缀本身也可能是基元
+    /// 文本的开头，那么「不带前缀的文本」在宽松读取模式下会被当成「带前缀」而剥掉一段，静默得到另一个值
+    /// （<c>Prefix = "-"</c> + <c>int</c>：<c>Parse("-5")</c> 得 5 而非 -5）。这类前缀必须挡住。
+    /// </para>
+    /// </remarks>
+    private static void ValidatePrefix(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        ITypeSymbol primitiveType,
+        RecordDeclarationSyntax[] records)
     {
         var prefix = AttributeReader.GetString(
             AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
             StronglyTypedIdInfo.PrefixArgumentName);
 
-        if (prefix is not null && string.IsNullOrWhiteSpace(prefix))
+        if (prefix is null || prefix.Length == 0)
         {
-            Report(context, Descriptors.InvalidPrefix, FindNamedArgumentLocation(records, StronglyTypedIdInfo.PrefixArgumentName) ?? records[0].GetLocation());
+            return;
+        }
+
+        var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.PrefixArgumentName) ?? records[0].GetLocation();
+
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            Report(context, Descriptors.InvalidPrefix, location);
+            return;
+        }
+
+        if (CanBeginPrimitiveText(prefix, primitiveType))
+        {
+            Report(context, Descriptors.AmbiguousPrefix, location, prefix, primitiveType.ToDisplayString());
         }
     }
+
+    /// <summary>
+    /// 判断是否存在某个基元取值，其文本形式以该前缀开头 —— 即前缀与基元文本不可区分。
+    /// </summary>
+    /// <remarks>
+    /// 只看首字符就够了：文本的首字符决定了「有没有可能以该前缀开头」，多字符前缀只有在首字符可作开头时
+    /// 才需要进一步考虑（<c>NaN</c> / <c>Infinity</c> 这两个字母开头的特例单独处理）。
+    /// 这样 <c>"DT-"</c>（日期）与 <c>"INV-"</c>（数值）这类合法前缀不会被误伤。
+    /// </remarks>
+    private static bool CanBeginPrimitiveText(string prefix, ITypeSymbol primitiveType)
+    {
+        var first = prefix[0];
+
+        return GetPrimitiveTextKind(primitiveType) switch
+        {
+            // 数字、正负号、小数点都能开启一个数值文本；"NaN" / "Infinity" 按前缀逐字符比对，
+            // 而不是「首字母是 N 或 I 就拒」—— 后者会误伤 "INV-" 这类完全安全的前缀。
+            PrimitiveTextKind.Numeric => IsAsciiDigit(first)
+                || first is '+' or '-' or '.'
+                || "NaN".StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                || "Infinity".StartsWith(prefix, StringComparison.OrdinalIgnoreCase),
+
+            // 不变文化下的日期时间与时间跨度都以数字开头；TimeSpan 的负值以 '-' 开头。
+            PrimitiveTextKind.Temporal => IsAsciiDigit(first) || first == '-',
+
+            // Guid.ToString() 恒小写十六进制，但 Guid.Parse 大小写都收，故两种都要算重叠。
+            PrimitiveTextKind.Guid => IsHexDigit(first),
+
+            // char 的文本形式就是单个字符，任何单字符前缀都是一个合法取值。
+            PrimitiveTextKind.Char => prefix.Length == 1,
+
+            // string 与 enum 不判定：字符串取值可以是任意文本，枚举文本是用户自定义的成员名，
+            // 两者都没有可枚举的文本文法，任何前缀都可能与之重叠。这是「前缀与基元文本之间没有
+            // 分隔符」这一设计本身的固有歧义，只能靠文档说明。
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// 按基元类型的文本文法归类，供 <see cref="CanBeginPrimitiveText"/> 判定。
+    /// </summary>
+    private static PrimitiveTextKind GetPrimitiveTextKind(ITypeSymbol primitiveType)
+    {
+        if (primitiveType.TypeKind == TypeKind.Enum)
+        {
+            return PrimitiveTextKind.Freeform;
+        }
+
+        // 其余受支持基元没有 SpecialType，按元数据名归类。调用方已保证类型来自
+        // SupportedPrimitiveTypes（System / System.Numerics），不存在同名自定义类型的干扰。
+        return primitiveType.SpecialType switch
+        {
+            SpecialType.System_String => PrimitiveTextKind.Freeform,
+            SpecialType.System_Char => PrimitiveTextKind.Char,
+            SpecialType.System_Byte
+                or SpecialType.System_SByte
+                or SpecialType.System_Int16
+                or SpecialType.System_UInt16
+                or SpecialType.System_Int32
+                or SpecialType.System_UInt32
+                or SpecialType.System_Int64
+                or SpecialType.System_UInt64
+                or SpecialType.System_Decimal
+                or SpecialType.System_Single
+                or SpecialType.System_Double => PrimitiveTextKind.Numeric,
+            _ => primitiveType.Name switch
+            {
+                "Int128" or "UInt128" or "Half" or "BigInteger" => PrimitiveTextKind.Numeric,
+                "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly" or "TimeSpan" => PrimitiveTextKind.Temporal,
+                "Guid" => PrimitiveTextKind.Guid,
+                _ => PrimitiveTextKind.Freeform,
+            },
+        };
+    }
+
+    /// <summary>
+    /// 是否为 ASCII 数字。<c>char.IsDigit</c> 会接受阿拉伯-印度数字等 Unicode 数字，而基元文本只发 ASCII。
+    /// </summary>
+    private static bool IsAsciiDigit(char value) => value is >= '0' and <= '9';
+
+    /// <summary>
+    /// 是否为十六进制数字（大小写皆算）。
+    /// </summary>
+    private static bool IsHexDigit(char value)
+        => IsAsciiDigit(value) || value is >= 'a' and <= 'f' or >= 'A' and <= 'F';
 
     /// <summary>
     /// 校验 <c>[StronglyTypedIdInstance]</c> 的名字与取值（STIA0020 / STIA0021），并对非 PascalCase 的名字给出
@@ -361,13 +485,18 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 校验 <c>[StronglyTypedId(Integrations = …)]</c> 请求的集成在当前编译里是否真的可用（STIA0019）。
+    /// 登记 <c>[StronglyTypedId(Integrations = …)]</c> 请求的集成（STIA0019）。
     /// </summary>
     /// <remarks>
-    /// 只在逐类型显式写出该参数时校验；未写出时生效的是程序集默认值，由
-    /// <see cref="ReportAssemblyIntegrationProblems"/> 统一报一次。
+    /// 只在逐类型显式写出该参数时登记；未写出时生效的是程序集默认值，由
+    /// <see cref="ReportIntegrationProblems"/> 统一登记。这里只收集不上报 —— 要等整个编译的请求
+    /// 都到齐，才能按集成聚合。
     /// </remarks>
-    private static void ValidateIntegrations(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
+    private static void ValidateIntegrations(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        RecordDeclarationSyntax[] records,
+        ConcurrentBag<IntegrationRequest> requests)
     {
         var raw = AttributeReader.GetEnumValue(
             AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
@@ -378,62 +507,107 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        ReportUnavailableIntegrations(
-            context.Compilation,
-            IntegrationFlags.Normalize(raw)!.Value,
-            type.Name,
-            FindNamedArgumentLocation(records, StronglyTypedIdInfo.IntegrationsArgumentName) ?? records[0].GetLocation(),
-            context.ReportDiagnostic);
+        var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.IntegrationsArgumentName) ?? records[0].GetLocation();
+        var mask = IntegrationFlags.Normalize(raw)!.Value;
+
+        ReportUnknownIntegration(context, type.Name, mask, location);
+
+        requests.Add(new IntegrationRequest(type.Name, mask, location));
     }
 
     /// <summary>
-    /// 校验 <c>[assembly: StronglyTypedIdDefaults(Integrations = …)]</c> 请求的集成是否可用（STIA0019）。
+    /// 掩码里超出 <see cref="IntegrationFlags.All"/> 的位永远不会匹配任何集成，也就永远不会生成代码
+    /// （STIA0024）。不报的话，使用者会以为自己打开了某个集成。
     /// </summary>
-    private static void ReportAssemblyIntegrationProblems(CompilationAnalysisContext context)
+    private static void ReportUnknownIntegration(SymbolAnalysisContext context, string owner, int mask, Location location)
+    {
+        var unknown = mask & ~IntegrationFlags.All;
+
+        if (unknown != 0)
+        {
+            Report(context, Descriptors.UnknownIntegration, location, owner, unknown, IntegrationFlags.All);
+        }
+    }
+
+    /// <summary>
+    /// 汇总整个编译的集成请求，为每个「请求了但没有引用」的集成报一条 STIA0019。
+    /// </summary>
+    /// <remarks>
+    /// 逐类型逐集成上报时，50 个 Id 配 <c>Integrations = All</c> 会得到 350 条同义诊断，真正缺的包
+    /// 反而被淹没。这里按集成去重，把所有请求方合并进同一条消息，条数上限就是集成总数（7 条）。
+    /// </remarks>
+    private static void ReportIntegrationProblems(CompilationAnalysisContext context, ConcurrentBag<IntegrationRequest> requests)
     {
         var assembly = context.Compilation.Assembly;
         var attribute = AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName);
         var raw = AttributeReader.GetEnumValue(attribute, StronglyTypedIdInfo.IntegrationsArgumentName);
 
-        if (raw is null)
+        if (raw is not null)
+        {
+            var location = attribute?.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation() ?? Location.None;
+            var mask = IntegrationFlags.Normalize(raw)!.Value;
+            var unknown = mask & ~IntegrationFlags.All;
+
+            // 程序集默认值走的是编译结束回调，这里没有 SymbolAnalysisContext，只能直接上报。
+            if (unknown != 0)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Descriptors.UnknownIntegration, location, assembly.Name, unknown, IntegrationFlags.All));
+            }
+
+            requests.Add(new IntegrationRequest(assembly.Name, mask, location));
+        }
+
+        if (requests.IsEmpty)
         {
             return;
         }
 
-        var location = attribute?.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation();
+        // 并发回调的入袋顺序不确定，先按「文件 → 位置 → 所有者」定序：诊断的落点与参数不能随线程调度抖动。
+        var ordered = requests
+            .OrderBy(request => request.Location.SourceTree?.FilePath ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(request => request.Location.SourceSpan.Start)
+            .ThenBy(request => request.Owner, StringComparer.Ordinal)
+            .ToArray();
 
-        ReportUnavailableIntegrations(
-            context.Compilation,
-            IntegrationFlags.Normalize(raw)!.Value,
-            assembly.Name,
-            location ?? Location.None,
-            context.ReportDiagnostic);
-    }
-
-    /// <summary>
-    /// 逐个比对掩码里的集成与当前编译的引用列表，为每个「请求了但没有引用」的集成报一条 STIA0019。
-    /// </summary>
-    private static void ReportUnavailableIntegrations(
-        Compilation compilation,
-        int mask,
-        string ownerName,
-        Location location,
-        Action<Diagnostic> report)
-    {
         foreach (var requirement in _integrationRequirements)
         {
-            if ((mask & requirement.Flag) == 0 || IsIntegrationReferenced(compilation, requirement))
+            if (IsIntegrationReferenced(context.Compilation, requirement))
             {
                 continue;
             }
 
-            report(Diagnostic.Create(
+            var requesters = ordered
+                .Where(request => (request.Mask & requirement.Flag) != 0)
+                .ToArray();
+
+            if (requesters.Length == 0)
+            {
+                continue;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(
                 Descriptors.IntegrationUnavailable,
-                location,
-                ownerName,
+                requesters[0].Location,
+                SummarizeOwners(requesters.Select(request => request.Owner)),
                 requirement.DisplayName,
                 requirement.AssemblyName));
         }
+    }
+
+    /// <summary>
+    /// 把请求方名字压成一行：超过 <see cref="MaxReportedOwners"/> 个时截断并附总数。
+    /// </summary>
+    /// <remarks>
+    /// 只用逗号与括号计数，不写 "and N more" 之类英文措辞 —— 参数会嵌进中英两套文案里。
+    /// </remarks>
+    private static string SummarizeOwners(IEnumerable<string> owners)
+    {
+        var distinct = owners.Distinct(StringComparer.Ordinal).ToArray();
+
+        return distinct.Length <= MaxReportedOwners
+            ? string.Join(", ", distinct)
+            : string.Join(", ", distinct.Take(MaxReportedOwners)) + " … (" + distinct.Length + ")";
     }
 
     /// <summary>
@@ -464,6 +638,32 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     ];
 
     /// <summary>
+    /// STIA0019 的消息里最多列出几个请求方，其余折成总数。
+    /// </summary>
+    private const int MaxReportedOwners = 3;
+
+    /// <summary>
+    /// 一条「请求了某些集成」的记录，攒到编译结束再按集成聚合上报（STIA0019）。
+    /// </summary>
+    private readonly struct IntegrationRequest(string owner, int mask, Location location)
+    {
+        /// <summary>
+        /// 请求方：Id 类型名，或程序集级默认值的程序集名。
+        /// </summary>
+        public string Owner { get; } = owner;
+
+        /// <summary>
+        /// 归一化后的集成掩码。
+        /// </summary>
+        public int Mask { get; } = mask;
+
+        /// <summary>
+        /// 诊断落点：逐类型取具名实参，程序集级取特性应用处。
+        /// </summary>
+        public Location Location { get; } = location;
+    }
+
+    /// <summary>
     /// 校验 <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法是否为合法的静态验证器。
     /// </summary>
     private static void ValidateValidator(
@@ -475,7 +675,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     {
         var method = type.GetMembers(validatorName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
 
-        var location = FindNamedArgumentLocation(records, StronglyTypedIdInfo.ValidatorArgumentName) ?? records[0].GetLocation();
+        var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.ValidatorArgumentName) ?? records[0].GetLocation();
 
         if (method is null
             || method.ReturnType.SpecialType != SpecialType.System_Boolean
@@ -498,7 +698,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     {
         var method = type.GetMembers(normalizerName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
 
-        var location = FindNamedArgumentLocation(records, StronglyTypedIdInfo.NormalizerArgumentName) ?? records[0].GetLocation();
+        var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.NormalizerArgumentName) ?? records[0].GetLocation();
 
         if (method is null
             || !SymbolEqualityComparer.Default.Equals(method.ReturnType, primitiveType)
@@ -518,7 +718,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         ITypeSymbol exceptionType,
         RecordDeclarationSyntax[] records)
     {
-        var location = FindNamedArgumentLocation(records, StronglyTypedIdInfo.ExceptionTypeArgumentName) ?? records[0].GetLocation();
+        var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.ExceptionTypeArgumentName) ?? records[0].GetLocation();
 
         if (!IsUsableExceptionType(exceptionType, type, context.Compilation))
         {
@@ -561,44 +761,33 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 在声明段里定位 <c>[StronglyTypedId(&lt;argumentName&gt; = …)]</c> 中指定命名实参的语法位置。
+    /// 在 <c>[StronglyTypedId(&lt;argumentName&gt; = …)]</c> 里定位指定命名实参的语法位置。
     /// </summary>
-    private static Location? FindNamedArgumentLocation(RecordDeclarationSyntax[] records, string argumentName)
+    /// <remarks>
+    /// 特性是否属于本库由符号层的 <see cref="AttributeData.AttributeClass"/> 判定，语法层只负责在命中的
+    /// attribute 内部找实参 —— 按名字后缀匹配会把第三方的同名特性（例如 <c>Acme.Domain.StronglyTypedIdAttribute</c>）
+    /// 也算进来，使诊断位置落到一个无关的特性上。这里也不调 <c>Compilation.GetSemanticModel</c>（RS1030）。
+    /// </remarks>
+    private static Location? FindNamedArgumentLocation(INamedTypeSymbol type, string argumentName)
     {
-        foreach (var record in records)
+        foreach (var attribute in type.GetAttributes())
         {
-            foreach (var attributeList in record.AttributeLists)
+            if (attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != AttributeReader.StronglyTypedIdAttributeName
+                || attribute.ApplicationSyntaxReference?.GetSyntax() is not AttributeSyntax syntax)
             {
-                foreach (var attribute in attributeList.Attributes)
-                {
-                    if (!IsStronglyTypedIdAttribute(attribute))
-                    {
-                        continue;
-                    }
+                continue;
+            }
 
-                    foreach (var argument in attribute.ArgumentList?.Arguments ?? default)
-                    {
-                        if (argument.NameEquals?.Name.Identifier.ValueText == argumentName)
-                        {
-                            return argument.GetLocation();
-                        }
-                    }
+            foreach (var argument in syntax.ArgumentList?.Arguments ?? default)
+            {
+                if (argument.NameEquals?.Name.Identifier.ValueText == argumentName)
+                {
+                    return argument.GetLocation();
                 }
             }
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// 判断 attribute 语法是否为 <c>[StronglyTypedId]</c>（含各种书写形态）。
-    /// </summary>
-    private static bool IsStronglyTypedIdAttribute(AttributeSyntax attribute)
-    {
-        var attributeName = attribute.Name.ToString();
-
-        return attributeName is "StronglyTypedId" or "StronglyTypedIdAttribute" or "Len.StronglyTypedId.StronglyTypedIdAttribute"
-            || attributeName.EndsWith("StronglyTypedIdAttribute", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -743,4 +932,35 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
     private static void Report(SyntaxNodeAnalysisContext context, DiagnosticDescriptor descriptor, Location location, params object[] arguments)
         => context.ReportDiagnostic(Diagnostic.Create(descriptor, location, arguments));
+
+    /// <summary>
+    /// 基元类型文本形式的文法类别，决定「哪些字符能开启一个文本」。
+    /// </summary>
+    private enum PrimitiveTextKind
+    {
+        /// <summary>
+        /// 数字、正负号、小数点，或 <c>NaN</c> / <c>Infinity</c>。
+        /// </summary>
+        Numeric,
+
+        /// <summary>
+        /// 数字开头（日期时间、时间跨度），负的时间跨度以 <c>-</c> 开头。
+        /// </summary>
+        Temporal,
+
+        /// <summary>
+        /// 十六进制数字（<c>Guid</c>）。
+        /// </summary>
+        Guid,
+
+        /// <summary>
+        /// 单个字符（<c>char</c>）。
+        /// </summary>
+        Char,
+
+        /// <summary>
+        /// 文本文法不可枚举（<c>string</c> 与枚举），无法判定重叠。
+        /// </summary>
+        Freeform,
+    }
 }

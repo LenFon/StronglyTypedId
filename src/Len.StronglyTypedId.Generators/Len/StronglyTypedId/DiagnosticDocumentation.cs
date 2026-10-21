@@ -26,12 +26,16 @@ internal static class DiagnosticDocumentation
         // 生成器侧诊断：故障发生在生成阶段，没有可机械修复的目标。
         new DiagnosticDocEntry(Descriptors.GeneratorFailureId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.InvalidPrefixId, new DocText("Remove the `Prefix` argument or give it a non-blank value", "删掉 `Prefix` 实参，或给它一个非空白值")),
+        // 无修复：删掉 Prefix 会改变规范文本形，已按带前缀格式落盘的数据将读不回来，只能由人换一个安全前缀。
+        new DiagnosticDocEntry(Descriptors.AmbiguousPrefixId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.ValidatorCanBeBypassedId, new DocText("Narrow the type to `internal`", "收窄为 `internal`")),
         // 命名类提示：正确地重命名一个类型意味着同时改掉所有引用，「这些 Id 看起来一样」也没有机械修法。
         new DiagnosticDocEntry(Descriptors.TypeNameShouldEndWithIdId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.DuplicatePrimitiveTypeId, DocText.Empty),
         // 缺包不是代码问题：无法替用户添加包引用，只能由人决定是补包还是去掉标志。
         new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, DocText.Empty),
+        // 越界位同理：该删哪几位取决于使用者想开哪个集成，机器不知道。
+        new DiagnosticDocEntry(Descriptors.UnknownIntegrationId, DocText.Empty),
         // 命名实例：改名要同时改掉所有引用点，改值要重新挑一个业务上有意义的取值，两者都没有机械修法。
         new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, DocText.Empty),

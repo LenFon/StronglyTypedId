@@ -50,6 +50,7 @@ public partial class DescriptorsTests
             // 默认 Warning —— 不阻断构建，但 build 与 CI 都能看见（各项目可在 .editorconfig 里调级）。
             // STIA0013（InvalidPrefix）同样是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误。
             // STIA0019（IntegrationUnavailable）也是告警：显式 opt-in 却因缺包静默失效，必须可见但不阻断构建。
+            // STIA0024（UnknownIntegration）同理：掩码里的越界位什么都不选中，代码本身合法，只是不生效。
             // STIA0014（ValidatorCanBeBypassed）为建议性诊断，默认 Info。
             // STIA0015 / STIA0016 是纯命名风格提示（名字不以 Id 结尾、同命名空间共用基元），
             // 与「声明是否合法」无关，默认 Info。
@@ -64,6 +65,9 @@ public partial class DescriptorsTests
                     break;
                 case Descriptors.IntegrationUnavailableId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0019 是告警性诊断");
+                    break;
+                case Descriptors.UnknownIntegrationId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0024 是告警性诊断");
                     break;
                 case Descriptors.ValidatorCanBeBypassedId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0014 是建议性诊断");

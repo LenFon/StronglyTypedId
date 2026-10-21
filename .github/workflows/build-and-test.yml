@@ -5,6 +5,11 @@
 # 墙钟由最长的 build 决定。
 #
 # 触发面只覆盖「会改变产物或校验结论」的路径：源码、测试、基准、工具、构建配置、文档表格与工作流本身。
+#
+# 第三方 action 一律钉 40 位 commit sha，不用 @v7 这类可变 ref —— 可变 ref 可以被上游重新指向，
+# 上游账号被盗或维护者被社工后推一个恶意 tag，下一次 CI 就执行攻击者代码。注释里的版本号供
+# dependabot 的 github-actions 生态识别，由它提 SHA 升级 PR（既钉死又不失维护）。
+# 本文件与 publish-nuget.yml / codeql-analysis.yml / nuget-audit.yml 共用同一批 SHA，改一处要四处同步。
 
 name: build and test
 
@@ -51,17 +56,21 @@ jobs:
     timeout-minutes: 25
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       with:
         # CHANGELOG 校验要把每个 tag 与版本小节对上，浅克隆读不到 tag。
         fetch-depth: 0
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         # 两个 TFM 的测试都要跑，显式安装两者，不依赖 runner 镜像预装的环境。
+        # 10.0.401 必须与 global.json 的 sdk.version 一致：global.json 钉的是「构建用哪个 SDK」，
+        # 这里钉的是「装哪个 SDK」。两处不一致时 setup-dotnet 装的是别的版本，
+        # dotnet 随后按 global.json 找不到要求的 SDK 而直接失败（rollForward=latestPatch 不跨特性带）。
+        # 升级 SDK 时两处同改。
         dotnet-version: |
           8.0.x
-          10.0.x
+          10.0.401
         # 五个 job 各跑在一台独立 VM 上，不缓存的话每台都要把整套依赖重下一遍。
         # 版本集中在 Directory.Packages.props（CPM），拿它当缓存键足够；仓库没有 lock 文件，
         # 键的粒度只能到「这份 props 变没变」，改任何版本都会整份失效 —— 宁可多失效，不会取到脏包。
@@ -74,6 +83,10 @@ jobs:
     - name: Verify generated README tables
       # 三张表由 DocGen 从生成器内部判定数据渲染，改了判定却没重新生成时这里直接红。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify
+    - name: Verify PACKAGE.md
+      # PACKAGE.md 是 NuGet 详情页正文，手写、不参与 README 的区块重写，发布后无法回滚。
+      # 这里只校验三段纯枚举事实（基元清单 / 集成标志 / 目标框架），散文措辞管不了。
+      run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-package-readme
     - name: Verify CHANGELOG
       # 每个 tag 必须有对应小节、日期与 tag 提交日期一致、文末链接不缺。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-changelog
@@ -139,14 +152,14 @@ jobs:
     # 统计范围与阈值在 codecov.yml（project 跌幅 ≤1%、patch ≥80%）；测试工程 / 工具 / 测试依赖由那边
     # 的 ignore 剔除 —— 采集阶段没法按路径过滤（--include-files 区分 / 与 \，跨 OS 不等价）。
     - name: Upload coverage (net8.0)
-      uses: codecov/codecov-action@v7
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: TestResults/coverage.net8.cobertura.xml
         flags: net8.0
         fail_ci_if_error: true
     - name: Upload coverage (net10.0)
-      uses: codecov/codecov-action@v7
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: TestResults/coverage.net10.cobertura.xml
@@ -167,13 +180,13 @@ jobs:
     timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: |
           8.0.x
-          10.0.x
+          10.0.401
         cache: true
         cache-dependency-path: Directory.Packages.props
     - name: Restore dependencies
@@ -192,12 +205,12 @@ jobs:
     timeout-minutes: 25
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: |
-          10.0.x
+          10.0.401
         cache: true
         cache-dependency-path: Directory.Packages.props
     - name: Install AOT toolchain
@@ -220,20 +233,21 @@ jobs:
     timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       with:
         # 需要 tag 才能让 TagToVersion 推导出正确的下一个版本号。
         fetch-depth: 0
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: |
           8.0.x
-          10.0.x
+          10.0.401
         cache: true
         cache-dependency-path: Directory.Packages.props
     - name: Install dotnet tool
-      run: dotnet tool install -g dotnetCampus.TagToVersion
+      # 钉版本：不钉的话 TagToVersion 的行为变化会在某次 CI 里静默改变版本号推导结果。
+      run: dotnet tool install -g dotnetCampus.TagToVersion --version 1.0.11
     - name: Set version from latest tag (fall back to baseline)
       # CP0021 是「基线抑制」：只有当前 Version ≥ 基线时才会挂上 ApiCompat 基线做跨版本比对；
       # 占位号 1.0.0 低于基线，抑制会被判为「不必要」而直接 error。
@@ -288,12 +302,12 @@ jobs:
     timeout-minutes: 25
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: |
-          10.0.x
+          10.0.401
         cache: true
         cache-dependency-path: Directory.Packages.props
     - name: Restore dependencies

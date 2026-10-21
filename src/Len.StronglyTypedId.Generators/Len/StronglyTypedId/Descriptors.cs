@@ -35,6 +35,8 @@ internal static class Descriptors
     public const string InvalidInstanceNameId = "STIA0020";
     public const string InvalidInstanceValueId = "STIA0021";
     public const string InstanceNameNotPascalCaseId = "STIA0022";
+    public const string AmbiguousPrefixId = "STIA0023";
+    public const string UnknownIntegrationId = "STIA0024";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -224,13 +226,20 @@ internal static class Descriptors
     /// <summary>
     /// 显式启用了某个集成，但当前编译没有引用其程序集，该集成不会生成任何代码。
     /// </summary>
+    /// <remarks>
+    /// 按集成聚合后只能在编译结束时上报（要等所有 Id 的请求都到齐），故必须带上
+    /// <see cref="WellKnownDiagnosticTags.CompilationEnd"/>，否则 RS1037 会报错。
+    /// </remarks>
     public static readonly DiagnosticDescriptor IntegrationUnavailable
         = new(IntegrationUnavailableId,
             new LocalizedString("IntegrationUnavailableTitle"),
             new LocalizedString("IntegrationUnavailableMessage"),
             Category,
             DiagnosticSeverity.Warning,
-            true);
+            true,
+            description: null,
+            helpLinkUri: null,
+            WellKnownDiagnosticTags.CompilationEnd);
 
     /// <summary>
     /// <c>[StronglyTypedIdInstance]</c> 的名字不是合法标识符、与另一条实例重名，或与类型自身 / 既有成员 /
@@ -268,6 +277,43 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// <c>[StronglyTypedId(Prefix = …)]</c> 的前缀与基元类型的文本形式重叠，读回时会被静默剥掉。
+    /// </summary>
+    public static readonly DiagnosticDescriptor AmbiguousPrefix
+        = new(AmbiguousPrefixId,
+            new LocalizedString("AmbiguousPrefixTitle"),
+            new LocalizedString("AmbiguousPrefixMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedId(Integrations = …)]</c> 的取值含有未定义的位。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 越界位既不匹配任何集成、也不会被任何生成器读到：不报就是「写了却什么都没发生」，而使用者
+    /// 会以为自己打开了某个集成。级别取 Warning 而非 Error —— 这段代码本身合法，只是不生效。
+    /// </para>
+    /// <para>
+    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/>：逐类型的越界位在符号回调里就能报，但
+    /// 程序集级默认值（<c>[assembly: StronglyTypedIdDefaults]</c>）只能等到编译结束才知道，而同一个
+    /// 描述符不能按调用点换标签（RS1037 要求「用于上报编译结束诊断的描述符」必须带该标签）。代价是
+    /// IDE 里的波浪线要等整轮编译结束才出现，与 STIA0019 一致。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnknownIntegration
+        = new(UnknownIntegrationId,
+            new LocalizedString("UnknownIntegrationTitle"),
+            new LocalizedString("UnknownIntegrationMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            description: null,
+            helpLinkUri: null,
+            WellKnownDiagnosticTags.CompilationEnd);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -287,6 +333,8 @@ internal static class Descriptors
         ExceptionTypeInvalid,
         BypassCreate,
         InvalidPrefix,
+        AmbiguousPrefix,
+        UnknownIntegration,
         ValidatorCanBeBypassed,
         TypeNameShouldEndWithId,
         DuplicatePrimitiveType,

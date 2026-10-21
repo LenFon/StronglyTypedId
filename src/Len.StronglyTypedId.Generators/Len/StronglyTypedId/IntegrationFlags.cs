@@ -56,9 +56,19 @@ internal static class IntegrationFlags
     internal const int AspNetCoreMvc = 1 << 7;
 
     /// <summary>
+    /// MessagePack 集成。
+    /// </summary>
+    internal const int MessagePack = 1 << 8;
+
+    /// <summary>
+    /// MongoDB BSON 集成。
+    /// </summary>
+    internal const int MongoDb = 1 << 9;
+
+    /// <summary>
     /// 全部集成，等价于「引用了就生成」。
     /// </summary>
-    internal const int All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc;
+    internal const int All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb;
 
     /// <summary>
     /// 把特性上的原始值规范成掩码：未指定返回 <see langword="null"/>，显式 <c>Default</c> 归一为

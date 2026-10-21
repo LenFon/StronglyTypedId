@@ -23,6 +23,17 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     public Type? ExceptionType { get; set; }
 
     /// <summary>
+    /// 获取或设置本程序集内强类型 Id 默认是否在验证失败消息中隐去被拒绝的原始值。默认值为
+    /// <see langword="false"/>，即保留原始值。
+    /// </summary>
+    /// <remarks>
+    /// 原始值会随异常消息进入日志、APM 与错误上报。对 <see cref="string"/> 基元的 Id 来说，那往往是
+    /// 用户输入（邮箱、手机号、token 片段）—— 常常正因为不合法才被拒，但它依然是个人信息。整库统一
+    /// 脱敏时用本属性；单个 Id 需要例外时在类型上显式写 <see cref="StronglyTypedIdAttribute.RedactValidationMessage"/>。
+    /// </remarks>
+    public bool RedactValidationMessage { get; set; }
+
+    /// <summary>
     /// 获取或设置本程序集内强类型 Id 默认生成哪些集成代码。默认值为
     /// <see cref="StronglyTypedIdIntegrations.Default"/>，即「引用了就生成」。
     /// </summary>

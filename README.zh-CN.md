@@ -39,6 +39,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - [测试辅助](#testing)
 - [示例程序](#samples)
 - [诊断与代码修复](#diagnostics)
+- [从其他库迁移](#migrating-from-another-library)
+- [与其他库的对比](#comparison-with-other-libraries)
 - [已知限制](#limitations)
 - [常见问题](#faq)
 - [许可证](#license)
@@ -114,7 +116,9 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
    ```
 
    只需安装这一个包：`Len.StronglyTypedId` 已经依赖 `Len.StronglyTypedId.Generators`，生成器、分析器与
-   代码修复都在后者之中。
+   代码修复都在后者之中。该依赖是传递的，**每个引用 `Len.StronglyTypedId` 的项目都会同时装上分析器** ——
+   包括只用 `IStronglyTypedId<,>`、自己一个 Id 都不声明的项目。这是有意为之：更下游的项目声明 Id 时
+   仍然需要生成器。确实不想要这些诊断的项目，可以在 `.editorconfig` 里按项目关掉。
 
 2. 用单一主构造函数参数（参数名必须为 `Value`）声明一个强类型 Id：
 
@@ -208,6 +212,8 @@ IFormatProvider)` 已被标记过时。
 | 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`    | 嵌套 `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                                       | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                |
 | 引用了 `Dapper` ≥ 2.0.0                                                                                  | 嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`                                                                                              |
+| 引用了 `MessagePack` ≥ 2.0.0                                                                             | `{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`，以及 `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`                                                    |
+| 引用了 `MongoDB.Bson` ≥ 3.0.0                                                                            | `{TypeName}BsonSerializer` → `…MongoDb.g.cs`，以及 `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`                                                                              |
 | 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                                            | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                         |
 | 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束）                                                                    |
 <!-- END GENERATED:generated-code -->
@@ -232,6 +238,8 @@ IFormatProvider)` 已被标记过时。
 - 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
   与序列化写出的文本一致，`Parse(id.ToString())` 可往返；需要按特定文化
   格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+  非空 `format` 只交给基元处理，文本形态不变：`Guid` 基元的 `ToString("N")` 得到去掉短横线的 GUID；
+  带前缀的 Id 仍带前缀（`ord_d8ac85d4…`），格式化路径不会退化成裸基元。
   注意字符串插值**不等同于** `ToString()`：`$"{id}"` 走 `IFormattable.ToString(null, CultureInfo.CurrentCulture)`，
   会跟随当前区域（de-DE 下 `decimal` 基元写成 `1234,5`），而 `id.ToString()` 不会。
 - 逐类型开启 `TypeConverter` 时，嵌套的 `XxxTypeConverter`（`[TypeConverter]` 特性）经 `TypeDescriptor` 在字符串与 Id 间往返；引用类型 Id 的 `null` 会解析回 `default`。
@@ -244,6 +252,10 @@ IFormatProvider)` 已被标记过时。
 （`Enum.IsDefined`），`[Flags]` 枚举允许成员组合，但不许出现没有任何成员占用的位——`Read | Write` 能解析，
 `999` 不能。掩码在编译期由各成员常量算出并按枚举底层类型宽度裁剪，运行期只剩一次按位与；若某个枚举
 定义了全部位（典型是 `All = -1`），则完全不生成校验。
+
+除这道校验外，语义就是 `Enum.TryParse` 本身的：前后空白与数字文本只要结果能通过上面的校验就接受，
+`[Flags]` 枚举还接受逗号分隔的组合，成员名**区分大小写**。因此 `1` 是已定义成员时 `" 1 "` 与 `"01"`
+都能解析，flags 枚举下 `"Read, Write"` 也能解析；规范文本请用 `ToString()`（它写成员名）。
 
 各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
 `internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，两个 `ApplyTo`
@@ -591,10 +603,14 @@ public partial record struct OrderId(Guid Value);
 var id = OrderId.Create(guid);
 
 id.ToString();                              // "ord_3f2c…"
+id.ToString("N");                           // "ord_3f2c…"（去短横线的 GUID，前缀保留）
 OrderId.Parse("ord_3f2c…");                 // OrderId
 OrderId.Parse("3f2c…");                     // OrderId（宽松读入，默认）
 JsonSerializer.Serialize(id);                // "ord_3f2c…"
 ```
+
+前缀不只出现在 `ToString()` 里：`ToString(format, provider)` 与 `TryFormat(...)` 同样会加上，
+因此 `$"{id:N}"` 与结构化日志的输出仍然一眼能认出是 Id。
 
 由于前缀落在规范文本形里，走文本的集成无需额外配置：MVC 模型绑定、路由约束与生成的 `TypeConverter`
 都自动接受并输出带前缀的形态。而走基元**值**的集成——EF Core 与 Dapper——不受影响，仍存裸基元，
@@ -859,7 +875,8 @@ if (typeof(OrderId).IsStronglyTypedId())
 ```
 
 该判断基于所实现的接口，因此同样能识别由其它程序集生成的强类型 Id。接口、抽象类型、枚举与数组
-永远不会被判定为强类型 Id。
+永远不会被判定为强类型 Id。可空 Id（`OrderId?`）按其底层 Id 判定，`typeof(OrderId?)` 得到的基元
+类型与 `typeof(OrderId)` 相同 —— 与 MVC 模型绑定器和 EF Core 转换器的口径一致。
 
 <a id="testing"></a>
 
@@ -876,15 +893,18 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 
 取值来自 `IStronglyTypedId<TSelf, TPrimitiveId>` 暴露的基元类型，因此对任意程序集声明的 Id 都有效
 （包括在本测试包编译之后才生成的 Id）。覆盖生成器支持的全部基元类型，外加 `enum`。取值刻意保持
-「普通」：有限浮点数、非空字符串、1970–2100 之间的日期 —— 免得测试因为 `double.NaN` 之类的值
-报出与被测代码无关的失败。
+「普通」：有限浮点数（正负都有）、非空字符串、1970–2100 之间的日期 —— 免得测试因为 `double.NaN`
+之类的值报出与被测代码无关的失败。
 
 - **可复现** —— `Any.Id<OrderId>(seed: 42)` 在同一运行时版本下返回相同的值；要让一整串值重复，
   请复用同一个 `AnyIdGenerator` 实例，或用 `Any.Ids<T>(count, seed)`。
 - **尊重验证器** —— 生成最多重试 `AnyIdOptions.MaxAttempts` 次（默认 100），仍不满足则抛出异常，
-  并在消息中指向 `Any.Register<T>(factory)`。
+  并在消息中指向 `Any.Register<T>(factory)`。拒绝只按异常类型识别，因此验证器因其他原因抛
+  `ArgumentException` 时同样会被当作拒绝而重试。
 - **可覆盖** —— `AnyIdOptions.PrimitiveValueFactory` 可按基元类型替换取值来源；返回 `null`
   表示回落到内置生成逻辑。
+- **按需覆盖边界** —— `AnyIdOptions.IncludeBoundaryValues` 会掺入基元的 `MinValue` / `MaxValue`
+  （约每 16 个值一个）。默认关闭：极端值会让「断言唯一性」的测试偶发失败，而大多数测试要的就是普通值。
 
 配合 AutoFixture 使用时，加上 `Len.StronglyTypedId.Testing.AutoFixture` 并启用定制：
 
@@ -949,7 +969,7 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 | STIA0010 | 验证器方法必须是合法的静态 bool 方法       | 删掉 `Validator` 实参                  |
 | STIA0011 | 强类型 Id 被直接构造                       | 改用 `Create(...)`                     |
 | STIA0012 | 强类型 Id 代码生成失败                     | —                                      |
-| STIA0013 | 前缀值为空                                 | 删掉 `Prefix` 实参，或给它一个非空白值 |
+| STIA0013 | 前缀值为纯空白                             | 删掉 `Prefix` 实参，或给它一个非空白值 |
 | STIA0014 | 验证器可被绕过                             | 收窄为 `internal`                      |
 | STIA0015 | 类型名应以‘Id’结尾                         | —                                      |
 | STIA0016 | 多个强类型 Id 使用相同的基元类型           | —                                      |
@@ -959,17 +979,127 @@ dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
 | STIA0020 | 命名实例的名字不可用                       | —                                      |
 | STIA0021 | 命名实例的值不是该基元类型的合法取值       | —                                      |
 | STIA0022 | 命名实例的名字应为 PascalCase              | —                                      |
+| STIA0023 | 前缀与基元文本重叠                         | —                                      |
+| STIA0024 | 集成掩码包含未定义的位                     | —                                      |
 <!-- END GENERATED:diagnostics -->
 
 报错的规则都提供修复，但有几条只在修复方式唯一时才提供 —— `STIA0003` 仅在 Id 自身是泛型时提供
 （删掉*包含类型*的类型参数会改变你的设计），`STIA0005` 仅在类型没有显式构造函数时提供（在已有构造函数旁
 再加主构造函数会撞 `CS0111`），`STIA0009` 仅在包含类型确实缺 `partial` 时提供（否则会插进第二个 `partial`）。
-两条命名提示（`STIA0015`、`STIA0016`）刻意不提供修复：正确地重命名一个类型意味着同时改掉所有引用，
-而「这些 Id 看起来一样」本身没有机械修法。
+`STIA0023` 刻意不提供修复：唯一能机械做出的改动是删掉 `Prefix`，而那会改变规范文本形，已经按带前缀格式
+写出去的数据将再也读不回来 —— 换一个安全的前缀只能由你来定。两条命名提示（`STIA0015`、`STIA0016`）
+同样刻意不提供修复：正确地重命名一个类型意味着同时改掉所有引用，而「这些 Id 看起来一样」本身没有机械修法。
 
 代码修复通过 IDE 的常规灯泡菜单提供，并支持**在文档 / 项目 / 解决方案中修复全部出现处**。类型可以
 拆成多个 `partial` 声明段：类型级规则按整个类型判定一次，参数级规则只在声明主构造函数的那一段上判定，
 因此在另一个声明段里追加成员完全合法。
+
+<a id="migrating-from-another-library"></a>
+
+## 从其他库迁移 <a href="#top" style="float:right">↑ 返回目录</a>
+
+下面的迁移都假定你要搬的是一个**已经落盘**的 Id。请先读
+[每次迁移都会变的东西](#things-that-change-for-every-migration)——文本形是数据契约，也是唯一无法靠
+编译器报错兜住的一项。
+
+### 从手写的 record 迁移
+
+如果你已经有 `public record struct OrderId(Guid Value);`，迁移是纯增量的：
+
+1. 加上 `[StronglyTypedId]` 与 `partial` 修饰符。
+2. 删掉手写的 `Parse`、`TryParse`、`ToString`、`CompareTo`、`==`/`!=` 以及任何 JSON 转换器——
+   生成器会全部产出。
+3. 验证器与归一化器保留为 `static` 方法，用特性指过去（`Validator = nameof(...)`、
+   `Normalizer = nameof(...)`）。
+4. **先确认原来的 `ToString()` 产出什么。** 手写 record 打印的是 `OrderId { Value = … }`，生成版打印的是
+   基元的不变文化文本。日志、快照测试、缓存键，以及任何对 Id 做 `string.Join` 的地方都会变。
+
+### 从 Andrew Lock 的 `StronglyTypedId` 迁移
+
+那个包也用 `[StronglyTypedId]` 特性，两者不能在同一文件里共存而不加别名。命名空间与参数都不一样：
+
+| 迁移前 | 迁移后 |
+| --- | --- |
+| `using StronglyTypedId;` | `using Len.StronglyTypedId;` |
+| `[StronglyTypedId(StronglyTypedIdBackingType.Guid)]` | `[StronglyTypedId]`——基元从构造函数参数读出 |
+| `[StronglyTypedId(converters: StronglyTypedIdConverter.SystemTextJson)]` | 不需要——集成按编译期引用自动判定，`Integrations` 只做减法 |
+| `public partial struct OrderId` | `public partial record struct OrderId(Guid Value)` |
+| `OrderId.New()` | `OrderId.Create(Guid.NewGuid())` |
+| `OrderId.Empty` | `default` |
+| `OrderId.Parse(text)` | 不变（`IParsable<TSelf>`） |
+| `orderId.Value` | 不变（位置记录的属性） |
+
+切换前值得知道两处行为差异：
+
+- **没有 `New()`。** 随机生成不属于契约：`Create` 接收一个值。测试里用
+  `Len.StronglyTypedId.Testing` 的 `Any.Id<OrderId>()` 补上这一环。
+- **转换器不再是开关。** 只要编译期引用了 `System.Text.Json`，转换器就会生成。要用 `Integrations`
+  减掉不想要的，而不是用它加上想要的。
+
+### 从 Vogen 迁移
+
+Vogen 把值包进带 `Value` 属性与 `From` 工厂的 `struct` / `class`；本库包进一个 `record`，它的唯一构造
+函数参数**就是**基元本身。
+
+| Vogen | 本库 |
+| --- | --- |
+| `[ValueObject<Guid>] public partial struct OrderId` | `[StronglyTypedId] public partial record struct OrderId(Guid Value)` |
+| `OrderId.From(guid)` | `OrderId.Create(guid)` |
+| `From` 抛 `ValueObjectValidationException` | `Create` 抛 `ArgumentException`（用 `ExceptionType` 换类型） |
+| `private static Validation Validate(Guid value)` | `[StronglyTypedId(Validator = nameof(IsValid))]` + 一个 `static bool` 方法 |
+| `private static Guid NormalizeInput(Guid value)` | `[StronglyTypedId(Normalizer = nameof(Normalize))]` |
+| `[Instance("Empty", "00000000-0000-0000-0000-000000000000")]` | `[StronglyTypedIdInstance(nameof(Empty), "00000000-0000-0000-0000-000000000000")]` |
+| `id.Value` | `id.Value` |
+
+`From` → `Create` 是机械替换。真正要想清楚的是校验钩子：Vogen 的 `Validate` 返回带消息的 `Validation`，
+而这里的验证器是一个纯谓词，消息由生成器产出（并可用 `RedactValidationMessage` 隐去原值）。
+
+<a id="things-that-change-for-every-migration"></a>
+
+### 每次迁移都会变的东西
+
+- **规范文本形是数据契约。** Id 一旦落盘，`ToString()` 就决定了库里存的是什么。`Prefix` 必须在**第一次
+  写入之前**定下来——之后再改会让存量数据读不回来，这也是 `STIA0023` 刻意不提供「删掉 Prefix」代码修复
+  的原因。
+- **文化。** `ToString()` 与 `Parse` 默认走不变文化，字符串插值不是。若被迁移的代码用过 `$"{id}"`，
+  请确认它原来产出什么——`decimal` 基元的 Id 在 de-DE 下插值得到 `1234,5`，而 `ToString()` 得到 `1234.5`。
+- **分析器随包而来。** 安装运行时包会把源生成器、分析器与代码修复一并带进每一个引用它的项目，
+  包括那些只用 `IStronglyTypedId<,>`、自己不声明任何 Id 的项目。
+- **可空 Id 也是 Id。** `typeof(OrderId?).IsStronglyTypedId()` 为 `true`，`GetPrimitiveIdType()` 返回
+  底层基元——与 MVC 绑定器和 EF 转换器的答案一致。
+
+<a id="comparison-with-other-libraries"></a>
+
+## 与其他库的对比 <a href="#top" style="float:right">↑ 返回目录</a>
+
+> 竞品能力记录于 **2026-10**，描述的是各项目当时的文档化能力。它们会变，选型前请查对方的最新文档。
+> 标 **—** 表示该能力不在对方的文档化范围内，而不是「对方做不到」。
+
+| | 本库 | Vogen | Andrew Lock 的 `StronglyTypedId` | 手写 `record` |
+| --- | --- | --- | --- | --- |
+| 声明形态 | `partial record`（class 或 struct） | `partial struct` / `class` | `partial struct` | 任意 |
+| 基元选择 | 从唯一构造函数参数推断 | 泛型实参或 `typeof` | `StronglyTypedIdBackingType` 枚举 | 不适用 |
+| 支持基元 | 24 种，含 `enum` | 广，含自定义类型 | 固定的几种 backing type | 任意 |
+| 校验钩子 | `Validator` 谓词 | `Validate` 返回 `Validation` | — | 手写 |
+| 归一化钩子 | `Normalizer` | `NormalizeInput` | — | 手写 |
+| 文本前缀 | `Prefix`，配歧义分析器 | — | — | 手写 |
+| 命名实例 | `[StronglyTypedIdInstance]` | `[Instance]` | `Empty` | 手写 |
+| System.Text.Json | 引用即生成 | 有 | 开关式 | 手写 |
+| Newtonsoft.Json | 引用即生成 | 有 | 开关式 | 手写 |
+| EF Core | 引用即生成 | 有 | 开关式 | 手写 |
+| Dapper | 引用即生成 | — | — | 手写 |
+| Swashbuckle / OpenAPI / MVC 绑定 | 引用即生成 | — | — | 手写 |
+| 分析器 | 25 条（`STIA0000`–`STIA0024`），带代码修复与重构 | 有 | 少量 | — |
+| 测试数据辅助 | `Any.Id<T>()`（`Len.StronglyTypedId.Testing`） | — | — | — |
+| 裁剪 / AOT | 声明 `IsAotCompatible`，转换器无反射 | — | — | 取决于你的代码 |
+
+取舍可以一句话概括：
+
+- **需要自定义类型作为底层值**，或者想要 `ValueObject` 基类及其实例方法提升——选 Vogen。它是更通用的工具。
+- **想让 Id 本身就是一个 record**（结构相等、`with` 表达式、模式匹配都由语言提供，而不是生成成员），
+  并且希望集成「因为引用了包就出现」而不是在特性里逐个枚举——选本库。
+- **一两个 Id 手写仍然合理。** 当你需要为每一个 Id 都准备解析、比较运算符、JSON 转换器、EF 转换器和
+  Dapper handler 时，手写就不再合理；当文本形必须跨文化稳定时，手写就不再安全。
 
 <a id="limitations"></a>
 

@@ -367,7 +367,7 @@ public class StronglyTypedIdGeneratorTests
                     {
                         if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)
                         {
-                            throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId");
+                            throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.");
                         }
 
                         return OrderId.Create(global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options));
@@ -459,7 +459,7 @@ public class StronglyTypedIdGeneratorTests
                         {
                             { } value => OrderId.Create(value),
                             null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,
-                            _ => throw new global::System.InvalidOperationException($"Cannot get the value of a token type '{reader.TokenType}' as a OrderId")
+                            _ => throw new global::Newtonsoft.Json.JsonSerializationException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.")
                         };
             
                     /// <inheritdoc/>
@@ -1435,6 +1435,119 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// <c>RedactValidationMessage</c> 打开后，拒绝消息不再内插被拒绝的原文。
+    /// </summary>
+    /// <remarks>
+    /// 原文会随异常消息进入日志、APM 与错误上报；对 <c>string</c> 基元的 Id 来说那往往是用户输入。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_OmitRejectedValue_WhenRedactValidationMessageIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), RedactValidationMessage = true)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::System.ArgumentException(\"The value is not a valid OrderId.\", nameof(value))")
+            .And.NotContain("The value '{value}'");
+    }
+
+    /// <summary>
+    /// 脱敏与 <c>Normalizer</c>、<c>ExceptionType</c> 叠加时，块体 <c>Create</c> 的拒绝分支同样不内插原文。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_OmitRejectedValue_InBlockBodiedCreate_WhenRedactValidationMessageIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), Normalizer = nameof(Normalize), ExceptionType = typeof(DomainException), RedactValidationMessage = true)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value) => value;
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public sealed class DomainException(string message) : Exception(message);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::Len.StronglyTypedId.DomainException(\"The value is not a valid OrderId.\");")
+            .And.NotContain("The value '{value}'");
+    }
+
+    /// <summary>
+    /// 装配级 <c>StronglyTypedIdDefaults(RedactValidationMessage = true)</c> 在没有逐类型配置时生效。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_UseAssemblyDefaultRedactValidationMessage_WhenTypeOmitsIt()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(RedactValidationMessage = true)]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("throw new global::System.ArgumentException(\"The value is not a valid OrderId.\", nameof(value))")
+            .And.NotContain("The value '{value}'");
+    }
+
+    /// <summary>
+    /// 逐类型的 <c>false</c> 不能撤销装配级脱敏——脱敏是安全策略，不是逐类型偏好。
+    /// </summary>
+    /// <remarks>
+    /// 属性是 <c>bool</c>，未写时读到的同样是 <c>false</c>，生成器无法区分「没写」与「写了 false」；
+    /// 因此逐类型只能单向打开。这条断言把这个取舍固定下来，避免日后被当成缺陷「修正」。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_KeepAssemblyRedaction_WhenTypeSetsFalse()
+    {
+        var code = """
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(RedactValidationMessage = true)]
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate), RedactValidationMessage = false)]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().NotContain("The value '{value}'");
+    }
+    /// <summary>
     /// <c>Create</c> 必须缩进一层。
     /// </summary>
     /// <remarks>
@@ -1785,14 +1898,19 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// <c>string</c> 基元的属性名直接构造，不经解析。
+    /// <c>string</c> 基元的属性名经 <c>TryCreate</c> 构造（验证器拒绝时不能抛 <c>ArgumentException</c>），
+    /// 失败统一抛 <c>JsonException</c>。
     /// </summary>
     [Fact]
-    public void SystemTextJson_Should_CreateDirectly_WhenReadingStringPropertyName()
+    public void SystemTextJson_Should_TryCreate_WhenReadingStringPropertyName()
     {
         var converter = GetGeneratedCodeByHint(OrderIdSource("string"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
 
-        converter.Should().Contain("return OrderId.Create(reader.GetString()!);");
+        converter.Should()
+            .Contain("var propertyName = reader.GetString();")
+            .And.Contain("return propertyName is not null && OrderId.TryCreate(propertyName, out var id)")
+            .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{propertyName}' to a OrderId.\");")
+            .And.NotContain("OrderId.Create(reader.GetString()!)");
     }
 
     /// <summary>
@@ -1807,6 +1925,33 @@ public class StronglyTypedIdGeneratorTests
             .Contain("var propertyName = reader.GetString();")
             .And.Contain("if (OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))")
             .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{propertyName}' to a OrderId.\");");
+    }
+
+    /// <summary>
+    /// D1：token 类型不符时必须抛 <c>JsonException</c>。抛 <c>InvalidOperationException</c> 会让按契约
+    /// <c>catch (JsonException)</c> 的调用方漏掉这条路径，且拿不到 JSON path。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_ThrowJsonException_WhenTokenCannotBecomeValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.\");")
+            .And.NotContain("InvalidOperationException");
+    }
+
+    /// <summary>
+    /// D1（Newtonsoft 侧）：同一契约，抛 <c>JsonSerializationException</c>，与同文件的结构性错误保持一致。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJson_Should_ThrowJsonSerializationException_WhenTokenCannotBecomeValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
+
+        converter.Should()
+            .Contain("_ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.\")")
+            .And.NotContain("InvalidOperationException");
     }
 
     /// <summary>

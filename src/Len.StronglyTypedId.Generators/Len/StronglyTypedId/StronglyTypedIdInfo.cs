@@ -68,6 +68,11 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string IntegrationsArgumentName = "Integrations";
 
     /// <summary>
+    /// attribute 中「验证失败消息是否隐去原始值」的命名实参名。
+    /// </summary>
+    internal const string RedactValidationMessageArgumentName = "RedactValidationMessage";
+
+    /// <summary>
     /// <c>PrefixReadMode.Strict</c> 的底层值；命名实参在元数据里存的是枚举值而非成员名。
     /// </summary>
     private const int StrictPrefixReadModeValue = 1;
@@ -120,6 +125,25 @@ internal readonly record struct StronglyTypedIdInfo
         "System.TimeOnly");
 
     /// <summary>
+    /// 二进制序列化（MessagePack / BSON）没有可靠原生表示的基元。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 实测 MessagePack 2.5.302 缺 <c>Int128</c> / <c>UInt128</c> 的格式化器（默认解析器会抛
+    /// <c>FormatterNotRegisteredException</c>）；MongoDB.Bson 3.2.1 除这两个之外还缺 <c>BigInteger</c>。
+    /// </para>
+    /// <para>
+    /// 三个类型在两种二进制格式里统一改走规范文本形，而不是各维护一份例外清单：差异只在于「谁缺」，
+    /// 而两种格式的载荷本来就不互通，统一之后产物更容易核对。
+    /// </para>
+    /// </remarks>
+    private static readonly ImmutableHashSet<string> _binaryTextPrimitives = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "System.Numerics.BigInteger",
+        "System.Int128",
+        "System.UInt128");
+
+    /// <summary>
     /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
     /// </summary>
     internal static bool IsStronglyTypedIdInterface(INamedTypeSymbol @interface)
@@ -132,7 +156,8 @@ internal readonly record struct StronglyTypedIdInfo
         string? defaultValidatorName = null,
         string? defaultNormalizerName = null,
         string? defaultExceptionTypeName = null,
-        int? defaultIntegrations = null)
+        int? defaultIntegrations = null,
+        bool defaultRedactValidationMessage = false)
     {
         // 非具名类型（数组、指针、类型参数等）没有 ContainingNamespace。
         var containingNamespace = type.ContainingNamespace
@@ -177,6 +202,8 @@ internal readonly record struct StronglyTypedIdInfo
         // Newtonsoft.Json 的 JsonWriter.WriteValue 不认识这几个类型，会抛 JsonWriterException；
         // 读侧同理。它们的转换器因此也改走规范文本形。
         IsNewtonsoftTextPrimitive = IsNewtonsoftTextPrimitiveCore(primitiveIdType);
+        // MessagePack / BSON 同理：缺原生表示时改走规范文本形（见 _binaryTextPrimitives）。
+        IsBinaryTextPrimitive = _binaryTextPrimitives.Contains(primitiveIdType.ToDisplayString());
         // 属性只查一次：下面五项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做五遍。
         var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
         ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaultValidatorName;
@@ -186,6 +213,11 @@ internal readonly record struct StronglyTypedIdInfo
                 ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
             ?? defaultExceptionTypeName;
         HasTypeConverter = AttributeReader.GetBoolean(attribute, TypeConverterArgumentName);
+        // 逐类型优先，其次程序集默认。属性是 bool，未写时读到的就是 false，无法区分「没写」与「写了 false」——
+        // 因此逐类型只能单向打开：程序集默认打开后，单个 Id 无法再关回去。这是有意的：脱敏是安全策略，
+        // 允许逐类型放宽等于把「整库不泄露用户输入」变成一句空话。
+        RedactsValidationMessage = AttributeReader.GetBoolean(attribute, RedactValidationMessageArgumentName)
+            || defaultRedactValidationMessage;
         IsObjectJsonShape = AttributeReader.GetEnumFlag(attribute, JsonShapeArgumentName, ObjectJsonShapeValue);
         Prefix = NormalizePrefix(AttributeReader.GetString(attribute, PrefixArgumentName));
         IsStrictPrefixRead = AttributeReader.GetEnumFlag(attribute, PrefixReadModeArgumentName, StrictPrefixReadModeValue);
@@ -305,6 +337,15 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsNewtonsoftTextPrimitive { get; }
 
     /// <summary>
+    /// 基元是否缺少 MessagePack / BSON 的原生表示（<c>BigInteger</c> / <c>Int128</c> / <c>UInt128</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 为 <see langword="true"/> 时，这两种二进制格式的序列化器改走 Id 的规范文本形（读写都经
+    /// <c>ToString()</c> / <c>TryParse</c>），否则会在运行期抛「格式化器未注册」。
+    /// </remarks>
+    public bool IsBinaryTextPrimitive { get; }
+
+    /// <summary>
     /// 基元类型是否为枚举（枚举没有带 <c>IFormatProvider</c> 的静态 <c>TryParse</c>）。
     /// </summary>
     public bool IsEnum { get; }
@@ -401,6 +442,15 @@ internal readonly record struct StronglyTypedIdInfo
     public int Integrations { get; }
 
     /// <summary>
+    /// 验证失败消息是否隐去被拒绝的原始值。
+    /// </summary>
+    /// <remarks>
+    /// 打开后 <c>Create</c> 抛出的消息是 <c>The value is not a valid OrderId.</c>，不再内插原始值 ——
+    /// 后者会随异常消息进入日志与 APM，而它往往是用户输入。
+    /// </remarks>
+    public bool RedactsValidationMessage { get; }
+
+    /// <summary>
     /// 判断给定集成是否被选中。仍须由调用方另外确认「当前编译确实引用了对应程序集」。
     /// </summary>
     public bool Supports(int integration) => (Integrations & integration) == integration;
@@ -463,6 +513,15 @@ internal readonly record struct StronglyTypedIdInfo
 
         return builder.ToString();
     }
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(RedactValidationMessage = …)]</c>；未声明时为
+    /// <see langword="false"/>。
+    /// </summary>
+    public static bool GetAssemblyDefaultRedactValidationMessage(IAssemblySymbol assembly)
+        => AttributeReader.GetBoolean(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            RedactValidationMessageArgumentName);
 
     /// <summary>
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Integrations = …)]</c> 并规范化；未声明时为
@@ -734,7 +793,16 @@ internal readonly record struct StronglyTypedIdInfo
         var hasProviderOverload = false;
         var hasPlainOverload = false;
 
-        foreach (var member in type.GetMembers("TryFormat"))
+        // 沿基类链取成员：GetMembers 只返回声明成员。当前 24 种基元都是 sealed 值类型或 string，
+        // 没有继承来的 TryFormat，但这条判定是「按成员名 + 参数形状」猜的 —— 将来若加入某个自带
+        // TryFormat 的自定义结构体基元，漏看基类会静默落到 Interface 分支（每次格式化都装箱）。
+        var members = new List<ISymbol>();
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            members.AddRange(current.GetMembers("TryFormat"));
+        }
+
+        foreach (var member in members)
         {
             if (member is not IMethodSymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 3 or 4 } method
                 || method.Parameters[0].Type is not INamedTypeSymbol spanType

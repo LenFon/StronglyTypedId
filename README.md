@@ -40,6 +40,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Testing](#testing)
 - [Samples](#samples)
 - [Diagnostics](#diagnostics)
+- [Migrating from another library](#migrating-from-another-library)
+- [Comparison with other libraries](#comparison-with-other-libraries)
 - [Limitations](#limitations)
 - [FAQ](#faq)
 - [License](#license)
@@ -131,7 +133,11 @@ the generator's much lower `netstandard2.0` baseline.
    ```
 
    One package is enough: `Len.StronglyTypedId` already depends on `Len.StronglyTypedId.Generators`,
-   which carries the generator, the analyzer and the code fixes.
+   which carries the generator, the analyzer and the code fixes. The dependency is transitive, so
+   **every project that references `Len.StronglyTypedId` also gets the analyzer** — including projects
+   that only consume `IStronglyTypedId<,>` and declare no ids of their own. That is deliberate: an id
+   declared further downstream still needs the generator. A project that wants none of the diagnostics
+   can silence them per project in `.editorconfig`.
 
 2. Declare a strongly typed id with a single primary constructor parameter named `Value`:
 
@@ -228,6 +234,8 @@ your own declaration is never modified. What is emitted depends on what the comp
 | `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`       | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                                          | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                   |
 | `Dapper` ≥ 2.0.0 is referenced                                                                                     | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`                                                                                               |
+| `MessagePack` ≥ 2.0.0 is referenced                                                                                | `{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`                                                       |
+| `MongoDB.Bson` ≥ 3.0.0 is referenced                                                                               | `{TypeName}BsonSerializer` → `…MongoDb.g.cs`, plus `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`                                                                                 |
 | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                                               | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                            |
 | `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)                                                              |
 <!-- END GENERATED:generated-code -->
@@ -256,6 +264,9 @@ The core implementation adds:
   `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
   `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and
   `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
+  A non-empty `format` is forwarded to the primitive and the text keeps its shape otherwise: on a
+  `Guid`-backed id `ToString("N")` yields the dash-less GUID, and on a prefixed id the prefix is still
+  there (`ord_d8ac85d4…`), so formatting never falls back to the bare primitive.
   String interpolation is **not** `ToString()`: `$"{id}"` goes through
   `IFormattable.ToString(null, CultureInfo.CurrentCulture)` and therefore follows the ambient culture
   (a `decimal`-backed id prints `1234,5` under de-DE), while `id.ToString()` does not.
@@ -272,6 +283,12 @@ defined member (`Enum.IsDefined`), while a `[Flags]` enum may combine members bu
 member occupies — `Read | Write` parses, `999` does not. The bit mask is computed at compile time from the
 members' constants and trimmed to the enum's underlying type, so it costs one bitwise-and at run time; an enum
 that defines every bit (typically `All = -1`) gets no check at all.
+
+Beyond that check the semantics are `Enum.TryParse`'s own: surrounding whitespace and numeric text are
+accepted as long as the resulting value passes the check above, comma-separated combinations are accepted
+for `[Flags]` enums, and member names are matched **case-sensitively**. So `" 1 "` and `"01"` parse when
+`1` is a defined member, and `"Read, Write"` parses on a flags enum; `ToString()` is what writes the
+canonical member name.
 
 The integration entry points are emitted into a single generated class —
 `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
@@ -331,6 +348,29 @@ Only `Create` uses it — `Parse` throws `FormatException` instead, following th
 (the same as `int.Parse` / `Guid.Parse`), because its failure also covers text that is not an id at all.
 Like the other options it can be set for the whole assembly with
 `[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`.
+
+### Keeping rejected values out of the message
+
+The rejection message interpolates the value that failed validation:
+`The value 'alice@example' is not a valid EmailAddress.` That text travels with the exception into logs,
+APM traces and error reports — and for an id wrapping `string` it is user input, often rejected precisely
+because it is malformed, but still personal data. Set `RedactValidationMessage` to drop it:
+
+```csharp
+[StronglyTypedId(Validator = nameof(IsEmail), RedactValidationMessage = true)]
+public partial record struct EmailAddress(string Value)
+{
+    private static bool IsEmail(string value) => value.Contains('@');
+}
+
+EmailAddress.Create("alice@example");   // The value is not a valid EmailAddress.
+```
+
+The default is `false`, so existing messages are unchanged. `[assembly: StronglyTypedIdDefaults(
+RedactValidationMessage = true)]` turns it on for a whole assembly; a type-level `false` cannot undo that,
+because redaction is a safety policy rather than a per-type preference. `Parse` already reports
+`Could not parse supplied value.` without echoing the input, and the ASP.NET Core model binder echoes the
+raw value into `ModelState` — that message is shown back to the caller who sent it, not written to logs.
 
 <a id="value-normalization"></a>
 
@@ -656,10 +696,14 @@ public partial record struct OrderId(Guid Value);
 var id = OrderId.Create(guid);
 
 id.ToString();                              // "ord_3f2c…"
+id.ToString("N");                           // "ord_3f2c…"  (dash-less GUID, prefix kept)
 OrderId.Parse("ord_3f2c…");                 // OrderId
 OrderId.Parse("3f2c…");                     // OrderId  (lenient read, the default)
 JsonSerializer.Serialize(id);                // "ord_3f2c…"
 ```
+
+The prefix is part of every text form, not just `ToString()`: `ToString(format, provider)` and
+`TryFormat(...)` prepend it too, so `$"{id:N}"` and structured-logging output stay recognisable as ids.
 
 Because the prefix lives in the canonical text form, integrations that go through text need no extra
 configuration: MVC model binding, route constraints and the generated `TypeConverter` all accept and emit
@@ -953,7 +997,9 @@ if (typeof(OrderId).IsStronglyTypedId())
 ```
 
 The check is based on the implemented interface, so it also recognises ids generated in other assemblies.
-Interfaces, abstract types, enums and arrays are never reported as strongly typed ids.
+Interfaces, abstract types, enums and arrays are never reported as strongly typed ids. A nullable id
+(`OrderId?`) is judged by its underlying id type, so `typeof(OrderId?)` reports the same primitive as
+`typeof(OrderId)` — the same answer the MVC model binder and the EF Core converters give.
 
 <a id="testing"></a>
 
@@ -971,15 +1017,19 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 
 Values are derived from the primitive exposed by `IStronglyTypedId<TSelf, TPrimitiveId>`, so ids
 declared in any assembly work — including ones compiled after the testing package. Every supported
-primitive is covered, plus `enum`. Values are deliberately ordinary (finite floats, non-empty strings,
-dates inside 1970–2100) to avoid failures unrelated to the code under test.
+primitive is covered, plus `enum`. Values are deliberately ordinary (finite floats of either sign,
+non-empty strings, dates inside 1970–2100) to avoid failures unrelated to the code under test.
 
 - **Reproducible** — `Any.Id<OrderId>(seed: 42)` returns the same value for a given runtime version;
   use one `AnyIdGenerator` instance (or `Any.Ids<T>(count, seed)`) when a whole sequence must repeat.
 - **Validator-aware** — generation retries up to `AnyIdOptions.MaxAttempts` (100 by default) and then
-  throws with a message pointing at `Any.Register<T>(factory)`.
+  throws with a message pointing at `Any.Register<T>(factory)`. A rejection is recognised by exception
+  type alone, so a validator that throws `ArgumentException` for an unrelated reason is retried too.
 - **Overridable** — `AnyIdOptions.PrimitiveValueFactory` replaces the value source per primitive type;
   returning `null` falls back to the built-in generator.
+- **Boundary-aware on demand** — `AnyIdOptions.IncludeBoundaryValues` mixes in the primitive's
+  `MinValue` / `MaxValue` (about one value in sixteen). Off by default: extremes make uniqueness
+  assertions flaky, and ordinary values are what most tests want.
 
 For AutoFixture, add `Len.StronglyTypedId.Testing.AutoFixture` and enable the customization:
 
@@ -1046,7 +1096,7 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0010 | Validator method must be a valid static bool method                   | Remove the `Validator` argument                           |
 | STIA0011 | Strongly typed id constructed directly                                | Replace with `Create(...)`                                |
 | STIA0012 | Strongly typed id code generation failed                              | —                                                         |
-| STIA0013 | Prefix value is empty                                                 | Remove the `Prefix` argument or give it a non-blank value |
+| STIA0013 | Prefix value is blank                                                 | Remove the `Prefix` argument or give it a non-blank value |
 | STIA0014 | Validator can be bypassed                                             | Narrow the type to `internal`                             |
 | STIA0015 | Type name should end with 'Id'                                        | —                                                         |
 | STIA0016 | Several strongly typed ids share the same primitive type              | —                                                         |
@@ -1056,20 +1106,140 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0020 | Named instance name is not usable                                     | —                                                         |
 | STIA0021 | Named instance value is not valid for the primitive type              | —                                                         |
 | STIA0022 | Named instance name should be PascalCase                              | —                                                         |
+| STIA0023 | Prefix overlaps the primitive text                                    | —                                                         |
+| STIA0024 | Integration mask contains undefined bits                              | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —
 `STIA0003` is offered only when the id itself is generic (removing the *containing* type's type parameters
 would change your design), `STIA0005` only when the type declares no explicit constructor (adding a primary
 constructor next to an existing one would collide with `CS0111`), and `STIA0009` only when the containing
-type is actually missing `partial` (otherwise the fix would insert a second `partial`). The two naming
-hints (`STIA0015`, `STIA0016`) deliberately offer none: renaming a type correctly means renaming every
-reference to it, and "these ids look alike" has no mechanical repair.
+type is actually missing `partial` (otherwise the fix would insert a second `partial`). `STIA0023` offers
+none on purpose: the only mechanical repair is deleting `Prefix`, which changes the canonical text form and
+makes data already written with that prefix unreadable — picking a safe replacement is a decision only you
+can make. The two naming hints (`STIA0015`, `STIA0016`) deliberately offer none: renaming a type correctly
+means renaming every reference to it, and "these ids look alike" has no mechanical repair.
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are
 evaluated once for the whole type, and parameter-level rules only against the block that declares the
 primary constructor, so adding members in a separate block is perfectly legal.
+
+<a id="migrating-from-another-library"></a>
+
+## Migrating from another library <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+The migrations below assume you are moving an existing, persisted id. Read
+[Things that change for every migration](#things-that-change-for-every-migration) first — the text form is
+a data contract, and it is the one thing that cannot be fixed by a compiler error.
+
+### From a hand-rolled record
+
+If you already have `public record struct OrderId(Guid Value);`, the migration is additive:
+
+1. Add `[StronglyTypedId]` and the `partial` modifier.
+2. Delete your hand-written `Parse`, `TryParse`, `ToString`, `CompareTo`, `==`/`!=` and any JSON converter —
+   the generator emits all of them.
+3. Keep your validator and normalizer as `static` methods and point the attribute at them
+   (`Validator = nameof(...)`, `Normalizer = nameof(...)`).
+4. **Check what `ToString()` produced before.** A hand-rolled record prints `OrderId { Value = … }`; the
+   generated one prints the primitive's invariant text. Logs, snapshot tests, cache keys and any
+   `string.Join` over ids will change.
+
+### From Andrew Lock's `StronglyTypedId`
+
+That package also uses a `[StronglyTypedId]` attribute, so the two cannot share a file without an alias.
+The namespace and the arguments differ:
+
+| Before | After |
+| --- | --- |
+| `using StronglyTypedId;` | `using Len.StronglyTypedId;` |
+| `[StronglyTypedId(StronglyTypedIdBackingType.Guid)]` | `[StronglyTypedId]` — the primitive is read from the constructor parameter |
+| `[StronglyTypedId(converters: StronglyTypedIdConverter.SystemTextJson)]` | nothing — integrations are detected from the compilation, and `Integrations` only subtracts |
+| `public partial struct OrderId` | `public partial record struct OrderId(Guid Value)` |
+| `OrderId.New()` | `OrderId.Create(Guid.NewGuid())` |
+| `OrderId.Empty` | `default` |
+| `OrderId.Parse(text)` | unchanged (`IParsable<TSelf>`) |
+| `orderId.Value` | unchanged (the positional record property) |
+
+Two behavioural differences are worth knowing before you switch:
+
+- **`New()` is gone.** Random generation is not part of the contract: `Create` takes a value. In tests,
+  `Any.Id<OrderId>()` from `Len.StronglyTypedId.Testing` fills the gap.
+- **Converters are no longer opt-in flags.** If the compilation references `System.Text.Json`, the
+  converter is generated. Use `Integrations` to remove what you do not want, rather than to add what you
+  do.
+
+### From Vogen
+
+Vogen wraps a value in a `struct` or `class` with a `Value` property and a `From` factory; this library
+wraps it in a `record` whose single constructor parameter *is* the primitive.
+
+| Vogen | Here |
+| --- | --- |
+| `[ValueObject<Guid>] public partial struct OrderId` | `[StronglyTypedId] public partial record struct OrderId(Guid Value)` |
+| `OrderId.From(guid)` | `OrderId.Create(guid)` |
+| `From` throwing `ValueObjectValidationException` | `Create` throwing `ArgumentException` (choose the type with `ExceptionType`) |
+| `private static Validation Validate(Guid value)` | `[StronglyTypedId(Validator = nameof(IsValid))]` plus a `static bool` method |
+| `private static Guid NormalizeInput(Guid value)` | `[StronglyTypedId(Normalizer = nameof(Normalize))]` |
+| `[Instance("Empty", "00000000-0000-0000-0000-000000000000")]` | `[StronglyTypedIdInstance(nameof(Empty), "00000000-0000-0000-0000-000000000000")]` |
+| `id.Value` | `id.Value` |
+
+`From` → `Create` is the mechanical part. The validation hook is the part that needs thought: Vogen's
+`Validate` returns a `Validation` carrying a message, whereas here the validator is a plain predicate and
+the message is generated (and can be redacted with `RedactValidationMessage`).
+
+### Things that change for every migration
+
+- **The canonical text form is a data contract.** Once ids are persisted, `ToString()` decides what is in
+  the database. Decide on `Prefix` *before* the first write — changing it afterwards makes existing rows
+  unreadable, which is why `STIA0023` refuses to offer a code fix that removes it.
+- **Culture.** `ToString()` and `Parse` are invariant by default; string interpolation is not. If the code
+  you are migrating used `$"{id}"`, check what it produced — a `decimal`-backed id prints `1234,5` under
+  `de-DE` through interpolation and `1234.5` through `ToString()`.
+- **Analyzers arrive with the package.** Installing the runtime package also brings the source generator,
+  the analyzers and the code fixes into every project that references it, including projects that only use
+  `IStronglyTypedId<,>` and declare no ids of their own.
+- **Nullable ids are ids.** `typeof(OrderId?).IsStronglyTypedId()` is `true`, and `GetPrimitiveIdType()`
+  returns the underlying primitive — the same answer MVC binding and the EF converter give.
+
+<a id="comparison-with-other-libraries"></a>
+
+## Comparison with other libraries <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+> Competitor capabilities are recorded as of **2026-10** and describe each project's documented surface at
+> that time. They change; check their current documentation before choosing. Cells marked **—** mean the
+> capability is not part of that library's documented surface, not that it is impossible to achieve there.
+
+| | This library | Vogen | Andrew Lock's `StronglyTypedId` | Hand-rolled `record` |
+| --- | --- | --- | --- | --- |
+| Declaration | `partial record` (class or struct) | `partial struct` / `class` | `partial struct` | anything |
+| Primitive selection | inferred from the single constructor parameter | generic argument or `typeof` | `StronglyTypedIdBackingType` enum | n/a |
+| Supported primitives | 24, including `enum` | wide, including custom types | a fixed set of backing types | any |
+| Validation hook | `Validator` predicate | `Validate` returning a `Validation` | — | manual |
+| Normalization hook | `Normalizer` | `NormalizeInput` | — | manual |
+| Text prefix | `Prefix`, with an ambiguity analyzer | — | — | manual |
+| Named instances | `[StronglyTypedIdInstance]` | `[Instance]` | `Empty` | manual |
+| System.Text.Json | generated when referenced | yes | opt-in flag | manual |
+| Newtonsoft.Json | generated when referenced | yes | opt-in flag | manual |
+| EF Core | generated when referenced | yes | opt-in flag | manual |
+| Dapper | generated when referenced | — | — | manual |
+| Swashbuckle / OpenAPI / MVC binding | generated when referenced | — | — | manual |
+| Analyzers | 25 ids (`STIA0000`–`STIA0024`), with code fixes and a refactoring | yes | limited | — |
+| Test data helpers | `Any.Id<T>()` (`Len.StronglyTypedId.Testing`) | — | — | — |
+| Trimming / AOT | declared `IsAotCompatible`, no reflective converters | — | — | depends on your code |
+
+The honest summary of the trade-offs:
+
+- **Choose Vogen** if you need a custom type as the underlying value, or if you want the `ValueObject`
+  base type and its hoisting of instance methods. It is the more general tool.
+- **Choose this library** if you want the id to *be* a record — structural equality, `with` expressions and
+  pattern matching come from the language rather than from generated members — and if you want the
+  integrations to appear because the compilation references the package, instead of being enumerated in an
+  attribute.
+- **Hand-rolling** stays reasonable for one or two ids. It stops being reasonable once you need parsing,
+  comparison operators, a JSON converter, an EF converter and a Dapper handler for each of them, and it
+  stops being *safe* once the text form has to survive a culture change.
 
 <a id="limitations"></a>
 

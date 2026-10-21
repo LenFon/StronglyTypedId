@@ -25,15 +25,52 @@
     <File Path="test.props" />
     <File Path="version.props" />
   </Folder>
+  <Folder Name="/assets/">
+    <File Path="assets/icon.png" />
+  </Folder>
   <Folder Name="/bench/">
     <Project Path="bench/Len.StronglyTypedId.Benchmarks/Len.StronglyTypedId.Benchmarks.csproj" />
     <Project Path="bench/Len.StronglyTypedId.Benchmarks.Consumer/Len.StronglyTypedId.Benchmarks.Consumer.csproj" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/_config.yml" />
+    <File Path="docs/aot.md" />
+    <File Path="docs/declaration.md" />
+    <File Path="docs/diagnostics.md" />
+    <File Path="docs/faq.md" />
+    <File Path="docs/generated-code.md" />
+    <File Path="docs/index.md" />
+    <File Path="docs/integrations.md" />
+    <File Path="docs/limitations.md" />
+    <File Path="docs/packages.md" />
+    <File Path="docs/performance.md" />
+    <File Path="docs/runtime.md" />
+    <File Path="docs/serialization.md" />
+    <File Path="docs/testing.md" />
+    <File Path="docs/troubleshooting.md" />
+  </Folder>
+  <Folder Name="/docs/zh-CN/">
+    <File Path="docs/zh-CN/aot.md" />
+    <File Path="docs/zh-CN/declaration.md" />
+    <File Path="docs/zh-CN/diagnostics.md" />
+    <File Path="docs/zh-CN/faq.md" />
+    <File Path="docs/zh-CN/generated-code.md" />
+    <File Path="docs/zh-CN/index.md" />
+    <File Path="docs/zh-CN/integrations.md" />
+    <File Path="docs/zh-CN/limitations.md" />
+    <File Path="docs/zh-CN/packages.md" />
+    <File Path="docs/zh-CN/performance.md" />
+    <File Path="docs/zh-CN/runtime.md" />
+    <File Path="docs/zh-CN/serialization.md" />
+    <File Path="docs/zh-CN/testing.md" />
+    <File Path="docs/zh-CN/troubleshooting.md" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Len.StronglyTypedId.Domain/Len.StronglyTypedId.Domain.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample1/Len.StronglyTypedId.Sample1.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample2/Len.StronglyTypedId.Sample2.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample3/Len.StronglyTypedId.Sample3.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.Sample4/Len.StronglyTypedId.Sample4.csproj" />
     <Project Path="samples/Len.StronglyTypedId.SampleConsole/Len.StronglyTypedId.SampleConsole.csproj" />
     <Project Path="samples/Len.StronglyTypedId.SampleIntegrations/Len.StronglyTypedId.SampleIntegrations.csproj" />
   </Folder>

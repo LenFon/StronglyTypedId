@@ -88,17 +88,26 @@ public partial record struct OrderId(Guid Value);
 ## Integrations
 
 Generated only when the matching package is referenced; `Integrations` can narrow the set per id, and
-`[assembly: StronglyTypedIdDefaults(...)]` sets assembly-wide defaults:
+`[assembly: StronglyTypedIdDefaults(...)]` sets assembly-wide defaults. The flags are
+`EntityFrameworkCore`, `Dapper`, `SystemTextJson`, `NewtonsoftJson`, `Swagger`, `AspNetCoreOpenApi`,
+`AspNetCoreMvc`, `MessagePack` and `MongoDb`:
 
-- **Serialization** — System.Text.Json and Newtonsoft.Json converters via a generated `[JsonConverter]`.
-- **EF Core** — `StronglyTypedIds.ApplyTo(configurationBuilder)` from `ConfigureConventions`, plus a
-  model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from `OnModelCreating`. Both overloads are
-  generated together whenever a `DbContext` overrides `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced.
-- **Dapper** — `StronglyTypedIds.ApplyTo()` registers `TypeHandler`s in Dapper's process-wide registry,
-  so it only needs to run once. The `ApplyTo(IDbConnection)` overload is kept for source compatibility and
-  ignores its argument.
-- **Swashbuckle / OpenAPI** — `StronglyTypedIds.ApplyTo(options)` for `AddSwaggerGen` / `AddOpenApi`.
-- **ASP.NET Core MVC** — `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id` and `{id:OrderId}`.
+- **Serialization** — `SystemTextJson` and `NewtonsoftJson` converters via a generated `[JsonConverter]`.
+- **Binary serialization** — `MessagePack` and `MongoDb`: a generated `IMessagePackFormatter<TId>` /
+  `IBsonSerializer<TId>`, wired up by `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` and
+  `StronglyTypedIds.RegisterBsonSerializers()`. Both write the primitive value itself — the text prefix
+  belongs to the text form (`ToString()` / JSON) and never reaches the payload.
+- **EF Core** — `EntityFrameworkCore`: `StronglyTypedIds.ApplyTo(configurationBuilder)` from
+  `ConfigureConventions`, plus a model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from
+  `OnModelCreating`. Both overloads are generated together whenever a `DbContext` overrides
+  `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced.
+- **Dapper** — `Dapper`: `StronglyTypedIds.ApplyTo()` registers `TypeHandler`s in Dapper's process-wide
+  registry, so it only needs to run once. The `ApplyTo(IDbConnection)` overload is kept for source
+  compatibility and ignores its argument.
+- **Swashbuckle / OpenAPI** — `Swagger` and `AspNetCoreOpenApi`: `StronglyTypedIds.ApplyTo(options)` for
+  `AddSwaggerGen` / `AddOpenApi`.
+- **ASP.NET Core MVC** — `AspNetCoreMvc`: `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id`
+  and `{id:OrderId}`.
 
 ## Testing
 

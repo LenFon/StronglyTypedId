@@ -337,9 +337,17 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 配置后改用该类型的单字符串构造函数（不带 <c>paramName</c>，因为自定义异常未必有双参构造）。
     /// </summary>
     private static string GetValidationFailureThrow(StronglyTypedIdInfo idInfo)
-        => idInfo.ExceptionTypeName is null
-            ? $"throw new global::System.ArgumentException($\"The value '{{value}}' is not a valid {idInfo.Name}.\", nameof(value))"
-            : $"throw new {idInfo.ExceptionTypeName}($\"The value '{{value}}' is not a valid {idInfo.Name}.\")";
+    {
+        // 被拒绝的原文会随异常消息进入日志、APM 与错误上报；对 string 基元的 Id 来说那就是用户输入。
+        // RedactValidationMessage 打开后只报「不是合法的 X」，不再内插原文。
+        var message = idInfo.RedactsValidationMessage
+            ? $"\"The value is not a valid {idInfo.Name}.\""
+            : $"$\"The value '{{value}}' is not a valid {idInfo.Name}.\"";
+
+        return idInfo.ExceptionTypeName is null
+            ? $"throw new global::System.ArgumentException({message}, nameof(value))"
+            : $"throw new {idInfo.ExceptionTypeName}({message})";
+    }
 
     /// <summary>
     /// 取 <c>TryParse</c> 的解析条件。
@@ -606,14 +614,15 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                 ? "((global::System.IFormattable)Value).ToString(format, formatProvider)"
                 : "Value.ToString(format, formatProvider)";
 
-            // format 为空时带前缀，非空时裸基元：$"{id}" 等常见路径走 IFormattable，一律裸基元会静默丢前缀。
+            // 前缀属于规范文本形，任何 format 都必须带上：否则 $"{id:X}" 会悄悄退化成裸基元，
+            // 与 ToString() / 序列化写出的文本不同形。
             AppendMember(
                 members,
                 version,
                 ["<inheritdoc/>"],
                 "public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>",
                 idInfo.HasPrefix
-                    ? $"    global::System.String.IsNullOrEmpty(format) ? {Literal(idInfo.Prefix!)} + {formatCall} : {formatCall};"
+                    ? $"    {Literal(idInfo.Prefix!)} + {formatCall};"
                     : $"    {formatCall};");
         }
 
@@ -625,6 +634,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                 var prefix = idInfo.Prefix!;
                 var charCount = prefix.Length;
 
+                // 前缀无条件先写：format 只作用于基元部分，不影响「规范文本形带前缀」这一点。
                 AppendMember(
                     members,
                     version,
@@ -635,11 +645,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "    global::System.ReadOnlySpan<char> format,",
                     "    global::System.IFormatProvider? provider)",
                     "{",
-                    "    if (!format.IsEmpty)",
-                    "    {",
-                    $"        return {GetTryFormatCall(idInfo.CharTryFormatKind, isUtf8: false, "destination", "charsWritten")};",
-                    "    }",
-                    string.Empty,
                     $"    if (!{Literal(prefix)}.AsSpan().TryCopyTo(destination))",
                     "    {",
                     "        charsWritten = 0;",
@@ -678,7 +683,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsUtf8SpanFormattable)
         {
-            // 与 UTF-16 的 TryFormat 同构：按基元能力直呼，format 为空时带前缀。
+            // 与 UTF-16 的 TryFormat 同构：前缀无条件先写，format 只作用于基元部分。
             if (idInfo.HasPrefix)
             {
                 var prefix = idInfo.Prefix!;
@@ -694,11 +699,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     "    global::System.ReadOnlySpan<char> format,",
                     "    global::System.IFormatProvider? provider)",
                     "{",
-                    "    if (!format.IsEmpty)",
-                    "    {",
-                    $"        return {GetTryFormatCall(idInfo.Utf8TryFormatKind, isUtf8: true, "utf8Destination", "bytesWritten")};",
-                    "    }",
-                    string.Empty,
                     $"    if (!{Literal(prefix)}u8.TryCopyTo(utf8Destination))",
                     "    {",
                     "        bytesWritten = 0;",

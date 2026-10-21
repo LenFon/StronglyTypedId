@@ -30,6 +30,19 @@ public class StronglyTypedIdAttribute : Attribute
     public Type? ExceptionType { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether a validator rejection leaves the rejected value out of the
+    /// exception message. The default is <see langword="false"/>, which keeps the value in the message.
+    /// </summary>
+    /// <remarks>
+    /// The rejected text travels with the exception message into logs, APM traces and error reports. For an
+    /// id wrapping <see cref="string"/> that text is user input — an e-mail address, a phone number, a token
+    /// fragment — often rejected precisely because it is malformed, but still personal data. Turning this on
+    /// yields <c>The value is not a valid OrderId.</c> instead of
+    /// <c>The value '...' is not a valid OrderId.</c>.
+    /// </remarks>
+    public bool RedactValidationMessage { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is
     /// generated for the strongly typed id.
     /// </summary>

@@ -19,7 +19,7 @@ public class CodeGeneratorModuleGateTests
     public void EfCore_Should_Generate_WhenEntityFrameworkCoreMajorVersionIsSeven()
     {
         var generated = RunGenerator(
-            DbContextSource,
+            EfCoreSource,
             SyntheticAssembly.GetOrCreate("Microsoft.EntityFrameworkCore", "7.0.0.0"));
 
         generated.Should().ContainKey("Len.StronglyTypedId.OrderId.EntityFrameworkCore.g.cs");
@@ -30,7 +30,7 @@ public class CodeGeneratorModuleGateTests
     public void EfCore_Should_NotGenerate_WhenEntityFrameworkCoreMajorVersionIsSix()
     {
         var generated = RunGenerator(
-            DbContextSource,
+            EfCoreSource,
             SyntheticAssembly.GetOrCreate("Microsoft.EntityFrameworkCore", "6.0.0.0"));
 
         generated.Keys.Should().NotContain(key => key.EndsWith(".EntityFrameworkCore.g.cs", StringComparison.Ordinal));
@@ -43,7 +43,7 @@ public class CodeGeneratorModuleGateTests
     public void EfCore_Should_IgnoreMinorAndPatchVersion()
     {
         var generated = RunGenerator(
-            DbContextSource,
+            EfCoreSource,
             SyntheticAssembly.GetOrCreate("Microsoft.EntityFrameworkCore", "7.42.13.7"));
 
         generated.Should().ContainKey("StronglyTypedIds.EntityFrameworkCore.g.cs");
@@ -261,6 +261,40 @@ public class CodeGeneratorModuleGateTests
         var generated = RunGenerator(
             IdSource,
             SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", "8.0.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreOpenApi.g.cs");
+    }
+
+    /// <summary>
+    /// 8.0 线上没有 schema 转换器 API（<c>IOpenApiSchemaTransformer</c> / <c>OpenApiOptions</c> 都是 9.0.0
+    /// 才引入的），OpenAPI 文档由 Swashbuckle 产出。本用例锁定这条替代路径：同一个编译里
+    /// OpenApi 8.0 + Swashbuckle 6 时，只产出 Swagger 入口，不产出 OpenAPI 入口 —— 否则消费者会拿到
+    /// 一份引用 8.0 里不存在类型的产物，编译直接 CS0246。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_Should_FallBackToSwagger_WhenMajorVersionIsEight()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", "8.0.0.0"),
+            SyntheticAssembly.GetOrCreate("Swashbuckle.AspNetCore.SwaggerGen", "6.0.0.0"));
+
+        generated.Should().ContainKey("StronglyTypedIds.Swagger.g.cs");
+        generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreOpenApi.g.cs");
+    }
+
+    /// <summary>
+    /// 8.0 线的每一个补丁版本都必须落在闸门外：闸门看主版本，8.0.0 与 8.0.32 行为必须一致。
+    /// </summary>
+    [Theory]
+    [InlineData("8.0.0.0")]
+    [InlineData("8.0.32.0")]
+    [InlineData("8.1.0.0")]
+    public void AspNetCoreOpenApi_Should_NotGenerate_ForAnyEightVersion(string assemblyVersion)
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", assemblyVersion));
 
         generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreOpenApi.g.cs");
     }
@@ -518,20 +552,16 @@ public class CodeGeneratorModuleGateTests
         """;
 
     /// <summary>
-    /// 示例源码必须出现 <c>protected override void ConfigureConventions(…)</c> 语法，否则 EF Core 生成器根本不会被选入，反向用例将失去判别力。
+    /// EF Core 闸门只看引用的 <c>Microsoft.EntityFrameworkCore</c> 主版本，与源码里是否重写
+    /// <c>ConfigureConventions</c> 无关，因此示例只需一个 Id。
     /// </summary>
-    private const string DbContextSource = """
+    private const string EfCoreSource = """
         using System;
 
         namespace Len.StronglyTypedId;
 
         [StronglyTypedId]
         public partial record struct OrderId(Guid Value);
-
-        public class TestDbContext
-        {
-            protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) { }
-        }
         """;
 
     /// <summary>

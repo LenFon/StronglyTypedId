@@ -6,6 +6,7 @@ public static class Program
     {
         await EfCoreDemo.RunAsync();
         await DapperDemo.RunAsync();
+        BinarySerializationDemo.Run();
 
         Demo.End();
     }

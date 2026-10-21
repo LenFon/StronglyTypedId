@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace Len.StronglyTypedId.SampleConsole.Demos;
@@ -36,5 +37,28 @@ internal static class TextDemo
             ?? throw new InvalidOperationException("TypeConverter 未能把 Id 转成字符串。");
         Demo.Line($"ConvertToInvariantString          -> {text}");
         Demo.Line($"ConvertFromInvariantString        -> {converter.ConvertFromInvariantString(text)}");
+
+        Demo.Section("Span 格式化：写进调用方缓冲区，不产生中间字符串");
+
+        // ISpanFormattable / IUtf8SpanFormattable：直接写进栈上缓冲区，适合高频日志与协议编码。
+        Span<char> chars = stackalloc char[64];
+
+        if (invoice.TryFormat(chars, out var charsWritten, default, CultureInfo.InvariantCulture))
+        {
+            Demo.Line($"TryFormat(Span<char>)             -> {new string(chars[..charsWritten])}");
+        }
+
+        Span<byte> utf8 = stackalloc byte[64];
+
+        if (invoice.TryFormat(utf8, out var bytesWritten, default, CultureInfo.InvariantCulture))
+        {
+            Demo.Line($"TryFormat(Span<byte>)             -> {Encoding.UTF8.GetString(utf8[..bytesWritten])}");
+        }
+
+        // IUtf8SpanParsable：从 UTF-8 字节直接读回，同样不经过字符串。
+        if (InvoiceId.TryParse(utf8[..bytesWritten], CultureInfo.InvariantCulture, out var reparsed))
+        {
+            Demo.Line($"TryParse(ReadOnlySpan<byte>)      -> {reparsed}");
+        }
     }
 }

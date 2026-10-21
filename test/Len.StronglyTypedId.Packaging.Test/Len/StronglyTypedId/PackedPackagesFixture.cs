@@ -109,6 +109,21 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// 读出包内某个条目的字节内容。
+    /// </summary>
+    public static byte[] ReadEntryBytes(string packagePath, string entryName)
+    {
+        using var archive = ZipFile.OpenRead(packagePath);
+        var entry = archive.Entries.Single(candidate => candidate.FullName == entryName);
+
+        using var stream = entry.Open();
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+
+        return buffer.ToArray();
+    }
+
+    /// <summary>
     /// 读出包内 nuspec 的 XML 文档。
     /// </summary>
     public static XDocument ReadNuspec(string packagePath)
@@ -184,11 +199,21 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
             Path.Combine(repositoryRoot, "common.props"),
             Path.Combine(repositoryRoot, "version.props"),
             Path.Combine(repositoryRoot, "Directory.Packages.props"),
+            Path.Combine(repositoryRoot, "PACKAGE.md"),
             Path.Combine(repositoryRoot, "src", "Len.StronglyTypedId", "Len.StronglyTypedId.csproj"),
             Path.Combine(repositoryRoot, "src", "Len.StronglyTypedId", "PublicAPI.Shipped.txt"),
             Path.Combine(repositoryRoot, "src", "Len.StronglyTypedId", "PublicAPI.Unshipped.txt"),
             Path.Combine(repositoryRoot, "src", "Len.StronglyTypedId.Generators", "Len.StronglyTypedId.Generators.csproj"),
         };
+
+        // 图标同样是包内容：不计入指纹的话，只改 assets/icon.png 时指纹不变，夹具会直接复用
+        // 上一次打好的包，图标断言就对着旧包通过了 —— 换了图标却「测过了」是最坏的一种绿。
+        var assetsRoot = Path.Combine(repositoryRoot, "assets");
+
+        if (Directory.Exists(assetsRoot))
+        {
+            inputs.AddRange(Directory.EnumerateFiles(assetsRoot, "*", SearchOption.AllDirectories));
+        }
 
         var sourceRoot = Path.Combine(repositoryRoot, "src");
 

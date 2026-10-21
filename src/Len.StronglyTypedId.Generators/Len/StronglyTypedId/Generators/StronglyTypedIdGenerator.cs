@@ -55,6 +55,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateAspNetCoreMvcCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateSystemTextJsonRegistrationCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateNewtonsoftJsonRegistrationCode);
+        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateMessagePackCode);
+        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateMongoDbCode);
     }
 
     private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
@@ -183,6 +185,16 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
         => GenerateIntegrationCode(context, args, "Newtonsoft.Json.dll");
 
+    private static void GenerateMessagePackCode(
+        SourceProductionContext context,
+        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
+        => GenerateIntegrationCode(context, args, "MessagePack.dll");
+
+    private static void GenerateMongoDbCode(
+        SourceProductionContext context,
+        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
+        => GenerateIntegrationCode(context, args, "MongoDB.Bson.dll");
+
     /// <summary>
     /// 按登记名取当前编译引用下已启用的集成生成器并执行；未启用时什么也不做。
     /// </summary>
@@ -306,6 +318,22 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText(
                 "Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`",
                 "嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`")),
+        new CodeGeneratorRegistration(
+            "MessagePack.dll",
+            static modules => modules.HasModule("MessagePack.dll", 2),
+            MessagePackCodeGenerator.Instance,
+            new DocText("`MessagePack` ≥ 2.0.0 is referenced", "引用了 `MessagePack` ≥ 2.0.0"),
+            new DocText(
+                "`{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`",
+                "`{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`，以及 `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`")),
+        new CodeGeneratorRegistration(
+            "MongoDB.Bson.dll",
+            static modules => modules.HasModule("MongoDB.Bson.dll", 3),
+            MongoDbCodeGenerator.Instance,
+            new DocText("`MongoDB.Bson` ≥ 3.0.0 is referenced", "引用了 `MongoDB.Bson` ≥ 3.0.0"),
+            new DocText(
+                "`{TypeName}BsonSerializer` → `…MongoDb.g.cs`, plus `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`",
+                "`{TypeName}BsonSerializer` → `…MongoDb.g.cs`，以及 `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`")),
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.OpenApi.dll",
             static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
@@ -447,9 +475,10 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         var defaultNormalizer = GetAssemblyDefaultNormalizer(context.SemanticModel.Compilation.Assembly);
         var defaultExceptionType = GetAssemblyDefaultExceptionType(context.SemanticModel.Compilation.Assembly);
         var defaultIntegrations = StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(context.SemanticModel.Compilation.Assembly);
+        var defaultRedact = StronglyTypedIdInfo.GetAssemblyDefaultRedactValidationMessage(context.SemanticModel.Compilation.Assembly);
 
         return SupportedPrimitiveTypes.IsSupported(ctorArgType)
-            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType, defaultIntegrations)
+            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType, defaultIntegrations, defaultRedact)
             : null;
     }
 
