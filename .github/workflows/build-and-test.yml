@@ -1,4 +1,4 @@
-# This workflow will build a .NET project
+﻿# This workflow will build a .NET project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
 
 name: build and test
@@ -125,58 +125,51 @@ jobs:
       # 这一步会点名是哪个 tag 没有小节，而不是等使用者去 NuGet 页面上猜。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-changelog
     - name: Restore coverage tool
-      # 必须排在下面的合并测试步骤之前：覆盖率那条腿要用 dotnet-coverage。
+      # 必须排在下面的测试步骤之前：两条腿都用 dotnet-coverage 采集。
       run: dotnet tool restore
-    - name: Test (net8.0 行为校验 + net10.0 覆盖率，两腿并行)
-      # 两腿互不依赖，串行跑合计约 6m52s（net8 3m33s + net10 3m19s），占整个 job 的 80%，
-      # 是这条流水线唯一的瓶颈。实测这套测试几乎不吃多核（同一份 Generators.Test 在 24 核上 167s、
-      # 在 4 核 runner 上约 200s，只差 20% —— Roslyn 编译链本身偏串行），因此并发重叠接近线性。
-      # GitHub Actions 无法并行同一 job 内的 step，而拆成 matrix job 会改变 check 名称（可能让分支保护
-      # 里登记的必需检查失配），故在同一个 step 内用后台进程并发，各自写独立日志、最后统一聚合退出码。
+    - name: Test + coverage (net8.0)
+      # net8.0 与 net10.0 各采一份报告、各带一个 flag 上传（见下方两个 Upload 步骤），
+      # 这样 Codecov 上既能按 TFM 分别查看覆盖率，也能看到合并后的总体趋势。
       #
-      # net8.0 腿：Packaging.Test 只目标 net10.0（包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack
-      # 重复一遍），而 MTP 模式的 dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含
-      # 该 TFM 的工程会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1
-      # 让整步失败（--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。故与 pack 步骤同理，
-      # 逐工程调用，只跑真正双目标的三个测试工程。
-      # net10.0 腿：用 dotnet-coverage 直接包住测试进程采集覆盖率 —— MTP 原生扩展在本仓库只产出空数据
-      # （10 字节空壳），故改用此方式。仅 net10.0 参与覆盖率，统计范围与阈值仍由 codecov.yml 决定。
+      # 两条腿是顺序执行的，不再像上一版那样在同一步里后台并发 —— 每份报告都需要一个独立的
+      # dotnet-coverage 采集会话，而两个会话并发是否互相干扰无法在本机验证（本机 bash 不可用），
+      # 与其在 CI 上赌偶发失败，不如用确定性换这二十来秒。测试提速后两条腿合计约一分钟。
+      #
+      # 为什么 net8.0 腿要逐工程调用而不是解决方案级：Packaging.Test 只目标 net10.0（包内容断言与
+      # 测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），而 MTP 模式的 dotnet test 在解决方案级
+      # 会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的工程会解析出并不存在的
+      # bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1 让整步失败
+      # （--test-modules 与 --framework 互斥，没法用它把这一个工程摘出去）。
+      #
+      # dotnet-coverage 一次只包一条命令，故用 bash -c 把三个工程串起来共享同一个采集会话。
+      # 内层必须自行累积退出码：没有 set -e 时 bash -c 的返回值取自最后一条命令，若前两个工程失败
+      # 而 Generators 通过，整条腿会被误判为成功。
       run: |
-        set -uo pipefail
         mkdir -p TestResults
-
-        # 注意：函数内必须自行累积退出码。没有 set -e 时函数的返回值取自最后一条命令，
-        # 若前两个工程失败而 Generators 通过，整条腿会被误判为成功。
-        run_net8() {
-          local rc=0
-          dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal || rc=1
-          dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal || rc=1
-          dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal || rc=1
-          return $rc
-        }
-
-        run_net8 > TestResults/net8.log 2>&1 &
-        net8_pid=$!
-
+        dotnet tool run dotnet-coverage -- collect -f cobertura \
+          -o TestResults/coverage.net8.cobertura.xml \
+          bash -c '
+            rc=0
+            dotnet test --project test/Len.StronglyTypedId.Test --framework net8.0 --no-build --verbosity normal || rc=1
+            dotnet test --project test/Len.StronglyTypedId.Integration.Test --framework net8.0 --no-build --verbosity normal || rc=1
+            dotnet test --project test/Len.StronglyTypedId.Generators.Test --framework net8.0 --no-build --verbosity normal || rc=1
+            exit $rc
+          '
+    - name: Test + coverage (net10.0)
+      # 解决方案级调用即可：所有测试工程都有 net10.0 目标，MTP 会并行调度各模块。
+      # 用 dotnet-coverage 直接包住测试进程采集覆盖率 —— MTP 原生扩展在本仓库只产出空数据
+      # （10 字节空壳），故改用此方式。
+      run: |
+        mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net10.cobertura.xml \
-          dotnet test --framework net10.0 --no-build --verbosity normal \
-          > TestResults/net10.log 2>&1 &
-        net10_pid=$!
-
-        # 两条腿都等完再判，避免一条腿失败时另一条的日志被截断。
-        status=0
-        wait "$net8_pid" || status=1
-        wait "$net10_pid" || status=1
-
-        echo "===== net8.0（行为校验）====="
-        cat TestResults/net8.log
-        echo "===== net10.0（覆盖率）====="
-        cat TestResults/net10.log
-        exit $status
-    - name: Codecov
+          dotnet test --framework net10.0 --no-build --verbosity normal
+    - name: Upload coverage (net8.0)
       # v5 起 action 只是 Codecov Wrapper 的外壳（CLI 由它自己下载并做 PGP 校验），入参沿用
-      # `files` / `token` 不变；v3 及以下走的是已废弃的 uploader，迟早会被服务端拒绝。
+      # `files` / `token` / `flags` 不变；v3 及以下走的是已废弃的 uploader，迟早会被服务端拒绝。
+      #
+      # 每份报告单独上传、单独带一个 flag —— Codecov 要求 flag 与报告一一对应：一份报告挂多个 flag
+      # 会把整份报告的覆盖率重复计入每个 flag，数字就失真了。
       #
       # fail_ci_if_error：上传失败（token 过期、Codecov 故障）直接让构建红。默认值是 false ——
       # 那意味着覆盖率可以静默停止更新几个月而没人发现，正是这条门槛要防的形态。
@@ -188,7 +181,16 @@ jobs:
       uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        files: "TestResults/coverage.net8.cobertura.xml"
+        flags: net8.0
+        fail_ci_if_error: true
+    - name: Upload coverage (net10.0)
+      # 与上一步一一对应，只是换了报告与 flag。
+      uses: codecov/codecov-action@v7
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: "TestResults/coverage.net10.cobertura.xml"
+        flags: net10.0
         fail_ci_if_error: true
 
   # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作。本 job 把这个宣称变成可验证的
