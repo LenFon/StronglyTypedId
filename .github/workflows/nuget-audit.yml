@@ -1,0 +1,46 @@
+# NuGet 已知漏洞巡检（含传递依赖）。
+#
+# 从 build-and-test.yml 里搬出来的：那一步在每次 PR 上要花 11s，而它非阻断、只写 job summary，
+# 平时没人看，只有排查依赖问题时才需要。改成每周一次 + 手动触发，能力不减，PR 少等 11s。
+#
+# 为什么不做成门禁：现存漏洞全落在 test / samples / bench 的传递依赖里，做成阻断会让 PR 因上游包
+# 尚未发版而永久变红。发布物那一侧的完整依赖链由 common.props 的 NuGetAuditMode=all 在 restore
+# 阶段报 NU1902/NU1903，那才是需要拦住的地方。
+
+name: nuget audit
+
+on:
+  schedule:
+    # 每周一 01:30 UTC = 北京时间 09:30。Dependabot 是 09:00，错开半小时免得同时抢 runner。
+    - cron: "30 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
+        cache: true
+        cache-dependency-path: Directory.Packages.props
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: NuGet vulnerability report
+      # 只写 job summary，不设退出码：这份报告是给人看的，不是门禁。
+      run: |
+        {
+          echo '### NuGet 已知漏洞（含传递依赖）'
+          echo '```'
+          dotnet package list --project Len.StronglyTypedId.slnx --vulnerable --include-transitive || true
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

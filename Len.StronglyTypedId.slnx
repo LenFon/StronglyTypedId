@@ -3,6 +3,7 @@
   <Folder Name="/.github/workflows/">
     <File Path=".github/workflows/build-and-test.yml" />
     <File Path=".github/workflows/codeql-analysis.yml" />
+    <File Path=".github/workflows/nuget-audit.yml" />
     <File Path=".github/workflows/publish-nuget.yml" />
   </Folder>
   <Folder Name="/Solution Items/">

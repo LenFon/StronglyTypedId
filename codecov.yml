@@ -7,18 +7,10 @@
 # 所以先用 ignore 把它们剔出去，只留四个随包发布的程序集：
 #   Len.StronglyTypedId / .Generators / .Testing / .Testing.AutoFixture
 # 剔除后本机实测（2026-10-21，42 个文件 / 4064 行）：net8.0 单腿 94.65%、net10.0 单腿 95.05%、
-# 两者并集 95.05%。net8.0 腿只跑三个测试工程（Test / Integration.Test / Generators.Test），
-# 是 net10.0 的子集，所以并集与 net10.0 单腿一致 —— 两个 flag 的价值在于能按 TFM 单独查看，
-# 以及将来出现 `#if NET8_0` 之类的分支时能立刻看出两条腿的差异。
+# 两者并集 95.05%。net8.0 腿只跑四个测试工程，是 net10.0 的子集，所以并集与 net10.0 单腿一致 ——
+# 分 TFM 的报告没带来额外信息，却要多付一次 dotnet-coverage 启动、一次上传和一次 Codecov 结算。
+# 故 CI 改为一次 dotnet test 跑完两个 TFM、只上传一份不带 flag 的报告（见 build-and-test.yml）。
 # （旧注释里的 96.83% / 3056 行是 2026-10-19 的口径，代码此后增长，已不适用。）
-
-# 两份报告（net8.0 / net10.0）在同一个 job 里先后上传。不声明等待数的话，Codecov 收到第一份就
-# 开始算状态、发评论 —— 那一刻只有 net8.0 的数据（实测 94.65% vs 合并后 95.05%），评论里的数字会
-# 短暂偏低。after_n_builds 让它等齐两份再算。
-# 代价：某条腿没上传成功时不会有评论/状态 —— 但那种情况下 job 本身就是红的（fail_ci_if_error）。
-codecov:
-  notify:
-    after_n_builds: 2
 
 coverage:
   precision: 2
@@ -42,18 +34,8 @@ coverage:
         threshold: 5%
         informational: false
 
-# 两条测试腿（net8.0 / net10.0）各自采集并上传一份报告，用 flag 区分，便于在 Codecov 上按 TFM
-# 分别查看。两者覆盖的是同一批源文件（同一份代码的两个 TFM 构建），因此**不设 paths** —— 设了会把
-# 对方的文件排除在外，反而割裂统计。
-#
-# carryforward：某次提交只跑了一条腿（例如另一条腿失败）时，缺失的 flag 沿用上一次的结果，而不是
-# 让 project 状态因为「报告不全」直接判红。
-flag_management:
-  default_rules:
-    carryforward: true
-
 comment:
-  layout: "reach,diff,flags,files"
+  layout: "reach,diff,files"
   behavior: default
   # 覆盖率没变化就不发评论，避免每个 PR 都刷一条「0% 变化」。
   require_changes: true

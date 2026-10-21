@@ -71,18 +71,6 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
-    - name: NuGet vulnerability report
-      # 非阻断，只写 job summary：现存漏洞全落在 test / samples / bench 的传递依赖里，
-      # 做成门禁会让 PR 因上游包未发版而永久变红。发布物那侧由 common.props 的
-      # NuGetAuditMode=all 在 restore 阶段报 NU1902/NU1903。
-      continue-on-error: true
-      run: |
-        {
-          echo '### NuGet 已知漏洞（含传递依赖）'
-          echo '```'
-          dotnet package list --project Len.StronglyTypedId.slnx --vulnerable --include-transitive || true
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
     - name: Verify generated README tables
       # 三张表由 DocGen 从生成器内部判定数据渲染，改了判定却没重新生成时这里直接红。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify
@@ -92,47 +80,38 @@ jobs:
     - name: Restore tools
       run: dotnet tool restore
 
-    # 两条腿都用 --test-modules 通配挑模块，而不是 --solution + --framework：后者会给每个测试工程
-    # 解析模块路径，对不含该 TFM 的工程解析出不存在的 bin/Debug/<tfm>/<工程名>，启动时抛
-    # Win32Exception 让整步失败。通配按「已构建产物」挑模块，没有该 TFM 产物的工程自然落选，
-    # 也不必维护工程清单。注意 --test-modules 与 --solution / --project / --framework 互斥，只能裸跑。
+    # 一次 dotnet test 跑完两个 TFM 的全部测试模块，只采一份覆盖率。
+    #
+    # 用 --test-modules 通配挑模块，而不是 --solution + --framework：后者会给每个测试工程解析模块
+    # 路径，对不含该 TFM 的工程解析出不存在的 bin/Debug/<tfm>/<工程名>，启动时抛 Win32Exception 让
+    # 整步失败。通配按「已构建产物」挑模块，没有该 TFM 产物的工程自然落选，也不必维护工程清单。
+    # 注意 --test-modules 与 --solution / --project / --framework 互斥，只能裸跑。
     #
     # 通配写 *.Test.dll 而不是 *Test.dll：后者会把 Aot.SmokeTest 这种名字以 Test 结尾的非测试程序集
     # 也捞进来。包内容断言工程的程序集名刻意叫 Len.StronglyTypedId.Packaging.Tests（复数），同样不被
     # 选中 —— 它要真跑 dotnet pack，由独立的 packaging job 负责。
     #
+    # 中间那段 * 同时匹配 net8.0 与 net10.0，九个模块交给 MTP 一次调度（内部并行）。以前是两条腿各跑
+    # 一次、各采一份报告，但实测 net8.0 覆盖的源文件是 net10.0 的子集（94.65% vs 95.05%，并集仍是
+    # 95.05%），分 TFM 的报告没带来额外信息，却要多付一次 dotnet-coverage 启动、一次上传和一次
+    # Codecov 结算。
+    #
     # 代价：glob 少匹配不会报错，只会静默少跑几个模块；动构建输出布局或测试工程集合时要回头核对。
-    - name: Test + coverage (net8.0)
+    - name: Test + coverage
       run: |
         mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
-          -o TestResults/coverage.net8.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net8.0/*.Test.dll" --no-build --verbosity normal
-    - name: Test + coverage (net10.0)
-      # 与上一步同构，只换 TFM 与报告路径。
-      run: |
-        mkdir -p TestResults
-        dotnet tool run dotnet-coverage -- collect -f cobertura \
-          -o TestResults/coverage.net10.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net10.0/*.Test.dll" --no-build --verbosity normal
+          -o TestResults/coverage.cobertura.xml \
+          dotnet test --test-modules "**/bin/Debug/*/*.Test.dll" --no-build --verbosity normal
 
-    # 每份报告单独上传、单独带一个 flag：一份报告挂多个 flag 会把整份覆盖率重复计入每个 flag。
     # fail_ci_if_error 必须为 true，否则覆盖率可以静默停更几个月而没人发现。
     # 统计范围与阈值在 codecov.yml（project 跌幅 ≤1%、patch ≥80%）；测试工程 / 工具 / 测试依赖由那边
     # 的 ignore 剔除 —— 采集阶段没法按路径过滤（--include-files 区分 / 与 \，跨 OS 不等价）。
-    - name: Upload coverage (net8.0)
+    - name: Upload coverage
       uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: TestResults/coverage.net8.cobertura.xml
-        flags: net8.0
-        fail_ci_if_error: true
-    - name: Upload coverage (net10.0)
-      uses: codecov/codecov-action@v7
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: TestResults/coverage.net10.cobertura.xml
-        flags: net10.0
+        files: TestResults/coverage.cobertura.xml
         fail_ci_if_error: true
 
   # 包内容断言单独成 job：它内部要真跑 dotnet pack，不该拖慢 build 的测试腿，也不该把与 TFM 无关的
@@ -279,6 +258,8 @@ jobs:
         cache: true
         cache-dependency-path: Directory.Packages.props
     - name: Restore dependencies
-      run: dotnet restore
+      # 只还原门槛要用的那条依赖链。整解决方案还原在 windows-latest 上实测 59s，而本 job 只用到
+      # bench 两个工程（Consumer 由 Benchmarks 传递引用）—— 收窄后省下的时间比门槛本身（20s）还多。
+      run: dotnet restore bench/Len.StronglyTypedId.Benchmarks/Len.StronglyTypedId.Benchmarks.csproj
     - name: Generator performance gate
-      run: dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate
+      run: dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks --no-restore -- --gate
