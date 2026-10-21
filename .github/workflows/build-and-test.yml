@@ -1,4 +1,4 @@
-﻿# This workflow will build a .NET project
+# This workflow will build a .NET project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
 
 name: build and test
@@ -301,8 +301,8 @@ jobs:
   # 门槛改用「固定轮次的确定性指标」：分配字节数为主判据（同一份代码走同一条路径时逐字节可复现，
   # 且 Roslyn 侧绝大多数性能退化 —— 多枚举一遍符号、多拼一次字符串、多接一层 LINQ —— 都会体现在分配量上），
   # 耗时只作数量级兜底（容忍 10 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
-# 之所以放到 10 倍：墙钟跨机器不可比，实测同一份代码在开发机 13.97 ms、在 windows-latest 59.75 ms，
-# 相差 4.3 倍而分配量只差 0.011% —— 4 倍的门槛会因 runner 较慢而假红。
+  # 之所以放到 10 倍：墙钟跨机器不可比，实测同一份代码在开发机 13.97 ms、在 windows-latest 59.75 ms，
+  # 相差 4.3 倍而分配量只差 0.011% —— 4 倍的门槛会因 runner 较慢而假红。
   #
   # 为什么钉在 windows-latest：基线是在 Windows 上生成的。引用程序集集合（尤其 Microsoft.AspNetCore.App
   # 的引用程序集）与运行时补丁在不同 OS 上并不逐字节相同，分配量因此不可跨 OS 比对。

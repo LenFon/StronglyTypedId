@@ -1,4 +1,4 @@
-﻿# Codecov 配置。放在仓库根，Codecov 自动读取。
+# Codecov 配置。放在仓库根，Codecov 自动读取。
 #
 # 覆盖率报告由 dotnet-coverage 采集，里面混着大量「跑测试用的代码」：测试工程自身、DocGen 工具，
 # 以及 Dapper / Microsoft.CodeAnalysis.Testing 这些测试依赖。它们把总覆盖率稀释到 40% 左右
