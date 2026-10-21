@@ -1,5 +1,9 @@
 # 构建 / 测试 / 覆盖率 / 打包校验 / AOT / 性能门槛。
 #
+# 五个 job 之间没有任何 needs。它们各跑在一台独立 VM 上、各 checkout、各 restore，谁也不消费谁的
+# 产物 —— 加一条 needs 买不到复用，只会把关键路径从 build 的 6 分钟拉成 8 分钟。全部从 t=0 并行，
+# 墙钟由最长的 build 决定。
+#
 # 触发面只覆盖「会改变产物或校验结论」的路径：源码、测试、基准、工具、构建配置、文档表格与工作流本身。
 
 name: build and test
@@ -13,7 +17,12 @@ on:
       - "bench/**"
       - "tools/**"
       - "*.props"
+      - "*.targets"
+      - "*.slnx"
+      - "global.json"
+      - ".editorconfig"
       - "README*.md"
+      - "PACKAGE.md"
       - "CHANGELOG*.md"
       - "codecov.yml"
       - ".github/workflows/*.yml"
@@ -26,6 +35,11 @@ env:
   DOTNET_NOLOGO: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
 
+# 本工作流只读仓库：不推代码、不发评论、不动 release。显式声明而不是沿用仓库默认值 ——
+# 默认值可能是 write-all，任何一个第三方 action 被投毒都能借此改仓库。
+permissions:
+  contents: read
+
 # 同一分支连推多次时旧运行已无意义：只对 PR 取消，push 到 dev/main 保留完整记录便于回溯。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +48,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@v7
@@ -47,6 +62,11 @@ jobs:
         dotnet-version: |
           8.0.x
           10.0.x
+        # 五个 job 各跑在一台独立 VM 上，不缓存的话每台都要把整套依赖重下一遍。
+        # 版本集中在 Directory.Packages.props（CPM），拿它当缓存键足够；仓库没有 lock 文件，
+        # 键的粒度只能到「这份 props 变没变」，改任何版本都会整份失效 —— 宁可多失效，不会取到脏包。
+        cache: true
+        cache-dependency-path: Directory.Packages.props
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
@@ -116,13 +136,17 @@ jobs:
         fail_ci_if_error: true
 
   # 包内容断言单独成 job：它内部要真跑 dotnet pack，不该拖慢 build 的测试腿，也不该把与 TFM 无关的
-  # 用例混进覆盖率报告。needs: build 让它排在上传之后，与 aot / pack / perf 互不影响。
+  # 用例混进覆盖率报告。
+  #
+  # 刻意不写 needs: build。五个 job 各 checkout、各 restore，谁也不消费谁的产物 —— 加一条 needs
+  # 买不到任何东西，只会把关键路径从 build 的 6 分钟拉成 8 分钟。源码编译不过时它自己也会红，
+  # 不需要 build 替它挡在前面。
   #
   # 不传 --framework：两个 TFM 的模块都会跑，夹具用跨进程文件锁串行化打包（先到者打包、后到者复用
   # 产物），因此 dotnet pack 只真正执行一次。
   packaging:
     runs-on: ubuntu-latest
-    needs: build
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@v7
@@ -132,6 +156,8 @@ jobs:
         dotnet-version: |
           8.0.x
           10.0.x
+        cache: true
+        cache-dependency-path: Directory.Packages.props
     - name: Restore dependencies
       # 夹具内部用 dotnet pack --no-restore，src 工程必须先还原。
       run: dotnet restore
@@ -145,6 +171,7 @@ jobs:
   # SmokeTestJsonContext 就是最小示例，同时也是「AOT 用户该怎么配」的活文档。
   aot:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@v7
@@ -153,6 +180,8 @@ jobs:
       with:
         dotnet-version: |
           10.0.x
+        cache: true
+        cache-dependency-path: Directory.Packages.props
     - name: Install AOT toolchain
       # Native AOT 在 Linux 上需要 clang 与 zlib 开发包。
       run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
@@ -170,6 +199,7 @@ jobs:
   # 写回 version.props（≥ 基线 → 跨版本比对生效）；推导失败则兜底为基线号本身。
   pack:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@v7
@@ -182,6 +212,8 @@ jobs:
         dotnet-version: |
           8.0.x
           10.0.x
+        cache: true
+        cache-dependency-path: Directory.Packages.props
     - name: Install dotnet tool
       run: dotnet tool install -g dotnetCampus.TagToVersion
     - name: Set version from latest tag (fall back to baseline)
@@ -235,6 +267,7 @@ jobs:
   # 有意改变性能特征时，本地跑 `--gate --update-baseline` 重写基线并连同改动一起提交。
   perf:
     runs-on: windows-latest
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@v7
@@ -243,6 +276,8 @@ jobs:
       with:
         dotnet-version: |
           10.0.x
+        cache: true
+        cache-dependency-path: Directory.Packages.props
     - name: Restore dependencies
       run: dotnet restore
     - name: Generator performance gate
