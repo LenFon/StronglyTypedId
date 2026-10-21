@@ -5,17 +5,17 @@ using Microsoft.CodeAnalysis;
 namespace Len.StronglyTypedId.Benchmarks;
 
 /// <summary>
-/// <see cref="StronglyTypedIdDiscovery.Discover"/> 在真实引用集上的成本，以及「被跑两遍」的放大效应。
+/// <see cref="StronglyTypedIdDiscovery.Discover"/> 在真实引用集上的成本，以及「被跑五遍」的放大效应。
 /// </summary>
 /// <remarks>
 /// <para>
-/// EfCore 与 Swagger 两个生成器各调用一次 Discover，且拿到的是同一份模块集合、同一个编译
-/// （都来自同一个 <c>MetadataReferencesProvider.Collect()</c>），于是「遍历每个引用程序集的全部类型」
-/// 在<b>同一次生成器运行中被完整地做了两遍</b>。用例命名对应消费者的两种形态：只引用其中一个包（一次）、
-/// 两个都引用（两次）。
+/// 改造前，EF Core / Swagger / Dapper / 内置 OpenAPI / MVC 五个集成生成器各调用一次 Discover，且拿到的
+/// 是同一份模块集合、同一个编译（都来自同一个 <c>MetadataReferencesProvider.Collect()</c>），于是
+/// 「遍历每个引用程序集的全部类型」在<b>同一次生成器运行中被完整地做了五遍</b>。改造后由
+/// <c>DiscoveredIds</c> 一次算好、各生成器共用，枚举只发生一次。
 /// </para>
 /// <para>
-/// 本组全部在「符号已实现」的热状态下测量（<see cref="Setup"/> 先做一次全量枚举预热），因为第二次
+/// 本组全部在「符号已实现」的热状态下测量（<see cref="Setup"/> 先做一次全量枚举预热），因为后续几次
 /// Discover 面对的正是热符号；一次运行中第一次调用的冷启动成本由 <see cref="ColdDiscoverBenchmarks"/> 单独测。
 /// </para>
 /// </remarks>
@@ -54,28 +54,28 @@ public class DiscoveryBenchmarks
         Console.WriteLine(ConsumerScenario.Describe(_modules.Length, _typeCache.Values.Sum(types => types.Length), discovered));
     }
 
-    /// <summary>现状：只启用 EF Core 或只启用 Swashbuckle 时的单次开销。</summary>
+    /// <summary>现状（改造后）：发现结果一次算好、各集成生成器共用，全量枚举只做一遍。</summary>
     [Benchmark(Baseline = true)]
     public int Discover_OneCall() => Discover().Count();
 
-    /// <summary>现状：两个包都引用时，两个生成器各跑一遍，全量枚举做两遍——本例应约等于基准的两倍。</summary>
+    /// <summary>改造前：五个集成生成器各跑一遍，全量枚举做五遍——本例应约等于基准的五倍。</summary>
     [Benchmark]
-    public int Discover_TwoCalls() => Discover().Count() + Discover().Count();
+    public int Discover_FiveCalls() => Enumerable.Range(0, 5).Sum(_ => Discover().Count());
 
     /// <summary>
-    /// 反事实（未实现的「加缓存」方案）：把每个模块的类型表缓存下来，同一次运行内的第二次 Discover
+    /// 反事实（另一条未采纳的路）：把每个模块的类型表缓存下来，同一次运行内的后续 Discover
     /// 只付查到缓存的成本。
     /// </summary>
     /// <remarks>
     /// 每次调用前清空缓存，模拟「一次生成器运行从空缓存开始」，因此本例量到的是一次运行的<b>总</b>开销，
-    /// 可以直接与 <see cref="Discover_TwoCalls"/> 对比：两者的差就是缓存能省下的部分。
+    /// 可以直接与 <see cref="Discover_FiveCalls"/> 对比：两者的差就是缓存能省下的部分。
     /// </remarks>
     [Benchmark]
-    public int Discover_TwoCalls_WithCache()
+    public int Discover_FiveCalls_WithCache()
     {
         _typeCache.Clear();
 
-        return DiscoverWithCache().Count() + DiscoverWithCache().Count();
+        return Enumerable.Range(0, 5).Sum(_ => DiscoverWithCache().Count());
     }
 
     private IEnumerable<StronglyTypedIdInfo> Discover()

@@ -86,6 +86,12 @@ csharp_style_conditional_delegate_call = true:suggestion
 csharp_style_unused_value_assignment_preference = discard_variable:suggestion
 csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
 
+# IDE0330（优先用 System.Threading.Lock）：.NET 9 起的专用锁类型，`lock` 语句会走
+# Lock.EnterScope() 而不是 Monitor，省掉装箱与 Monitor 的对象头开销。
+# 后缀直接写 warning（而非 suggestion），使该规则在 net9.0/net10.0 工程的 dotnet build
+# 里也能报出来 —— 只写 dotnet_diagnostic.IDE0330.severity 对高 AnalysisLevelStyle 无效。
+csharp_prefer_system_threading_lock = true:warning
+
 # 限定与修饰符。
 dotnet_style_qualification_for_field = false:suggestion
 dotnet_style_qualification_for_property = false:suggestion
@@ -102,7 +108,7 @@ dotnet_style_coalesce_expression = true:suggestion
 dotnet_style_null_propagation = true:suggestion
 dotnet_style_explicit_tuple_names = true:suggestion
 dotnet_style_prefer_is_null_check_over_reference_equality_method = true:suggestion
-dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_prefer_auto_properties = true:warning
 dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
 dotnet_style_prefer_conditional_expression_over_return = true:suggestion
 dotnet_style_prefer_compound_assignment = true:suggestion
@@ -193,6 +199,8 @@ dotnet_diagnostic.IDE0053.severity = warning
 dotnet_diagnostic.IDE0034.severity = warning
 
 # IDE0032（用自动属性代替带后备字段的属性）：对应 dotnet_style_prefer_auto_properties。
+# 风格选项本身已从 suggestion 升为 warning（见上方「C# 代码风格」段），使 VS「代码样式」
+# 页显示的级别与实际诊断级别一致；此处再显式重申一次，作为可评审的承诺。
 dotnet_diagnostic.IDE0032.severity = warning
 
 # IDE0290（用主构造函数）：对应 csharp_style_prefer_primary_constructors。
@@ -217,6 +225,12 @@ dotnet_diagnostic.IDE0066.severity = warning
 # 该规则只对「签名可自由更改」的成员生效 —— 接口实现、override、虚/抽象成员、
 # partial 定义、事件处理器等一律豁免，故提升后不会波及必须保留的形参。
 dotnet_diagnostic.IDE0060.severity = warning
+
+# IDE0330（优先用 System.Threading.Lock）：对应 csharp_prefer_system_threading_lock。
+# 风格选项已带 :warning 后缀（见上方「其它常用偏好」段），此处再显式重申一次。
+# 注意 System.Threading.Lock 仅 net9.0+ 存在：双目标（net8.0;net10.0）的工程需要用
+# #if NET9_0_OR_GREATER 分支出锁字段的类型，net8.0 下保持 object。
+dotnet_diagnostic.IDE0330.severity = warning
 
 # ---------------------------------------------------------------------------
 # 编译器 / 分析器诊断（非 IDE 风格规则，参与 dotnet build，不受 EnforceCodeStyleInBuild 影响）
@@ -245,6 +259,11 @@ dotnet_diagnostic.CA2263.severity = warning
 # 具体类型时，改用该具体类型 —— 接口调用要走接口分发、且装箱后取值要多一次间接寻址。
 # 只在「类型完全由本程序集掌控」时才会报，故不会波及对外暴露的公开契约。
 dotnet_diagnostic.CA1859.severity = warning
+
+# CA1869（缓存并复用 JsonSerializerOptions 实例）：.NET 分析器的性能规则，默认只是 Info。
+# JsonSerializerOptions 首次参与序列化后会冻结并缓存反射得到的元数据；每次调用都 new 一个
+# 等于把这份缓存重建一遍，热路径上开销显著。改为 static readonly 字段（或注入的共享实例）。
+dotnet_diagnostic.CA1869.severity = warning
 
 # RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
 # src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
