@@ -25,7 +25,7 @@
 		     且生成与收缩都基于 PCG，失败时能给出可复现的 seed。 -->
 		<PackageVersion Include="CsCheck" Version="4.9.1" />
 		<PackageVersion Include="Dapper" Version="2.1.89" />
-		<PackageVersion Include="FluentAssertions" Version="8.10.0" />
+		<PackageVersion Include="FluentAssertions" Version="8.11.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" Version="1.1.4" />
@@ -40,7 +40,7 @@
 		  MTP 不再支持 VSTest target，这两个包会把 dotnet test 拽回 VSTest 路径并直接报错。
 		  测试工程统一由 xunit.v3 自带的 MTP in-proc runner 承载（见 test.props）。
 		-->
-		<PackageVersion Include="xunit.v3" Version="4.0.1" />
+		<PackageVersion Include="xunit.v3" Version="4.0.2" />
 	</ItemGroup>
 
 	<!-- bench：基准工程（bench.props 引用） -->
