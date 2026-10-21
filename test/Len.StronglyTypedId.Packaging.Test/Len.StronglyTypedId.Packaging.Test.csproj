@@ -3,10 +3,17 @@
 	<Import Project="..\..\test.props" />
 	<PropertyGroup>
 		<!--
-		  包内容断言测试。只跑 net10.0：断言对象是 .nupkg / .snupkg 的条目清单，
-		  与测试自身的 TFM 无关，双目标只会把「dotnet pack」这一步重复一遍、白白翻倍耗时。
+		  包内容断言测试。与其他测试工程一样双目标：单目标会让「解决方案级 dotnet test 指定单个框架」
+		  在这个工程上解析出并不存在的模块路径而整步失败，net8.0 腿也就不得不逐工程列举。
+		  断言对象是 .nupkg / .snupkg 的条目清单，与测试自身 TFM 无关，故两个 TFM 的模块共用同一份
+		  产物：夹具用跨进程文件锁串行化，先到者打包、后到者等锁释放后直接复用（见 PackedPackagesFixture）。
 		-->
-		<TargetFramework>net10.0</TargetFramework>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<!--
+		  程序集名刻意用复数 Tests：CI 的两条测试腿用 *.Test.dll 通配挑模块，包断言要真跑 dotnet pack，
+		  必须由独立的 packaging job 单独执行，不能被通配捞进 build job 的测试腿。
+		-->
+		<AssemblyName>Len.StronglyTypedId.Packaging.Tests</AssemblyName>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 	</PropertyGroup>

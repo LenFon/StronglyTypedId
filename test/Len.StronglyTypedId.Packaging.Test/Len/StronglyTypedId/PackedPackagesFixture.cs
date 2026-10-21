@@ -19,6 +19,15 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     private const string MainProject = "src/Len.StronglyTypedId/Len.StronglyTypedId.csproj";
 
     /// <summary>
+    /// 打包期间持有的跨进程锁文件名（放在输出目录里，随输入指纹一起隔离）。
+    /// </summary>
+    private const string LockFileName = ".pack.lock";
+
+    private static readonly TimeSpan _lockTimeout = TimeSpan.FromMinutes(5);
+
+    private static readonly TimeSpan _lockPollInterval = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>
     /// 仓库根目录（含 <c>Len.StronglyTypedId.slnx</c> 的那一层）。
     /// </summary>
     public string RepositoryRoot { get; private set; } = string.Empty;
@@ -44,9 +53,13 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
 
         Directory.CreateDirectory(OutputDirectory);
 
-        if (File.Exists(GeneratorsPackagePath)
-            && File.Exists(MainPackagePath)
-            && File.Exists(SymbolsPackagePath))
+        // 两个 TFM 的测试模块会被 MTP 并行调度，而产物目录按输入指纹隔离、与 TFM 无关 —— 不加锁就会
+        // 两边同时判定「还没有包」、同时往同一目录写包，撞文件锁或 NU5026。这里用跨进程独占文件锁
+        // 串行化：先到者打包，后到者等锁释放后重新检查产物、直接复用。
+        await using var lockHandle = await AcquirePackLockAsync(
+            Path.Combine(OutputDirectory, LockFileName)).ConfigureAwait(false);
+
+        if (HasAllPackages())
         {
             return;
         }
@@ -56,6 +69,34 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    /// <summary>
+    /// 三个包是否都已落地（锁内复查：另一个 TFM 可能刚刚打完）。
+    /// </summary>
+    private bool HasAllPackages()
+        => File.Exists(GeneratorsPackagePath)
+            && File.Exists(MainPackagePath)
+            && File.Exists(SymbolsPackagePath);
+
+    /// <summary>
+    /// 取得跨进程独占锁。拿不到就轮询等待，直到超时后把最后一次异常抛出去。
+    /// </summary>
+    private static async Task<FileStream> AcquirePackLockAsync(string lockPath)
+    {
+        var deadline = DateTime.UtcNow + _lockTimeout;
+
+        while (true)
+        {
+            try
+            {
+                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(_lockPollInterval).ConfigureAwait(false);
+            }
+        }
+    }
 
     /// <summary>
     /// 打开一个包，读出它的条目清单。

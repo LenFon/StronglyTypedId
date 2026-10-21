@@ -135,14 +135,17 @@ jobs:
       # dotnet-coverage 采集会话，而两个会话并发是否互相干扰无法在本机验证（本机 bash 不可用），
       # 与其在 CI 上赌偶发失败，不如用确定性换这二十来秒。测试提速后两条腿合计约一分钟。
       #
-      # 为什么 net8.0 腿用 --test-modules 通配而不是 --framework：Packaging.Test 只目标 net10.0
-      # （包内容断言与测试自身 TFM 无关，双目标只会把 dotnet pack 重复一遍），而 MTP 模式的
-      # dotnet test 在解决方案级会按 --framework 给每个测试工程解析模块路径：对不含该 TFM 的工程
-      # 会解析出并不存在的 bin/Debug/net8.0/<工程名>，启动时直接抛 Win32Exception 并以退出码 1
-      # 让整步失败。--test-modules 反过来按「已构建产物」挑模块，Packaging.Test 没有 net8.0 产物
-      # 就自然落选，不必维护工程清单（上一版逐工程列举，Testing.Test 加入时漏登记，它的 net8.0
-      # 目标有一段时间没在 CI 上跑过）。注意 --test-modules 与 --solution / --project / --framework
+      # 两条腿都用 --test-modules 通配挑模块，而不是解决方案级 + --framework：后者会给每个测试工程
+      # 解析模块路径，对不含该 TFM 的工程解析出并不存在的 bin/Debug/<tfm>/<工程名>，启动时抛
+      # Win32Exception 让整步失败。通配反过来按「已构建产物」挑模块，没有该 TFM 产物的工程自然
+      # 落选，也不必维护工程清单（上一版逐工程列举，Testing.Test 加入时漏登记，它的 net8.0 目标
+      # 有一段时间没在 CI 上跑过）。注意 --test-modules 与 --solution / --project / --framework
       # 互斥，只能在仓库根裸跑。
+      #
+      # 通配写 *.Test.dll 而不是 *Test.dll：后者会把 Aot.SmokeTest 这种名字以 Test 结尾的非测试
+      # 程序集也捞进来（MTP 会把它当测试宿主直接启动）。包内容断言工程的程序集名刻意叫
+      # Len.StronglyTypedId.Packaging.Tests（复数），同样不被这条通配选中 —— 它要真跑 dotnet pack，
+      # 由独立的 packaging job 负责，见下方。
       #
       # 代价是 glob 少匹配（改了 OutputPath、工程改名、TFM 变化）不会报错，只会静默少跑几个模块：
       # 动到构建输出布局或测试工程集合时，要回头核对这条通配仍能匹配到全部双目标工程。
@@ -150,17 +153,18 @@ jobs:
         mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net8.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net8.0/*Test.dll" \
+          dotnet test --test-modules "**/bin/Debug/net8.0/*.Test.dll" \
             --no-build --verbosity normal
     - name: Test + coverage (net10.0)
-      # 解决方案级调用即可：所有测试工程都有 net10.0 目标，MTP 会并行调度各模块。
+      # 与 net8.0 腿同构，只换了 TFM 与报告路径（为什么用通配、为什么排除包断言见上一条注释）。
       # 用 dotnet-coverage 直接包住测试进程采集覆盖率 —— MTP 原生扩展在本仓库只产出空数据
       # （10 字节空壳），故改用此方式。
       run: |
         mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net10.cobertura.xml \
-          dotnet test --framework net10.0 --no-build --verbosity normal
+          dotnet test --test-modules "**/bin/Debug/net10.0/*.Test.dll" \
+            --no-build --verbosity normal
     - name: Upload coverage (net8.0)
       # v5 起 action 只是 Codecov Wrapper 的外壳（CLI 由它自己下载并做 PGP 校验），入参沿用
       # `files` / `token` / `flags` 不变；v3 及以下走的是已废弃的 uploader，迟早会被服务端拒绝。
@@ -189,6 +193,31 @@ jobs:
         files: "TestResults/coverage.net10.cobertura.xml"
         flags: net10.0
         fail_ci_if_error: true
+
+  # 包内容断言（Packaging.Test）单独成 job：它内部要真跑一次 dotnet pack，产物落在临时目录，
+  # 既不该拖慢 build job 的测试腿，也不该把与 TFM 无关的用例混进覆盖率报告。
+  #
+  # needs: build —— 排在 build（含两份覆盖率报告上传）之后，与 aot / perf 等 job 互不影响。
+  # 不传 --framework：两个 TFM 的模块都会被调度，夹具用跨进程文件锁串行化打包，先到者打包、
+  # 后到者等锁释放后复用产物，因此 dotnet pack 只真正执行一次。
+  packaging:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --no-restore
+    - name: Verify package contents
+      run: dotnet test --project test/Len.StronglyTypedId.Packaging.Test --no-build --verbosity normal
 
   # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作。本 job 把这个宣称变成可验证的
   # 证据：真做一次 Native AOT 发布，再运行产物里的冒烟断言（创建 / 解析 / 格式化 / 前缀 / STJ 值
