@@ -10,6 +10,7 @@
 		<!-- 中心版本为 6.5.0；本项目专门验证「Swashbuckle 10（Microsoft.OpenApi 2.x）」这条路径，
 		     通过 VersionOverride 单独使用 10.2.3，不影响 Sample1。 -->
 		<PackageReference Include="Swashbuckle.AspNetCore" VersionOverride="10.2.3" />
+		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
 	</ItemGroup>
 
 	<ItemGroup>
