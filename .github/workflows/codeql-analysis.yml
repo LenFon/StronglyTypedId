@@ -64,16 +64,14 @@ jobs:
       uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
-        # 需要更宽的查询集时在这里加 `queries: security-extended,security-and-quality`；
-        # 默认查询集只报高置信度问题，误报最少。
-        #
         # 只报 src / tools 的告警：test / bench / samples 不是攻击面（测试代码与示例从不进入
         # 使用者的进程），把它们留在结果里只会稀释真正的信号。下面的 Build 也同步只编译
         # src 与 tools，两处口径保持一致 —— 否则会出现「提取了却不许上报」的白费功夫。
-        paths-ignore:
-          - test/**
-          - bench/**
-          - samples/**
+        #
+        # 过滤规则必须写在配置文件里：`with:` 只接受标量映射，写成 YAML 序列会被 workflow
+        # 校验拒绝（Invalid workflow file ... A sequence was not expected），而且
+        # `paths-ignore` 也不是 codeql-action/init 的输入。查询集同样在配置文件里调整。
+        config-file: ./.github/codeql/codeql-config.yml
 
     # 顺序不可颠倒：CodeQL 的 C# 提取器挂在编译过程上，必须在 init 之后、analyze 之前完成构建。
     #
