@@ -91,6 +91,19 @@ public class NamedInstanceTests
     }
 
     /// <summary>
+    /// D4：<c>NaN</c> 与 <c>±Infinity</c> 是 <c>Half</c> 的合法取值，编译期校验不能把它们判成非法；
+    /// <c>(65504, 65520)</c> 会舍入回最大有限值，同样不是溢出。
+    /// </summary>
+    [Fact]
+    public void Instance_Should_SupportHalfSpecialValuesAndRounding()
+    {
+        Half.IsNaN(InstanceHalfId.NotANumber.Value).Should().BeTrue();
+        InstanceHalfId.PositiveInfinity.Value.Should().Be(Half.PositiveInfinity);
+        InstanceHalfId.NegativeInfinity.Value.Should().Be(Half.NegativeInfinity);
+        InstanceHalfId.RoundedToMax.Value.Should().Be(Half.MaxValue);
+    }
+
+    /// <summary>
     /// 引用类型 Id 的实例是单例：<c>static readonly</c> 保证同一引用，且与 <c>default</c>（null）不相等。
     /// </summary>
     [Fact]

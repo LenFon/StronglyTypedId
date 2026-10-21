@@ -5,9 +5,20 @@ namespace Len.StronglyTypedId.Testing;
 /// <summary>
 /// Produces plausible values for every primitive type the generator supports.
 /// </summary>
-internal sealed class PrimitiveValueFactory(Random random, int stringLength, Func<Type, object?>? customFactory)
+internal sealed class PrimitiveValueFactory(Random random, int stringLength, Func<Type, object?>? customFactory, bool includeBoundaryValues)
 {
-    private const string Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    /// <summary>
+    /// 默认字符集：字母 + 数字 + 常见分隔符。只给字母数字会让「字符集约束」型验证器
+    /// （邮箱、路径、复合编码）在 <see cref="AnyIdOptions.MaxAttempts"/> 次重试内必然全败 ——
+    /// 分隔符出现的概率约为每字符 1/71，8 字符样本里约有 11% 含 <c>@</c>，100 次重试足够。
+    /// </summary>
+    private const string Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@.-_/:";
+
+    /// <summary>
+    /// 开启 <see cref="AnyIdOptions.IncludeBoundaryValues"/> 后，每次取值有 1/16 的概率返回
+    /// 该类型的最小值或最大值。
+    /// </summary>
+    private const int BoundaryOdds = 16;
 
     private static readonly long _minDateTimeTicks = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
 
@@ -37,15 +48,15 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
 
         return Type.GetTypeCode(type) switch
         {
-            TypeCode.Byte => (byte)random.Next(byte.MinValue, byte.MaxValue + 1),
-            TypeCode.SByte => (sbyte)random.Next(sbyte.MinValue, sbyte.MaxValue + 1),
-            TypeCode.Int16 => (short)random.Next(short.MinValue, short.MaxValue + 1),
-            TypeCode.UInt16 => (ushort)random.Next(ushort.MinValue, ushort.MaxValue + 1),
-            TypeCode.Int32 => random.Next(),
-            TypeCode.UInt32 => (uint)random.NextInt64(uint.MinValue, (long)uint.MaxValue + 1),
-            TypeCode.Int64 => random.NextInt64(),
-            TypeCode.UInt64 => (ulong)random.NextInt64(),
-            TypeCode.Decimal => CreateDecimal(),
+            TypeCode.Byte => BoundaryOr(byte.MinValue, byte.MaxValue, () => (byte)random.Next(byte.MinValue, byte.MaxValue + 1)),
+            TypeCode.SByte => BoundaryOr(sbyte.MinValue, sbyte.MaxValue, () => (sbyte)random.Next(sbyte.MinValue, sbyte.MaxValue + 1)),
+            TypeCode.Int16 => BoundaryOr(short.MinValue, short.MaxValue, () => (short)random.Next(short.MinValue, short.MaxValue + 1)),
+            TypeCode.UInt16 => BoundaryOr(ushort.MinValue, ushort.MaxValue, () => (ushort)random.Next(ushort.MinValue, ushort.MaxValue + 1)),
+            TypeCode.Int32 => BoundaryOr(int.MinValue, int.MaxValue, NextInt32),
+            TypeCode.UInt32 => BoundaryOr(uint.MinValue, uint.MaxValue, () => (uint)random.NextInt64(uint.MinValue, (long)uint.MaxValue + 1)),
+            TypeCode.Int64 => BoundaryOr(long.MinValue, long.MaxValue, NextInt64Bits),
+            TypeCode.UInt64 => BoundaryOr(ulong.MinValue, ulong.MaxValue, NextUInt64Bits),
+            TypeCode.Decimal => BoundaryOr(decimal.MinValue, decimal.MaxValue, CreateDecimal),
             TypeCode.Single => CreateSingle(),
             TypeCode.Double => CreateDouble(),
             TypeCode.DateTime => CreateDateTime(),
@@ -58,9 +69,9 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
     private object CreateOther(Type type) => type switch
     {
         _ when type == typeof(Guid) => CreateGuid(),
-        _ when type == typeof(Int128) => new Int128((ulong)random.NextInt64(), (ulong)random.NextInt64()),
-        _ when type == typeof(UInt128) => new UInt128((ulong)random.NextInt64(), (ulong)random.NextInt64()),
-        _ when type == typeof(Half) => (Half)CreateSingle(),
+        _ when type == typeof(Int128) => BoundaryOr(Int128.MinValue, Int128.MaxValue, () => new Int128(NextUInt64Bits(), NextUInt64Bits())),
+        _ when type == typeof(UInt128) => BoundaryOr(UInt128.MinValue, UInt128.MaxValue, () => new UInt128(NextUInt64Bits(), NextUInt64Bits())),
+        _ when type == typeof(Half) => CreateHalf(),
         _ when type == typeof(BigInteger) => new BigInteger(CreateBytes(16)),
         _ when type == typeof(DateTimeOffset) => new DateTimeOffset(CreateDateTime()),
         _ when type == typeof(TimeSpan) => TimeSpan.FromTicks(random.NextInt64(0, TimeSpan.TicksPerDay)),
@@ -71,12 +82,71 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
             + $"Provide a value through {nameof(AnyIdOptions)}.{nameof(AnyIdOptions.PrimitiveValueFactory)}."),
     };
 
+    /// <summary>
+    /// 按 <see cref="BoundaryOdds"/> 的概率返回区间端点，否则走常规采样。
+    /// </summary>
+    /// <remarks>
+    /// 默认关闭，因为「偶尔蹦出个 <c>int.MaxValue</c>」会让
+    /// <c>Any.Ids&lt;Int32Id&gt;(100).Should().OnlyHaveUniqueItems()</c> 这类断言偶发失败 ——
+    /// 两个端点各占 1/32，100 个样本里撞上同一个端点的概率约 22%。需要边界覆盖时显式打开。
+    /// </remarks>
+    private T BoundaryOr<T>(T min, T max, Func<T> ordinary)
+        => includeBoundaryValues && random.Next(BoundaryOdds) == 0
+            ? (random.Next(2) == 0 ? min : max)
+            : ordinary();
+
+    /// <summary>
+    /// <see cref="Random.Next(int, int)"/> 的上界是**独占**的，<c>Next(int.MinValue, int.MaxValue)</c>
+    /// 因此永远取不到 <see cref="int.MaxValue"/> —— 而它恰恰是 <c>ToString</c> 位数最长、
+    /// <c>Parse</c> 溢出检测的临界点。改用 64 位区间 +1 再收窄。
+    /// </summary>
+    private int NextInt32() => (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1);
+
+    /// <summary>
+    /// 取满 64 位有符号区间（含 <see cref="long.MaxValue"/>）。<c>NextInt64(min, max)</c> 同样是
+    /// 上界独占，而 <c>long.MaxValue + 1</c> 溢出，没法用同一个重载表达闭区间 —— 走位重解释。
+    /// </summary>
+    private long NextInt64Bits() => unchecked((long)NextUInt64Bits());
+
+    /// <summary>
+    /// 符号与小数位数都随机：原来的 <c>isNegative: false</c> + <c>scale ∈ [0, 5)</c> 让负数与
+    /// 高精度舍入这两条分支永不触发。scale 取满 <c>[0, 28]</c>（<see cref="decimal"/> 的上限），
+    /// 低位的尾数会因此缩成 <c>0.000…</c> 形态，正好覆盖 <c>ToString</c> 的定点格式化。
+    /// </summary>
     private decimal CreateDecimal()
-        => new(random.Next(1, int.MaxValue), random.Next(0, int.MaxValue), 0, false, (byte)random.Next(0, 5));
+        => new(random.Next(1, int.MaxValue), random.Next(0, int.MaxValue), 0, random.Next(2) == 0, (byte)random.Next(0, 29));
 
-    private float CreateSingle() => (float)((random.NextDouble() * 1_000_000) + 1);
+    /// <summary>
+    /// <see cref="Half"/> 的最大有限值是 65504（溢出阈值 65520），而 <see cref="CreateSingle"/>
+    /// 落在 <c>[-1_000_000, 1_000_000]</c> —— 直接转型会让约 93% 的样本按 IEEE 舍入成
+    /// <see cref="Half.PositiveInfinity"/>，<c>ToString()</c> 得到 <c>"∞"</c>。这里按
+    /// <see cref="Half"/> 的实际量程取值，顺带覆盖负数。
+    /// </summary>
+    private Half CreateHalf() => (Half)(((random.NextDouble() * 2) - 1) * 60_000);
 
-    private double CreateDouble() => (random.NextDouble() * 1_000_000) + 1;
+    /// <summary>
+    /// 对称区间 <c>[-1_000_000, 1_000_000]</c>。只取正数会让符号相关的分支（<c>CompareTo</c> 的
+    /// 负号、<c>ToString</c> 的前导 <c>-</c>、JSON 的负数形式）在 <c>Any.Id&lt;T&gt;()</c> 下永不触发。
+    /// 刻意不注入 <c>NaN</c> / <c>±Infinity</c>：它们在 JSON 里非法，会让序列化往返测试随机失败，
+    /// 而重试循环救不了（验证器会接受它们，不会触发重试）。
+    /// </summary>
+    private float CreateSingle() => (float)(((random.NextDouble() * 2) - 1) * 1_000_000);
+
+    private double CreateDouble() => ((random.NextDouble() * 2) - 1) * 1_000_000;
+
+    /// <summary>
+    /// 取满 64 位无符号区间（2^64 个取值，含 <see cref="ulong.MaxValue"/>）。
+    /// <c>Random.NextInt64()</c> 的无参重载只覆盖 <c>[0, long.MaxValue)</c>（63 位），直接转型会让
+    /// <c>ulong</c> / <c>UInt128</c> 的上半区与 <c>Int128</c> 的负数区永不出现 —— 取两次低 32 位拼满 64 位。
+    /// 不写成 <c>(ulong)random.NextInt64() &lt;&lt; 1 | …</c>：符号扩展后的按位或会触发 CS0675。
+    /// </summary>
+    private ulong NextUInt64Bits()
+    {
+        var high = unchecked((uint)random.NextInt64());
+        var low = unchecked((uint)random.NextInt64());
+
+        return ((ulong)high << 32) | low;
+    }
 
     private DateTime CreateDateTime() => new(random.NextInt64(_minDateTimeTicks, _maxDateTimeTicks), DateTimeKind.Utc);
 

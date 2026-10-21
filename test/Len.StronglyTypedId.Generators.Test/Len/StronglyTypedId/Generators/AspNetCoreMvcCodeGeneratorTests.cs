@@ -192,6 +192,32 @@ public class AspNetCoreMvcCodeGeneratorTests
             .And.NotContain("rawValue is not string text");
     }
 
+    /// <summary>
+    /// <c>Nullable&lt;T&gt;</c> 不实现任何接口，provider 必须先拆出底层类型，否则 <c>[FromQuery] OrderId?</c>
+    /// 会退回框架的 <c>TryParseModelBinder</c>（按 CurrentCulture 解析，与不变文化契约不一致）。
+    /// 同时泛型实参必须用底层类型：<c>Nullable&lt;OrderId&gt;</c> 不满足 <c>where TId : IParsable&lt;TId&gt;</c>。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreMvc_BinderProvider_Should_UnwrapNullableModelType()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetMvcGeneratedCode(code);
+
+        generated.Should()
+            .Contain("var idType = global::System.Nullable.GetUnderlyingType(modelType) ?? modelType;")
+            .And.Contain("foreach (var interfaceType in idType.GetInterfaces())")
+            .And.Contain(".MakeGenericType(idType)")
+            .And.NotContain(".MakeGenericType(modelType)");
+    }
+
     [Fact]
     public void AspNetCoreMvc_Should_RegisterConstraintForEveryId()
     {

@@ -67,13 +67,21 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                     {
                         var modelType = context.Metadata.ModelType;
 
+                        // Nullable<T> 不实现任何接口（typeof(OrderId?).GetInterfaces() 长度为 0），直接扫 modelType
+                        // 会让 [FromQuery] OrderId? 落到框架的 TryParseModelBinder：它按 CurrentCulture 解析，
+                        // 与强类型 Id 的不变文化契约相悖——同一条路由的可空与非可空参数对同一份载荷会得出不同值
+                        // （de-DE 下 "1,5" 分别得到 1.5 与 15），非法值的错误消息也不同。
+                        // 故先拆出底层类型再判定。泛型实参也必须用底层类型：Nullable<OrderId> 不满足
+                        // where TId : IParsable<TId>，拿它 MakeGenericType 会抛 ArgumentException。
+                        var idType = global::System.Nullable.GetUnderlyingType(modelType) ?? modelType;
+
                         // 仅接管实现了 IStronglyTypedId<,> 的类型，避免误伤其它可解析类型。
-                        foreach (var interfaceType in modelType.GetInterfaces())
+                        foreach (var interfaceType in idType.GetInterfaces())
                         {
                             if (interfaceType.IsGenericType
                                 && interfaceType.GetGenericTypeDefinition() == typeof(global::Len.StronglyTypedId.IStronglyTypedId<,>))
                             {
-                                var binderType = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdModelBinder<>).MakeGenericType(modelType);
+                                var binderType = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdModelBinder<>).MakeGenericType(idType);
 
                                 return (global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinder)global::System.Activator.CreateInstance(binderType)!;
                             }

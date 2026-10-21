@@ -318,6 +318,15 @@ public partial record struct InstanceDateTimeId(DateTime Value);
 [StronglyTypedIdInstance("PlusEight", "2020-01-01T00:00:00+08:00")]
 public partial record struct InstanceDateTimeOffsetId(DateTimeOffset Value);
 
+// Half 的特殊值与舍入边界：NaN / ±Infinity 是合法取值（Half.Parse 接受），
+// 而 (65504, 65520) 会舍入回最大有限值 —— 都不是溢出。
+[StronglyTypedId]
+[StronglyTypedIdInstance("NotANumber", "NaN")]
+[StronglyTypedIdInstance("PositiveInfinity", "Infinity")]
+[StronglyTypedIdInstance("NegativeInfinity", "-Infinity")]
+[StronglyTypedIdInstance("RoundedToMax", "65510")]
+public partial record struct InstanceHalfId(Half Value);
+
 // N2：实例必须通过验证器。哨兵值被业务规则拒绝时，类型初始化器会抛 TypeInitializationException ——
 // 这是刻意的取舍：宁可第一次触碰就失败，也不要让一个「不可能存在」的 Id 悄悄流进领域模型。
 [StronglyTypedId(Validator = nameof(Validate))]

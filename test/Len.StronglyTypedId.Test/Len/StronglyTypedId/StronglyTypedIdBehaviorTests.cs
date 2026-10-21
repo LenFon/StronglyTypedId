@@ -381,7 +381,7 @@ public class StronglyTypedIdBehaviorTests
     }
 
     [Fact]
-    public void Prefix_Formattable_Should_IncludePrefix_WhenFormatIsNullOrEmpty()
+    public void Prefix_Formattable_Should_IncludePrefix_RegardlessOfFormat()
     {
         var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var id = PrefixedGuidId.Create(g);
@@ -390,12 +390,12 @@ public class StronglyTypedIdBehaviorTests
         ((IFormattable)id).ToString(null, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
         ((IFormattable)id).ToString(string.Empty, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
 
-        // format 非空：前缀会污染 format 语义，故保持裸基元。
-        ((IFormattable)id).ToString("N", null).Should().Be(g.ToString("N", null));
+        // format 非空：format 只作用于基元部分，前缀仍在——否则 $"{id:N}" 会与 ToString() 不同形。
+        ((IFormattable)id).ToString("N", null).Should().Be("ord_" + g.ToString("N", null));
     }
 
     [Fact]
-    public void Prefix_TryFormat_Should_WritePrefix_WhenFormatIsEmpty()
+    public void Prefix_TryFormat_Should_WritePrefix_RegardlessOfFormat()
     {
         var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var id = PrefixedGuidId.Create(g);
@@ -405,13 +405,13 @@ public class StronglyTypedIdBehaviorTests
         id.TryFormat(destination, out var charsWritten, default, null).Should().BeTrue();
         destination[..charsWritten].ToString().Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
 
-        // format 非空时保持裸基元。
-        id.TryFormat(destination, out var bareWritten, "N", null).Should().BeTrue();
-        destination[..bareWritten].ToString().Should().Be(g.ToString("N", null));
+        // format 非空时同样带前缀。
+        id.TryFormat(destination, out var formattedWritten, "N", null).Should().BeTrue();
+        destination[..formattedWritten].ToString().Should().Be("ord_" + g.ToString("N", null));
     }
 
     [Fact]
-    public void Prefix_TryFormatUtf8_Should_WritePrefix_WhenFormatIsEmpty()
+    public void Prefix_TryFormatUtf8_Should_WritePrefix_RegardlessOfFormat()
     {
         var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var id = PrefixedGuidId.Create(g);
@@ -420,6 +420,9 @@ public class StronglyTypedIdBehaviorTests
 
         id.TryFormat(destination, out var bytesWritten, default, null).Should().BeTrue();
         Encoding.UTF8.GetString(destination[..bytesWritten]).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+
+        id.TryFormat(destination, out var formattedBytes, "N", null).Should().BeTrue();
+        Encoding.UTF8.GetString(destination[..formattedBytes]).Should().Be("ord_" + g.ToString("N", null));
     }
 
     [Fact]

@@ -143,15 +143,22 @@ public class PrefixCodeGeneratorTests
     }
 
     /// <summary>
-    /// 低层格式化成员在 <c>format</c> 为空时带前缀，保证 <c>$"{id}"</c> / 结构化日志与 <c>ToString()</c> 一致。
+    /// 低层格式化成员无论 <c>format</c> 是否为空都带前缀：前缀是规范文本形的一部分，
+    /// <c>$"{id:X}"</c> 不该悄悄退化成裸基元。
     /// </summary>
     [Fact]
-    public void Core_Should_PrependPrefix_InLowLevelFormatting_WhenFormatIsEmpty()
+    public void Core_Should_PrependPrefix_InLowLevelFormatting_RegardlessOfFormat()
     {
         var generated = GetGeneratedCode(PrefixIdSource)["Len.StronglyTypedId.OrderId.g.cs"];
 
         generated.Should().Contain(
-            """global::System.String.IsNullOrEmpty(format) ? "ord_" + Value.ToString(format, formatProvider) : Value.ToString(format, formatProvider)""");
+            "public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>");
+        generated.Should().Contain("\"ord_\" + Value.ToString(format, formatProvider);");
+
+        // TryFormat 不得再对非空 format 短路成裸基元。
+        generated.Should().NotContain("if (!format.IsEmpty)");
+        generated.Should().NotContain("IsNullOrEmpty(format)");
+        generated.Should().Contain("""if (!"ord_".AsSpan().TryCopyTo(destination))""");
     }
 
     /// <summary>

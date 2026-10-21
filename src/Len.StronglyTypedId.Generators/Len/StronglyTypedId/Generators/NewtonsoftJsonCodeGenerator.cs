@@ -84,7 +84,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                 builder.Append("            {").Append('\n');
                 builder.Append("                { } text when ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
                 builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
-                builder.Append("                _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
+                builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
                 builder.Append("            };");
 
                 return builder.ToString();
@@ -94,7 +94,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("            {").Append('\n');
             builder.Append("                { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
             builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
-            builder.Append("                _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
+            builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };");
 
             return builder.ToString();
@@ -126,7 +126,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("            return valueToken.ToObject<string>() switch").Append('\n');
             builder.Append("            {").Append('\n');
             builder.Append("                { } text when ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
-            builder.Append("                _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{valueToken.Type}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
+            builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };").Append('\n');
             builder.Append("        }");
 
@@ -136,7 +136,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("            return valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>() switch").Append('\n');
         builder.Append("            {").Append('\n');
         builder.Append("                { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
-        builder.Append("                _ => throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{valueToken.Type}' as a ").Append(idInfo.Name).Append("\")").Append('\n');
+        builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
         builder.Append("            };").Append('\n');
         builder.Append("        }");
 

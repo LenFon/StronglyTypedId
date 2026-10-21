@@ -4,6 +4,9 @@ namespace Len.StronglyTypedId;
 
 public class SerializationAndDeserializationTests
 {
+    // JsonSerializerOptions 首次参与序列化后会冻结并缓存元数据，内联 new 等于每次重建这份缓存（CA1869）。
+    private static readonly System.Text.Json.JsonSerializerOptions _caseInsensitiveOptions = new() { PropertyNameCaseInsensitive = true };
+
     [Theory]
     [InlineData(12, typeof(Int32Id), "12")]
     [InlineData(13L, typeof(Int64Id), "13")]
@@ -110,6 +113,24 @@ public class SerializationAndDeserializationTests
 
         System.Text.Json.JsonSerializer.Deserialize<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
         Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
+    }
+
+    /// <summary>
+    /// 对象形态的属性名匹配要跟着 <c>PropertyNameCaseInsensitive</c> 走：默认只认小写 <c>value</c>，
+    /// 开了选项后 <c>{"Value": …}</c> 也必须能读 —— 否则与 JsonSerializer 对普通对象的处理不一致。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_HonorPropertyNameCaseInsensitive_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string pascalCaseJson = """{"Value":"d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(pascalCaseJson, _caseInsensitiveOptions).Value.Should().Be(guid);
+
+        // 未开启该选项时保持原样：属性名大小写不符 → 等同于缺少 value 属性。
+        var deserialize = () => System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(pascalCaseJson);
+
+        deserialize.Should().Throw<System.Text.Json.JsonException>();
     }
 
     /// <summary>
@@ -290,6 +311,21 @@ public class SerializationAndDeserializationTests
             .Deserialize<Dictionary<StringId, int>>(expectedJson, options)!;
 
         roundTripped.Should().ContainKey(StringId.Create("UserName"));
+    }
+
+    /// <summary>
+    /// D3：string 基元的字典键被验证器拒绝时，必须抛 <c>JsonException</c> 而不是 <c>ArgumentException</c> ——
+    /// STJ 的转换器契约要求失败一律抛 <c>JsonException</c>，同一生成器的带前缀 / 非 string 分支都是这么做的。
+    /// </summary>
+    [Fact]
+    public void StringId_Should_ThrowJsonException_When_DictionaryKeyRejected()
+    {
+        // ShortStringId 的验证器限制长度 ≤ 8，"far-too-long" 会被拒。
+        const string json = """{"far-too-long":1}""";
+
+        var act = () => System.Text.Json.JsonSerializer.Deserialize<Dictionary<ShortStringId, int>>(json);
+
+        act.Should().Throw<System.Text.Json.JsonException>();
     }
 
     #region C10 文本前缀：JSON 走规范文本形

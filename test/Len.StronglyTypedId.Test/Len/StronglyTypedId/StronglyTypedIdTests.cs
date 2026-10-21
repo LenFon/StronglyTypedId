@@ -58,6 +58,43 @@ public class StronglyTypedIdTests
     public void IsStronglyTypedId_Should_ReturnFalse_When(Type type) => type.IsStronglyTypedId().Should().BeFalse();
 
     /// <summary>
+    /// 可空 Id 必须按底层 Id 判定。<c>Nullable&lt;T&gt;</c> 的 <c>GetInterfaces()</c> 恒为空数组，
+    /// 不先拆壳就会把 <c>GuidId?</c> 判成「不是强类型 Id」，而 MVC 绑定器与 EF 转换器都按 Id 处理。
+    /// </summary>
+    [Fact]
+    public void IsStronglyTypedId_Should_ReturnTrue_ForNullableId() => typeof(GuidId?).IsStronglyTypedId().Should().BeTrue();
+
+    /// <summary>
+    /// 拆壳只对可空 Id 生效：可空的普通基元仍然不是强类型 Id。
+    /// </summary>
+    [Fact]
+    public void IsStronglyTypedId_Should_ReturnFalse_ForNullablePrimitive() => typeof(int?).IsStronglyTypedId().Should().BeFalse();
+
+    [Fact]
+    public void GetPrimitiveIdType_Should_ReturnPrimitive_ForNullableId() => typeof(GuidId?).GetPrimitiveIdType().Should().Be<Guid>();
+
+    [Fact]
+    public void TryGetPrimitiveIdType_Should_ReturnTrue_ForNullableId()
+    {
+        typeof(GuidId?).TryGetPrimitiveIdType(out var primitiveIdType).Should().BeTrue();
+        primitiveIdType.Should().Be<Guid>();
+    }
+
+    /// <summary>
+    /// 判定结果按类型缓存：「不是强类型 Id」也要能缓存（字典值为 <see langword="null"/>），
+    /// 否则热路径上每次都要重走 <c>GetInterfaces()</c> + LINQ。
+    /// </summary>
+    [Fact]
+    public void GetPrimitiveIdType_Should_BeRepeatable_ForNonIdTypes()
+    {
+        typeof(NotStronglyTypedId).GetPrimitiveIdType().Should().BeNull();
+        typeof(NotStronglyTypedId).GetPrimitiveIdType().Should().BeNull();
+
+        typeof(GuidId).GetPrimitiveIdType().Should().Be<Guid>();
+        typeof(GuidId).GetPrimitiveIdType().Should().Be<Guid>();
+    }
+
+    /// <summary>
     /// 两个入参为 null 的重载都必须先抛 <see cref="ArgumentNullException"/>，而不是在解引用时抛 NRE。
     /// </summary>
     [Fact]

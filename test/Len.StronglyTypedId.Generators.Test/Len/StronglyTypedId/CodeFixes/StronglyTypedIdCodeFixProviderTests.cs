@@ -396,6 +396,39 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
+    /// 空实参的 <c>new Xxx()</c> 不提供修复：<c>ArgumentList</c> 不是 <see langword="null"/> 而是空表，
+    /// 只判 null 会产出缺参数的 <c>Xxx.Create()</c>，修复后反而编译不过。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldNotOfferFix_WhenObjectCreationHasNoArguments()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => new OrderId();
+            }
+            """;
+
+        var offered = await CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.BypassCreate,
+            "OrderId",
+            static root => root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>().First());
+
+        Assert.Empty(offered);
+    }
+
+    /// <summary>
     /// 对照：同一 harness 在目标类型化 <c>new(...)</c> 上确实会注册修复，证明上面的空集合断言是真门禁生效、而非 harness 根本没驱动 provider。
     /// </summary>
     [Fact]
@@ -643,9 +676,8 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0000：把 struct 转成 record。IsFixable 里 STIA0000 分支判定的是 
-    /// <c>ClassDeclarationSyntax or StructDeclarationSyntax</c>，struct 走的是 StructDeclarationSyntax 这一支，与
-    /// class 是不同代码路径，需单独把守。
+    /// STIA0000：把 struct 转成 <c>record struct</c>。一律写成 <c>record</c> 会把值类型悄悄换成引用类型
+    /// （装箱行为、默认值、<c>==</c> 语义全变），所以这里必须守住 <c>struct</c> 关键字。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_ConvertStructToRecord_WhenTypeMustBeRecord()
@@ -665,13 +697,69 @@ public class StronglyTypedIdCodeFixProviderTests
             namespace Len.StronglyTypedId.Tests;
 
             [StronglyTypedId]
-            public partial record OrderId(Guid Value) { }
+            public partial record struct OrderId(Guid Value) { }
             """";
 
         var expected = Verify.Diagnostic(Descriptors.TypeMustBeRecord)
             .WithSpan(5, 1, 6, 46).WithArguments("OrderId");
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIA0000：<c>readonly struct</c> 转成 <c>readonly record struct</c>。<c>readonly</c> 修饰符原样搬运，
+    /// 若只补 <c>record</c> 会得到 <c>readonly record</c>（CS8809，编译不过）。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_ConvertReadonlyStructToReadonlyRecordStruct()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public readonly partial struct OrderId(Guid Value) { }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public readonly partial record struct OrderId(Guid Value) { }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeMustBeRecord)
+            .WithSpan(5, 1, 6, 55).WithArguments("OrderId");
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
+    /// STIA0000：<c>ref struct</c> 不提供修复 —— 它不能装箱、不能实现接口，转成任何一种 record 都不可能成为
+    /// 合法的强类型 Id，机械转换只会把「一条诊断」换成「一片编译错误」。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldNotOfferFix_WhenRefStruct()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public ref partial struct OrderId(Guid Value) { }
+            """";
+
+        var offered = await CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.TypeMustBeRecord,
+            "OrderId",
+            static root => root.DescendantNodes().OfType<StructDeclarationSyntax>().First());
+
+        Assert.Empty(offered);
     }
 
     /// <summary>
@@ -777,8 +865,11 @@ public class StronglyTypedIdCodeFixProviderTests
     }
 
     /// <summary>
-    /// STIA0013：<c>Prefix = ""</c> 时删掉 <c>Prefix</c> 命名实参（等同「未设置」）。
+    /// STIA0013：<c>Prefix = "   "</c>（纯空白）时删掉 <c>Prefix</c> 命名实参（等同「未设置」）。
     /// </summary>
+    /// <remarks>
+    /// 用纯空白而非空串：空串在生成器侧本就等价于「未设置」，分析器不再为它报警（见 STIA0013 的 D10 修正）。
+    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_RemovePrefixArgument_WhenPrefixIsBlank()
     {
@@ -787,7 +878,7 @@ public class StronglyTypedIdCodeFixProviderTests
 
             namespace Len.StronglyTypedId.Tests;
 
-            [StronglyTypedId(Prefix = "")]
+            [StronglyTypedId(Prefix = "   ")]
             public partial record struct OrderId(Guid Value);
             """";
 
@@ -801,13 +892,13 @@ public class StronglyTypedIdCodeFixProviderTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
-            .WithSpan(5, 18, 5, 29);
+            .WithSpan(5, 18, 5, 32);
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
 
     /// <summary>
-    /// STIA0013：attribute 有多个命名实参时，只删空的 Prefix，保留其余（JsonShape）。
+    /// STIA0013：attribute 有多个命名实参时，只删空白的 Prefix，保留其余（JsonShape）。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_KeepOtherArguments_WhenRemovingPrefix()
@@ -817,7 +908,7 @@ public class StronglyTypedIdCodeFixProviderTests
 
             namespace Len.StronglyTypedId.Tests;
 
-            [StronglyTypedId(JsonShape = JsonShape.Object, Prefix = "")]
+            [StronglyTypedId(JsonShape = JsonShape.Object, Prefix = "   ")]
             public partial record struct OrderId(Guid Value);
             """";
 
@@ -831,7 +922,7 @@ public class StronglyTypedIdCodeFixProviderTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.InvalidPrefix)
-            .WithSpan(5, 48, 5, 59);
+            .WithSpan(5, 48, 5, 62);
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
@@ -887,6 +978,10 @@ public class StronglyTypedIdCodeFixProviderTests
     /// STIA0010 增强：当 <c>Validator</c> 指向的方法根本不存在时，CodeFix 应在 Id 类型里生成一个符合契约的桩方法（静态、返回 bool、恰好一个参数且类型等于基元 Id
     /// 类型），而非删掉实参。桩方法用全限定名渲染基元类型，避免与任何同名局部类型冲突。
     /// </summary>
+    /// <remarks>
+    /// 桩体必须是 <c>throw</c> 而不是 <c>=&gt; true</c>：Fix All 会把这条桩铺到几十个 Id 上，恒真的桩等于把校验整体架空，
+    /// 而「忘了填」要到第一次运行时才炸出来，比编译不过更难发现。
+    /// </remarks>
     [Fact]
     public async Task CodeFix_Should_GenerateValidatorStub_WhenValidatorMethodMissing()
     {
@@ -907,7 +1002,7 @@ public class StronglyTypedIdCodeFixProviderTests
             [StronglyTypedId(Validator = nameof(Validate))]
             public partial record OrderId(Guid Value)
             {
-                private static bool Validate(global::System.Guid value) => true;
+                private static bool Validate(global::System.Guid value) => throw new global::System.NotImplementedException("TODO: implement the validation rule.");
             }
             """";
 

@@ -99,5 +99,18 @@ public class LocalizedStringTests
         => typeof(LocalizedString).Assembly.GetManifestResourceNames()
             .Should().Contain(name => name.EndsWith(".Locales.en.txt", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// STIA0005 的修复标题必须自带「其余参数会被移除」的信息，且两种语言都得配上——
+    /// 漏配时 <see cref="LocalizedString"/> 会静默回退成键名，用户看到的是一串英文标识符。
+    /// </summary>
+    [Fact]
+    public void PrimaryConstructorFixTitle_Should_BeLocalizedInBothCultures()
+    {
+        var localized = new LocalizedString("TypeMustHaveSingleParameterPrimaryConstructorFixTitle");
+
+        localized.ToString(CultureInfo.GetCultureInfo("en")).Should().Contain("Guid Value");
+        localized.ToString(CultureInfo.GetCultureInfo("zh-CN")).Should().Contain("其余参数将被移除");
+    }
+
     #endregion
 }

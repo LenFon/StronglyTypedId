@@ -11,7 +11,6 @@ namespace Len.StronglyTypedId.CodeRefactorings;
 internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 {
     private const string AttributeName = "StronglyTypedId";
-    private const string AttributeFullName = "Len.StronglyTypedId.StronglyTypedIdAttribute";
     private const string NamespaceName = "Len.StronglyTypedId";
     private const string ValueParameterName = "Value";
 
@@ -71,15 +70,28 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             .Any(attribute => IsStronglyTypedIdAttributeName(attribute.Name));
 
     /// <summary>
-    /// 判断特性名是否指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
+    /// 判断特性名是否**精确**指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只认这几种确定写法，不做任意后缀匹配 —— 按 <c>.StronglyTypedIdAttribute</c> 后缀认特性会把第三方的
+    /// 同名特性（例如 <c>Acme.Domain.StronglyTypedIdAttribute</c>）当成自家的，而 Inline 重构会把它物理删掉：
+    /// 用户点一下，别人的特性就没了，且没有任何提示。
+    /// </para>
+    /// <para>
+    /// 这里刻意不查语义模型。<c>SemanticModel.GetSymbolInfo(AttributeSyntax)</c> 在特性名被同名命名空间遮蔽时
+    /// 返回的不是特性类型（实测：源码位于 <c>namespace Len.StronglyTypedId.Tests</c> 时，<c>[StronglyTypedId]</c>
+    /// 解析成命名空间 <c>Len.StronglyTypedId</c>，符号为 <see langword="null"/>），判定会整体失效。
+    /// 精确白名单在语法层就能给出确定答案。
+    /// </para>
+    /// </remarks>
     private static bool IsStronglyTypedIdAttributeName(NameSyntax name)
-    {
-        var text = name.ToString();
-
-        return text is AttributeName or "StronglyTypedIdAttribute" or AttributeFullName
-            || text.EndsWith(".StronglyTypedIdAttribute", StringComparison.Ordinal);
-    }
+        => name.ToString() is AttributeName
+            or "StronglyTypedIdAttribute"
+            or "Len.StronglyTypedId.StronglyTypedId"
+            or "Len.StronglyTypedId.StronglyTypedIdAttribute"
+            or "global::Len.StronglyTypedId.StronglyTypedId"
+            or "global::Len.StronglyTypedId.StronglyTypedIdAttribute";
 
     /// <summary>
     /// 判断该 record 是否「加上特性、partial 与 using 后就是一个合法的强类型 Id」。
@@ -177,12 +189,23 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return document;
         }
 
+        // 「还有没有别的 Id」必须在替换**之前**判断：替换后的树里当前 record 已经没有特性了。
+        var hasOtherIds = root.DescendantNodes()
+            .OfType<RecordDeclarationSyntax>()
+            .Any(other => !ReferenceEquals(other, record) && HasStronglyTypedIdAttribute(other));
+
         var updated = record
             .WithAttributeLists(RemoveStronglyTypedIdAttributes(record.AttributeLists))
             .WithModifiers(SyntaxFactory.TokenList(
                 record.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
 
-        var newRoot = RemoveUsingIfUnused(root.ReplaceNode(record, updated));
+        var newRoot = root.ReplaceNode(record, updated);
+
+        if (!hasOtherIds
+            && !await UsesNamespaceAsync(document, root, record, cancellationToken).ConfigureAwait(false))
+        {
+            newRoot = RemoveUsingDirective(newRoot);
+        }
 
         return document.WithSyntaxRoot(DocumentFormatting.Format(document, newRoot, cancellationToken));
     }
@@ -256,12 +279,76 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     }
 
     /// <summary>
-    /// 在文件里再无强类型 Id 时摘掉 <c>using Len.StronglyTypedId;</c>。
+    /// 判断文件里是否还有标识符绑定到 <c>Len.StronglyTypedId</c> 命名空间下的符号。
     /// </summary>
-    private static SyntaxNode RemoveUsingIfUnused(SyntaxNode root)
+    /// <remarks>
+    /// 该命名空间除 <c>[StronglyTypedId]</c> 之外还导出 <c>IStronglyTypedId&lt;,&gt;</c>、<c>Any</c>、
+    /// <c>StronglyTypedIdDefaults</c>、<c>StronglyTypedIdIntegrations</c> 等。只按「文件里还有没有带特性的
+    /// record」判断，会把只用这些类型的文件里的 using 一并删掉，产出 CS0246。
+    /// 待内联的 record 自己的特性列表必须排除：它马上就要被摘掉，而 <c>StronglyTypedIdAttribute</c>
+    /// 本身就属于该命名空间。
+    /// </remarks>
+    private static async Task<bool> UsesNamespaceAsync(
+        Document document,
+        SyntaxNode root,
+        RecordDeclarationSyntax record,
+        CancellationToken cancellationToken)
     {
-        if (root is not CompilationUnitSyntax compilationUnit
-            || compilationUnit.DescendantNodes().OfType<RecordDeclarationSyntax>().Any(HasStronglyTypedIdAttribute))
+        var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+
+        if (semanticModel is null)
+        {
+            // 拿不到语义模型时保守处理：多留一行 using 无害，删错了是编译错误。
+            return true;
+        }
+
+        // 按位置排除待内联 record 自己的特性列表：它马上就要被摘掉，而 StronglyTypedIdAttribute
+        // 本身就属于该命名空间。用 Span 而不是节点引用，避免依赖「两次取到的语法树是同一个实例」。
+        var attributeSpans = record.AttributeLists.Select(static attributeList => attributeList.Span).ToArray();
+
+        foreach (var name in root.DescendantNodes().OfType<SimpleNameSyntax>())
+        {
+            if (attributeSpans.Any(span => span.Contains(name.Span)))
+            {
+                continue;
+            }
+
+            var info = semanticModel.GetSymbolInfo(name, cancellationToken);
+
+            if (NeedsNamespace(info.Symbol)
+                || info.CandidateSymbols.Any(static candidate => NeedsNamespace(candidate)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 判断某个标识符是否指向直接声明在 <c>Len.StronglyTypedId</c> 命名空间下的**类型**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只认类型、不认命名空间：<c>namespace Len.StronglyTypedId.Tests;</c> 里的 <c>Tests</c> 绑定到命名空间
+    /// <c>Len.StronglyTypedId.Tests</c>，它的 <c>ContainingNamespace</c> 恰好就是 <c>Len.StronglyTypedId</c> ——
+    /// 按命名空间判会把「文件自己就在这个命名空间下」当成「还在用这条 using」，using 永远删不掉。
+    /// </para>
+    /// <para>
+    /// 只比相等、不回溯祖先：声明在 <c>Len.StronglyTypedId.Tests</c> 这类子命名空间里的类型本来就不需要
+    /// 这条 using。
+    /// </para>
+    /// </remarks>
+    private static bool NeedsNamespace(ISymbol? symbol)
+        => symbol is INamedTypeSymbol { ContainingNamespace: { } containingNamespace }
+            && containingNamespace.ToDisplayString() == NamespaceName;
+
+    /// <summary>
+    /// 摘掉 <c>using Len.StronglyTypedId;</c>（调用方负责先确认文件里再无强类型 Id）。
+    /// </summary>
+    private static SyntaxNode RemoveUsingDirective(SyntaxNode root)
+    {
+        if (root is not CompilationUnitSyntax compilationUnit)
         {
             return root;
         }

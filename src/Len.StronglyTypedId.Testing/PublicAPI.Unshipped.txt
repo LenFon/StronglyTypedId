@@ -9,6 +9,8 @@ Len.StronglyTypedId.Testing.AnyIdGenerator.Ids<TId>(int count) -> System.Collect
 Len.StronglyTypedId.Testing.AnyIdGenerator.Register<TId>(System.Func<TId>! factory) -> void
 Len.StronglyTypedId.Testing.AnyIdOptions
 Len.StronglyTypedId.Testing.AnyIdOptions.AnyIdOptions() -> void
+Len.StronglyTypedId.Testing.AnyIdOptions.IncludeBoundaryValues.get -> bool
+Len.StronglyTypedId.Testing.AnyIdOptions.IncludeBoundaryValues.set -> void
 Len.StronglyTypedId.Testing.AnyIdOptions.MaxAttempts.get -> int
 Len.StronglyTypedId.Testing.AnyIdOptions.MaxAttempts.set -> void
 Len.StronglyTypedId.Testing.AnyIdOptions.PrimitiveValueFactory.get -> System.Func<System.Type!, object?>?

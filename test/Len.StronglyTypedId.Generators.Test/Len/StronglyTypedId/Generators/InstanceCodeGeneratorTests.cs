@@ -188,6 +188,33 @@ public class InstanceCodeGeneratorTests
     }
 
     /// <summary>
+    /// D4：<c>NaN</c> / <c>±Infinity</c> 是 <c>Half</c> 的合法取值（<c>Half.Parse</c> 接受），
+    /// 编译期不能把它们判成非法，直接发射对应常量。
+    /// </summary>
+    [Theory]
+    [InlineData("NaN", "global::System.Half.NaN")]
+    [InlineData("Infinity", "global::System.Half.PositiveInfinity")]
+    [InlineData("-Infinity", "global::System.Half.NegativeInfinity")]
+    public void Core_Should_EmitHalfSpecialValue_AsConstant(string value, string expression)
+    {
+        var generated = GetCore(Single("Half", value));
+
+        ShouldContainField(generated, "OrderId", "Sentinel", expression);
+    }
+
+    /// <summary>
+    /// D4：<c>(65504, 65520)</c> 会舍入回最大有限值（实测 <c>65519.9 → 65504</c>），不是溢出。
+    /// 拿 65504 当上限会把这类合法文本误判成非法。
+    /// </summary>
+    [Fact]
+    public void Core_Should_AcceptHalf_WhenValueRoundsToMaxFinite()
+    {
+        var generated = GetCore(Single("Half", "65510"));
+
+        ShouldContainField(generated, "OrderId", "Sentinel", "(global::System.Half)(65510F)");
+    }
+
+    /// <summary>
     /// 超出 <c>Half</c> 范围的有限值会被静默转成无穷，必须挡掉。
     /// </summary>
     [Fact]
@@ -550,6 +577,30 @@ public class InstanceCodeGeneratorTests
 
         generated.Should().Contain("= Create((int)(1));");
         generated.Should().NotContain("= Create((int)(2));");
+    }
+
+    /// <summary>
+    /// 引用类型 Id 会额外生成私有的 <c>CompareValues</c> 比较辅助方法，实例取这个名字会撞 CS0102，
+    /// 故整条跳过（分析器另报 STIA0020）。
+    /// </summary>
+    [Fact]
+    public void Core_Should_SkipInstance_WhenNameCollidesWithGeneratedComparisonHelper()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("CompareValues", "0")]
+            public partial record OrderId(int Value);
+            """;
+
+        var generated = GetCore(code);
+
+        generated.Should().NotContain("public static readonly OrderId CompareValues");
+        // 辅助方法本身照常产出，证明「跳过实例」不是因为整套比较逻辑都没生成。
+        generated.Should().Contain("private static int CompareValues(OrderId? left, OrderId? right)");
     }
 
     /// <summary>

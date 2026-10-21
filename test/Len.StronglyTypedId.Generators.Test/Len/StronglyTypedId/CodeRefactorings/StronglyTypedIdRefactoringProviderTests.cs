@@ -406,6 +406,46 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
+    /// 反向重构：文件里虽无第二个 Id，但仍在用该命名空间导出的其他类型（<c>IStronglyTypedId&lt;,&gt;</c>、
+    /// <c>Any</c>、<c>StronglyTypedIdIntegrations</c> 等）时必须保留 using —— 只按「还有没有带特性的 record」
+    /// 判断会把它一并删掉，产出 CS0246。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_Should_KeepUsing_WhenOtherTypesFromNamespaceAreUsed()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+
+            public static class OrderIds
+            {
+                public static string Describe(StronglyTypedIdIntegrations integrations) => integrations.ToString();
+            }
+            """;
+
+        var expected = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme;
+
+            public record OrderId(Guid Value);
+
+            public static class OrderIds
+            {
+                public static string Describe(StronglyTypedIdIntegrations integrations) => integrations.ToString();
+            }
+            """;
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
+    /// <summary>
     /// 反向重构：同一 Id 有多段 partial 声明时摘掉 <c>partial</c> 会 CS0260，不提供。
     /// </summary>
     [Fact]
@@ -460,6 +500,74 @@ public class StronglyTypedIdRefactoringProviderTests
             string.Empty);
 
         (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
+    #endregion
+
+    #region 第三方同名特性
+
+    /// <summary>
+    /// 第三方命名空间下的同名特性不能被当成自家的：判定按语义绑定走，否则 Inline 重构会把
+    /// <c>Acme.StronglyTypedIdAttribute</c> 一并物理删掉 —— 用户点一下，别人的特性就没了，且没有任何提示。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_ShouldNotTreatForeignAttributeAsStronglyTypedId()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme
+            {
+                [AttributeUsage(AttributeTargets.All)]
+                public sealed class StronglyTypedIdAttribute : Attribute
+                {
+                }
+            }
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [Acme.StronglyTypedIdAttribute]
+                public partial record OrderId(Guid Value);
+            }
+            """;
+
+        var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title).ToList();
+
+        titles.Should().NotContain("Inline strongly typed id");
+        titles.Should().Contain("Convert to strongly typed id");
+    }
+
+    /// <summary>
+    /// Inline 只摘自家的 <c>[StronglyTypedId]</c>，第三方同名特性必须原样留下。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_Should_KeepForeignAttribute_WhenInlining()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme
+            {
+                [AttributeUsage(AttributeTargets.All)]
+                public sealed class StronglyTypedIdAttribute : Attribute
+                {
+                }
+            }
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId]
+                [Acme.StronglyTypedIdAttribute]
+                public partial record OrderId(Guid Value);
+            }
+            """;
+
+        var result = await Verify.ApplyRefactoringAsync(code);
+
+        result.Should().Contain("[Acme.StronglyTypedIdAttribute]");
+        result.Should().NotContain("[StronglyTypedId]");
     }
 
     #endregion

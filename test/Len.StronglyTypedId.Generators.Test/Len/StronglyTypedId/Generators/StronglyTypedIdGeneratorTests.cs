@@ -1965,7 +1965,9 @@ public class StronglyTypedIdGeneratorTests
 
         converter.Should()
             .Contain("if (reader.TokenType != global::System.Text.Json.JsonTokenType.StartObject)")
-            .And.Contain("if (reader.ValueTextEquals(\"value\"))")
+            .And.Contain("if (reader.ValueTextEquals(\"value\")")
+            // 属性名匹配要跟着 options.PropertyNameCaseInsensitive 走，否则开了大小写不敏感也读不到 {"Value": …}。
+            .And.Contain("options.PropertyNameCaseInsensitive && global::System.String.Equals(reader.GetString(), \"value\", global::System.StringComparison.OrdinalIgnoreCase)")
             .And.Contain("writer.WriteStartObject();")
             .And.Contain("writer.WritePropertyName(\"value\");")
             .And.Contain("writer.WriteEndObject();");

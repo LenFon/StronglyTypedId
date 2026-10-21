@@ -64,7 +64,25 @@ public static class Any
     /// </param>
     public static void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
-        => Current.Register(factory);
+    {
+        // 注册必须落在「当前的」共享生成器上。Reset() 可能在「读到引用」与「写进字典」之间换掉实例，
+        // 那样注册会留在被丢弃的旧实例里 —— 之后 Any.Id<TId>() 静默不生效，且没有任何报错。
+        // 用「写后复查」而不是「持锁执行」：后者会在锁内调用用户工厂，工厂跨线程再进 Any 就死锁。
+        while (true)
+        {
+            var generator = Current;
+
+            generator.Register(factory);
+
+            lock (_sync)
+            {
+                if (ReferenceEquals(Generator, generator))
+                {
+                    return;
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Discards the shared generator, dropping every registration made through <see cref="Register{TId}"/>.
@@ -77,6 +95,15 @@ public static class Any
         }
     }
 
+    /// <summary>
+    /// Gets a snapshot of the shared generator.
+    /// </summary>
+    /// <remarks>
+    /// Generation deliberately works on a snapshot: racing with <see cref="Reset"/> may use the instance that
+    /// was just discarded, which only loses one reset — the produced ids stay valid. Holding the lock across the
+    /// whole call would instead run user-supplied factories while locked. The one operation that does need
+    /// atomicity is <see cref="Register{TId}"/>, which re-checks the instance after writing.
+    /// </remarks>
     private static AnyIdGenerator Current
     {
         get

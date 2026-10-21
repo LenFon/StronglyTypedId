@@ -220,12 +220,16 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 分组键必须与兄弟类型的取值方式一致，否则当前类型落不进自己的组（见 GetSingleParameterType）。
         var primitiveName = (GetSingleParameterType(type) ?? primitiveType).ToDisplayString();
 
-        var group = namespaceSymbol.GetTypeMembers()
+        // 范围是「命名空间下的全部类型」，含嵌套类型：`GetTypeMembers()` 只返回顶层类型，
+        // 漏掉嵌套会让 `class Orders { record OrderId(Guid Value); }` 与同命名空间的
+        // `CustomerId(Guid Value)` 撞车却不报警 —— 而两者的规范文本形确实无法区分。
+        var group = GetAllTypes(namespaceSymbol)
             .Where(HasStronglyTypedIdAttribute)
             .Select(member => (Member: member, Primitive: GetSingleParameterType(member)))
             .Where(pair => pair.Primitive?.ToDisplayString() == primitiveName)
             .Select(pair => pair.Member)
-            .OrderBy(member => member.Name, StringComparer.Ordinal)
+            // 按完整名排序：嵌套类型与顶层类型可能同名，只比 Name 得不到确定的「第一个成员」。
+            .OrderBy(member => member.ToDisplayString(), StringComparer.Ordinal)
             .ToArray();
 
         // 组内第一个成员负责上报，否则同一组会被每个成员各报一次。
@@ -242,6 +246,22 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             primitiveName,
             group.Length - 1,
             namespaceSymbol.ToDisplayString());
+    }
+
+    /// <summary>
+    /// 枚举容器（命名空间或类型）下的全部类型，含逐层嵌套的类型。
+    /// </summary>
+    private static IEnumerable<INamedTypeSymbol> GetAllTypes(INamespaceOrTypeSymbol container)
+    {
+        foreach (var member in container.GetTypeMembers())
+        {
+            yield return member;
+
+            foreach (var nested in GetAllTypes(member))
+            {
+                yield return nested;
+            }
+        }
     }
 
     /// <summary>

@@ -57,6 +57,11 @@ A rejection is recognised by its type: `ArgumentException` by default, or whatev
 through `ExceptionType` (per id, falling back to `[assembly: StronglyTypedIdDefaults]`). Anything else
 thrown by the validator is a bug in the validator, so it propagates instead of being retried.
 
+The exception type is the **only** signal, so a validator that throws `ArgumentException` for an
+unrelated reason — a null argument, a failed cast, an invariant it asserts — is indistinguishable from
+a rejection: the value is retried until `MaxAttempts` and then reported as "cannot generate". Keep
+validators total (return `false` instead of throwing), or register a factory for that id.
+
 `Register` affects the shared generator used by the static `Any` members; call `Any.Reset()` between
 tests to drop registrations. Prefer a dedicated `AnyIdGenerator` instance when a test needs isolation.
 
@@ -70,6 +75,19 @@ var any = new AnyIdGenerator(new AnyIdOptions
 ```
 
 Return `null` to fall back to the built-in generator for that type.
+
+## Boundary values
+
+Values stay ordinary by default: `int.MaxValue` is reachable in principle but never actually drawn.
+Turn on `IncludeBoundaryValues` when the code under test is boundary-sensitive — formatting width,
+overflow checks, database column limits:
+
+```csharp
+var any = new AnyIdGenerator(new AnyIdOptions { IncludeBoundaryValues = true });
+```
+
+Roughly one value in sixteen is then the primitive's `MinValue` or `MaxValue` (integral and `decimal`
+types only). Leave it off when a test asserts uniqueness: two ids can then collide on the same extreme.
 
 ## AutoFixture
 
@@ -88,8 +106,12 @@ seeded `AnyIdGenerator` to `WithStronglyTypedIds` for reproducible fixtures.
 
 ## Notes
 
-- Values are deliberately ordinary: finite floating-point numbers, non-empty strings, dates inside
-  1970–2100. A fixture handing out `double.NaN` or `DateTime.MaxValue` mostly produces failures
-  unrelated to the code under test.
+- Values are deliberately ordinary: finite floating-point numbers (either sign), non-empty strings,
+  dates inside 1970–2100. A fixture handing out `double.NaN` or `DateTime.MaxValue` mostly produces
+  failures unrelated to the code under test — `NaN` is not even valid JSON, so a round-trip test would
+  fail for a reason that has nothing to do with the id.
+- Strings are drawn from letters, digits and the separators `@ . - _ / :`, so a validator that looks
+  for an `@` or a `.` can be satisfied without registering a factory. Anything stricter (a real email
+  regex) still needs `Register`.
 - `AnyIdGenerator` is thread-safe, but the sequence it produces under parallel access is not
   deterministic even with a fixed seed.

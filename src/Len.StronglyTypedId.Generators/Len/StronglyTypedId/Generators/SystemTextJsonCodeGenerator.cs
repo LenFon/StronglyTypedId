@@ -164,7 +164,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("        {").Append('\n');
             builder.Append("            if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
             builder.Append("            {").Append('\n');
-            builder.Append("                throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\");").Append('\n');
+            // 契约：转换器失败一律抛 JsonException（STJ 只会给它补 Path / LineNumber），
+            // 抛 InvalidOperationException 会让按契约 catch (JsonException) 的调用方漏掉这条路径。
+            builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
             builder.Append("            }").Append('\n');
             builder.Append('\n');
 
@@ -208,7 +210,11 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("                    continue;").Append('\n');
         builder.Append("                }").Append('\n');
         builder.Append('\n');
-        builder.Append("                if (reader.ValueTextEquals(\"value\"))").Append('\n');
+        // 属性名匹配要跟着 options.PropertyNameCaseInsensitive 走：`ValueTextEquals` 是逐字节比较，
+        // 只认小写 `value`。用户开了大小写不敏感后，`{"Value":"..."}` 会走进下面的 Skip 分支，
+        // 最终报「缺少 value 属性」—— 与 JsonSerializer 对普通对象的处理不一致。
+        builder.Append("                if (reader.ValueTextEquals(\"value\")").Append('\n');
+        builder.Append("                    || (options.PropertyNameCaseInsensitive && global::System.String.Equals(reader.GetString(), \"value\", global::System.StringComparison.OrdinalIgnoreCase)))").Append('\n');
         builder.Append("                {").Append('\n');
         builder.Append("                    reader.Read();").Append('\n');
 
@@ -225,7 +231,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             // 与基元形态同理：null 在这里显式拦下，故下面可以读非可空基元。
             builder.Append("                    if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
             builder.Append("                    {").Append('\n');
-            builder.Append("                        throw new global::System.InvalidOperationException($\"Cannot get the value of a token type '{reader.TokenType}' as a ").Append(idInfo.Name).Append("\");").Append('\n');
+            builder.Append("                        throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
             builder.Append("                    }").Append('\n');
             builder.Append('\n');
             builder.Append("                    result = ").Append(idInfo.Name).Append(".Create(").Append(GetDeserializeExpression(idInfo)).Append(");").Append('\n');
@@ -329,7 +335,12 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         }
         else if (idInfo.IsStringPrimitive && !idInfo.HasPrefix)
         {
-            builder.Append($"            return {idInfo.Name}.Create(reader.GetString()!);").Append('\n');
+            // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
+            // 它会穿透 JsonSerializer.Deserialize —— 而 STJ 的转换器契约要求失败一律抛 JsonException。
+            builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
+            builder.Append($"            return propertyName is not null && {idInfo.Name}.TryCreate(propertyName, out var id)").Append('\n');
+            builder.Append("                ? id").Append('\n');
+            builder.Append($"                : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{{propertyName}}' to a {idInfo.Name}.\");").Append('\n');
         }
         else
         {

@@ -102,15 +102,22 @@ public class ModuleInfoTests
     [Fact]
     public void GetTypes_Should_EnumerateTypes_WhenAssemblyIsPresent()
     {
-        var compilation = CSharpCompilation.Create(
-            "ReferencedAssembly",
-            [CSharpSyntaxTree.ParseText("namespace Sample { public class OrderId { } public class ProductId { } }")],
-            [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var module = new ModuleInfo("ReferencedAssembly.dll", new Version(1, 0), compilation.ToMetadataReference(), compilation.Assembly);
+        var module = ResolveModule("ReferencedAssembly", referencesRuntime: true);
 
         module.GetTypes().Select(type => type.Name).Should().Contain(["OrderId", "ProductId"]);
+    }
+
+    /// <summary>
+    /// 剪枝：看不见 <c>IStronglyTypedId&lt;,&gt;</c> 的模块不可能声明 Id，直接返回空，
+    /// 不必遍历整棵类型树（<c>System.Private.CoreLib</c> 就有上万个类型）。
+    /// </summary>
+    [Fact]
+    public void GetTypes_Should_ReturnEmpty_WhenModuleCannotDeclareIds()
+    {
+        var module = ResolveModule("UnrelatedAssembly", referencesRuntime: false);
+
+        module.MayDeclareIds.Should().BeFalse();
+        module.GetTypes().Should().BeEmpty();
     }
 
     #endregion
@@ -200,6 +207,26 @@ public class ModuleInfoTests
 
     private static ModuleInfo CreateModule(string name, string version)
         => new(name, Version.Parse(version), _reference, null);
+
+    /// <summary>
+    /// 按生产路径造一个模块：源码程序集（<see cref="CompilationReference"/>）经
+    /// <see cref="ModuleIdentity.ResolveAssembly"/> 解析，从而覆盖 <see cref="ModuleInfo.MayDeclareIds"/> 的推导。
+    /// </summary>
+    private static ModuleInfo ResolveModule(string assemblyName, bool referencesRuntime)
+    {
+        MetadataReference[] references = referencesRuntime
+            ? [_reference, AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)]
+            : [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)];
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText("namespace Sample { public class OrderId { } public class ProductId { } }")],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return new ModuleIdentity($"{assemblyName}.dll", new Version(1, 0), compilation.ToMetadataReference())
+            .ResolveAssembly(compilation);
+    }
 
     #endregion
 }

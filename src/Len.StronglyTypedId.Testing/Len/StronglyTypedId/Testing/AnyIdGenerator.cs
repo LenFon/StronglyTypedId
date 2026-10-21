@@ -54,7 +54,11 @@ public sealed class AnyIdGenerator
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttempts, 1);
 
         _options = options;
-        _values = new PrimitiveValueFactory(new Random(options.Seed ?? Random.Shared.Next()), options.StringLength, options.PrimitiveValueFactory);
+        _values = new PrimitiveValueFactory(
+            new Random(options.Seed ?? Random.Shared.Next()),
+            options.StringLength,
+            options.PrimitiveValueFactory,
+            options.IncludeBoundaryValues);
     }
 
     /// <summary>

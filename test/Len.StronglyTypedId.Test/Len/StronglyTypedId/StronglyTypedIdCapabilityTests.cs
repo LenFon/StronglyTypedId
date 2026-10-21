@@ -742,10 +742,11 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
-    /// 低层格式化成员在 <c>format</c> 为空时带前缀，保证 <c>$"{id}"</c> / 结构化日志与 <c>ToString()</c> 一致。
+    /// 低层格式化成员无论 <c>format</c> 是否为空都带前缀：前缀属于规范文本形，
+    /// <c>$"{id:N}"</c> 不该悄悄退化成裸基元。
     /// </summary>
     [Fact]
-    public void Prefix_Should_AppearInLowLevelFormatting_WhenFormatIsEmpty()
+    public void Prefix_Should_AppearInLowLevelFormatting_RegardlessOfFormat()
     {
         var id = PrefixedGuidId.Create(_lowGuid);
 
@@ -755,8 +756,8 @@ public class StronglyTypedIdCapabilityTests
         id.TryFormat(destination, out var charsWritten, default, CultureInfo.InvariantCulture).Should().BeTrue();
         destination[..charsWritten].ToString().Should().Be($"ord_{_lowGuid}");
 
-        // 显式格式串仍按基元语义输出（前缀只在「无格式」这一档生效）。
-        ((IFormattable)id).ToString("N", CultureInfo.InvariantCulture).Should().Be(_lowGuid.ToString("N"));
+        // 显式格式串只作用于基元部分，前缀仍在。
+        ((IFormattable)id).ToString("N", CultureInfo.InvariantCulture).Should().Be($"ord_{_lowGuid.ToString("N")}");
     }
 
     /// <summary>
