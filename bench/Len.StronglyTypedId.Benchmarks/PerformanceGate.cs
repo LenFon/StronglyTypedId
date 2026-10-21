@@ -19,7 +19,7 @@ namespace Len.StronglyTypedId.Benchmarks;
 /// <para>
 /// <b>分配字节数是主判据</b> —— 同一份代码走同一条路径时分配量逐字节可复现，与机器快慢无关；
 /// 而 Roslyn 侧绝大多数性能退化（多枚举一遍符号、多拼一次字符串、多接一层 LINQ）都会体现在分配量上。
-/// <b>耗时只作数量级兜底</b>（容忍 4 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
+/// <b>耗时只作数量级兜底</b>（容忍 10 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
 /// </para>
 /// <para>
 /// 用法：<c>dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate</c>；
@@ -54,7 +54,20 @@ internal static class PerformanceGate
     private const double AllocatedBytesTolerance = 0.10;
 
     /// <summary>耗时的容忍比例：只在数量级退化时报警（跨机器、跨 runner 的墙钟不可比）。</summary>
-    private const double ElapsedTolerance = 3.0;
+    /// <remarks>
+    /// <para>
+    /// 取 9.0（上限为基线的 10 倍）而不是更紧的值，是因为这个判据天生跨机器不可比。实测同一份代码、
+    /// 同一份基线：开发机 13.97 ms，GitHub 的 windows-latest 59.75 ms —— 相差 4.3 倍，而两者的分配量
+    /// 分别是 5,585,256 B 与 5,584,640 B（相差 0.011%）。原先取 3.0（上限 4 倍）时，CI 仅因 runner 较慢
+    /// 就被判红，是一次纯粹的假阳性。
+    /// </para>
+    /// <para>
+    /// 放宽到 10 倍不会放过真正关心的退化：本判据只负责兜住「分配量没变但复杂度炸了」的情形，
+    /// 而 O(n) 变 O(n²) 这类爆炸远超一个数量级。常规退化（多枚举一遍符号、多拼一次字符串、多接一层
+    /// LINQ）由分配量那条 10% 的判据负责，它的跨机器噪声只有 0.011%。
+    /// </para>
+    /// </remarks>
+    private const double ElapsedTolerance = 9.0;
 
     private const string BaselineFileName = "generator-run.baseline.json";
 

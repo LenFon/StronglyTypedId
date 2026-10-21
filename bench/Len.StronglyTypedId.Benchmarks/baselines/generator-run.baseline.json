@@ -5,5 +5,5 @@
   "AllocatedBytesPerRun": 5553424,
   "ElapsedMillisecondsPerRun": 14.117,
   "AllocatedBytesTolerance": 0.1,
-  "ElapsedTolerance": 3
+  "ElapsedTolerance": 9
 }
