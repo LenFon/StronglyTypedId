@@ -634,7 +634,7 @@ public class StronglyTypedIdInfoTests
             .Union(seed)
             .Distinct()
             .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))];
+            .Select(AssemblyReferenceCache.FromAssembly)];
     }
 
     #endregion

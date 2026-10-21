@@ -43,7 +43,7 @@ public static class SyntheticAssembly
         var compilation = CSharpCompilation.Create(
             assemblyName,
             [CSharpSyntaxTree.ParseText(source)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         using var stream = new MemoryStream();

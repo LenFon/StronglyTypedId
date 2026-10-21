@@ -105,7 +105,7 @@ public class ModuleInfoTests
         var compilation = CSharpCompilation.Create(
             "ReferencedAssembly",
             [CSharpSyntaxTree.ParseText("namespace Sample { public class OrderId { } public class ProductId { } }")],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var module = new ModuleInfo("ReferencedAssembly.dll", new Version(1, 0), compilation.ToMetadataReference(), compilation.Assembly);
@@ -184,7 +184,7 @@ public class ModuleInfoTests
         var withAnotherReference = new ModuleInfo(
             "Newtonsoft.Json.dll",
             new Version(13, 0, 3, 0),
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
             null);
 
         comparer.Equals(withDefaultReference, withAnotherReference).Should().BeTrue();
@@ -196,7 +196,7 @@ public class ModuleInfoTests
 
     // 模块描述符本身不读取 MetadataReference 的内容，仅用于承载实例，取任一真实引用即可。
     private static readonly MetadataReference _reference
-        = MetadataReference.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location);
+        = AssemblyReferenceCache.FromAssembly(typeof(StronglyTypedIdAttribute).Assembly);
 
     private static ModuleInfo CreateModule(string name, string version)
         => new(name, Version.Parse(version), _reference, null);

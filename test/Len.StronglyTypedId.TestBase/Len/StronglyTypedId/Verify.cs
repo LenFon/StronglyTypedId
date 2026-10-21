@@ -178,8 +178,8 @@ public static class Verify
             .GetProject(projectId)!
             .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
             .WithParseOptions(parseOptions)
-            .AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location))
-            .AddMetadataReference(MetadataReference.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location));
+            .AddMetadataReference(AssemblyReferenceCache.FromAssembly(typeof(object).Assembly))
+            .AddMetadataReference(AssemblyReferenceCache.FromAssembly(typeof(StronglyTypedIdAttribute).Assembly));
 
         return (project.AddDocument("Test.cs", root), new TextSpan(position, 0));
     }
@@ -207,7 +207,7 @@ public static class Verify
 
         if (File.Exists(net8Location))
         {
-            test.TestState.AdditionalReferences.Add(MetadataReference.CreateFromFile(net8Location));
+            test.TestState.AdditionalReferences.Add(AssemblyReferenceCache.FromFile(net8Location));
         }
         else
         {

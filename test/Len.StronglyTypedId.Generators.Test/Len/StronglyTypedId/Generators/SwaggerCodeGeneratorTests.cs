@@ -19,10 +19,10 @@ public class SwaggerCodeGeneratorTests
     #region 辅助：驱动生成器并捕获 Swagger 产物
 
     private static MetadataReference Swagger6Reference { get; }
-        = MetadataReference.CreateFromFile(typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions).Assembly.Location);
+        = AssemblyReferenceCache.FromAssembly(typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions).Assembly);
 
     private static MetadataReference OpenApiReference { get; }
-        = MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location);
+        = AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly);
 
     private static CSharpCompilation CreateCompilation(string sourceCode, params MetadataReference[] extraReferences)
     {
@@ -46,7 +46,7 @@ public class SwaggerCodeGeneratorTests
             .Distinct()
             .Where(a => !a.IsDynamic)
             .Where(ShouldReferenceAssembly)
-            .Select(a => MetadataReference.CreateFromFile(a.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Cast<MetadataReference>()
             .Concat(extraReferences)
             .ToArray();

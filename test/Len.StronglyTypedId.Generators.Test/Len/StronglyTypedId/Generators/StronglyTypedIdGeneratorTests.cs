@@ -835,7 +835,7 @@ public class StronglyTypedIdGeneratorTests
             .Where(assembly => !assembly.IsDynamic)
             .Where(ShouldReferenceAssembly)
             .Union(extraAssemblyTypes.Select(type => type.Assembly).Where(assembly => !assembly.IsDynamic))
-            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Cast<MetadataReference>()
             .Concat(extraReferences);
 
@@ -2169,8 +2169,8 @@ public class StronglyTypedIdGeneratorTests
             code,
             [typeof(Microsoft.EntityFrameworkCore.DbContext), typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -2339,7 +2339,7 @@ public class StronglyTypedIdGeneratorTests
             IdSource,
             [typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions), typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
                 CreateReferencedDomainReference(),
             ]);
 
@@ -2414,8 +2414,8 @@ public class StronglyTypedIdGeneratorTests
             code,
             [typeof(Microsoft.EntityFrameworkCore.DbContext), typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -2484,11 +2484,11 @@ public class StronglyTypedIdGeneratorTests
             code,
             [typeof(Microsoft.EntityFrameworkCore.DbContext), typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions)],
             [
-                MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
                 // EF Core 的 ValueConverter 签名里带 Expression<>，而合成编译的引用集由 AppDomain 里「已加载」的
                 // 程序集拼出（见 ShouldReferenceAssembly），单跑本用例时它可能尚未加载 —— 显式引入，让结果与运行顺序无关。
-                MetadataReference.CreateFromFile(typeof(System.Linq.Expressions.Expression).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(System.Linq.Expressions.Expression).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -2672,7 +2672,7 @@ public class StronglyTypedIdGeneratorTests
         var references = new MetadataReference[]
         {
             fakeAttributeReference,
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
         };
 
         return CSharpCompilation.Create(
@@ -2699,7 +2699,7 @@ public class StronglyTypedIdGeneratorTests
         var compilation = CSharpCompilation.Create(
             "FakeSti",
             [CSharpSyntaxTree.ParseText(source)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         using var stream = new MemoryStream();
@@ -2780,8 +2780,8 @@ public class StronglyTypedIdGeneratorTests
             "ReferencedDomain",
             [CSharpSyntaxTree.ParseText(ReferencedDomainSource)],
             [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(StronglyTypedIdAttribute).Assembly),
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 

@@ -40,7 +40,7 @@ public class NewtonsoftJsonCodeGeneratorTests
             .Distinct()
             .Where(assembly => !assembly.IsDynamic)
             .Where(ShouldReferenceAssembly)
-            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Cast<MetadataReference>()
             .Concat(extraReferences)
             .ToArray();
