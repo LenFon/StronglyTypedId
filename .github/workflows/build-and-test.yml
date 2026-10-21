@@ -1,94 +1,49 @@
-# This workflow will build a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
+# 构建 / 测试 / 覆盖率 / 打包校验 / AOT / 性能门槛。
+#
+# 触发面只覆盖「会改变产物或校验结论」的路径：源码、测试、基准、工具、构建配置、文档表格与工作流本身。
 
 name: build and test
 
 on:
   push:
-    branches: 
-      - dev
-      - main
-    paths:
-      - "src/**/*.cs"
-      - "src/**/*.csproj"
-      - "test/**/*.cs"
-      - "test/**/*.csproj"
-      - "bench/**/*.cs"
-      - "bench/**/*.csproj"
-      - "bench/**/baselines/*.json"
-      - "bench.props"
-      # README 的三张表由 tools/Len.StronglyTypedId.DocGen 从生成器内部数据渲染，改动源或产物都要跑校验
-      - "tools/**/*.cs"
-      - "tools/**/*.csproj"
-      - "README.md"
-      - "README.zh-CN.md"
-      - "CHANGELOG.md"
-      - "CHANGELOG.zh-CN.md"
-      # pack 校验由本流水线的 pack job 承担，触发面需覆盖其依赖的工程 / 配置 / 工作流变更
-      - "Directory.Build.props"
-      - "common.props"
-      - "version.props"
-      - "Directory.Packages.props"
-      - "src/Len.StronglyTypedId/CompatibilitySuppressions.xml"
-      - "src/Len.StronglyTypedId/PublicAPI.Shipped.txt"
-      - "src/Len.StronglyTypedId/PublicAPI.Unshipped.txt"
-      # 覆盖率门槛的统计范围与阈值都在这里，改它就该重跑一次
+    branches: [dev, main]
+    paths: &changed-paths
+      - "src/**"
+      - "test/**"
+      - "bench/**"
+      - "tools/**"
+      - "*.props"
+      - "README*.md"
+      - "CHANGELOG*.md"
       - "codecov.yml"
-      - ".github/workflows/build-and-test.yml"
-      - ".github/workflows/publish-nuget.yml"
+      - ".github/workflows/*.yml"
   pull_request:
-    branches:
-      - dev
-      - main
-    paths:
-      - "src/**/*.cs"
-      - "src/**/*.csproj"
-      - "test/**/*.cs"
-      - "test/**/*.csproj"
-      - "bench/**/*.cs"
-      - "bench/**/*.csproj"
-      - "bench/**/baselines/*.json"
-      - "bench.props"
-      - "tools/**/*.cs"
-      - "tools/**/*.csproj"
-      - "README.md"
-      - "README.zh-CN.md"
-      - "CHANGELOG.md"
-      - "CHANGELOG.zh-CN.md"
-      - "Directory.Build.props"
-      - "common.props"
-      - "version.props"
-      - "Directory.Packages.props"
-      - "src/Len.StronglyTypedId/CompatibilitySuppressions.xml"
-      - "src/Len.StronglyTypedId/PublicAPI.Shipped.txt"
-      - "src/Len.StronglyTypedId/PublicAPI.Unshipped.txt"
-      - "codecov.yml"
-      - ".github/workflows/build-and-test.yml"
-      - ".github/workflows/publish-nuget.yml"
+    branches: [dev, main]
+    paths: *changed-paths
   workflow_dispatch:
 
-# 同一分支连推多次时，旧运行已经没有意义：取消它能把 runner 让给最新提交。
-# 只对 PR 取消 —— push 到 dev/main 的运行保留完整记录，便于回溯某次合并对应的结果。
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+# 同一分支连推多次时旧运行已无意义：只对 PR 取消，push 到 dev/main 保留完整记录便于回溯。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v7
       with:
-        # CHANGELOG 校验要把每个 tag 与版本小节对上，浅克隆（默认 fetch-depth: 1）读不到 tag，
-        # 校验会直接判失败而不是静默跳过。
+        # CHANGELOG 校验要把每个 tag 与版本小节对上，浅克隆读不到 tag。
         fetch-depth: 0
     - name: Setup .NET
       uses: actions/setup-dotnet@v6
       with:
-        # net8.0 与 net10.0 两个目标框架的测试都要跑，必须显式安装两者运行时，
-        # 避免依赖 runner 镜像预装的 .NET 8 环境。
+        # 两个 TFM 的测试都要跑，显式安装两者，不依赖 runner 镜像预装的环境。
         dotnet-version: |
           8.0.x
           10.0.x
@@ -97,109 +52,74 @@ jobs:
     - name: Build
       run: dotnet build --no-restore
     - name: NuGet vulnerability report
-      # 非阻断，只写进 job summary。
-      #
-      # 本仓现存漏洞全部落在 test / samples / bench 的**传递**依赖里（EF Core 8.0.0 拉下来的
-      # Azure.Identity、Microsoft.Data.SqlClient、System.Text.Json，以及测试栈里的
-      # System.Security.Cryptography.Pkcs），它们不进任何发布包，由 Dependabot 逐步收敛。
-      # 若把它们做成阻断门禁，PR 会因为「示例工程的上游包还没发新版」而永久变红。
-      #
-      # 发布物那一侧不靠这一步：common.props 给 src 开了 NuGetAuditMode=all，
-      # 依赖链里一旦出现已知漏洞，restore 阶段直接报 NU1902/NU1903 警告。
+      # 非阻断，只写 job summary：现存漏洞全落在 test / samples / bench 的传递依赖里，
+      # 做成门禁会让 PR 因上游包未发版而永久变红。发布物那侧由 common.props 的
+      # NuGetAuditMode=all 在 restore 阶段报 NU1902/NU1903。
       continue-on-error: true
       run: |
         {
           echo '### NuGet 已知漏洞（含传递依赖）'
-          echo ''
           echo '```'
           dotnet package list --project Len.StronglyTypedId.slnx --vulnerable --include-transitive || true
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
     - name: Verify generated README tables
-      # 三张表（基元类型 / 集成触发条件 / 诊断）由 tools/Len.StronglyTypedId.DocGen 从生成器内部的判定数据
-      # 渲染，README 里只保留 <!-- BEGIN GENERATED:… --> 标记之间的内容。改了判定却没重新生成时，
-      # 这一步直接失败并指出首个差异行 —— 否则 README 会静默停在旧内容，而没人会去数表格行数。
+      # 三张表由 DocGen 从生成器内部判定数据渲染，改了判定却没重新生成时这里直接红。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify
     - name: Verify CHANGELOG
-      # 每个 tag 都必须有对应小节、日期与 tag 提交日期一致、文末链接不缺。发布前忘了写变更说明时，
-      # 这一步会点名是哪个 tag 没有小节，而不是等使用者去 NuGet 页面上猜。
+      # 每个 tag 必须有对应小节、日期与 tag 提交日期一致、文末链接不缺。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-changelog
-    - name: Restore coverage tool
-      # 必须排在下面的测试步骤之前：两条腿都用 dotnet-coverage 采集。
+    - name: Restore tools
       run: dotnet tool restore
+
+    # 两条腿都用 --test-modules 通配挑模块，而不是 --solution + --framework：后者会给每个测试工程
+    # 解析模块路径，对不含该 TFM 的工程解析出不存在的 bin/Debug/<tfm>/<工程名>，启动时抛
+    # Win32Exception 让整步失败。通配按「已构建产物」挑模块，没有该 TFM 产物的工程自然落选，
+    # 也不必维护工程清单。注意 --test-modules 与 --solution / --project / --framework 互斥，只能裸跑。
+    #
+    # 通配写 *.Test.dll 而不是 *Test.dll：后者会把 Aot.SmokeTest 这种名字以 Test 结尾的非测试程序集
+    # 也捞进来。包内容断言工程的程序集名刻意叫 Len.StronglyTypedId.Packaging.Tests（复数），同样不被
+    # 选中 —— 它要真跑 dotnet pack，由独立的 packaging job 负责。
+    #
+    # 代价：glob 少匹配不会报错，只会静默少跑几个模块；动构建输出布局或测试工程集合时要回头核对。
     - name: Test + coverage (net8.0)
-      # net8.0 与 net10.0 各采一份报告、各带一个 flag 上传（见下方两个 Upload 步骤），
-      # 这样 Codecov 上既能按 TFM 分别查看覆盖率，也能看到合并后的总体趋势。
-      #
-      # 两条腿是顺序执行的，不再像上一版那样在同一步里后台并发 —— 每份报告都需要一个独立的
-      # dotnet-coverage 采集会话，而两个会话并发是否互相干扰无法在本机验证（本机 bash 不可用），
-      # 与其在 CI 上赌偶发失败，不如用确定性换这二十来秒。测试提速后两条腿合计约一分钟。
-      #
-      # 两条腿都用 --test-modules 通配挑模块，而不是解决方案级 + --framework：后者会给每个测试工程
-      # 解析模块路径，对不含该 TFM 的工程解析出并不存在的 bin/Debug/<tfm>/<工程名>，启动时抛
-      # Win32Exception 让整步失败。通配反过来按「已构建产物」挑模块，没有该 TFM 产物的工程自然
-      # 落选，也不必维护工程清单（上一版逐工程列举，Testing.Test 加入时漏登记，它的 net8.0 目标
-      # 有一段时间没在 CI 上跑过）。注意 --test-modules 与 --solution / --project / --framework
-      # 互斥，只能在仓库根裸跑。
-      #
-      # 通配写 *.Test.dll 而不是 *Test.dll：后者会把 Aot.SmokeTest 这种名字以 Test 结尾的非测试
-      # 程序集也捞进来（MTP 会把它当测试宿主直接启动）。包内容断言工程的程序集名刻意叫
-      # Len.StronglyTypedId.Packaging.Tests（复数），同样不被这条通配选中 —— 它要真跑 dotnet pack，
-      # 由独立的 packaging job 负责，见下方。
-      #
-      # 代价是 glob 少匹配（改了 OutputPath、工程改名、TFM 变化）不会报错，只会静默少跑几个模块：
-      # 动到构建输出布局或测试工程集合时，要回头核对这条通配仍能匹配到全部双目标工程。
       run: |
         mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net8.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net8.0/*.Test.dll" \
-            --no-build --verbosity normal
+          dotnet test --test-modules "**/bin/Debug/net8.0/*.Test.dll" --no-build --verbosity normal
     - name: Test + coverage (net10.0)
-      # 与 net8.0 腿同构，只换了 TFM 与报告路径（为什么用通配、为什么排除包断言见上一条注释）。
-      # 用 dotnet-coverage 直接包住测试进程采集覆盖率 —— MTP 原生扩展在本仓库只产出空数据
-      # （10 字节空壳），故改用此方式。
+      # 与上一步同构，只换 TFM 与报告路径。
       run: |
         mkdir -p TestResults
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net10.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net10.0/*.Test.dll" \
-            --no-build --verbosity normal
+          dotnet test --test-modules "**/bin/Debug/net10.0/*.Test.dll" --no-build --verbosity normal
+
+    # 每份报告单独上传、单独带一个 flag：一份报告挂多个 flag 会把整份覆盖率重复计入每个 flag。
+    # fail_ci_if_error 必须为 true，否则覆盖率可以静默停更几个月而没人发现。
+    # 统计范围与阈值在 codecov.yml（project 跌幅 ≤1%、patch ≥80%）；测试工程 / 工具 / 测试依赖由那边
+    # 的 ignore 剔除 —— 采集阶段没法按路径过滤（--include-files 区分 / 与 \，跨 OS 不等价）。
     - name: Upload coverage (net8.0)
-      # v5 起 action 只是 Codecov Wrapper 的外壳（CLI 由它自己下载并做 PGP 校验），入参沿用
-      # `files` / `token` / `flags` 不变；v3 及以下走的是已废弃的 uploader，迟早会被服务端拒绝。
-      #
-      # 每份报告单独上传、单独带一个 flag —— Codecov 要求 flag 与报告一一对应：一份报告挂多个 flag
-      # 会把整份报告的覆盖率重复计入每个 flag，数字就失真了。
-      #
-      # fail_ci_if_error：上传失败（token 过期、Codecov 故障）直接让构建红。默认值是 false ——
-      # 那意味着覆盖率可以静默停止更新几个月而没人发现，正是这条门槛要防的形态。
-      #
-      # 统计范围与阈值都在仓库根的 codecov.yml：project 只允许比基线跌 1%，patch 要求 80%。
-      # 报告里混着的测试工程 / 工具 / 测试依赖由那边的 ignore 剔除（采集阶段没法按路径过滤：
-      # dotnet-coverage 的 --include-files 区分 / 与 \，同一份通配符在 Windows 与 Linux 上不等价，
-      # 实测在 Windows 上用 `**/src/...` 会得到一份空报告）。
       uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: "TestResults/coverage.net8.cobertura.xml"
+        files: TestResults/coverage.net8.cobertura.xml
         flags: net8.0
         fail_ci_if_error: true
     - name: Upload coverage (net10.0)
-      # 与上一步一一对应，只是换了报告与 flag。
       uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: "TestResults/coverage.net10.cobertura.xml"
+        files: TestResults/coverage.net10.cobertura.xml
         flags: net10.0
         fail_ci_if_error: true
 
-  # 包内容断言（Packaging.Test）单独成 job：它内部要真跑一次 dotnet pack，产物落在临时目录，
-  # 既不该拖慢 build job 的测试腿，也不该把与 TFM 无关的用例混进覆盖率报告。
+  # 包内容断言单独成 job：它内部要真跑 dotnet pack，不该拖慢 build 的测试腿，也不该把与 TFM 无关的
+  # 用例混进覆盖率报告。needs: build 让它排在上传之后，与 aot / pack / perf 互不影响。
   #
-  # needs: build —— 排在 build（含两份覆盖率报告上传）之后，与 aot / perf 等 job 互不影响。
-  # 不传 --framework：两个 TFM 的模块都会被调度，夹具用跨进程文件锁串行化打包，先到者打包、
-  # 后到者等锁释放后复用产物，因此 dotnet pack 只真正执行一次。
+  # 不传 --framework：两个 TFM 的模块都会跑，夹具用跨进程文件锁串行化打包（先到者打包、后到者复用
+  # 产物），因此 dotnet pack 只真正执行一次。
   packaging:
     runs-on: ubuntu-latest
     needs: build
@@ -213,19 +133,16 @@ jobs:
           8.0.x
           10.0.x
     - name: Restore dependencies
+      # 夹具内部用 dotnet pack --no-restore，src 工程必须先还原。
       run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
     - name: Verify package contents
-      run: dotnet test --project test/Len.StronglyTypedId.Packaging.Test --no-build --verbosity normal
+      run: dotnet test --project test/Len.StronglyTypedId.Packaging.Test --verbosity normal
 
-  # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作。本 job 把这个宣称变成可验证的
-  # 证据：真做一次 Native AOT 发布，再运行产物里的冒烟断言（创建 / 解析 / 格式化 / 前缀 / STJ 值
-  # 与属性名）。
+  # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作，本 job 把它变成可验证的证据。
   #
-  # 注意生成的 STJ 转换器内部仍走 JsonSerializer，而 AOT 下反射序列化被禁用 —— 因此宿主必须提供
-  # 源生成的 JsonSerializerContext。这是 STJ 在 AOT 下的标准要求，不是本库的特例；冒烟工程里的
-  # SmokeTestJsonContext 就是最小示例，同时也充当「AOT 用户该怎么配」的活文档。
+  # 生成的 STJ 转换器内部仍走 JsonSerializer，而 AOT 下反射序列化被禁用 —— 宿主必须提供源生成的
+  # JsonSerializerContext。这是 STJ 在 AOT 下的标准要求，不是本库的特例；冒烟工程里的
+  # SmokeTestJsonContext 就是最小示例，同时也是「AOT 用户该怎么配」的活文档。
   aot:
     runs-on: ubuntu-latest
 
@@ -237,29 +154,27 @@ jobs:
         dotnet-version: |
           10.0.x
     - name: Install AOT toolchain
-      # Native AOT 在 Linux 上需要 clang 与 zlib 开发包
+      # Native AOT 在 Linux 上需要 clang 与 zlib 开发包。
       run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-    # 不传 --no-restore：ILCompiler 包由 PublishAot 的 targets 在还原阶段引入，
-    # 让它自己按 RID 还原最稳妥。
     - name: Publish (Native AOT)
+      # 不传 --no-restore：ILCompiler 包由 PublishAot 的 targets 在还原阶段按 RID 引入。
       run: dotnet publish test/Len.StronglyTypedId.Aot.SmokeTest/Len.StronglyTypedId.Aot.SmokeTest.csproj -c Release -r linux-x64 -o artifacts/aot-smoke
     - name: Run smoke test
       run: ./artifacts/aot-smoke/Len.StronglyTypedId.Aot.SmokeTest
 
-  # EnablePackageValidation 只在 dotnet pack 阶段真正生效：任何「删成员 / 改签名 / 去掉目标框架 /
-  # 降低程序集版本」都会在此直接报错，而不是等使用者升级后才发现。
+  # EnablePackageValidation 只在 dotnet pack 阶段生效：删成员 / 改签名 / 去掉目标框架 / 降低程序集版本
+  # 都会在此直接报错，而不是等使用者升级后才发现。
   #
-  # 版本号推导：version.props 里的占位号（1.0.0）必然低于 ApiCompat 基线（1.3.0-preview.5），
-  # 此时 common.props 的跨版本基线不会挂上，pack 退化为包内一致性校验。下面复用发布流水线的
-  # TagToVersion 机制——从最近 tag 推导出下一个版本号写回 version.props（≥ 基线 → 自动挂上基线，
-  # 跨版本比对在 PR 上就能拦截破坏性变更），推导失败则保留占位号、只跑一致性校验。
+  # 版本号推导：version.props 的占位号（1.0.0）低于 ApiCompat 基线（1.3.0-preview.5），此时跨版本基线
+  # 不会挂上，pack 退化为包内一致性校验。故复用发布流水线的 TagToVersion 从最近 tag 推导下一个版本号
+  # 写回 version.props（≥ 基线 → 跨版本比对生效）；推导失败则兜底为基线号本身。
   pack:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v7
       with:
-        # 需要 tag 才能让 TagToVersion 推导出正确的下一个版本号
+        # 需要 tag 才能让 TagToVersion 推导出正确的下一个版本号。
         fetch-depth: 0
     - name: Setup .NET
       uses: actions/setup-dotnet@v6
@@ -269,13 +184,10 @@ jobs:
           10.0.x
     - name: Install dotnet tool
       run: dotnet tool install -g dotnetCampus.TagToVersion
-    - name: Set version from latest tag (fall back to baseline on failure)
-      # CP0021 是「基线抑制」，只有当前 Version ≥ 基线（1.3.0-preview.5）时才会挂上 ApiCompat 基线
-      # 做跨版本比对；占位号 1.0.0 低于基线，抑制会被判为「不必要」而直接 error。
-      # 因此优先用 TagToVersion 从最近 tag 推导下一个版本号（≥ 基线 → 跨版本比对生效）；
-      # 推导失败（无 tag / 分支落后）时兜底为基线号本身（Version == 基线 → 仍挂上基线），
-      # 保证 pack 在任何分支上都能跑跨版本校验，而不是静默退化为包内一致性校验。
-      # 同时把 Assembly 版本号主段（major.minor.0.0）写入环境变量，供 build/pack 透传，
+    - name: Set version from latest tag (fall back to baseline)
+      # CP0021 是「基线抑制」：只有当前 Version ≥ 基线时才会挂上 ApiCompat 基线做跨版本比对；
+      # 占位号 1.0.0 低于基线，抑制会被判为「不必要」而直接 error。
+      # 同时把 Assembly 版本号主段（major.minor.0.0）写进 env 供 build / pack 透传，
       # 让 CP0003「程序集版本应等于或高于基线」通过（基线 AssemblyVersion 是 1.3.0.0）。
       run: |
         set +e
@@ -286,35 +198,25 @@ jobs:
           echo "no tag reachable; using baseline version 1.3.0-preview.5"
           sed -i 's#<Version>.*</Version>#<Version>1.3.0-preview.5</Version>#' version.props
         fi
-        # 取 version.props 里的 Version（NuGet 号，如 1.3.0-preview.5 或 1.3.1），
-        # 拆出 major.minor 作为 Assembly 版本号主段。
         PKG_VERSION=$(grep -oP '(?<=<Version>)[^<]+' version.props | head -n1)
         MAJOR=$(echo "$PKG_VERSION" | cut -d'.' -f1)
         MINOR=$(echo "$PKG_VERSION" | cut -d'.' -f2 | cut -d'-' -f1)
         ASM_VERSION="${MAJOR}.${MINOR}.0.0"
         echo "PackageVersion=${PKG_VERSION}  AssemblyVersion=${ASM_VERSION}"
         echo "ASSEMBLY_VERSION=${ASM_VERSION}" >> "$GITHUB_ENV"
-    # 顺序很关键：ApiCompat 的基线包由 PackageDownload 声明（Microsoft.NET.ApiCompat.targets），
-    # 而 PackageValidationBaselineVersion 只在「Version ≥ 基线」时才挂上（见 common.props）。
-    # 若在改写 version.props 之前就 restore，此刻版本还是占位号 1.0.0，基线包既不进还原图、
-    # 也不会落到全局包目录；随后 Build 挂上基线去找
-    # $(NuGetPackageRoot)/len.stronglytypedid/1.3.0-preview.5/…nupkg 会 FileNotFound，
-    # ValidatePackageTask 直接抛 MSB4018（本地因缓存里恰好留着该包，所以不复现）。
-    # 故 restore 必须排在版本改写之后，与 publish-nuget.yml 的顺序保持一致。
+    # restore 必须排在版本改写之后：ApiCompat 的基线包由 PackageDownload 声明，而
+    # PackageValidationBaselineVersion 只在「Version ≥ 基线」时才挂上（见 common.props）。
+    # 若先 restore，此刻版本还是占位号 1.0.0，基线包不进还原图也不落全局包目录，随后 Build 会因
+    # 找不到 $(NuGetPackageRoot)/len.stronglytypedid/1.3.0-preview.5/…nupkg 抛 MSB4018
+    # （本地因缓存里恰好留着该包而不复现）。与 publish-nuget.yml 的顺序保持一致。
     - name: Restore dependencies
       run: dotnet restore
-    # EnablePackageValidation 的跨版本比对需要基线包（1.3.0-preview.5）做 CP 校验；
-    # 这里先按 Release 完整 build 再 pack（pack 阶段不再重复 restore）。
-    # -p:AssemblyVersion 透传上面推导出的主段，使 CP0003「程序集版本 ≥ 基线 1.3.0.0」通过。
     - name: Build (Release)
       run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
-    # 只有两个可发布项目：common.props 把 IsPackable 默认设为 false，仅
-    # src/Len.StronglyTypedId 与 src/Len.StronglyTypedId.Generators 显式打开，
-    # 因此上面的 Release build（GeneratePackageOnBuild）与这里的 pack 都只会产出这两个包，
-    # test / samples / bench / tools 不会再生成垃圾包。
-    # 仍然逐项目 pack 而不是 pack 整个解决方案：主包多 TFM 的 dll 收集在统一 OutputPath 下会撞
-    # NU5026，逐项目 pack 用各自默认输出路径，两个 TFM 的 dll 各归其位，可正常成包。
-    # pack 同样透传 AssemblyVersion。
+    # 逐项目 pack 而不是 pack 整个解决方案：主包多 TFM 的 dll 收集在统一 OutputPath 下会撞 NU5026，
+    # 逐项目 pack 用各自默认输出路径，两个 TFM 的 dll 各归其位。
+    # 只有两个可发布项目（common.props 把 IsPackable 默认设为 false，仅主包与生成器包打开），
+    # 因此上面的 Release build（GeneratePackageOnBuild）与这里的 pack 都只产出这两个包。
     - name: Pack (Release, with package validation)
       run: |
         dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
@@ -322,16 +224,14 @@ jobs:
 
   # 生成器性能回归门槛。
   #
-  # 为什么不用 BenchmarkDotNet 做 CI 门槛：BDN 的价值在统计严谨（多轮迭代 + 离群剔除），代价是单次跑几分钟；
-  # 而 CI 跑在共享 runner 上，短作业的墙钟抖动本身就常常超过 ±20%，拿它做阻断式门槛只会制造假红。
-  # 门槛改用「固定轮次的确定性指标」：分配字节数为主判据（同一份代码走同一条路径时逐字节可复现，
-  # 且 Roslyn 侧绝大多数性能退化 —— 多枚举一遍符号、多拼一次字符串、多接一层 LINQ —— 都会体现在分配量上），
-  # 耗时只作数量级兜底（容忍 10 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
-  # 之所以放到 10 倍：墙钟跨机器不可比，实测同一份代码在开发机 13.97 ms、在 windows-latest 59.75 ms，
-  # 相差 4.3 倍而分配量只差 0.011% —— 4 倍的门槛会因 runner 较慢而假红。
+  # 不用 BenchmarkDotNet 做门禁：BDN 的价值在统计严谨，代价是单次几分钟；而 CI 跑在共享 runner 上，
+  # 短作业墙钟抖动常超 ±20%，拿它做阻断式门槛只会制造假红。门槛改用固定轮次的确定性指标：分配字节数
+  # 为主判据（同一路径逐字节可复现，Roslyn 侧的性能退化几乎都会体现在分配量上），耗时只作数量级兜底
+  # （容忍 10 倍，用于捕捉「分配没变但复杂度炸了」）。放到 10 倍是因为墙钟跨机器不可比：实测同一份
+  # 代码在开发机 13.97 ms、在 windows-latest 59.75 ms，相差 4.3 倍而分配量只差 0.011%。
   #
-  # 为什么钉在 windows-latest：基线是在 Windows 上生成的。引用程序集集合（尤其 Microsoft.AspNetCore.App
-  # 的引用程序集）与运行时补丁在不同 OS 上并不逐字节相同，分配量因此不可跨 OS 比对。
+  # 钉在 windows-latest：基线在 Windows 上生成。引用程序集集合（尤其 Microsoft.AspNetCore.App 的
+  # 引用程序集）与运行时补丁在不同 OS 上并不逐字节相同，分配量因此不可跨 OS 比对。
   # 有意改变性能特征时，本地跑 `--gate --update-baseline` 重写基线并连同改动一起提交。
   perf:
     runs-on: windows-latest
