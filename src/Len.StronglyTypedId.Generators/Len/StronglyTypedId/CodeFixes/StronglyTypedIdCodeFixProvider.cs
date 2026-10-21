@@ -1,6 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.Simplification;
 
 namespace Len.StronglyTypedId.CodeFixes;
 
@@ -8,6 +9,9 @@ namespace Len.StronglyTypedId.CodeFixes;
 internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 {
     private const string ValueParameterName = "Value";
+
+    private static readonly LocalizedString _primaryConstructorFixTitle
+        = new("TypeMustHaveSingleParameterPrimaryConstructorFixTitle");
 
     public override ImmutableArray<string> FixableDiagnosticIds { get; } =
         ImmutableArray.Create(
@@ -44,7 +48,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 continue;
             }
 
-            var title = descriptor.Title.ToString();
+            var title = GetFixTitle(diagnostic.Id, descriptor);
             var action = CodeAction.Create(title,
                              token => diagnostic.Id switch
                              {
@@ -73,6 +77,15 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
+    /// 取修复标题。默认沿用诊断标题；STIA0005 例外——它的修复是把参数表整体换成 <c>(Guid Value)</c>，
+    /// 原有参数会被丢弃，标题必须把这一点说出来，否则用户会以为只是「补一个参数」。
+    /// </summary>
+    private static string GetFixTitle(string diagnosticId, DiagnosticDescriptor descriptor)
+        => diagnosticId == Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId
+            ? _primaryConstructorFixTitle.ToString()
+            : descriptor.Title.ToString();
+
+    /// <summary>
     /// 判断该诊断的靶子是否真的适用对应修复。
     /// </summary>
     private static bool IsFixable(Diagnostic diagnostic, SyntaxNode root)
@@ -87,9 +100,14 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } declaration
                     && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword),
 
-            // 靶子当前是 class 或 struct，直接转关键字即可。
-            Descriptors.TypeMustBeRecordId =>
-                FindNode<TypeDeclarationSyntax>(root, diagnostic) is ClassDeclarationSyntax or StructDeclarationSyntax,
+            // 靶子当前是 class 或 struct，直接转关键字即可。ref struct 不给修复：它不能装箱、不能实现接口，
+            // 无论转成哪种 record 都不可能成为合法的强类型 Id。
+            Descriptors.TypeMustBeRecordId => FindNode<TypeDeclarationSyntax>(root, diagnostic) switch
+            {
+                ClassDeclarationSyntax => true,
+                StructDeclarationSyntax structDeclaration => !structDeclaration.Modifiers.Any(SyntaxKind.RefKeyword),
+                _ => false,
+            },
 
             // 仅当最外层容器直接挂在编译单元下（链上没有任何命名空间）才包命名空间。
             Descriptors.TypeMustHaveNamespaceId =>
@@ -119,15 +137,19 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.InvalidPrefixId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
 
+            // STIA0023 刻意不给修复：唯一能机械做出的改动是「删掉 Prefix」，但那会改变规范文本形，
+            // 已经按带前缀格式写出去的数据将再也读不回来。换一个安全前缀必须由人决定。
+
             // 只有显式写了 public 才有得收窄；省略修饰符的类型本身就是 internal。
             Descriptors.ValidatorCanBeBypassedId =>
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } bypassCandidate
                     && bypassCandidate.Modifiers.Any(SyntaxKind.PublicKeyword),
 
-            // 只有「带参数列表的构造」能机械改写成 Create(...)。default / default(T) 与无参的对象初始化器
-            // 一律不给修复：前者改成 Create(default) 会把编译期提示换成运行时异常，后者没有可搬运的实参。
+            // 只有「带实参的构造」能机械改写成 Create(...)。default / default(T) 与无参的对象初始化器
+            // 一律不给修复：前者改成 Create(default) 会把编译期提示换成运行时异常，后者没有可搬运的实参
+            // （`new Xxx()` 的 ArgumentList 不是 null 而是空表，只判 null 会产出缺参数的 `Xxx.Create()`）。
             Descriptors.BypassCreateId =>
-                FindNode<BaseObjectCreationExpressionSyntax>(root, diagnostic) is { ArgumentList: not null },
+                FindNode<BaseObjectCreationExpressionSyntax>(root, diagnostic) is { ArgumentList.Arguments.Count: > 0 },
 
             _ => true,
         };
@@ -253,8 +275,12 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 把 class / struct 关键字转成 record，使其通过 STIA0000。
+    /// 把 class / struct 关键字转成对应的 record，使其通过 STIA0000。
     /// </summary>
+    /// <remarks>
+    /// struct 必须转成 <c>record struct</c>：一律写成 <c>record</c> 会把值类型悄悄换成引用类型（装箱行为、
+    /// 默认值、<c>==</c> 语义全变）；<c>readonly struct</c> 更是直接编译不过（CS8809）。
+    /// </remarks>
     private static async Task<Document> ConvertToRecordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
         var root = await context.Document.GetSyntaxRootAsync(token);
@@ -264,9 +290,20 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
+        // record 与 struct 之间必须有一个空格，两个关键字都是新造的 token，没有现成的 trivia 可用。
+        // kind 也必须跟着换：RecordDeclaration 与 RecordStructDeclaration 是两个不同的节点种类，
+        // 只改 classOrStructKeyword 会得到「长得像 record struct、实则是引用类型 record」的产物。
+        var isStruct = declaration is StructDeclarationSyntax;
+
         var record = SyntaxFactory.RecordDeclaration(
+                isStruct ? SyntaxKind.RecordStructDeclaration : SyntaxKind.RecordDeclaration,
                 SyntaxFactory.Token(SyntaxKind.RecordKeyword),
                 declaration.Identifier)
+            .WithClassOrStructKeyword(isStruct
+                ? SyntaxFactory.Token(SyntaxKind.StructKeyword)
+                    .WithLeadingTrivia(SyntaxFactory.Space)
+                    .WithTrailingTrivia(SyntaxFactory.Space)
+                : SyntaxFactory.Token(SyntaxKind.None))
             .WithAttributeLists(declaration.AttributeLists)
             .WithModifiers(declaration.Modifiers)
             .WithTypeParameterList(declaration.TypeParameterList)
@@ -329,7 +366,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 SyntaxFactory.Parameter(
                     default,
                     default,
-                    SyntaxFactory.ParseTypeName("Guid"),
+                    GuidTypeName(),
                     SyntaxFactory.Identifier("Value"),
                     default)));
 
@@ -348,11 +385,19 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
-        var newType = SyntaxFactory.ParseTypeName("Guid").WithTriviaFrom(parameter.Type!);
+        var newType = GuidTypeName().WithTriviaFrom(parameter.Type!);
         var updated = parameter.WithType(newType);
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(parameter, updated));
     }
+
+    /// <summary>
+    /// 修复产物里的 <c>Guid</c> 类型名。写成 <c>global::System.Guid</c> 并挂 <see cref="Simplifier.Annotation"/>：
+    /// 文件里已有 <c>using System;</c> 时由 CodeFix 后处理简化回 <c>Guid</c>，没有时停在 <c>System.Guid</c>，
+    /// 否则裸 <c>Guid</c> 会留下一个新的 CS0246。
+    /// </summary>
+    private static TypeSyntax GuidTypeName()
+        => SyntaxFactory.ParseTypeName("global::System.Guid").WithAdditionalAnnotations(Simplifier.Annotation);
 
     /// <summary>
     /// STIA0010 修复主入口：决定「生成验证器桩」还是「删掉 Validator 实参」。
@@ -383,9 +428,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         }
 
         // 方法已存在（但签名不符）时删掉实参；只有根本不存在时才生成桩，二者不可混用。
+        // 桩体必须是 throw 而不是 `=> true`：Fix All 会把这条桩铺到几十个 Id 上，恒真的桩等于把校验整体架空，
+        // 而「忘了填」要到第一次运行时才炸出来，比编译不过更难发现。
         return typeSymbol.GetMembers(validatorName).OfType<IMethodSymbol>().Any(member => member.IsStatic)
             ? await RemoveNamedArgumentAsync(context, diagnostic, token)
-            : GenerateMethodStub(context.Document, root, recordDeclaration, $"private static bool {validatorName}({primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} value) => true;", token);
+            : GenerateMethodStub(context.Document, root, recordDeclaration, $"private static bool {validatorName}({primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} value) => throw new global::System.NotImplementedException(\"TODO: implement the validation rule.\");", token);
     }
 
     /// <summary>

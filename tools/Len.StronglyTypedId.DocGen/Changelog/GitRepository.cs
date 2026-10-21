@@ -44,7 +44,7 @@ internal static class GitRepository
     /// <summary>最近一个可从 <c>HEAD</c> 到达的 tag；没有 tag 时返回 <see langword="null"/>。</summary>
     public static string? FindLatestTag(string root)
     {
-        var result = TryRun(root, "describe", "--tags", "--abbrev=0");
+        var result = TryRun(root, out _, "describe", "--tags", "--abbrev=0");
 
         return string.IsNullOrWhiteSpace(result) ? null : result.Trim();
     }
@@ -67,12 +67,24 @@ internal static class GitRepository
     public static string NormalizeVersion(string tag) =>
         tag.Length > 1 && (tag[0] == 'v' || tag[0] == 'V') ? tag[1..] : tag;
 
-    private static string Run(string root, params string[] arguments) =>
-        TryRun(root, arguments)
-        ?? throw new InvalidOperationException(
-            $"`git {string.Join(' ', arguments)}` 执行失败；请确认当前目录是 git 仓库，且已拉取 tag（CI 需 fetch-depth: 0）。");
+    private static string Run(string root, params string[] arguments)
+    {
+        var output = TryRun(root, out var error, arguments);
 
-    private static string? TryRun(string root, params string[] arguments)
+        if (output is not null)
+        {
+            return output;
+        }
+
+        var message = $"`git {string.Join(' ', arguments)}` 执行失败；请确认当前目录是 git 仓库，且已拉取 tag（CI 需 fetch-depth: 0）。";
+
+        throw new InvalidOperationException(
+            string.IsNullOrWhiteSpace(error)
+                ? message
+                : $"{message}{Environment.NewLine}git stderr:{Environment.NewLine}{error.Trim()}");
+    }
+
+    private static string? TryRun(string root, out string error, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("git")
         {
@@ -95,11 +107,17 @@ internal static class GitRepository
             using var process = Process.Start(startInfo)
                 ?? throw new InvalidOperationException("无法启动 git 进程。");
 
-            var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
+            // 两个管道各有约 4 KB 的内核缓冲：必须并发读。顺序 ReadToEnd 时，只要 git 往
+            // stderr 写满缓冲（dubious ownership、LF→CRLF 告警、LFS 钩子……），它就会阻塞在
+            // 写 stderr 上，而我们阻塞在 stdout 的 EOF 上 —— 双方互等，永久挂起。
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+
             process.WaitForExit();
 
-            return process.ExitCode == 0 ? output : null;
+            error = errorTask.GetAwaiter().GetResult();
+
+            return process.ExitCode == 0 ? outputTask.GetAwaiter().GetResult() : null;
         }
         catch (Win32Exception exception)
         {

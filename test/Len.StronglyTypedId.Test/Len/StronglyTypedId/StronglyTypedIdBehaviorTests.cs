@@ -143,12 +143,12 @@ public class StronglyTypedIdBehaviorTests
 
     [Theory]
     [MemberData(nameof(InvalidIdSamples))]
-    public void Parse_Should_ThrowArgumentException_ForInvalidInput(Type idType, string invalidInput)
+    public void Parse_Should_ThrowFormatException_ForInvalidInput(Type idType, string invalidInput)
     {
-        // 通过反射调用，真实异常会被 TargetInvocationException 包裹，内层才是 ArgumentException
+        // 通过反射调用，真实异常会被 TargetInvocationException 包裹，内层才是 FormatException
         var act = () => Parse(idType, invalidInput);
 
-        act.Should().Throw<TargetInvocationException>().WithInnerException<ArgumentException>();
+        act.Should().Throw<TargetInvocationException>().WithInnerException<FormatException>();
     }
 
     /// <summary>
@@ -315,14 +315,14 @@ public class StronglyTypedIdBehaviorTests
 
     /// <summary>
     /// 自定义异常只作用于 <c>Create</c>：<c>Parse</c> 的失败还包含「文本不是 Id」，仍按 <see cref="IParsable{TSelf}"/>
-    /// 的惯例抛 <see cref="ArgumentException"/>。
+    /// 的惯例抛 <see cref="FormatException"/>。
     /// </summary>
     [Fact]
-    public void Parse_Should_KeepArgumentException_WhenExceptionTypeIsConfigured()
+    public void Parse_Should_ThrowFormatException_WhenExceptionTypeIsConfigured()
     {
         var parse = () => DomainValidatedGuidId.Parse(Guid.Empty.ToString("D"), null);
 
-        parse.Should().Throw<ArgumentException>();
+        parse.Should().Throw<FormatException>();
     }
 
     [Fact]
@@ -334,7 +334,7 @@ public class StronglyTypedIdBehaviorTests
 
         var act = () => StrictPrefixedGuidId.Parse(g.ToString("D"), null);
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<FormatException>();
     }
 
     [Fact]
@@ -381,7 +381,7 @@ public class StronglyTypedIdBehaviorTests
     }
 
     [Fact]
-    public void Prefix_Formattable_Should_IncludePrefix_WhenFormatIsNullOrEmpty()
+    public void Prefix_Formattable_Should_IncludePrefix_RegardlessOfFormat()
     {
         var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var id = PrefixedGuidId.Create(g);
@@ -390,12 +390,12 @@ public class StronglyTypedIdBehaviorTests
         ((IFormattable)id).ToString(null, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
         ((IFormattable)id).ToString(string.Empty, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
 
-        // format 非空：前缀会污染 format 语义，故保持裸基元。
-        ((IFormattable)id).ToString("N", null).Should().Be(g.ToString("N", null));
+        // format 非空：format 只作用于基元部分，前缀仍在——否则 $"{id:N}" 会与 ToString() 不同形。
+        ((IFormattable)id).ToString("N", null).Should().Be("ord_" + g.ToString("N", null));
     }
 
     [Fact]
-    public void Prefix_TryFormat_Should_WritePrefix_WhenFormatIsEmpty()
+    public void Prefix_TryFormat_Should_WritePrefix_RegardlessOfFormat()
     {
         var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var id = PrefixedGuidId.Create(g);
@@ -405,13 +405,13 @@ public class StronglyTypedIdBehaviorTests
         id.TryFormat(destination, out var charsWritten, default, null).Should().BeTrue();
         destination[..charsWritten].ToString().Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
 
-        // format 非空时保持裸基元。
-        id.TryFormat(destination, out var bareWritten, "N", null).Should().BeTrue();
-        destination[..bareWritten].ToString().Should().Be(g.ToString("N", null));
+        // format 非空时同样带前缀。
+        id.TryFormat(destination, out var formattedWritten, "N", null).Should().BeTrue();
+        destination[..formattedWritten].ToString().Should().Be("ord_" + g.ToString("N", null));
     }
 
     [Fact]
-    public void Prefix_TryFormatUtf8_Should_WritePrefix_WhenFormatIsEmpty()
+    public void Prefix_TryFormatUtf8_Should_WritePrefix_RegardlessOfFormat()
     {
         var g = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
         var id = PrefixedGuidId.Create(g);
@@ -420,6 +420,9 @@ public class StronglyTypedIdBehaviorTests
 
         id.TryFormat(destination, out var bytesWritten, default, null).Should().BeTrue();
         Encoding.UTF8.GetString(destination[..bytesWritten]).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
+
+        id.TryFormat(destination, out var formattedBytes, "N", null).Should().BeTrue();
+        Encoding.UTF8.GetString(destination[..formattedBytes]).Should().Be("ord_" + g.ToString("N", null));
     }
 
     [Fact]
@@ -509,25 +512,6 @@ public class StronglyTypedIdBehaviorTests
     // 通过 dynamic 读取生成属性 Value，再以静态 object 返回，
     // 以便 FluentAssertions 的扩展方法 Should() 能在静态类型上正常解析。
     private static object GetValue(object id) => ((dynamic)id).Value;
-
-    /// <summary>
-    /// string 基元的 Id 对相等的字符串取值做驻留：值相等但引用不同的两个字符串，经 <c>Create</c> 后会共享同一个底层字符串引用，减少重复 Id 的内存占用。
-    /// </summary>
-    [Fact]
-    public void StringId_Should_Intern_EqualValueStrings_ToSameReference()
-    {
-        // 构造两个「值相等但引用不同」的字符串：编译器不会对 new string(...) 自动驻留（与字面量区分开）。
-        var first = new string('a', 3);
-        var second = new string('a', 3);
-        ReferenceEquals(first, second).Should().BeFalse();
-
-        var left = StringId.Create(first);
-        var right = StringId.Create(second);
-
-        // 同一取值的两个实例共享底层字符串引用（内存驻留优化），且取值本身保持值相等。
-        ReferenceEquals(left.Value, right.Value).Should().BeTrue();
-        left.Value.Should().Be(second);
-    }
 
     #endregion
 }

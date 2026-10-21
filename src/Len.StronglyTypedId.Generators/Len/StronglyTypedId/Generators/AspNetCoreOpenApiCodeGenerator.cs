@@ -22,7 +22,12 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
         var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
 
         var schemaEntries = discoveredIds.ExternalFor(IntegrationFlags.AspNetCoreOpenApi)
-            .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(idInfo, useOpenApiV2)}, {GetFormatLiteral(idInfo)}),")
+            .Select(idInfo =>
+            {
+                var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
+
+                return $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(type, useOpenApiV2)}, {GetFormatLiteral(format)}),";
+            })
             .ToArray();
 
         // 空注册入口没有任何作用：Integrations = None 时必须连这个文件也不产出。
@@ -97,33 +102,20 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
     /// <summary>
     /// 取 OpenAPI <c>schema.Type</c> 的字面量。
     /// </summary>
-    private static string GetTypeLiteral(StronglyTypedIdInfo idInfo, bool useOpenApiV2)
-    {
-        var isString = idInfo.HasPrefix
-            || StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) is "Guid" or "string" or "char";
-
-        return useOpenApiV2
-            ? (isString ? "global::Microsoft.OpenApi.JsonSchemaType.String" : "global::Microsoft.OpenApi.JsonSchemaType.Integer")
-            : (isString ? "\"string\"" : "\"integer\"");
-    }
+    private static string GetTypeLiteral(string type, bool useOpenApiV2)
+        => useOpenApiV2
+            ? type switch
+            {
+                PrimitiveIdSchemaMap.String => "global::Microsoft.OpenApi.JsonSchemaType.String",
+                PrimitiveIdSchemaMap.Integer => "global::Microsoft.OpenApi.JsonSchemaType.Integer",
+                PrimitiveIdSchemaMap.Number => "global::Microsoft.OpenApi.JsonSchemaType.Number",
+                _ => "global::Microsoft.OpenApi.JsonSchemaType.String",
+            }
+            : "\"" + type + "\"";
 
     /// <summary>
-    /// 取 OpenAPI <c>schema.Format</c> 的字面量；无特定格式时为 <see langword="null"/>。
+    /// 取 OpenAPI <c>schema.Format</c> 的字面量；无特定格式时为 <c>null</c>。
     /// </summary>
-    private static string? GetFormatLiteral(StronglyTypedIdInfo idInfo)
-        => idInfo.HasPrefix
-            ? "null"
-            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
-            {
-                "Guid" => "\"uuid\"",
-                "int" => "\"int32\"",
-                "long" => "\"int64\"",
-                "uint" => "\"uint32\"",
-                "ulong" => "\"uint64\"",
-                "byte" => "\"byte\"",
-                "sbyte" => "\"sbyte\"",
-                "short" => "\"int16\"",
-                "ushort" => "\"uint16\"",
-                _ => "null",
-            };
+    private static string GetFormatLiteral(string? format)
+        => format is null ? "null" : "\"" + format + "\"";
 }

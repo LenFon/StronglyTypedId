@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace Len.StronglyTypedId.Testing;
@@ -6,21 +6,15 @@ namespace Len.StronglyTypedId.Testing;
 /// <summary>
 /// Creates strongly typed ids with plausible primitive values, for use in tests.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The generator discovers the wrapped primitive from the implemented
-/// <see cref="IStronglyTypedId{TSelf, TPrimitiveId}"/> interface, so it works for ids declared in any
-/// assembly — including ones generated after this package was compiled.
-/// </para>
-/// <para>
-/// Instances are thread-safe: the underlying <see cref="Random"/> is guarded by a lock, and registrations
-/// live in a concurrent dictionary. Sharing one instance across a parallel test run therefore yields a
-/// well-defined (though not deterministic) sequence.
-/// </para>
-/// </remarks>
 public sealed class AnyIdGenerator
 {
     private static readonly ConcurrentDictionary<Type, Func<AnyIdGenerator, object>> _factories = new();
+
+    /// <summary>
+    /// 每个 Id 类型在验证失败时抛出的异常类型。生成器允许用 <c>ExceptionType</c> 把它换掉，
+    /// 而重试循环必须认得这个类型，否则第一次被拒就直接冒泡。
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, Type> _rejectionTypes = new();
 
     private readonly AnyIdOptions _options;
 
@@ -28,7 +22,12 @@ public sealed class AnyIdGenerator
 
     private readonly ConcurrentDictionary<Type, Func<object>> _registered = new();
 
+#if NET9_0_OR_GREATER
+    // System.Threading.Lock 仅 net9.0+ 存在；net8.0 目标继续用 object（Monitor）。
+    private readonly System.Threading.Lock _sync = new();
+#else
     private readonly object _sync = new();
+#endif
 
     /// <summary>
     /// Initializes a new instance with default options.
@@ -42,7 +41,9 @@ public sealed class AnyIdGenerator
     /// Initializes a new instance with the specified options.
     /// </summary>
     /// <param name="options">The options controlling seeding, string length and value generation.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="AnyIdOptions.StringLength"/> or <see cref="AnyIdOptions.MaxAttempts"/> is less than 1.
     /// </exception>
@@ -53,7 +54,11 @@ public sealed class AnyIdGenerator
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttempts, 1);
 
         _options = options;
-        _values = new PrimitiveValueFactory(new Random(options.Seed ?? Random.Shared.Next()), options.StringLength, options.PrimitiveValueFactory);
+        _values = new PrimitiveValueFactory(
+            new Random(options.Seed ?? Random.Shared.Next()),
+            options.StringLength,
+            options.PrimitiveValueFactory,
+            options.IncludeBoundaryValues);
     }
 
     /// <summary>
@@ -95,11 +100,10 @@ public sealed class AnyIdGenerator
     /// </summary>
     /// <param name="idType">A type implementing <see cref="IStronglyTypedId{TSelf, TPrimitiveId}"/>.</param>
     /// <returns>A new id wrapping a generated primitive value.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="idType"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="idType"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentException"><paramref name="idType"/> is not a strongly typed id.</exception>
-    /// <remarks>
-    /// The non-generic entry point exists for reflection-driven consumers such as AutoFixture specimen builders.
-    /// </remarks>
     public object Create(Type idType)
     {
         ArgumentNullException.ThrowIfNull(idType);
@@ -113,12 +117,12 @@ public sealed class AnyIdGenerator
     /// Registers an explicit factory for <typeparamref name="TId"/>, overriding value generation.
     /// </summary>
     /// <typeparam name="TId">The strongly typed id type.</typeparam>
-    /// <param name="factory">The factory invoked on every subsequent request for <typeparamref name="TId"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// This is the escape hatch for ids whose validator is too strict for random values — for example one that
-    /// only accepts ids issued by a sequence generator.
-    /// </remarks>
+    /// <param name="factory">
+    /// The factory invoked on every subsequent request for <typeparamref name="TId"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="factory"/> is <see langword="null"/>.
+    /// </exception>
     public void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
     {
@@ -146,18 +150,27 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
+    /// 解析 Id 在验证失败时抛出的异常类型：逐类型 <c>ExceptionType</c> 优先，其次程序集级
+    /// <c>StronglyTypedIdDefaults</c>，最后是 <see cref="ArgumentException"/>。优先级与生成器一致。
+    /// </summary>
+    private static Type ResolveRejectionType(Type idType)
+        => _rejectionTypes.GetOrAdd(idType, static type =>
+            type.GetCustomAttribute<StronglyTypedIdAttribute>()?.ExceptionType
+            ?? type.Assembly.GetCustomAttribute<StronglyTypedIdDefaultsAttribute>()?.ExceptionType
+            ?? typeof(ArgumentException));
+
+    /// <summary>
     /// Generates a value and wraps it, retrying while the id's validator rejects it.
     /// </summary>
-    /// <remarks>
-    /// Only <see cref="ArgumentException"/> is retried: that is exactly what the generated <c>Create</c>
-    /// throws when a validator returns <see langword="false"/>. Anything else (a broken validator, a
-    /// mismatched primitive) is a real defect and must not be masked by retries.
-    /// </remarks>
     private object CreateCore<TId, TPrimitive>()
         where TId : IStronglyTypedId<TId, TPrimitive>
         where TPrimitive : notnull, IComparable
     {
         Exception? lastFailure = null;
+
+        // 拒绝异常可能是 ArgumentException，也可能是 ExceptionType 指定的自定义类型。
+        // 只认这两种：其它异常（验证器自身的 NullReferenceException 之类）是真 bug，必须冒泡。
+        var rejectionType = ResolveRejectionType(typeof(TId));
 
         for (var attempt = 0; attempt < _options.MaxAttempts; attempt++)
         {
@@ -172,7 +185,7 @@ public sealed class AnyIdGenerator
             {
                 return TId.Create(value);
             }
-            catch (ArgumentException exception)
+            catch (Exception exception) when (rejectionType.IsInstanceOfType(exception))
             {
                 lastFailure = exception;
             }

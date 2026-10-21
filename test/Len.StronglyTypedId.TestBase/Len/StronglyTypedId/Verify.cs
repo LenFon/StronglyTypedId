@@ -28,17 +28,18 @@ public static class Verify
     public static Task VerifyAnalyzerAsync(string source, params DiagnosticResult[] expected)
     {
         var test = new TestAnalyzer { TestCode = source };
+        EnableStyleHintsWhenExpected(test, expected);
         test.ExpectedDiagnostics.AddRange(expected);
         return test.RunAsync();
     }
 
     /// <summary>
-    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但会启用默认被测试基建屏蔽的两条命名风格提示
-    /// （STIAO015 / STIAO016）。
+    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但无条件启用默认被测试基建屏蔽的两条命名风格提示（STIA0015 / STIA0016）。
     /// </summary>
     /// <remarks>
-    /// 这两条是 Info 级、无代码修复的风格提示，与「声明是否合法」无关（见 <see cref="ApplyDefaults"/>）。
-    /// 专门验证它们的用例必须走这里，否则诊断会被基建过滤掉，断言「应当有诊断」永远失败。
+    /// 只在「期望零诊断、但源码结构足以触发风格提示」时才需要显式调用 —— 那种情形没有期望诊断可供
+    /// <see cref="EnableStyleHintsWhenExpected"/> 推断。期望里已写明 STIA0015 / STIA0016 的用例
+    /// 直接走 <see cref="VerifyAnalyzerAsync"/> 即可，两者等价。
     /// </remarks>
     public static Task VerifyAnalyzerWithStyleHintsAsync(string source, params DiagnosticResult[] expected)
     {
@@ -51,10 +52,6 @@ public static class Verify
     /// <summary>
     /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但额外挂一份 <c>.editorconfig</c>。
     /// </summary>
-    /// <remarks>
-    /// 用于验证默认关闭（<c>IsEnabledByDefault = false</c>）的规则：Roslyn 测试框架会按
-    /// <c>IsEnabledByDefault</c> 过滤诊断，只有 <c>.editorconfig</c> 显式调级后才会产出。
-    /// </remarks>
     public static Task VerifyAnalyzerWithEditorConfigAsync(string source, string editorConfig, params DiagnosticResult[] expected)
     {
         var test = new TestAnalyzer { TestCode = source };
@@ -67,7 +64,6 @@ public static class Verify
     /// <summary>
     /// 与 <see cref="VerifyCodeFixAsync(string, DiagnosticResult, string)"/> 相同，但额外挂一份 <c>.editorconfig</c>。
     /// </summary>
-    /// <remarks>默认关闭的规则必须先经 <c>.editorconfig</c> 启用，代码修复才有诊断可修。</remarks>
     public static Task VerifyCodeFixWithEditorConfigAsync(string source, string editorConfig, DiagnosticResult expected, string fixedSource)
     {
         var test = new TestCodeFix
@@ -106,17 +102,6 @@ public static class Verify
     /// <param name="source">原始源码。</param>
     /// <param name="expected">期望的分析器诊断，顺序需与 Roslyn 的报告顺序一致。</param>
     /// <param name="fixedSource">批处理修复后的源码。</param>
-    /// <remarks>
-    /// <para>
-    /// 逐条修复的期望（<c>FixedCode</c>）与批处理的期望（<c>BatchFixedCode</c>）都设为
-    /// <paramref name="fixedSource"/>：当 <c>FixedCode</c> 缺省时，测试框架会把它当作「与源码相同」，
-    /// 于是逐条修复阶段必然失败。
-    /// </para>
-    /// <para>
-    /// 迭代次数显式给出，不去依赖框架的自动推断：逐条修复每轮只处理一条诊断，因而轮数等于诊断条数；
-    /// 批处理一轮即可收敛。
-    /// </para>
-    /// </remarks>
     public static Task VerifyCodeFixAllAsync(string source, DiagnosticResult[] expected, string fixedSource)
     {
         var test = new TestCodeFix
@@ -138,11 +123,6 @@ public static class Verify
     /// <param name="source">
     /// 源码。可用 <c>$$</c> 标记光标位置；缺省时光标落在第一个 record 声明的标识符上。
     /// </param>
-    /// <remarks>
-    /// 代码重构没有像诊断那样的「期望清单」可供测试框架比对，故直接驱动 provider：解析源码 → 在光标处调用
-    /// <c>ComputeRefactoringsAsync</c> → 收集它注册的 <see cref="CodeAction"/>。断言「不提供重构」这类场景
-    /// 也只能这样表达。
-    /// </remarks>
     public static async Task<IReadOnlyList<CodeAction>> CollectRefactoringsAsync(string source)
     {
         using var workspace = new AdhocWorkspace();
@@ -179,10 +159,6 @@ public static class Verify
     /// <summary>
     /// 把源码解析成「可跑重构的 Document」，并算出光标位置。
     /// </summary>
-    /// <remarks>
-    /// 引用只给 <c>System.Private.CoreLib</c> 与被测程序集：重构的门禁只需要解析出基元类型符号
-    /// （<c>Guid</c> / <c>int</c> / <c>string</c> 都在 CoreLib），不需要完整的引用程序集集。
-    /// </remarks>
     private static (Document Document, TextSpan Span) CreateRefactoringDocument(AdhocWorkspace workspace, string source)
     {
         const string Marker = "$$";
@@ -209,15 +185,8 @@ public static class Verify
     }
 
     /// <summary>
-    /// 分析器测试与 CodeFix 测试共用的默认配置：
-    /// 关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
+    /// 分析器测试与 CodeFix 测试共用的默认配置：关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
     /// </summary>
-    /// <remarks>
-    /// 这里必须保持 <see cref="CompilerDiagnostics.None"/>：分析器用例的源码片段普遍不含
-    /// <c>using System;</c>（<c>Guid</c> 是错误类型符号）；而 CodeFix 用例在 net10.0 目标下还会因为
-    /// 被测程序集是 net10 构建、引用程序集却固定在 net8.0 而报 CS1705。修复产物的正确性由
-    /// <c>FixedCode</c> 的精确文本比对把守。
-    /// </remarks>
     private static void ApplyDefaults(AnalyzerTest<DefaultVerifier> test)
     {
         test.CompilerDiagnostics = CompilerDiagnostics.None;
@@ -230,7 +199,7 @@ public static class Verify
         // 在 net10.0 测试宿主里 typeof(StronglyTypedIdAttribute).Assembly 会指向 net10.0 构建的
         // Len.StronglyTypedId.dll，与 net8.0 引用程序集产生版本错位，使
         // [StronglyTypedId(Validator = ...)] 的命名实参无法绑定（被静默丢弃），验证器相关诊断
-        // （STIAO010 / STIAO011）在 net10.0 下零产出。改取同目录下的 net8.0 产物即可对齐。
+        // （STIA0010 / STIA0011）在 net10.0 下零产出。改取同目录下的 net8.0 产物即可对齐。
         var runtimeAssembly = typeof(StronglyTypedIdAttribute).Assembly;
         var net8Location = runtimeAssembly.Location.Replace(
             $"{Path.DirectorySeparatorChar}net10.0{Path.DirectorySeparatorChar}",
@@ -245,14 +214,14 @@ public static class Verify
             test.TestState.AdditionalReferences.Add(runtimeAssembly);
         }
 
-        // STIAO014 是「默认关闭」的建议性规则（IsEnabledByDefault = false）：公开 Id 是正常用法，
+        // STIA0014 是「默认关闭」的建议性规则（IsEnabledByDefault = false）：公开 Id 是正常用法，
         // 默认开启只会在绝大多数项目上制造噪声。但 Roslyn 测试框架默认仍会报告被抑制的诊断，
         // 若不显式登记，凡是「public + Validator」的既有用例都会凭空多出一条诊断。
         // 需要验证该规则的用例走 VerifyAnalyzerWithEditorConfigAsync / VerifyCodeFixWithEditorConfigAsync，
         // 那里会用 EnableOptInDiagnostics 把它从禁用清单里摘掉。
         test.DisabledDiagnostics.Add(Descriptors.ValidatorCanBeBypassedId);
 
-        // STIAO015 / STIAO016 是命名风格提示（Info 级、无代码修复），与「声明是否合法」无关。
+        // STIA0015 / STIA0016 是命名风格提示（Info 级、无代码修复），与「声明是否合法」无关。
         // 代码修复用例的源码里经常出现多个同基元 Id（例如同时声明 OrderId 与 InvoiceId），
         // 修复完成后这些提示依然存在，会让「修复后应无诊断」的断言失败 —— 与修复本身是否正确无关。
         // 需要验证这两条规则的用例走 VerifyAnalyzerWithStyleHintsAsync。
@@ -267,12 +236,33 @@ public static class Verify
         => test.DisabledDiagnostics.Remove(Descriptors.ValidatorCanBeBypassedId);
 
     /// <summary>
-    /// 解除两条命名风格提示的屏蔽，让专门验证 STIAO015 / STIAO016 的用例能看到它们。
+    /// 解除两条命名风格提示的屏蔽，让专门验证 STIA0015 / STIA0016 的用例能看到它们。
     /// </summary>
     private static void EnableStyleHintDiagnostics(AnalyzerTest<DefaultVerifier> test)
     {
         test.DisabledDiagnostics.Remove(Descriptors.TypeNameShouldEndWithIdId);
         test.DisabledDiagnostics.Remove(Descriptors.DuplicatePrimitiveTypeId);
+    }
+
+    /// <summary>
+    /// 期望的诊断里只要出现 STIA0015 / STIA0016，就自动解除它们的屏蔽。
+    /// </summary>
+    /// <remarks>
+    /// 这两条规则默认被 <see cref="ApplyDefaults"/> 关掉（理由见那里的注释）。此前验证它们的用例
+    /// 必须手工改用 <see cref="VerifyAnalyzerWithStyleHintsAsync"/>，漏改的症状是「期望有诊断、
+    /// 实际零产出」，报错信息完全指不到真正原因。按期望内容自动判定后，两种写法等价。
+    /// </remarks>
+    private static void EnableStyleHintsWhenExpected(AnalyzerTest<DefaultVerifier> test, DiagnosticResult[] expected)
+    {
+        foreach (var diagnostic in expected)
+        {
+            if (diagnostic.Id == Descriptors.TypeNameShouldEndWithIdId ||
+                diagnostic.Id == Descriptors.DuplicatePrimitiveTypeId)
+            {
+                EnableStyleHintDiagnostics(test);
+                return;
+            }
+        }
     }
 
     private static CSharpParseOptions CreateDefaultParseOptions()

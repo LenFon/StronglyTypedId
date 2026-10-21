@@ -49,6 +49,11 @@ internal enum InstanceIssue
 internal readonly struct InstanceDeclaration
 {
     /// <summary>
+    /// <c>[System.CodeDom.Compiler.GeneratedCode]</c> 的全限定显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    private const string GeneratedCodeAttributeName = "global::System.CodeDom.Compiler.GeneratedCodeAttribute";
+
+    /// <summary>
     /// 生成代码里会出现的成员名。这些成员此刻还不存在（由生成器稍后产出），
     /// <c>type.GetMembers</c> 查不到，只能硬编码。
     /// </summary>
@@ -68,6 +73,19 @@ internal readonly struct InstanceDeclaration
         "EqualityContract",
         "SystemTextJsonConverter",
         "NewtonsoftJsonConverter",
+    ];
+
+    /// <summary>
+    /// 仅引用类型 Id 才会产出的成员名。
+    /// </summary>
+    /// <remarks>
+    /// 引用类型的比较运算符要容忍 <see langword="null"/> 操作数，因而额外生成一个私有的
+    /// <c>CompareValues</c> 辅助方法；值类型直连基元比较，没有这个成员。放在单独的清单里而不是并进
+    /// <see cref="_reservedNames"/>，是为了不给值类型 Id 制造「本来不存在的撞名」。
+    /// </remarks>
+    private static readonly string[] _referenceTypeReservedNames =
+    [
+        "CompareValues",
     ];
 
     /// <summary>
@@ -163,15 +181,36 @@ internal readonly struct InstanceDeclaration
     /// 判断名字是否会与类型自身、既有成员或即将生成的成员撞名。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 与类型同名会触发 CS0542（成员名不能与包含类型同名），与既有成员同名会触发 CS0102。
     /// <c>type.GetMembers</c> 覆盖用户自己写的成员与 record 合成成员（<c>Value</c> / <c>Equals</c> /
     /// <c>&lt;Clone&gt;$</c> 等），保留名清单覆盖生成器稍后才产出的那些。
+    /// </para>
+    /// <para>
+    /// 必须滤掉生成器自己产出的命名实例字段：分析器跑在**已包含生成代码**的编译上，否则每条实例都会撞上
+    /// 它自己刚刚生成的那个字段，于是全部被判成撞名。过滤范围只限「生成器产出的静态只读字段」这一种形态 ——
+    /// 生成器产出的方法与嵌套类型必须照常参与判定，否则用户给实例取这些名字时分析器会沉默，
+    /// 直到生成代码里冒出 CS0102。
+    /// </para>
     /// </remarks>
     private static bool IsReservedName(INamedTypeSymbol type, string name)
         => name == type.Name
             || name == type.Name + "TypeConverter"
             || Array.IndexOf(_reservedNames, name) >= 0
-            || type.GetMembers(name).Length > 0;
+            || (type.IsReferenceType && Array.IndexOf(_referenceTypeReservedNames, name) >= 0)
+            || type.GetMembers(name).Any(member => !IsGeneratedInstanceField(member));
+
+    /// <summary>
+    /// 判断成员是否是生成器为某条命名实例产出的字段（<c>public static readonly</c> + <c>[GeneratedCode]</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 只认字段：命名实例是唯一的「与实例同名」的产物，其余生成成员（<c>Create</c> / <c>Parse</c> /
+    /// <c>CompareValues</c> / <c>XxxTypeConverter</c> 等）都与实例名争同一个声明空间，必须参与撞名判定。
+    /// </remarks>
+    private static bool IsGeneratedInstanceField(ISymbol member)
+        => member is IFieldSymbol { IsStatic: true, IsReadOnly: true }
+            && member.GetAttributes().Any(attribute =>
+                attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == GeneratedCodeAttributeName);
 
     /// <summary>
     /// 判断名字是否符合 PascalCase，并在不符合时给出建议名。

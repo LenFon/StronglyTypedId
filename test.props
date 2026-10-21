@@ -3,14 +3,23 @@
 		<RootNamespace />
 
 		<IsPackable>false</IsPackable>
+
+		<!--
+		  xunit.v3 的 MTP runner 要求测试工程本身是可执行文件（每个 TFM 一个入口 exe）。
+		  该属性原先由 Microsoft.NET.Test.Sdk 隐式带入，移除该包后必须显式声明，
+		  否则 xunit.v3.core.mtp-v2.targets 直接报「must be executable」。
+		-->
+		<OutputType>Exe</OutputType>
 	</PropertyGroup>
 
+	<!--
+	  .NET 10 SDK 起，Microsoft.Testing.Platform 不再支持 VSTest target：
+	  工程里只要还留着 Microsoft.NET.Test.Sdk / xunit.runner.visualstudio，
+	  `dotnet test` 就会退回 VSTest 路径并直接报错（aka.ms/dotnet-test-mtp-error），
+	  表现为「一条测试都没跑」。故此处只保留 xunit.v3 —— 它自带 MTP in-proc runner，
+	  与 global.json 的 "test.runner": "Microsoft.Testing.Platform" 构成唯一受支持的组合。
+	-->
 	<ItemGroup>
-		<PackageReference Include="Microsoft.NET.Test.Sdk" />
 		<PackageReference Include="xunit.v3" />
-		<PackageReference Include="xunit.runner.visualstudio">
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-			<PrivateAssets>all</PrivateAssets>
-		</PackageReference>
 	</ItemGroup>
 </Project>

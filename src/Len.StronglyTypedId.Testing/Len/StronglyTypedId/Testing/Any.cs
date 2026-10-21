@@ -1,24 +1,18 @@
-namespace Len.StronglyTypedId.Testing;
+﻿namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
 /// Static convenience entry point for creating strongly typed ids in tests.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The static members share one process-wide <see cref="AnyIdGenerator"/> seeded from the clock. Use
-/// <see cref="Reset"/> between tests when a test registers an explicit factory, and prefer an
-/// <see cref="AnyIdGenerator"/> instance when a test needs its own seed.
-/// </para>
-/// <para>
-/// For reproducible sequences use the overloads taking a seed: the same seed produces the same values
-/// for a given runtime version.
-/// </para>
-/// </remarks>
 public static class Any
 {
+#if NET9_0_OR_GREATER
+    // System.Threading.Lock 仅 net9.0+ 存在；net8.0 目标继续用 object（Monitor）。
+    private static readonly System.Threading.Lock _sync = new();
+#else
     private static readonly object _sync = new();
+#endif
 
-    private static AnyIdGenerator _generator = new();
+    private static AnyIdGenerator Generator { get; set; } = new();
 
     /// <summary>
     /// Creates a strongly typed id of type <typeparamref name="TId"/>.
@@ -35,10 +29,6 @@ public static class Any
     /// <typeparam name="TId">The strongly typed id type.</typeparam>
     /// <param name="seed">The seed of the generator used for this call.</param>
     /// <returns>A new id wrapping a generated primitive value.</returns>
-    /// <remarks>
-    /// Because a new generator is created per call, repeating the same seed returns the same value.
-    /// Use <see cref="Ids{TId}(int, int)"/> when a reproducible <em>sequence</em> is wanted.
-    /// </remarks>
     public static TId Id<TId>(int seed)
         where TId : IStronglyTypedId<TId>
         => new AnyIdGenerator(new AnyIdOptions { Seed = seed }).Id<TId>();
@@ -54,7 +44,8 @@ public static class Any
         => Current.Ids<TId>(count);
 
     /// <summary>
-    /// Creates <paramref name="count"/> strongly typed ids of type <typeparamref name="TId"/> from a freshly seeded generator.
+    /// Creates <paramref name="count"/> strongly typed ids of type <typeparamref name="TId"/> from a freshly
+    /// seeded generator.
     /// </summary>
     /// <typeparam name="TId">The strongly typed id type.</typeparam>
     /// <param name="count">The number of ids to create.</param>
@@ -68,10 +59,30 @@ public static class Any
     /// Registers an explicit factory for <typeparamref name="TId"/> on the shared generator.
     /// </summary>
     /// <typeparam name="TId">The strongly typed id type.</typeparam>
-    /// <param name="factory">The factory invoked on every subsequent request for <typeparamref name="TId"/>.</param>
+    /// <param name="factory">
+    /// The factory invoked on every subsequent request for <typeparamref name="TId"/>.
+    /// </param>
     public static void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
-        => Current.Register(factory);
+    {
+        // 注册必须落在「当前的」共享生成器上。Reset() 可能在「读到引用」与「写进字典」之间换掉实例，
+        // 那样注册会留在被丢弃的旧实例里 —— 之后 Any.Id<TId>() 静默不生效，且没有任何报错。
+        // 用「写后复查」而不是「持锁执行」：后者会在锁内调用用户工厂，工厂跨线程再进 Any 就死锁。
+        while (true)
+        {
+            var generator = Current;
+
+            generator.Register(factory);
+
+            lock (_sync)
+            {
+                if (ReferenceEquals(Generator, generator))
+                {
+                    return;
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Discards the shared generator, dropping every registration made through <see cref="Register{TId}"/>.
@@ -80,17 +91,26 @@ public static class Any
     {
         lock (_sync)
         {
-            _generator = new AnyIdGenerator();
+            Generator = new AnyIdGenerator();
         }
     }
 
+    /// <summary>
+    /// Gets a snapshot of the shared generator.
+    /// </summary>
+    /// <remarks>
+    /// Generation deliberately works on a snapshot: racing with <see cref="Reset"/> may use the instance that
+    /// was just discarded, which only loses one reset — the produced ids stay valid. Holding the lock across the
+    /// whole call would instead run user-supplied factories while locked. The one operation that does need
+    /// atomicity is <see cref="Register{TId}"/>, which re-checks the instance after writing.
+    /// </remarks>
     private static AnyIdGenerator Current
     {
         get
         {
             lock (_sync)
             {
-                return _generator;
+                return Generator;
             }
         }
     }

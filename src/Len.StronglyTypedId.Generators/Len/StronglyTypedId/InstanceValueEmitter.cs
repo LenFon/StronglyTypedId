@@ -260,11 +260,32 @@ internal static class InstanceValueEmitter
     {
         expression = null;
 
-        // netstandard2.0 没有 Half，先用 float 校验再显式转换；超出 Half 范围的有限值会被转成无穷，故先挡掉。
-        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            || float.IsNaN(value)
-            || float.IsInfinity(value)
-            || Math.Abs(value) > 65504F)
+        // netstandard2.0 没有 Half，先用 float 校验语法再显式转换。实测 (Half)float 与
+        // Half.Parse 对同一文本给出完全相同的值，故 float 只承担「文本是否是数字」这一层判定。
+        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        {
+            return false;
+        }
+
+        // NaN 与 ±Infinity 是 Half 的合法取值（Half.Parse 也接受），直接发射对应常量。
+        if (float.IsNaN(value))
+        {
+            expression = "global::System.Half.NaN";
+            return true;
+        }
+
+        if (float.IsInfinity(value))
+        {
+            expression = float.IsPositiveInfinity(value)
+                ? "global::System.Half.PositiveInfinity"
+                : "global::System.Half.NegativeInfinity";
+            return true;
+        }
+
+        // 只有「舍入后变成无穷」才算越界。Half 的最大有限值是 65504，但 (65504, 65520) 会舍入回 65504
+        // （实测 65519.9 → 65504），真正的溢出阈值是中点 65520（就近偶数舍入到无穷）。
+        // 拿 65504 当上限会比 Half.Parse 更严，把合法文本误判成非法。
+        if (Math.Abs(value) >= 65520F)
         {
             return false;
         }

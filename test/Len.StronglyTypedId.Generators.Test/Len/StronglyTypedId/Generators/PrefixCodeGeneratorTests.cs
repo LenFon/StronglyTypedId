@@ -1,4 +1,4 @@
-// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
+﻿// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
 // 统一在此文件禁用该测试框架分析器警告。
 #pragma warning disable xUnit1051
 using System.Reflection;
@@ -9,19 +9,8 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// C10（文本前缀）的生成器产物契约：核心生成器的 <c>ToString</c> / <c>TryParse</c> / 低层格式化，
-/// 以及 STJ / Newtonsoft 的读写路径在有前缀时的形态。
+/// C10（文本前缀）的生成器产物契约：核心生成器的 <c>ToString</c> / <c>TryParse</c> / 低层格式化，以及 STJ / Newtonsoft 的读写路径在有前缀时的形态。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 本文件同时守住一条<b>回归护栏</b>：无前缀的 Id 产物里不得出现任何前缀管线
-/// （<c>StartsWith</c> / 前缀字面量），即「opt-in 之外逐字节不变」。
-/// </para>
-/// <para>
-/// 前缀进入规范文本形（<c>ToString</c> 前置、<c>Parse</c> / <c>TryParse</c> 剥离），
-/// 因此 MVC 绑定 / 路由约束 / <c>TypeConverter</c> 等经文本路径的集成<b>零改动</b>即自动生效。
-/// </para>
-/// </remarks>
 public class PrefixCodeGeneratorTests
 {
     #region 辅助：驱动生成器并捕获产物
@@ -43,7 +32,7 @@ public class PrefixCodeGeneratorTests
             .Distinct()
             .Where(assembly => !assembly.IsDynamic)
             .Where(ShouldReferenceAssembly)
-            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Cast<MetadataReference>()
             .Concat(extraReferences)
             .ToArray();
@@ -154,15 +143,22 @@ public class PrefixCodeGeneratorTests
     }
 
     /// <summary>
-    /// 低层格式化成员在 <c>format</c> 为空时带前缀，保证 <c>$"{id}"</c> / 结构化日志与 <c>ToString()</c> 一致。
+    /// 低层格式化成员无论 <c>format</c> 是否为空都带前缀：前缀是规范文本形的一部分，
+    /// <c>$"{id:X}"</c> 不该悄悄退化成裸基元。
     /// </summary>
     [Fact]
-    public void Core_Should_PrependPrefix_InLowLevelFormatting_WhenFormatIsEmpty()
+    public void Core_Should_PrependPrefix_InLowLevelFormatting_RegardlessOfFormat()
     {
         var generated = GetGeneratedCode(PrefixIdSource)["Len.StronglyTypedId.OrderId.g.cs"];
 
         generated.Should().Contain(
-            """global::System.String.IsNullOrEmpty(format) ? "ord_" + Value.ToString(format, formatProvider) : Value.ToString(format, formatProvider)""");
+            "public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>");
+        generated.Should().Contain("\"ord_\" + Value.ToString(format, formatProvider);");
+
+        // TryFormat 不得再对非空 format 短路成裸基元。
+        generated.Should().NotContain("if (!format.IsEmpty)");
+        generated.Should().NotContain("IsNullOrEmpty(format)");
+        generated.Should().Contain("""if (!"ord_".AsSpan().TryCopyTo(destination))""");
     }
 
     /// <summary>

@@ -1,12 +1,8 @@
-namespace Len.StronglyTypedId.Testing;
+﻿namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
 /// Configures how <see cref="AnyIdGenerator"/> produces primitive values.
 /// </summary>
-/// <remarks>
-/// Every option is mutable so it can be written as an object initializer. The generator copies nothing —
-/// it reads the instance on each call, so mutating an option after construction takes effect immediately.
-/// </remarks>
 public sealed class AnyIdOptions
 {
     /// <summary>
@@ -29,11 +25,6 @@ public sealed class AnyIdOptions
     /// Gets or sets how many random values are tried before giving up on an id whose validator rejects them.
     /// </summary>
     /// <value>The maximum number of attempts, 100 by default. Must be at least 1.</value>
-    /// <remarks>
-    /// A validator is an arbitrary predicate, so no generator can guarantee a satisfying value. Retrying is
-    /// cheap for permissive validators (the first attempt almost always succeeds) and bounded for strict ones;
-    /// when the budget is exhausted, register an explicit factory instead.
-    /// </remarks>
     public int MaxAttempts { get; set; } = 100;
 
     /// <summary>
@@ -43,10 +34,20 @@ public sealed class AnyIdOptions
     /// A delegate returning the value to wrap, or <see langword="null"/> to fall back to the built-in
     /// generator. <see langword="null"/> is also what the delegate itself returns to mean "not handled".
     /// </value>
-    /// <remarks>
-    /// The callback receives the primitive type (for example <c>typeof(Guid)</c>), not the id type, so one
-    /// handler can serve every id wrapping the same primitive. Return a value assignable to that type;
-    /// anything else surfaces as an <see cref="InvalidCastException"/> from the generated <c>Create</c> call.
-    /// </remarks>
     public Func<Type, object?>? PrimitiveValueFactory { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether generated values occasionally include the minimum and maximum of the
+    /// primitive's range.
+    /// </summary>
+    /// <value>
+    /// <see langword="false"/> by default. Values then stay ordinary — <c>int.MaxValue</c> is reachable
+    /// in principle but never actually drawn. Turn it on when the code under test is boundary-sensitive
+    /// (formatting width, overflow checks, database column limits): roughly one value in sixteen is then
+    /// the primitive's <c>MinValue</c> or <c>MaxValue</c>. Integral and <see cref="decimal"/> primitives
+    /// only — the floating-point boundaries are <c>NaN</c> / <c>±Infinity</c>, which are deliberately
+    /// never generated because they make JSON round-trips fail for reasons unrelated to the code under
+    /// test. Leave it off when a test asserts uniqueness: two ids can then collide on the same extreme.
+    /// </value>
+    public bool IncludeBoundaryValues { get; set; }
 }

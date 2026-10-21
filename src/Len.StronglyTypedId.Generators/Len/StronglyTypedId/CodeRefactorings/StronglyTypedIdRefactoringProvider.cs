@@ -1,6 +1,5 @@
 ﻿using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeRefactorings;
-using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Len.StronglyTypedId.CodeRefactorings;
@@ -8,24 +7,10 @@ namespace Len.StronglyTypedId.CodeRefactorings;
 /// <summary>
 /// 把已有 <c>record</c> 一键升级为强类型 Id 的代码重构，以及反向回退的「Inline」重构。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 与 <see cref="CodeFixes.StronglyTypedIdCodeFixProvider"/> 的分工：代码修复针对「已经标了
-/// <c>[StronglyTypedId]</c>、但写得不对」的诊断；本重构针对「还没标、形状却已经合适」的普通 record。
-/// 使用者的典型路径是先写下 <c>public record OrderId(Guid Value);</c>，后来才知道有这个库，此时需要手动补
-/// 特性、<c>partial</c> 与 using —— 本重构把这三步一次做完，把存量代码的迁移成本降到最低。
-/// </para>
-/// <para>
-/// 只做这三件事，不越界：类型不在命名空间内、包含类型非 partial、主构造函数多参等形状问题各有专门的诊断与
-/// 代码修复，重构不去替使用者猜意图。参数名不是 <c>Value</c> 时也不提供 —— 重命名位置参数会连带改掉生成的
-/// 属性名（并可能打断 record 体内对它的引用），属于超出「转换」语义的破坏性变更。
-/// </para>
-/// </remarks>
 [ExportCodeRefactoringProvider(LanguageNames.CSharp, Name = nameof(StronglyTypedIdRefactoringProvider))]
 internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 {
     private const string AttributeName = "StronglyTypedId";
-    private const string AttributeFullName = "Len.StronglyTypedId.StronglyTypedIdAttribute";
     private const string NamespaceName = "Len.StronglyTypedId";
     private const string ValueParameterName = "Value";
 
@@ -56,10 +41,6 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 取光标所在的 record 声明；光标落在声明体内部（成员之间）时不提供重构。
     /// </summary>
-    /// <remarks>
-    /// 只认「声明头」上的光标：标识符、修饰符、参数表、基列表、约束子句都排在 <c>{</c> / <c>;</c> 之前。
-    /// 若只看「光标是否落在整个 record 的范围内」，光标停在某个成员方法体里也会弹出重构，过于宽泛。
-    /// </remarks>
     private static RecordDeclarationSyntax? FindRecordDeclaration(SyntaxNode root, TextSpan span)
     {
         var record = root.FindToken(span.Start)
@@ -89,28 +70,32 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             .Any(attribute => IsStronglyTypedIdAttributeName(attribute.Name));
 
     /// <summary>
-    /// 判断特性名是否指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
+    /// 判断特性名是否**精确**指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
     /// </summary>
     /// <remarks>
-    /// 按写法逐一匹配：<c>[StronglyTypedId]</c>、<c>[StronglyTypedIdAttribute]</c>、全限定的
-    /// <c>[Len.StronglyTypedId.StronglyTypedIdAttribute]</c>，以及任何以 <c>.StronglyTypedIdAttribute</c> 结尾的
-    /// 别名限定写法。与 <c>StronglyTypedIdAnalyzer</c> 里定位 <c>Validator</c> 实参时的判据保持同一取向。
+    /// <para>
+    /// 只认这几种确定写法，不做任意后缀匹配 —— 按 <c>.StronglyTypedIdAttribute</c> 后缀认特性会把第三方的
+    /// 同名特性（例如 <c>Acme.Domain.StronglyTypedIdAttribute</c>）当成自家的，而 Inline 重构会把它物理删掉：
+    /// 用户点一下，别人的特性就没了，且没有任何提示。
+    /// </para>
+    /// <para>
+    /// 这里刻意不查语义模型。<c>SemanticModel.GetSymbolInfo(AttributeSyntax)</c> 在特性名被同名命名空间遮蔽时
+    /// 返回的不是特性类型（实测：源码位于 <c>namespace Len.StronglyTypedId.Tests</c> 时，<c>[StronglyTypedId]</c>
+    /// 解析成命名空间 <c>Len.StronglyTypedId</c>，符号为 <see langword="null"/>），判定会整体失效。
+    /// 精确白名单在语法层就能给出确定答案。
+    /// </para>
     /// </remarks>
     private static bool IsStronglyTypedIdAttributeName(NameSyntax name)
-    {
-        var text = name.ToString();
-
-        return text is AttributeName or "StronglyTypedIdAttribute" or AttributeFullName
-            || text.EndsWith(".StronglyTypedIdAttribute", StringComparison.Ordinal);
-    }
+        => name.ToString() is AttributeName
+            or "StronglyTypedIdAttribute"
+            or "Len.StronglyTypedId.StronglyTypedId"
+            or "Len.StronglyTypedId.StronglyTypedIdAttribute"
+            or "global::Len.StronglyTypedId.StronglyTypedId"
+            or "global::Len.StronglyTypedId.StronglyTypedIdAttribute";
 
     /// <summary>
     /// 判断该 record 是否「加上特性、partial 与 using 后就是一个合法的强类型 Id」。
     /// </summary>
-    /// <remarks>
-    /// 只校验重构不去修的那几项：单参数主构造函数、参数名 <c>Value</c>、非抽象、非泛型、基元类型受支持。
-    /// 命名空间 / 包含类型 partial 等形状问题不在门禁内 —— 它们在存量代码里少见，且各有专门的诊断与代码修复。
-    /// </remarks>
     private static async Task<bool> IsConvertibleAsync(CodeRefactoringContext context, RecordDeclarationSyntax record)
     {
         if (record.ParameterList is not { Parameters: [var parameter] }
@@ -151,6 +136,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return document;
         }
 
+        var endOfLine = DocumentFormatting.GetEndOfLine(root);
+
         // 新特性列表接管 record 原本的前导 trivia（通常是它上方那一行换行 / 空行），record 自身只留一个换行 ——
         // 否则新特性会挤在上一行末尾，或与声明之间多出一个空行。
         var attributeList = SyntaxFactory.AttributeList(
@@ -159,24 +146,18 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             .WithLeadingTrivia(record.GetLeadingTrivia());
 
         var updated = record
-            .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed)
+            .WithLeadingTrivia(SyntaxFactory.EndOfLine(endOfLine))
             .WithAttributeLists(record.AttributeLists.Insert(0, attributeList))
             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword));
 
-        var newRoot = AddUsingIfMissing(root.ReplaceNode(record, updated));
+        var newRoot = AddUsingIfMissing(root.ReplaceNode(record, updated), endOfLine);
 
-        return document.WithSyntaxRoot(
-            Formatter.Format(newRoot, document.Project.Solution.Workspace, cancellationToken: cancellationToken));
+        return document.WithSyntaxRoot(DocumentFormatting.Format(document, newRoot, cancellationToken));
     }
 
     /// <summary>
     /// 反向重构：摘掉 <c>[StronglyTypedId]</c> 与 <c>partial</c>，必要时一并摘掉 using。
     /// </summary>
-    /// <remarks>
-    /// 仅在「该 Id 只有一个声明段」时注册：多段 partial 声明里摘掉任一段的 <c>partial</c> 都会 CS0260。
-    /// 摘掉特性后生成器不再为该类型产出成员，调用 <c>Create</c> / <c>Parse</c> 的代码会失去目标 ——
-    /// 这是回退重构的固有代价，故标题用「Inline」而非「Remove」。
-    /// </remarks>
     private static async Task RegisterInlineRefactoringAsync(CodeRefactoringContext context, RecordDeclarationSyntax record)
     {
         var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
@@ -208,23 +189,30 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return document;
         }
 
+        // 「还有没有别的 Id」必须在替换**之前**判断：替换后的树里当前 record 已经没有特性了。
+        var hasOtherIds = root.DescendantNodes()
+            .OfType<RecordDeclarationSyntax>()
+            .Any(other => !ReferenceEquals(other, record) && HasStronglyTypedIdAttribute(other));
+
         var updated = record
             .WithAttributeLists(RemoveStronglyTypedIdAttributes(record.AttributeLists))
             .WithModifiers(SyntaxFactory.TokenList(
                 record.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
 
-        var newRoot = RemoveUsingIfUnused(root.ReplaceNode(record, updated));
+        var newRoot = root.ReplaceNode(record, updated);
 
-        return document.WithSyntaxRoot(
-            Formatter.Format(newRoot, document.Project.Solution.Workspace, cancellationToken: cancellationToken));
+        if (!hasOtherIds
+            && !await UsesNamespaceAsync(document, root, record, cancellationToken).ConfigureAwait(false))
+        {
+            newRoot = RemoveUsingDirective(newRoot);
+        }
+
+        return document.WithSyntaxRoot(DocumentFormatting.Format(document, newRoot, cancellationToken));
     }
 
     /// <summary>
     /// 从特性列表中摘掉全部 <c>[StronglyTypedId]</c>；某条特性列表被摘空时连同方括号一起移除。
     /// </summary>
-    /// <remarks>
-    /// 一条特性列表里可以并列多个特性（<c>[StronglyTypedId, Obsolete]</c>），因此要按特性粒度摘，而不是整条列表。
-    /// </remarks>
     private static SyntaxList<AttributeListSyntax> RemoveStronglyTypedIdAttributes(SyntaxList<AttributeListSyntax> attributeLists)
     {
         var result = new List<AttributeListSyntax>();
@@ -251,12 +239,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 在编译单元顶部补 <c>using Len.StronglyTypedId;</c>；已有该 using 时原样返回。
     /// </summary>
-    /// <remarks>
-    /// 插入点有两处：文件里已有 using 时插在最后一个 using 之后，一个都没有时插在第一个成员之前。
-    /// 两种情形都要把「插入点原本的换行 / 空行 trivia」挪到新指令上，再把插入点规整成一个换行 ——
-    /// 否则要么两条 using 之间多出一个空行，要么 namespace 紧贴 using。
-    /// </remarks>
-    private static SyntaxNode AddUsingIfMissing(SyntaxNode root)
+    private static SyntaxNode AddUsingIfMissing(SyntaxNode root, string endOfLine)
     {
         if (root is not CompilationUnitSyntax compilationUnit || HasUsingDirective(compilationUnit))
         {
@@ -271,14 +254,14 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 
             return compilationUnit.WithUsings(
                 compilationUnit.Usings
-                    .Replace(lastUsing, lastUsing.WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed))
-                    .Add(directive.WithTrailingTrivia(gap.Count > 0 ? gap : SyntaxFactory.TriviaList(SyntaxFactory.CarriageReturnLineFeed))));
+                    .Replace(lastUsing, lastUsing.WithTrailingTrivia(SyntaxFactory.EndOfLine(endOfLine)))
+                    .Add(directive.WithTrailingTrivia(gap.Count > 0 ? gap : SyntaxFactory.TriviaList(SyntaxFactory.EndOfLine(endOfLine)))));
         }
 
         if (compilationUnit.Members.FirstOrDefault() is not { } firstMember)
         {
             return compilationUnit.WithUsings(
-                SyntaxFactory.SingletonList(directive.WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed)));
+                SyntaxFactory.SingletonList(directive.WithTrailingTrivia(SyntaxFactory.EndOfLine(endOfLine))));
         }
 
         var leading = firstMember.GetLeadingTrivia();
@@ -288,20 +271,84 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
         // 首个成员本身只保留一个换行。
         var directiveTrailing = leading.Count > 0
             ? leading
-            : SyntaxFactory.TriviaList(SyntaxFactory.CarriageReturnLineFeed, SyntaxFactory.CarriageReturnLineFeed);
+            : SyntaxFactory.TriviaList(SyntaxFactory.EndOfLine(endOfLine), SyntaxFactory.EndOfLine(endOfLine));
 
         return compilationUnit
             .WithUsings(SyntaxFactory.SingletonList(directive.WithTrailingTrivia(directiveTrailing)))
-            .ReplaceNode(firstMember, firstMember.WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed));
+            .ReplaceNode(firstMember, firstMember.WithLeadingTrivia(SyntaxFactory.EndOfLine(endOfLine)));
     }
 
     /// <summary>
-    /// 在文件里再无强类型 Id 时摘掉 <c>using Len.StronglyTypedId;</c>。
+    /// 判断文件里是否还有标识符绑定到 <c>Len.StronglyTypedId</c> 命名空间下的符号。
     /// </summary>
-    private static SyntaxNode RemoveUsingIfUnused(SyntaxNode root)
+    /// <remarks>
+    /// 该命名空间除 <c>[StronglyTypedId]</c> 之外还导出 <c>IStronglyTypedId&lt;,&gt;</c>、<c>Any</c>、
+    /// <c>StronglyTypedIdDefaults</c>、<c>StronglyTypedIdIntegrations</c> 等。只按「文件里还有没有带特性的
+    /// record」判断，会把只用这些类型的文件里的 using 一并删掉，产出 CS0246。
+    /// 待内联的 record 自己的特性列表必须排除：它马上就要被摘掉，而 <c>StronglyTypedIdAttribute</c>
+    /// 本身就属于该命名空间。
+    /// </remarks>
+    private static async Task<bool> UsesNamespaceAsync(
+        Document document,
+        SyntaxNode root,
+        RecordDeclarationSyntax record,
+        CancellationToken cancellationToken)
     {
-        if (root is not CompilationUnitSyntax compilationUnit
-            || compilationUnit.DescendantNodes().OfType<RecordDeclarationSyntax>().Any(HasStronglyTypedIdAttribute))
+        var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+
+        if (semanticModel is null)
+        {
+            // 拿不到语义模型时保守处理：多留一行 using 无害，删错了是编译错误。
+            return true;
+        }
+
+        // 按位置排除待内联 record 自己的特性列表：它马上就要被摘掉，而 StronglyTypedIdAttribute
+        // 本身就属于该命名空间。用 Span 而不是节点引用，避免依赖「两次取到的语法树是同一个实例」。
+        var attributeSpans = record.AttributeLists.Select(static attributeList => attributeList.Span).ToArray();
+
+        foreach (var name in root.DescendantNodes().OfType<SimpleNameSyntax>())
+        {
+            if (attributeSpans.Any(span => span.Contains(name.Span)))
+            {
+                continue;
+            }
+
+            var info = semanticModel.GetSymbolInfo(name, cancellationToken);
+
+            if (NeedsNamespace(info.Symbol)
+                || info.CandidateSymbols.Any(static candidate => NeedsNamespace(candidate)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 判断某个标识符是否指向直接声明在 <c>Len.StronglyTypedId</c> 命名空间下的**类型**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只认类型、不认命名空间：<c>namespace Len.StronglyTypedId.Tests;</c> 里的 <c>Tests</c> 绑定到命名空间
+    /// <c>Len.StronglyTypedId.Tests</c>，它的 <c>ContainingNamespace</c> 恰好就是 <c>Len.StronglyTypedId</c> ——
+    /// 按命名空间判会把「文件自己就在这个命名空间下」当成「还在用这条 using」，using 永远删不掉。
+    /// </para>
+    /// <para>
+    /// 只比相等、不回溯祖先：声明在 <c>Len.StronglyTypedId.Tests</c> 这类子命名空间里的类型本来就不需要
+    /// 这条 using。
+    /// </para>
+    /// </remarks>
+    private static bool NeedsNamespace(ISymbol? symbol)
+        => symbol is INamedTypeSymbol { ContainingNamespace: { } containingNamespace }
+            && containingNamespace.ToDisplayString() == NamespaceName;
+
+    /// <summary>
+    /// 摘掉 <c>using Len.StronglyTypedId;</c>（调用方负责先确认文件里再无强类型 Id）。
+    /// </summary>
+    private static SyntaxNode RemoveUsingDirective(SyntaxNode root)
+    {
+        if (root is not CompilationUnitSyntax compilationUnit)
         {
             return root;
         }

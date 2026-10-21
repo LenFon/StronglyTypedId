@@ -12,16 +12,6 @@ namespace Len.StronglyTypedId;
 /// <see cref="ModuleInfo"/>、<see cref="ModuleInfo.Comparer"/> 与 <see cref="ModuleInfoExtensions.HasModule"/>
 /// 的单元测试。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 这三者共同决定「哪些代码生成器被启用」，以及增量管道里模块集合如何去重。
-/// </para>
-/// <para>
-/// 注意两处版本语义并不相同，不能互相替代：<see cref="ModuleInfoExtensions.HasModule"/> 只看
-/// <b>主版本号</b>（用于启用闸门），<see cref="ModuleInfo.Comparer"/> 则按<b>完整版本号</b>判定等价
-/// （用于 <c>SelectMany(…).WithComparer(…)</c> 的去重）。本文件同时把守这两条语义。
-/// </para>
-/// </remarks>
 public class ModuleInfoTests
 {
     #region HasModule：程序集名匹配
@@ -112,15 +102,22 @@ public class ModuleInfoTests
     [Fact]
     public void GetTypes_Should_EnumerateTypes_WhenAssemblyIsPresent()
     {
-        var compilation = CSharpCompilation.Create(
-            "ReferencedAssembly",
-            [CSharpSyntaxTree.ParseText("namespace Sample { public class OrderId { } public class ProductId { } }")],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var module = new ModuleInfo("ReferencedAssembly.dll", new Version(1, 0), compilation.ToMetadataReference(), compilation.Assembly);
+        var module = ResolveModule("ReferencedAssembly", referencesRuntime: true);
 
         module.GetTypes().Select(type => type.Name).Should().Contain(["OrderId", "ProductId"]);
+    }
+
+    /// <summary>
+    /// 剪枝：看不见 <c>IStronglyTypedId&lt;,&gt;</c> 的模块不可能声明 Id，直接返回空，
+    /// 不必遍历整棵类型树（<c>System.Private.CoreLib</c> 就有上万个类型）。
+    /// </summary>
+    [Fact]
+    public void GetTypes_Should_ReturnEmpty_WhenModuleCannotDeclareIds()
+    {
+        var module = ResolveModule("UnrelatedAssembly", referencesRuntime: false);
+
+        module.MayDeclareIds.Should().BeFalse();
+        module.GetTypes().Should().BeEmpty();
     }
 
     #endregion
@@ -182,8 +179,8 @@ public class ModuleInfoTests
     }
 
     /// <summary>
-    /// 忽略 <see cref="ModuleInfo.MetadataReference"/> 与 <see cref="ModuleInfo.Assembly"/> 的实例差异：
-    /// 同一程序集可能以不同引用形态出现，但去重时它们是同一个模块。
+    /// 忽略 <see cref="ModuleInfo.MetadataReference"/> 与 <see cref="ModuleInfo.Assembly"/>
+    /// 的实例差异：同一程序集可能以不同引用形态出现，但去重时它们是同一个模块。
     /// </summary>
     [Fact]
     public void Comparer_Should_IgnoreMetadataReferenceAndAssemblyIdentity()
@@ -194,7 +191,7 @@ public class ModuleInfoTests
         var withAnotherReference = new ModuleInfo(
             "Newtonsoft.Json.dll",
             new Version(13, 0, 3, 0),
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
             null);
 
         comparer.Equals(withDefaultReference, withAnotherReference).Should().BeTrue();
@@ -206,10 +203,30 @@ public class ModuleInfoTests
 
     // 模块描述符本身不读取 MetadataReference 的内容，仅用于承载实例，取任一真实引用即可。
     private static readonly MetadataReference _reference
-        = MetadataReference.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location);
+        = AssemblyReferenceCache.FromAssembly(typeof(StronglyTypedIdAttribute).Assembly);
 
     private static ModuleInfo CreateModule(string name, string version)
         => new(name, Version.Parse(version), _reference, null);
+
+    /// <summary>
+    /// 按生产路径造一个模块：源码程序集（<see cref="CompilationReference"/>）经
+    /// <see cref="ModuleIdentity.ResolveAssembly"/> 解析，从而覆盖 <see cref="ModuleInfo.MayDeclareIds"/> 的推导。
+    /// </summary>
+    private static ModuleInfo ResolveModule(string assemblyName, bool referencesRuntime)
+    {
+        MetadataReference[] references = referencesRuntime
+            ? [_reference, AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)]
+            : [AssemblyReferenceCache.FromAssembly(typeof(object).Assembly)];
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText("namespace Sample { public class OrderId { } public class ProductId { } }")],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return new ModuleIdentity($"{assemblyName}.dll", new Version(1, 0), compilation.ToMetadataReference())
+            .ResolveAssembly(compilation);
+    }
 
     #endregion
 }

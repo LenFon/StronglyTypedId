@@ -47,10 +47,14 @@ jobs:
       with:
         user: ${{ secrets.NUGET_USER }}  # nuget.org 用户名（配置文件名），不是邮箱
 
+    # --skip-duplicate：重跑同一 tag 的 workflow 时，主包已存在会让 nuget.org 返回 409，
+    # 该选项把 409 降级为警告并继续，使发布步骤幂等。
     - name: Publish the package to nuget.org
-      run: dotnet nuget push bin/Release/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+      run: dotnet nuget push bin/Release/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
     # 符号包必须单独再推一次：通配符 *.nupkg 不匹配 *.snupkg（结尾是 .snupkg 而非 .nupkg）。
     # 顺序上必须在主包之后——nuget.org 要求符号包对应的包已存在。
+    # --skip-duplicate：nuget.org 对同一版本符号包「已有待验证副本」时返回 409，
+    # 该选项把 409 降级为警告，避免因重跑或上次校验未完成而让整个发布失败。
     - name: Publish the symbol package to nuget.org
-      run: dotnet nuget push bin/Release/*.snupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+      run: dotnet nuget push bin/Release/*.snupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

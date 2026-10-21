@@ -1,17 +1,13 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Len.StronglyTypedId.CodeRefactorings;
 using Xunit;
 
 namespace Len.StronglyTypedId.CodeRefactorings;
 
 /// <summary>
-/// <see cref="StronglyTypedIdRefactoringProvider"/> 的用例：正向「Convert to strongly typed id」与
-/// 反向「Inline strongly typed id」。
+/// <see cref="StronglyTypedIdRefactoringProvider"/> 的用例：正向「Convert to strongly typed id」与反向「Inline strongly
+/// typed id」。
 /// </summary>
-/// <remarks>
-/// 代码重构没有像诊断那样的「期望清单」可供测试框架比对，故经 <c>Verify.ApplyRefactoringAsync</c> 直接驱动
-/// provider 并应用它注册的唯一重构，再按精确文本断言产物。
-/// </remarks>
 public class StronglyTypedIdRefactoringProviderTests
 {
     #region 正向：Convert to strongly typed id
@@ -178,6 +174,37 @@ public class StronglyTypedIdRefactoringProviderTests
         (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
     }
 
+    /// <summary>
+    /// 正向重构插入的换行沿用文档自身的行尾：CRLF 文档得 CRLF，LF 文档得 LF。
+    /// </summary>
+    [Theory]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    public async Task Refactoring_Should_PreserveEndOfLine_WhenConverting(string endOfLine)
+    {
+        var code = string.Join(
+            endOfLine,
+            "using System;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "public record OrderId(Guid Value);",
+            string.Empty);
+
+        var expected = string.Join(
+            endOfLine,
+            "using System;",
+            "using Len.StronglyTypedId;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "[StronglyTypedId]",
+            "public partial record OrderId(Guid Value);",
+            string.Empty);
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
     #endregion
 
     #region 正向：不提供的场景
@@ -237,7 +264,7 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
-    /// 基元类型不受支持：加上特性后会触发 STIAO008，不提供重构。
+    /// 基元类型不受支持：加上特性后会触发 STIA0008，不提供重构。
     /// </summary>
     [Fact]
     public async Task Refactoring_ShouldNotBeOffered_WhenPrimitiveUnsupported()
@@ -297,7 +324,7 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
-    /// 泛型 record 不能成为强类型 Id（STIAO003），不提供重构。
+    /// 泛型 record 不能成为强类型 Id（STIA0003），不提供重构。
     /// </summary>
     [Fact]
     public async Task Refactoring_ShouldNotBeOffered_WhenGeneric()
@@ -379,6 +406,46 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
+    /// 反向重构：文件里虽无第二个 Id，但仍在用该命名空间导出的其他类型（<c>IStronglyTypedId&lt;,&gt;</c>、
+    /// <c>Any</c>、<c>StronglyTypedIdIntegrations</c> 等）时必须保留 using —— 只按「还有没有带特性的 record」
+    /// 判断会把它一并删掉，产出 CS0246。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_Should_KeepUsing_WhenOtherTypesFromNamespaceAreUsed()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+
+            public static class OrderIds
+            {
+                public static string Describe(StronglyTypedIdIntegrations integrations) => integrations.ToString();
+            }
+            """;
+
+        var expected = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme;
+
+            public record OrderId(Guid Value);
+
+            public static class OrderIds
+            {
+                public static string Describe(StronglyTypedIdIntegrations integrations) => integrations.ToString();
+            }
+            """;
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
+    /// <summary>
     /// 反向重构：同一 Id 有多段 partial 声明时摘掉 <c>partial</c> 会 CS0260，不提供。
     /// </summary>
     [Fact]
@@ -402,6 +469,105 @@ public class StronglyTypedIdRefactoringProviderTests
         var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title);
 
         titles.Should().NotContain("Inline strongly typed id");
+    }
+
+    /// <summary>
+    /// 反向重构重排后的换行同样沿用文档自身的行尾（摘掉特性后留下的空行由格式化器补齐）。
+    /// </summary>
+    [Theory]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    public async Task Refactoring_Should_PreserveEndOfLine_WhenInlining(string endOfLine)
+    {
+        var code = string.Join(
+            endOfLine,
+            "using System;",
+            "using Len.StronglyTypedId;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "[StronglyTypedId]",
+            "public partial record OrderId(Guid Value);",
+            string.Empty);
+
+        var expected = string.Join(
+            endOfLine,
+            "using System;",
+            string.Empty,
+            "namespace Len.StronglyTypedId.Tests;",
+            string.Empty,
+            "public record OrderId(Guid Value);",
+            string.Empty);
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
+    #endregion
+
+    #region 第三方同名特性
+
+    /// <summary>
+    /// 第三方命名空间下的同名特性不能被当成自家的：判定按语义绑定走，否则 Inline 重构会把
+    /// <c>Acme.StronglyTypedIdAttribute</c> 一并物理删掉 —— 用户点一下，别人的特性就没了，且没有任何提示。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_ShouldNotTreatForeignAttributeAsStronglyTypedId()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme
+            {
+                [AttributeUsage(AttributeTargets.All)]
+                public sealed class StronglyTypedIdAttribute : Attribute
+                {
+                }
+            }
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [Acme.StronglyTypedIdAttribute]
+                public partial record OrderId(Guid Value);
+            }
+            """;
+
+        var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title).ToList();
+
+        titles.Should().NotContain("Inline strongly typed id");
+        titles.Should().Contain("Convert to strongly typed id");
+    }
+
+    /// <summary>
+    /// Inline 只摘自家的 <c>[StronglyTypedId]</c>，第三方同名特性必须原样留下。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_Should_KeepForeignAttribute_WhenInlining()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Acme
+            {
+                [AttributeUsage(AttributeTargets.All)]
+                public sealed class StronglyTypedIdAttribute : Attribute
+                {
+                }
+            }
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId]
+                [Acme.StronglyTypedIdAttribute]
+                public partial record OrderId(Guid Value);
+            }
+            """;
+
+        var result = await Verify.ApplyRefactoringAsync(code);
+
+        result.Should().Contain("[Acme.StronglyTypedIdAttribute]");
+        result.Should().NotContain("[StronglyTypedId]");
     }
 
     #endregion

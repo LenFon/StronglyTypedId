@@ -5,41 +5,37 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// 生成的 JSON 转换器在「null 与畸形载荷」下的边界行为。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 既有 <see cref="SerializationAndDeserializationTests"/> 只覆盖合法值的往返，本类补的是
-/// 生成代码里那条「取不到值」的兜底路径（<c>_ =&gt; throw …</c>）与写侧的空值路径
-/// （<c>writer.WriteNullValue()</c> / <c>writer.WriteNull()</c>），二者此前从未被执行过。
-/// </para>
-/// <para>
-/// 断言按「实测事实」而非「推测」书写，且只锁定异常**类型**不锁定消息文本：消息里的
-/// 路径 / 行列号由 JSON 库在不同主版本间调整。
-/// </para>
-/// <para>
-/// 值类型（record struct）与引用类型（record）在 null 上的契约不同，因此两者都测：
-/// Newtonsoft 的生成代码显式用 <c>null when (objectType.IsClass || …)</c> 分流，System.Text.Json 则由框架
-/// 依据 <see cref="System.Text.Json.Serialization.JsonConverter{T}"/> 的空值处理约定分流。
-/// </para>
-/// </remarks>
 public class JsonConverterBoundaryTests
 {
     #region System.Text.Json：null 令牌
 
     /// <summary>
-    /// 值类型 Id 遇到 JSON <c>null</c> 时，框架仍会把令牌交给生成的转换器，
-    /// 转换器取不到值 → 抛 <see cref="InvalidOperationException"/>。
+    /// 值类型 Id 遇到 JSON <c>null</c> 时，框架仍会把令牌交给生成的转换器，转换器取不到值 → 抛
+    /// <see cref="System.Text.Json.JsonException"/>（STJ 的转换器契约：失败一律抛 JsonException，
+    /// 只有它才会被补上 Path / LineNumber / BytePositionInLine）。
     /// </summary>
     [Fact]
-    public void SystemTextJson_Should_Throw_WhenValueTypeIdReceivesNullToken()
+    public void SystemTextJson_Should_ThrowJsonException_WhenValueTypeIdReceivesNullToken()
     {
         var act = () => System.Text.Json.JsonSerializer.Deserialize<GuidId>("null");
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<System.Text.Json.JsonException>();
     }
 
     /// <summary>
-    /// 引用类型 Id 遇到 JSON <c>null</c> 时由框架直接返回 <see langword="null"/>，
-    /// 不进入转换器（因此不会抛出"取不到值"异常）。
+    /// 嵌套位置的 null 令牌：异常必须带上 JSON path，否则调用方无法定位是哪一层出的问题。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_AttachJsonPath_WhenNestedValueTypeIdReceivesNullToken()
+    {
+        var act = () => System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, GuidId>>("""{"k":null}""");
+
+        act.Should().Throw<System.Text.Json.JsonException>()
+            .Which.Path.Should().Be("$.k");
+    }
+
+    /// <summary>
+    /// 引用类型 Id 遇到 JSON <c>null</c> 时由框架直接返回 <see langword="null"/>，不进入转换器（因此不会抛出"取不到值"异常）。
     /// </summary>
     [Fact]
     public void SystemTextJson_Should_ReturnNull_WhenReferenceTypeIdReceivesNullToken()
@@ -70,10 +66,7 @@ public class JsonConverterBoundaryTests
     #region System.Text.Json：写侧空值
 
     [Fact]
-    public void SystemTextJson_Should_WriteNull_WhenReferenceTypeIdIsNull()
-    {
-        System.Text.Json.JsonSerializer.Serialize(default(GuidIdV2)).Should().Be("null");
-    }
+    public void SystemTextJson_Should_WriteNull_WhenReferenceTypeIdIsNull() => System.Text.Json.JsonSerializer.Serialize(default(GuidIdV2)).Should().Be("null");
 
     [Fact]
     public void SystemTextJson_Should_WritePrimitiveValue_WhenValueIsDefaultStruct()
@@ -88,14 +81,15 @@ public class JsonConverterBoundaryTests
 
     /// <summary>
     /// 生成的 <c>ReadJson</c> 里 <c>null when (objectType.IsClass || Nullable.GetUnderlyingType(...))</c>
-    /// 的兜底分支：值类型 Id 两个条件都不成立，落到 <c>_ =&gt;</c> 抛出。
+    /// 的兜底分支：值类型 Id 两个条件都不成立，落到 <c>_ =&gt;</c> 抛
+    /// <see cref="Newtonsoft.Json.JsonSerializationException"/>（与同文件其它结构性错误一致）。
     /// </summary>
     [Fact]
-    public void NewtonsoftJson_Should_Throw_WhenValueTypeIdReceivesNullToken()
+    public void NewtonsoftJson_Should_ThrowJsonSerializationException_WhenValueTypeIdReceivesNullToken()
     {
         var act = () => Newtonsoft.Json.JsonConvert.DeserializeObject<GuidId>("null");
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
     }
 
     /// <summary>
@@ -130,10 +124,7 @@ public class JsonConverterBoundaryTests
     #region Newtonsoft.Json：写侧空值
 
     [Fact]
-    public void NewtonsoftJson_Should_WriteNull_WhenReferenceTypeIdIsNull()
-    {
-        Newtonsoft.Json.JsonConvert.SerializeObject(default(GuidIdV2)).Should().Be("null");
-    }
+    public void NewtonsoftJson_Should_WriteNull_WhenReferenceTypeIdIsNull() => Newtonsoft.Json.JsonConvert.SerializeObject(default(GuidIdV2)).Should().Be("null");
 
     [Fact]
     public void NewtonsoftJson_Should_WritePrimitiveValue_WhenValueIsDefaultStruct()
@@ -150,7 +141,7 @@ public class JsonConverterBoundaryTests
     public void NullTokenContract_Should_BePrimitiveAgnostic_ForSystemTextJson()
     {
         var act = () => System.Text.Json.JsonSerializer.Deserialize<Int32Id>("null");
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<System.Text.Json.JsonException>();
 
         System.Text.Json.JsonSerializer.Deserialize<Int32IdV2>("null").Should().BeNull();
     }
@@ -159,7 +150,7 @@ public class JsonConverterBoundaryTests
     public void NullTokenContract_Should_BePrimitiveAgnostic_ForNewtonsoftJson()
     {
         var act = () => Newtonsoft.Json.JsonConvert.DeserializeObject<Int32Id>("null");
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
 
         Newtonsoft.Json.JsonConvert.DeserializeObject<Int32IdV2>("null").Should().BeNull();
     }

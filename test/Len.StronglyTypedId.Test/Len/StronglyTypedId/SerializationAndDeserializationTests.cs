@@ -4,6 +4,9 @@ namespace Len.StronglyTypedId;
 
 public class SerializationAndDeserializationTests
 {
+    // JsonSerializerOptions 首次参与序列化后会冻结并缓存元数据，内联 new 等于每次重建这份缓存（CA1869）。
+    private static readonly System.Text.Json.JsonSerializerOptions _caseInsensitiveOptions = new() { PropertyNameCaseInsensitive = true };
+
     [Theory]
     [InlineData(12, typeof(Int32Id), "12")]
     [InlineData(13L, typeof(Int64Id), "13")]
@@ -76,8 +79,8 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": … }</c>，
-    /// 供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
+    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": …
+    /// }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_SerializeAsObject_When()
@@ -113,7 +116,25 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：对象形态只作用于「值」的位置 —— 字典键本就是字符串，读写键的路径不受影响。
+    /// 对象形态的属性名匹配要跟着 <c>PropertyNameCaseInsensitive</c> 走：默认只认小写 <c>value</c>，
+    /// 开了选项后 <c>{"Value": …}</c> 也必须能读 —— 否则与 JsonSerializer 对普通对象的处理不一致。
+    /// </summary>
+    [Fact]
+    public void ObjectJsonShape_Should_HonorPropertyNameCaseInsensitive_When()
+    {
+        var guid = Guid.Parse("d8ac85d4-ed76-4974-b055-8ef3508743f3");
+        const string pascalCaseJson = """{"Value":"d8ac85d4-ed76-4974-b055-8ef3508743f3"}""";
+
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(pascalCaseJson, _caseInsensitiveOptions).Value.Should().Be(guid);
+
+        // 未开启该选项时保持原样：属性名大小写不符 → 等同于缺少 value 属性。
+        var deserialize = () => System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(pascalCaseJson);
+
+        deserialize.Should().Throw<System.Text.Json.JsonException>();
+    }
+
+    /// <summary>
+    /// C4：对象形态只作用于「值」的位置——字典键本就是字符串，读写键的路径不受影响。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_KeepPrimitiveDictionaryKey_When()
@@ -133,10 +154,6 @@ public class SerializationAndDeserializationTests
     /// <summary>
     /// C1：char 基元的字典键走 <c>WriteAsPropertyName</c> / <c>ReadAsPropertyName</c>。
     /// </summary>
-    /// <remarks>
-    /// 这条路径在生成器里用的是 <c>primitiveId.ToString()</c> 而非 <c>ToString(null, InvariantCulture)</c>
-    /// —— char 的后者是显式接口实现（CS1501）。用例同时守住「键能写出去、也能读回来」。
-    /// </remarks>
     [Fact]
     public void CharId_Should_RoundTripAsDictionaryKey_When()
     {
@@ -151,11 +168,170 @@ public class SerializationAndDeserializationTests
         roundTripped.Should().ContainKey(CharId.Create('k'));
     }
 
+    /// <summary>
+    /// 枚举基元的字典键写成成员名、值写成数字。这不是本项目的独有偏差：<c>System.Text.Json</c> 对原生
+    /// <c>Dictionary&lt;MyEnum, MyEnum&gt;</c> 也是同样的「键用名字、值用数字」（JSON 对象的键只能是字符串）。
+    /// 用例把这个形态钉住，避免日后被当成 bug「修」成另一种表示而破坏线上的 JSON。
+    /// </summary>
+    [Fact]
+    public void EnumId_Should_WriteMemberNameAsDictionaryKey_AndNumberAsValue_When()
+    {
+        var dictionary = new Dictionary<SampleStatusId, SampleStatusId>
+        {
+            [SampleStatusId.Create(SampleStatus.Active)] = SampleStatusId.Create(SampleStatus.Suspended),
+        };
+
+        const string expectedJson = """{"Active":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SampleStatusId, SampleStatusId>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(SampleStatusId.Create(SampleStatus.Active));
+    }
+
+    /// <summary>
+    /// 枚举 Id 作字典键时应用 <c>DictionaryKeyPolicy</c>，与 <c>System.Text.Json</c> 对原生枚举键的行为一致
+    /// （原生 <c>Dictionary&lt;Status,int&gt;</c> 在 CamelCase 下写出 <c>{"active":1}</c>）。
+    /// </summary>
+    [Fact]
+    public void EnumId_Should_ApplyDictionaryKeyPolicy_When()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        };
+
+        var dictionary = new Dictionary<SamplePriorityId, int>
+        {
+            [SamplePriorityId.Create(SamplePriority.VeryHigh)] = 1,
+            [SamplePriorityId.Create(SamplePriority.LowPriority)] = 2,
+        };
+
+        const string expectedJson = """{"veryHigh":1,"lowPriority":2}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary, options).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SamplePriorityId, int>>(expectedJson, options)!;
+
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.VeryHigh));
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.LowPriority));
+    }
+
+    /// <summary>
+    /// 键文本被 policy 改写后仍能读回：解析必须忽略大小写。这也是 <c>System.Text.Json</c> 对原生枚举键的
+    /// 行为（<c>{"ACTIVE":1}</c> 同样能读回 <c>Active</c>）。
+    /// </summary>
+    [Fact]
+    public void EnumId_Should_ReadDictionaryKeyIgnoringCase_When()
+    {
+        const string json = """{"VERYHIGH":1,"lowpriority":2}""";
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SamplePriorityId, int>>(json)!;
+
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.VeryHigh));
+        roundTripped.Should().ContainKey(SamplePriorityId.Create(SamplePriority.LowPriority));
+    }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举作字典键：位组合必须能往返（键文本是 <c>"Read, Write"</c>），
+    /// 而含未定义位的键必须被拒 —— 字典键走的是忽略大小写的独立解析路径，位校验在那里同样要生效。
+    /// </summary>
+    [Fact]
+    public void FlagsEnumId_Should_RoundTripCombinationAsDictionaryKey_AndRejectUndefinedBits()
+    {
+        var dictionary = new Dictionary<SampleAccessId, int>
+        {
+            [SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write)] = 1,
+        };
+
+        const string expectedJson = """{"Read, Write":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<SampleAccessId, int>>(expectedJson)!;
+
+        roundTripped.Should().ContainKey(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write));
+
+        Action act = () => System.Text.Json.JsonSerializer.Deserialize<Dictionary<SampleAccessId, int>>("""{"999":1}""");
+
+        act.Should().Throw<System.Text.Json.JsonException>();
+    }
+
+    /// <summary>
+    /// 带前缀的枚举 Id 不应用 <c>DictionaryKeyPolicy</c>：键文本含用户定义的前缀，policy 会把前缀一起改写，
+    /// 读回时前缀匹配必然失败。用 SnakeCaseLower 才能看出差异（CamelCase 对 <c>pri_VeryHigh</c> 无变化）。
+    /// </summary>
+    [Fact]
+    public void PrefixedEnumId_Should_NotApplyDictionaryKeyPolicy_When()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
+        };
+
+        var dictionary = new Dictionary<PrefixedPriorityId, int>
+        {
+            [PrefixedPriorityId.Create(SamplePriority.VeryHigh)] = 1,
+        };
+
+        const string expectedJson = """{"pri_VeryHigh":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary, options).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<PrefixedPriorityId, int>>(expectedJson, options)!;
+
+        roundTripped.Should().ContainKey(PrefixedPriorityId.Create(SamplePriority.VeryHigh));
+    }
+
+    /// <summary>
+    /// string 基元的键值是数据本身而非名字，不应用 <c>DictionaryKeyPolicy</c>：改写它等于改写键值，
+    /// 写出去就读不回来（<c>StringId.Create("UserName")</c> 会变成 <c>StringId.Create("userName")</c>）。
+    /// </summary>
+    [Fact]
+    public void StringId_Should_NotApplyDictionaryKeyPolicy_When()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        };
+
+        var dictionary = new Dictionary<StringId, int> { [StringId.Create("UserName")] = 1 };
+
+        const string expectedJson = """{"UserName":1}""";
+
+        System.Text.Json.JsonSerializer.Serialize(dictionary, options).Should().Be(expectedJson);
+
+        var roundTripped = System.Text.Json.JsonSerializer
+            .Deserialize<Dictionary<StringId, int>>(expectedJson, options)!;
+
+        roundTripped.Should().ContainKey(StringId.Create("UserName"));
+    }
+
+    /// <summary>
+    /// D3：string 基元的字典键被验证器拒绝时，必须抛 <c>JsonException</c> 而不是 <c>ArgumentException</c> ——
+    /// STJ 的转换器契约要求失败一律抛 <c>JsonException</c>，同一生成器的带前缀 / 非 string 分支都是这么做的。
+    /// </summary>
+    [Fact]
+    public void StringId_Should_ThrowJsonException_When_DictionaryKeyRejected()
+    {
+        // ShortStringId 的验证器限制长度 ≤ 8，"far-too-long" 会被拒。
+        const string json = """{"far-too-long":1}""";
+
+        var act = () => System.Text.Json.JsonSerializer.Deserialize<Dictionary<ShortStringId, int>>(json);
+
+        act.Should().Throw<System.Text.Json.JsonException>();
+    }
+
     #region C10 文本前缀：JSON 走规范文本形
 
     /// <summary>
-    /// C10：有前缀时，值位置的 JSON 变为字符串（数字 / 枚举 / 日期基元由 number 变 string），
-    /// 内容为规范文本形（含前缀）；两种序列化器行为一致。
+    /// C10：有前缀时，值位置的 JSON 变为字符串（数字 / 枚举 / 日期基元由 number 变 string），内容为规范文本形（含前缀）；两种序列化器行为一致。
     /// </summary>
     [Fact]
     public void Prefix_Should_SerializeAsPrefixedString_When()
@@ -192,7 +368,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C10：前缀 + 对象形态 —— <c>{ "value": "ord_x" }</c>。
+    /// C10：前缀 + 对象形态—— <c>{ "value": "ord_x" }</c>。
     /// </summary>
     [Fact]
     public void Prefix_WithObjectShape_Should_SerializeAsObject_When()
