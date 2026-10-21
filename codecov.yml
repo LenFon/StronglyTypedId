@@ -13,8 +13,9 @@
 # 拆开看：主包 18/21（85.71%）、生成器包 3705/3898（95.05%）。主包行数极少（几乎全是接口与特性），
 # 一个未覆盖的分支就能拉动 4 个百分点，看趋势时以生成器包为准。
 #
-# CI 是一次 dotnet test 跑完两个 TFM、只上传一份不带 flag 的报告（见 build-and-test.yml）：
-# 分 TFM 的报告没带来额外信息，却要多付一次 dotnet-coverage 启动、一次上传和一次 Codecov 结算。
+# CI 按 TFM 分两条腿、各采一份报告、各带一个 flag（net8.0 / net10.0）上传，见 build-and-test.yml。
+# 两份报告在 Codecov 上是独立数据集：一份报告挂多个 flag 会把整份覆盖率重复计入每个 flag，所以必须
+# 「一条腿一份文件一个 flag」。合并后的整体覆盖率由 Codecov 自己按 flag 求并集，不需要本地合并。
 # （旧注释里的 96.83% / 3056 行是 2026-10-19 的口径，代码此后增长，已不适用。）
 
 coverage:
@@ -40,10 +41,16 @@ coverage:
         informational: false
 
 comment:
-  layout: "reach,diff,files"
+  # flags 段列出每个 flag 各自的覆盖率与行数，PR 里一眼能看出两条腿的差异。
+  layout: "reach,diff,flags,files"
   behavior: default
   # 覆盖率没变化就不发评论，避免每个 PR 都刷一条「0% 变化」。
   require_changes: true
+
+# 两条腿在同一 job 里顺序执行、先后上传。不设这个值，Codecov 收到第一份报告就结算并评论，
+# 第二条腿的数字永远晚一步才补上（表现为评论里的整体覆盖率偏低、状态检查闪一下又变）。
+notify:
+  after_n_builds: 2
 
 # 只统计真正发布出去的两个包。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
 ignore:
