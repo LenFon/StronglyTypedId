@@ -80,8 +80,15 @@ jobs:
     - name: Restore tools
       run: dotnet tool restore
 
-    # 两条腿各跑一次、各采一份报告：net8.0 与 net10.0 在 Codecov 上用不同 flag 分开呈现，
-    # 将来出现 `#if NET8_0` 之类的分支时能立刻看出两条腿的差异。
+    # 两条腿在同一个 step 内后台并发，但**各采一份报告、绝不合并**：Actions 的 step 天然串行，想并行
+    # 只能在一个 shell 里 `&` + `wait`；而 dotnet-coverage 一次 collect 只产出一个文件，所以并发的是
+    # 「两个采集会话」，不是「一份报告」。net8.0 与 net10.0 各自落到 coverage.net8/net10.cobertura.xml，
+    # 再由下面两个 upload step 分别带 flags: net8.0 / net10.0 上传 —— 合并会丢掉「哪条腿漏了哪些行」
+    # 这个唯一的信息量（实测两条腿差 13 行，全在 UTF-8 TryParse 的发射路径上）。
+    #
+    # 并发采集已验证不互扰：本机实测两份报告同时产出，net8 那份的大小与串行时逐字节一致。
+    # 收益也不是理想的 max(单腿)：两条腿抢 CPU，本机 24 核上串行 39+37=76s → 并发 60s（省 21%），
+    # 4 核 runner 上省得更少。代价是 Actions UI 里只剩一个 step，失败时要看聚合日志分辨是哪条腿。
     #
     # 用 --test-modules 通配挑模块，而不是 --solution + --framework：后者会给每个测试工程解析模块
     # 路径，对不含该 TFM 的工程解析出不存在的 bin/Debug/<tfm>/<工程名>，启动时抛 Win32Exception 让
@@ -92,20 +99,40 @@ jobs:
     # 也捞进来。包内容断言工程的程序集名刻意叫 Len.StronglyTypedId.Packaging.Tests（复数），同样不被
     # 选中 —— 它要真跑 dotnet pack，由独立的 packaging job 负责。
     #
+    # 退出码必须自己聚合：Actions 默认 `bash -e`，第一个 `wait` 非零就会中止，第二条腿的报告根本采不到。
+    # 故先 `set +e`，两个 `wait` 都收齐再统一判红，并把两份日志都 cat 出来。
+    #
     # 代价：glob 少匹配不会报错，只会静默少跑几个模块；动构建输出布局或测试工程集合时要回头核对。
-    - name: Test + coverage (net8.0)
+    - name: Test + coverage (net8.0 + net10.0, in parallel)
       run: |
         mkdir -p TestResults
+        # 先删旧报告：万一工作区里有残留，dotnet-coverage 可能往里追加，那就变成「合并」了。
+        rm -f TestResults/coverage.net8.cobertura.xml TestResults/coverage.net10.cobertura.xml
+        set +e
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net8.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net8.0/*.Test.dll" --no-build --verbosity normal
-    - name: Test + coverage (net10.0)
-      # 与上一步同构，只换 TFM 与报告路径。
-      run: |
-        mkdir -p TestResults
+          dotnet test --test-modules "**/bin/Debug/net8.0/*.Test.dll" --no-build --verbosity normal \
+          > TestResults/net8.log 2>&1 &
+        pid8=$!
         dotnet tool run dotnet-coverage -- collect -f cobertura \
           -o TestResults/coverage.net10.cobertura.xml \
-          dotnet test --test-modules "**/bin/Debug/net10.0/*.Test.dll" --no-build --verbosity normal
+          dotnet test --test-modules "**/bin/Debug/net10.0/*.Test.dll" --no-build --verbosity normal \
+          > TestResults/net10.log 2>&1 &
+        pid10=$!
+        wait $pid8; rc8=$?
+        wait $pid10; rc10=$?
+        cat TestResults/net8.log TestResults/net10.log
+        # 两份报告必须都存在且非空。少一份就是「合并成一份」的前兆，宁可直接红。
+        for f in TestResults/coverage.net8.cobertura.xml TestResults/coverage.net10.cobertura.xml; do
+          if [ ! -s "$f" ]; then
+            echo "::error::missing coverage report: $f"
+            exit 1
+          fi
+        done
+        if [ $rc8 -ne 0 ] || [ $rc10 -ne 0 ]; then
+          echo "::error::net8.0 rc=$rc8, net10.0 rc=$rc10"
+          exit 1
+        fi
 
     # 每份报告单独上传、单独带一个 flag：一份报告挂多个 flag 会把整份覆盖率重复计入每个 flag。
     # fail_ci_if_error 必须为 true，否则覆盖率可以静默停更几个月而没人发现。
