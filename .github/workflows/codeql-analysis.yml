@@ -5,6 +5,9 @@
 #
 # 不用 autobuild：runner 预装的 SDK 未必含 net10.0，而本仓双目标 net8.0;net10.0，
 # autobuild 会在还原阶段失败。改为显式安装两个 SDK 后手动 build，与 build-and-test.yml 一致。
+#
+# 第三方 action 一律钉 40 位 commit sha，不用 @v4 这类可变 ref（理由见 build-and-test.yml 顶部）；
+# 注释里的版本号供 dependabot 的 github-actions 生态识别并提 SHA 升级 PR。
 name: "CodeQL"
 
 on:
@@ -50,10 +53,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
         dotnet-version: |
           8.0.x
@@ -61,7 +64,7 @@ jobs:
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
+      uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
       with:
         languages: ${{ matrix.language }}
         # 只报 src / tools 的告警：test / bench / samples 不是攻击面（测试代码与示例从不进入
@@ -100,6 +103,6 @@ jobs:
         dotnet build tools/Len.StronglyTypedId.DocGen/Len.StronglyTypedId.DocGen.csproj --no-restore
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
+      uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
       with:
         category: "/language:${{matrix.language}}"
