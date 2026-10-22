@@ -30,7 +30,9 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
             {
-                /// <summary>Employ strongly typed IDs in Newtonsoft.Json.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs in Newtonsoft.Json.
+                /// </summary>
                 /// <param name="settings"><see cref="global::Newtonsoft.Json.JsonSerializerSettings"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonRegistrationCodeGenerator), version)}}
