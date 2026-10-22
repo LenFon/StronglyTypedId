@@ -243,6 +243,339 @@ public class CodeGeneratorModuleGateTests
 
     #endregion
 
+    #region Dapper：处理器名消歧与基元转换矩阵
+
+    /// <summary>
+    /// 两个命名空间的同名 Id 会撞处理器类名（都叫 <c>OrderIdTypeHandler</c>），此时必须用 <c>HintName</c> 消歧。
+    /// </summary>
+    [Fact]
+    public void Dapper_Should_QualifyHandlerName_WhenNamesCollide()
+    {
+        var generated = RunGenerator(
+            AmbiguousIdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        generated["Sales.OrderId.Dapper.g.cs"]
+            .Should().Contain("class Sales_OrderIdTypeHandler");
+
+        generated["Billing.OrderId.Dapper.g.cs"]
+            .Should().Contain("class Billing_OrderIdTypeHandler");
+    }
+
+    /// <summary>
+    /// 每个数值基元都必须映射到 <c>System.Convert</c> 上对应的重载：驱动返回的 CLR 类型与基元并不总是一致
+    /// （SQLite 下整型列可能回 <c>long</c>、实数列回 <c>double</c>），漏一个就会在读取时抛
+    /// <see cref="InvalidCastException"/>。本用例逐基元锁定映射表。
+    /// </summary>
+    [Fact]
+    public void Dapper_Should_MapEveryNumericPrimitive_ToItsConvertOverload()
+    {
+        var generated = RunGenerator(
+            AllConvertPrimitiveIdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
+
+        var expectations = new (string Id, string Method)[]
+        {
+            ("ByteId", "ToByte"),
+            ("SByteId", "ToSByte"),
+            ("Int16Id", "ToInt16"),
+            ("UInt16Id", "ToUInt16"),
+            ("UInt32Id", "ToUInt32"),
+            ("Int64Id", "ToInt64"),
+            ("UInt64Id", "ToUInt64"),
+            ("SingleId", "ToSingle"),
+            ("DoubleId", "ToDouble"),
+            ("DateTimeId", "ToDateTime"),
+        };
+
+        foreach (var (id, method) in expectations)
+        {
+            generated[$"Len.StronglyTypedId.{id}.Dapper.g.cs"]
+                .Should().Contain($"global::System.Convert.{method}(value, global::System.Globalization.CultureInfo.InvariantCulture)");
+        }
+
+        // TimeSpan 刻意不在映射表里：System.Convert 没有 ToTimeSpan，只能走文本入口。
+        generated["Len.StronglyTypedId.DurationId.Dapper.g.cs"]
+            .Should().Contain("global::System.TimeSpan.Parse(global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture)!, global::System.Globalization.CultureInfo.InvariantCulture)");
+    }
+
+    #endregion
+
+    #region MessagePack：MessagePack 主版本 >= 2
+
+    [Fact]
+    public void MessagePack_Should_Generate_WhenMajorVersionIsTwo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated.Should().ContainKey("Len.StronglyTypedId.OrderId.MessagePack.g.cs");
+        generated.Should().ContainKey("StronglyTypedIds.MessagePack.g.cs");
+    }
+
+    [Fact]
+    public void MessagePack_Should_NotGenerate_WhenMajorVersionIsOne()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "1.9.0.0"));
+
+        generated.Keys.Should().NotContain(key => key.EndsWith(".MessagePack.g.cs", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MessagePack_Should_GenerateFormatterAndApplyTo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.MessagePack.g.cs"]
+            .Should().Contain("internal sealed class OrderIdMessagePackFormatter : global::MessagePack.Formatters.IMessagePackFormatter<global::Len.StronglyTypedId.OrderId>")
+            .And.Contain("public void Serialize(")
+            .And.Contain("ref global::MessagePack.MessagePackWriter writer,")
+            .And.Contain("public global::Len.StronglyTypedId.OrderId Deserialize(");
+
+        generated["StronglyTypedIds.MessagePack.g.cs"]
+            .Should().Contain("public static global::MessagePack.MessagePackSerializerOptions ApplyTo(global::MessagePack.MessagePackSerializerOptions options)")
+            .And.Contain("options.WithResolver(global::MessagePack.Resolvers.CompositeResolver.Create(")
+            .And.Contain("new OrderIdMessagePackFormatter(),")
+            .And.Contain("new global::MessagePack.IFormatterResolver[] { options.Resolver }));");
+    }
+
+    /// <summary>
+    /// 二进制载荷必须是基元本身（<c>value.Value</c>），不能是规范文本形：文本前缀只是文本形的装饰，
+    /// 一旦混进二进制，「改前缀」就会让已落盘的数据读不回来。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_StorePrimitivePayload_InsteadOfCanonicalText()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.MessagePack.g.cs"]
+            .Should().Contain("global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::System.Guid>(options.Resolver).Serialize(ref writer, value.Value, options);")
+            .And.Contain("return global::Len.StronglyTypedId.OrderId.Create(")
+            .And.Contain("    global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::System.Guid>(options.Resolver).Deserialize(ref reader, options));")
+            .And.NotContain("writer.Write(value.ToString());");
+    }
+
+    /// <summary>
+    /// 值类型 Id 读到 nil 说明载荷与契约不符（nil 只可能来自 <c>Nullable&lt;TId&gt;</c> 的写入）。
+    /// 静默落成 default 会把「数据缺失」伪装成 <c>Guid.Empty</c> 这样的合法值。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_Throw_WhenValueTypeIdReadsNil()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.MessagePack.g.cs"]
+            .Should().Contain("if (reader.TryReadNil())")
+            .And.Contain("throw new global::MessagePack.MessagePackSerializationException(\"Cannot convert a nil MessagePack value to a OrderId.\");")
+            .And.NotContain("return default!;");
+    }
+
+    /// <summary>
+    /// 引用类型 Id 的 null 必须写成 nil：走到格式化器这一步已经没有别人替我们补 nil，
+    /// 直接取 <c>value.Value</c> 会抛 <see cref="NullReferenceException"/>。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_WriteNil_ForNullReferenceTypeId()
+    {
+        var generated = RunGenerator(
+            ClassIdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["Len.StronglyTypedId.OrderClassId.MessagePack.g.cs"]
+            .Should().Contain("if (value is null)")
+            .And.Contain("writer.WriteNil();")
+            .And.Contain("return default!;");
+    }
+
+    /// <summary>
+    /// <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 没有 MessagePack 的原生格式化器，
+    /// 直接按基元写会在运行期抛「格式化器未注册」，故退回规范文本形。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_FallBackToCanonicalText_ForBinaryTextPrimitive()
+    {
+        var generated = RunGenerator(
+            BinaryTextIdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["Len.StronglyTypedId.BigId.MessagePack.g.cs"]
+            .Should().Contain("writer.Write(value.ToString());")
+            .And.Contain("var text = reader.ReadString();")
+            .And.Contain("if (text is not null && global::Len.StronglyTypedId.BigId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id))")
+            .And.Contain("throw new global::MessagePack.MessagePackSerializationException(\"Cannot convert the MessagePack value to a BigId.\");");
+    }
+
+    /// <summary>
+    /// 两个不同命名空间的同名 Id 会撞格式化器类名（都叫 <c>OrderIdMessagePackFormatter</c>），
+    /// 此时必须用 <c>HintName</c> 消歧。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_QualifyFormatterName_WhenNamesCollide()
+    {
+        var generated = RunGenerator(
+            AmbiguousIdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["Sales.OrderId.MessagePack.g.cs"]
+            .Should().Contain("internal sealed class Sales_OrderIdMessagePackFormatter");
+
+        generated["Billing.OrderId.MessagePack.g.cs"]
+            .Should().Contain("internal sealed class Billing_OrderIdMessagePackFormatter");
+    }
+
+    /// <summary>
+    /// 一个 Id 都没有时不产出空壳装配入口，与 Dapper / JSON 的注册入口保持一致。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_NotGenerate_WhenNoIds()
+    {
+        var generated = RunGenerator(
+            NoIdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.MessagePack.g.cs");
+    }
+
+    #endregion
+
+    #region MongoDB.Bson：主版本 >= 3
+
+    [Fact]
+    public void MongoDb_Should_Generate_WhenMajorVersionIsThree()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated.Should().ContainKey("Len.StronglyTypedId.OrderId.MongoDb.g.cs");
+        generated.Should().ContainKey("StronglyTypedIds.MongoDb.g.cs");
+    }
+
+    /// <summary>
+    /// driver 2.x 的 <c>SerializerBase&lt;T&gt;</c> 与 3.x 的抽象成员签名不同，闸门据此只认 3+。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_NotGenerate_WhenMajorVersionIsTwo()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "2.19.0.0"));
+
+        generated.Keys.Should().NotContain(key => key.EndsWith(".MongoDb.g.cs", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MongoDb_Should_GenerateSerializerAndRegistration()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.MongoDb.g.cs"]
+            .Should().Contain("internal sealed class OrderIdBsonSerializer : global::MongoDB.Bson.Serialization.Serializers.SerializerBase<global::Len.StronglyTypedId.OrderId>")
+            .And.Contain("public override void Serialize(")
+            .And.Contain("global::MongoDB.Bson.Serialization.BsonSerializationContext context,")
+            .And.Contain("public override global::Len.StronglyTypedId.OrderId Deserialize(");
+
+        generated["StronglyTypedIds.MongoDb.g.cs"]
+            .Should().Contain("public static void RegisterBsonSerializers()")
+            .And.Contain("global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(new OrderIdBsonSerializer());");
+    }
+
+    /// <summary>
+    /// 载荷同样是裸基元：<c>LookupSerializer&lt;T&gt;</c> 直接写 <c>value.Value</c>。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_StorePrimitivePayload_InsteadOfCanonicalText()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.MongoDb.g.cs"]
+            .Should().Contain("global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<global::System.Guid>()")
+            .And.Contain("    .Serialize(context, args, value.Value);")
+            .And.Contain("return global::Len.StronglyTypedId.OrderId.Create(")
+            .And.Contain("    global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<global::System.Guid>().Deserialize(context, args));")
+            .And.NotContain("context.Writer.WriteString(value.ToString());");
+    }
+
+    [Fact]
+    public void MongoDb_Should_Throw_WhenValueTypeIdReadsNull()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["Len.StronglyTypedId.OrderId.MongoDb.g.cs"]
+            .Should().Contain("if (context.Reader.CurrentBsonType == global::MongoDB.Bson.BsonType.Null)")
+            .And.Contain("context.Reader.ReadNull();")
+            .And.Contain("throw new global::MongoDB.Bson.BsonSerializationException(\"Cannot convert a BSON null to a OrderId.\");")
+            .And.NotContain("return default!;");
+    }
+
+    [Fact]
+    public void MongoDb_Should_WriteNull_ForNullReferenceTypeId()
+    {
+        var generated = RunGenerator(
+            ClassIdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["Len.StronglyTypedId.OrderClassId.MongoDb.g.cs"]
+            .Should().Contain("if (value is null)")
+            .And.Contain("context.Writer.WriteNull();")
+            .And.Contain("return default!;");
+    }
+
+    [Fact]
+    public void MongoDb_Should_FallBackToCanonicalText_ForBinaryTextPrimitive()
+    {
+        var generated = RunGenerator(
+            BinaryTextIdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["Len.StronglyTypedId.BigId.MongoDb.g.cs"]
+            .Should().Contain("context.Writer.WriteString(value.ToString());")
+            .And.Contain("var text = context.Reader.ReadString();")
+            .And.Contain("if (global::Len.StronglyTypedId.BigId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id))")
+            .And.Contain("throw new global::MongoDB.Bson.BsonSerializationException(\"Cannot convert the BSON string to a BigId.\");");
+    }
+
+    [Fact]
+    public void MongoDb_Should_QualifySerializerName_WhenNamesCollide()
+    {
+        var generated = RunGenerator(
+            AmbiguousIdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["Sales.OrderId.MongoDb.g.cs"]
+            .Should().Contain("internal sealed class Sales_OrderIdBsonSerializer");
+
+        generated["Billing.OrderId.MongoDb.g.cs"]
+            .Should().Contain("internal sealed class Billing_OrderIdBsonSerializer");
+    }
+
+    [Fact]
+    public void MongoDb_Should_NotGenerate_WhenNoIds()
+    {
+        var generated = RunGenerator(
+            NoIdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.MongoDb.g.cs");
+    }
+
+    #endregion
+
     #region Microsoft.AspNetCore.OpenApi：主版本 >= 9
 
     [Fact]
@@ -521,6 +854,80 @@ public class CodeGeneratorModuleGateTests
         """;
 
     /// <summary>
+    /// 缺少 MessagePack / BSON 原生表示的基元（<c>Int128</c>）：两种二进制集成都必须退回规范文本形。
+    /// </summary>
+    private const string BinaryTextIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
+        public partial record struct BigId(Int128 Value);
+        """;
+
+    /// <summary>
+    /// Dapper 的基元转换矩阵：每个数值基元一个 Id，外加一个刻意落在映射表之外的 <c>TimeSpan</c>。
+    /// </summary>
+    private const string AllConvertPrimitiveIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
+        public partial record struct ByteId(byte Value);
+
+        [StronglyTypedId]
+        public partial record struct SByteId(sbyte Value);
+
+        [StronglyTypedId]
+        public partial record struct Int16Id(short Value);
+
+        [StronglyTypedId]
+        public partial record struct UInt16Id(ushort Value);
+
+        [StronglyTypedId]
+        public partial record struct UInt32Id(uint Value);
+
+        [StronglyTypedId]
+        public partial record struct Int64Id(long Value);
+
+        [StronglyTypedId]
+        public partial record struct UInt64Id(ulong Value);
+
+        [StronglyTypedId]
+        public partial record struct SingleId(float Value);
+
+        [StronglyTypedId]
+        public partial record struct DoubleId(double Value);
+
+        [StronglyTypedId]
+        public partial record struct DateTimeId(DateTime Value);
+
+        [StronglyTypedId]
+        public partial record struct DurationId(TimeSpan Value);
+        """;
+
+    /// <summary>
+    /// 两个命名空间下的同名 Id：格式化器 / 序列化器的类名会撞车，必须靠 <c>HintName</c> 消歧。
+    /// </summary>
+    private const string AmbiguousIdSource = """
+        using System;
+        using Len.StronglyTypedId;
+
+        namespace Sales
+        {
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+        }
+
+        namespace Billing
+        {
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+        }
+        """;
+
+    /// <summary>
     /// 一个「已由生成器补齐接口实现、但没有内嵌任何 JSON 转换器」的强类型 Id，等价于「声明它的程序集既没引用 System.Text.Json 也没引用 Newtonsoft.Json」的产物。
     /// </summary>
     private const string ReferencedIdWithoutConvertersSource = """
@@ -580,6 +987,8 @@ public class CodeGeneratorModuleGateTests
         "Microsoft.AspNetCore.Mvc.Abstractions",
         "Microsoft.AspNetCore.OpenApi",
         "Microsoft.AspNetCore.Routing",
+        "MessagePack",
+        "MongoDB.Bson",
     ];
 
     private static Dictionary<string, string> RunGenerator(string sourceCode, params MetadataReference[] extraReferences)

@@ -218,9 +218,9 @@ public class SupportedPrimitiveTypesTests
             "Probe",
             [CSharpSyntaxTree.ParseText(sourceCode)],
             [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
                 // BigInteger 不在 CoreLib，而在 System.Runtime.Numerics；扩展基元测试需要解析它。
-                MetadataReference.CreateFromFile(typeof(System.Numerics.BigInteger).Assembly.Location),
+                AssemblyReferenceCache.FromAssembly(typeof(System.Numerics.BigInteger).Assembly),
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 

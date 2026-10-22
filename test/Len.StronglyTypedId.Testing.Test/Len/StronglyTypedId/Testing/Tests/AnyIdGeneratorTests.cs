@@ -148,6 +148,84 @@ public class AnyIdGeneratorTests
     [Fact]
     public void IncludeBoundaryValues_Should_BeOffByDefault() => new AnyIdOptions().IncludeBoundaryValues.Should().BeFalse();
 
+    /// <summary>
+    /// 边界注入覆盖所有「有明确端点」的基元，而不只是 <c>int</c> / <c>long</c>：窄整型的溢出、
+    /// <c>ulong</c> 上半区的格式化、<c>decimal</c> 的 96 位尾数、<c>Int128</c> / <c>UInt128</c> 的高低位，
+    /// 都只有在端点样本上才会走到。
+    /// </summary>
+    [Fact]
+    public void IncludeBoundaryValues_Should_CoverEveryBoundedPrimitive()
+    {
+        // 1/16 的注入概率下，400 个样本里漏掉某一端的概率约 6e-12。
+        const int Count = 400;
+
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021, IncludeBoundaryValues = true });
+
+        var bytes = generator.Ids<ByteId>(Count).Select(id => id.Value).ToArray();
+        bytes.Should().Contain(byte.MinValue).And.Contain(byte.MaxValue);
+
+        var sbytes = generator.Ids<SByteId>(Count).Select(id => id.Value).ToArray();
+        sbytes.Should().Contain(sbyte.MinValue).And.Contain(sbyte.MaxValue);
+
+        var int16Values = generator.Ids<Int16Id>(Count).Select(id => id.Value).ToArray();
+        int16Values.Should().Contain(short.MinValue).And.Contain(short.MaxValue);
+
+        var uint16Values = generator.Ids<UInt16Id>(Count).Select(id => id.Value).ToArray();
+        uint16Values.Should().Contain(ushort.MinValue).And.Contain(ushort.MaxValue);
+
+        var uint32Values = generator.Ids<UInt32Id>(Count).Select(id => id.Value).ToArray();
+        uint32Values.Should().Contain(uint.MinValue).And.Contain(uint.MaxValue);
+
+        var uint64Values = generator.Ids<UInt64Id>(Count).Select(id => id.Value).ToArray();
+        uint64Values.Should().Contain(ulong.MinValue).And.Contain(ulong.MaxValue);
+
+        var decimals = generator.Ids<DecimalId>(Count).Select(id => id.Value).ToArray();
+        decimals.Should().Contain(decimal.MinValue).And.Contain(decimal.MaxValue);
+
+        var int128Values = generator.Ids<Int128Id>(Count).Select(id => id.Value).ToArray();
+        int128Values.Should().Contain(Int128.MinValue).And.Contain(Int128.MaxValue);
+
+        var uint128Values = generator.Ids<UInt128Id>(Count).Select(id => id.Value).ToArray();
+        uint128Values.Should().Contain(UInt128.MinValue).And.Contain(UInt128.MaxValue);
+    }
+
+    /// <summary>
+    /// 浮点刻意不注入端点：<c>NaN</c> / <c>±Infinity</c> 在 JSON 里非法，会让序列化往返测试随机失败，
+    /// 而重试循环救不了（验证器会接受它们，不触发重试）。这条把「刻意排除」钉住，免得日后顺手补上。
+    /// </summary>
+    [Fact]
+    public void IncludeBoundaryValues_Should_NotInjectNonFiniteFloatingPoint()
+    {
+        const int Count = 400;
+
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021, IncludeBoundaryValues = true });
+
+        generator.Ids<SingleId>(Count).Select(id => id.Value).Should().OnlyContain(value => float.IsFinite(value));
+        generator.Ids<DoubleId>(Count).Select(id => id.Value).Should().OnlyContain(value => double.IsFinite(value));
+        generator.Ids<HalfId>(Count).Select(id => id.Value).Should().OnlyContain(value => Half.IsFinite(value));
+    }
+
+    /// <summary>
+    /// 计数 0 合法（只有负数才抛）：批量生成空集合是「今天没有样本」的正常表达。
+    /// </summary>
+    [Fact]
+    public void Ids_WithZeroCount_Should_ReturnEmpty() => Any.Ids<GuidId>(0).Should().BeEmpty();
+
+    /// <summary>
+    /// <c>StringLength</c> 的下界是 1（0 在构造时就被拒，见 <c>Options_Should_RejectInvalidValues</c>），
+    /// 且只影响 <c>string</c> 基元 —— 调小它不该改变其它基元的形态。
+    /// </summary>
+    [Fact]
+    public void StringLength_Should_AffectOnlyStringPrimitives()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { StringLength = 1, Seed = 20261021 });
+
+        generator.Id<StringId>().Value.Should().HaveLength(1);
+
+        // 非 string 基元不受影响：Guid 仍是 16 字节。
+        generator.Id<GuidId>().Value.ToByteArray().Should().HaveCount(16);
+    }
+
     [Fact]
     public void Ids_Should_ProduceDistinctValues() => Any.Ids<GuidId>(100).Select(id => id.Value).Should().OnlyHaveUniqueItems();
 

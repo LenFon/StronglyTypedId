@@ -133,6 +133,34 @@ public partial record struct DomainValidatedGuidId(Guid Value)
     private static bool Validate(Guid value) => value != Guid.Empty;
 }
 
+// 验证失败消息是否内插被拒原文。默认内插（便于定位问题），开启 RedactValidationMessage 后只报
+// 「不是合法的 X」—— 对 string 基元的 Id 来说，被拒原文就是用户输入，会顺着异常进日志与 APM。
+// 两个夹具除该开关外完全同构，差异只来自这一个布尔值。
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct VerboseValidatedStringId(string Value)
+{
+    private static bool Validate(string value) => value.Length <= 8;
+}
+
+[StronglyTypedId(Validator = nameof(Validate), RedactValidationMessage = true)]
+public partial record struct RedactedValidatedStringId(string Value)
+{
+    private static bool Validate(string value) => value.Length <= 8;
+}
+
+// 脱敏与自定义异常类型正交：换成领域异常后同样不内插原文，且不带 paramName
+// （自定义异常未必有 (string, string) 双参构造，故生成器只传消息）。
+public sealed class RedactedDomainException(string message) : Exception(message);
+
+[StronglyTypedId(
+    Validator = nameof(Validate),
+    ExceptionType = typeof(RedactedDomainException),
+    RedactValidationMessage = true)]
+public partial record struct RedactedCustomExceptionId(string Value)
+{
+    private static bool Validate(string value) => value.Length <= 8;
+}
+
 public partial record NotStronglyTypedId();
 
 // readonly record struct 形态：生成器必须把 readonly 修饰符透出到生成的 partial 段，否则与使用者
@@ -202,6 +230,16 @@ public partial record struct PrefixedValidatedGuidId(Guid Value)
 // 严格读入：缺前缀即解析失败（PrefixReadMode 默认宽松，此处显式改为严格）。
 [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
 public partial record struct StrictPrefixedGuidId(Guid Value);
+
+// 严格前缀 + TypeConverter：TypeDescriptor 是与 JSON 并列的另一条文本读入路径。
+// 生成的转换器内部调 Parse，故严格模式下的拒绝表现为 FormatException，而不是 NotSupportedException。
+[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict, TypeConverter = true)]
+public partial record struct StrictConvertiblePrefixedGuidId(Guid Value);
+
+// 严格前缀 + 对象形态：{ "value": "ord_x" } 的对象读入分支与基元形态是两段生成代码，
+// 前缀策略必须两边都生效 —— 否则严格模式在对象形态上形同虚设。
+[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict, JsonShape = JsonShape.Object)]
+public partial record struct StrictPrefixedObjectGuidId(Guid Value);
 
 // 前缀 + 枚举：键文本含前缀，DictionaryKeyPolicy 会把前缀一起改写导致读不回，故生成器对它不应用 policy。
 [StronglyTypedId(Prefix = "pri_")]
@@ -300,6 +338,17 @@ public partial record struct InstanceStatusId(SampleStatus Value);
 public partial record struct NormalizedInstanceStringId(string Value)
 {
     private static string Normalize(string value) => value.ToUpperInvariant();
+}
+
+// 归一化 + 验证：Create 与两条读入路径（UTF-16 / UTF-8）都必须「先归一化、再校验」。
+// 负数取绝对值 —— 原文 -5 若先校验（要求 > 0）会被拒，先归一化则是 5。
+[StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
+public partial record struct NormalizedValidatedInt32Id(int Value)
+{
+    // int.MinValue 取反会溢出，原样返回交给验证器拒绝。
+    private static int Normalize(int value) => value is < 0 and not int.MinValue ? -value : value;
+
+    private static bool Validate(int value) => value > 0;
 }
 
 // 前缀 + 实例：实例声明的是基元值，不带前缀；ToString() 照常带前缀。

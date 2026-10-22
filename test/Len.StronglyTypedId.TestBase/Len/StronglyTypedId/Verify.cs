@@ -6,6 +6,7 @@ using Len.StronglyTypedId.CodeFixes;
 using Len.StronglyTypedId.CodeRefactorings;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
+using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CodeRefactorings;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -145,6 +146,62 @@ public static class Verify
         var updated = applied.ChangedSolution.GetDocument(document.Id)!;
 
         return (await updated.GetTextAsync()).ToString();
+    }
+
+    /// <summary>
+    /// 直接驱动 <see cref="StronglyTypedIdCodeFixProvider"/>：把源码解析成 Document，在指定诊断（定位在 record 声明上）上调用
+    /// <c>RegisterCodeFixesAsync</c>，收集它注册的 <see cref="CodeAction"/>。
+    /// </summary>
+    /// <remarks>
+    /// 用于断言「不提供修复」这类 <c>VerifyCodeFixAsync</c> 框架本身不支持的场景（后者假定修复一定会被应用）。
+    /// </remarks>
+    public static Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
+        string source,
+        DiagnosticDescriptor descriptor,
+        string typeName)
+        => CountOfferedCodeFixesAsync(
+            source,
+            descriptor,
+            typeName,
+            static root => root.DescendantNodes().OfType<RecordDeclarationSyntax>().First());
+
+    /// <summary>
+    /// 同上，但由调用方指定诊断落在哪个节点上（例如 <c>default</c> 表达式而非 record 声明）。
+    /// </summary>
+    public static async Task<IReadOnlyList<CodeAction>> CountOfferedCodeFixesAsync(
+        string source,
+        DiagnosticDescriptor descriptor,
+        string typeName,
+        Func<SyntaxNode, SyntaxNode> selectTarget)
+    {
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
+        var root = tree.GetRoot();
+        var target = selectTarget(root);
+        var location = Location.Create(tree, target.Span);
+        // 本类另有 Diagnostic(...) 工厂方法，此处必须全限定，否则解析到方法而非类型。
+        var diagnostic = Microsoft.CodeAnalysis.Diagnostic.Create(descriptor, location, typeName);
+
+        using var workspace = new AdhocWorkspace();
+        var projectId = ProjectId.CreateNewId();
+        var project = workspace.CurrentSolution
+            .AddProject(projectId, "TestProject", "TestProject", LanguageNames.CSharp)
+            .GetProject(projectId)!
+            .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
+            .WithParseOptions(parseOptions);
+        var document = project.AddDocument("Test.cs", tree.GetRoot());
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            CancellationToken.None);
+
+        var provider = new StronglyTypedIdCodeFixProvider();
+        await provider.RegisterCodeFixesAsync(context);
+
+        return actions;
     }
 
     /// <summary>

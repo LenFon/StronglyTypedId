@@ -1,4 +1,7 @@
-﻿using System.Xml.Linq;
+﻿using System.Collections.Immutable;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
+using System.Xml.Linq;
 using FluentAssertions;
 using Xunit;
 
@@ -73,6 +76,47 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
             .ToArray();
 
         dependencies.Should().BeEmpty("分析器包不应把 Roslyn 依赖写进 nuspec");
+    }
+
+    /// <summary>
+    /// 分析器目录里只允许出现生成器程序集本身。该目录是 Roslyn 的加载面，多放一个文件就等于多让一份
+    /// 代码进入使用者的编译过程；<c>IndexRange</c> 是源码包（不产生运行期程序集），所以「只有一个 dll」
+    /// 正是当前的预期形态。
+    /// </summary>
+    [Fact]
+    public void GeneratorsPackage_Should_ShipOnlyWhitelistedAnalyzerFiles()
+    {
+        var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
+
+        entries
+            .Where(entry => entry.StartsWith("analyzers/dotnet/cs/", StringComparison.Ordinal))
+            .Should().BeEquivalentTo([GeneratorsAssemblyEntry],
+                "分析器目录里只应有生成器程序集；新增文件必须在此处显式登记");
+    }
+
+    /// <summary>
+    /// 生成器程序集的引用必须全部来自 Roslyn / BCL。分析器目录里只有这一个 dll，任何第三方运行期依赖
+    /// 都会在使用者**编译期**变成 <c>FileNotFoundException</c> —— <c>IndexRange</c> 之所以安全，是因为它是
+    /// 源码包（只提供 polyfill 源码，不产生程序集引用）。
+    /// </summary>
+    [Fact]
+    public void GeneratorsAssembly_Should_ReferenceOnlyRoslynAndBclAssemblies()
+    {
+        var image = PackedPackagesFixture.ReadEntryBytes(fixture.GeneratorsPackagePath, GeneratorsAssemblyEntry);
+
+        using var peReader = new PEReader(ImmutableArray.Create(image));
+        var metadata = peReader.GetMetadataReader();
+
+        var references = metadata.AssemblyReferences
+            .Select(handle => metadata.GetString(metadata.GetAssemblyReference(handle).Name))
+            .ToArray();
+
+        // OnlyContain 收的是表达式树，里面不能用 is 模式（CS8122），只能逐个比较。
+        references.Should().OnlyContain(name =>
+            name == "netstandard" || name == "mscorlib"
+            || name.StartsWith("System.", StringComparison.Ordinal)
+            || name.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal),
+            "分析器程序集不得依赖 Roslyn / BCL 之外的运行期程序集");
     }
 
     #endregion

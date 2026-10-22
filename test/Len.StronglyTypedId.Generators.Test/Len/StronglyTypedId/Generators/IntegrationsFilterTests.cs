@@ -367,7 +367,7 @@ public class IntegrationsFilterTests
             .Distinct()
             .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
             .Where(assembly => !_versionGatedAssemblies.Contains(assembly.GetName().Name, StringComparer.Ordinal))
-            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Concat(extraReferences)
             .ToArray();
 

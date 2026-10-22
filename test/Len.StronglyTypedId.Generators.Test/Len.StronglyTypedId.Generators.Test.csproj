@@ -23,10 +23,33 @@
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
+		<!-- README 表格由 DocGen 从生成器内部数据渲染，测试直接调用同一套渲染器断言 README 未过期。 -->
+		<ProjectReference Include="..\..\tools\Len.StronglyTypedId.DocGen\Len.StronglyTypedId.DocGen.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+		  并发上限：本工程绝大多数用例都在跑 Roslyn 合成编译，属于内存带宽密集型。
+		  实测（24 核）并发 4/6/8/10/12/24 路的墙钟分别为 16.3/14.6/14.1/15.0/15.0/16.1 秒 ——
+		  8 路最优，再往上 GC 与元数据导入争抢会把单测成本抬高数倍（串行总耗时从 39s 膨胀到 130s）。
+		-->
+		<None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<!--
+	  Analyzer / CodeFix 用例只在 net10.0 腿跑。
+	  Verify.ApplyDefaults 把引用程序集固定成 net8.0（Microsoft.NETCore.App.Ref 8.0.0），被测分析器与
+	  CodeFix 提供器本身都是 netstandard2.0 单一产物，所以这两个目录下的用例在两个宿主 TFM 下走的是
+	  完全相同的编译与诊断路径 —— 双跑等于把同一份工作做两遍，约占本工程一半墙钟。
+	  若将来分析器引入 #if NET10_0_OR_GREATER 之类与宿主相关的分支，必须撤销这条排除。
+	-->
+	<ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+		<Compile Remove="Len\StronglyTypedId\Analyzers\**\*.cs" />
+		<Compile Remove="Len\StronglyTypedId\CodeFixes\**\*.cs" />
 	</ItemGroup>
 
 </Project>

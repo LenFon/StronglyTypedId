@@ -118,6 +118,21 @@ public class StronglyTypedIdTests
     }
 
     /// <summary>
+    /// 抽象类型即便继承了强类型 Id 的接口实现，也不能算强类型 Id —— 它没有可构造的实例，
+    /// 而模型绑定器与 EF 转换器拿到它只会尝试实例化。
+    /// </summary>
+    /// <remarks>
+    /// 这条分支在 <c>ResolvePrimitiveIdType</c> 里排在接口扫描之前，故必须显式覆盖：
+    /// 只测「普通 record」与「接口」两条负向用例时，删掉 <c>IsAbstract</c> 判断不会有任何用例变红。
+    /// </remarks>
+    [Fact]
+    public void IsStronglyTypedId_Should_ReturnFalse_ForAbstractId()
+    {
+        typeof(AbstractGuidId).IsStronglyTypedId().Should().BeFalse();
+        typeof(AbstractGuidId).GetPrimitiveIdType().Should().BeNull();
+    }
+
+    /// <summary>
     /// 特性契约：只能标在 class / struct 上，且不可继承、不允许多次标注。
     /// </summary>
     [Fact]
@@ -131,3 +146,11 @@ public class StronglyTypedIdTests
         usage.Inherited.Should().BeFalse();
     }
 }
+
+/// <summary>
+/// 抽象 Id：继承了 <see cref="GuidIdV2"/> 的接口实现，但自身不可实例化。
+/// </summary>
+/// <remarks>
+/// 刻意从真实的生成类型派生，而不是手写一份接口实现 —— 这样「接口齐全但类型抽象」才是唯一让它被判否的原因。
+/// </remarks>
+public abstract record AbstractGuidId(Guid Value) : GuidIdV2(Value);
