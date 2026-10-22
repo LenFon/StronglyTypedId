@@ -1,0 +1,89 @@
+# Dependabot 自动升级依赖。
+#
+# 为什么必须有它：Directory.Build.props 里的 NuGet Audit 只在「已知漏洞已影响当前锁定版本」时报警，
+# 不会告诉你「有更新的版本可用」。两者互补 —— Audit 负责发现，Dependabot 负责把修复推过来。
+#
+# 本仓用中央包管理（Directory.Packages.props），Dependabot 直接改那里的 <PackageVersion>。
+version: 2
+
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    # 按「一起升级才不会互相打架」的边界分组，避免每周收到十几个单包 PR。
+    groups:
+      roslyn:
+        patterns:
+          - "Microsoft.CodeAnalysis*"
+      ef-core:
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+      aspnetcore:
+        patterns:
+          - "Microsoft.AspNetCore*"
+          - "Swashbuckle*"
+      test-tooling:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "FluentAssertions"
+          - "CsCheck"
+          - "AutoFixture"
+      misc:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "Microsoft.CodeAnalysis*"
+          - "Microsoft.EntityFrameworkCore*"
+          - "Microsoft.AspNetCore*"
+          - "Swashbuckle*"
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "FluentAssertions"
+          - "CsCheck"
+          - "AutoFixture"
+    ignore:
+      # Roslyn 的 major 升级会改分析器/生成器 API，本仓生成器直接依赖这些 API 的形状
+      # （见 SupportedPrimitiveTypes、IStronglyTypedId 判据），跨大版本必须人工评估。
+      - dependency-name: "Microsoft.CodeAnalysis*"
+        update-types:
+          - "version-update:semver-major"
+      # EF Core 的 major 与目标框架绑定：9.x 起不再支持 net8.0，而 samples 里有 net8.0 工程。升 major
+      # 等于同时改 TFM，不是一次依赖升级能解决的事。
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types:
+          - "version-update:semver-major"
+      # Swashbuckle 的 major 跨度太大（6.x → 10.x 换了 OpenApi 抽象），Sample3 专门验 OpenApi 2.x 的
+      # 兼容性，升级需连同示例一起改。
+      - dependency-name: "Swashbuckle*"
+        update-types:
+          - "version-update:semver-major"
+
+  # Actions 自身的版本也要跟：checkout、setup-dotnet、codeql-action 一旦弃用旧运行时
+  # （Node 20 → 24 之类），工作流会直接红，而这与业务代码毫无关系。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns:
+          - "*"

@@ -112,7 +112,7 @@ dotnet_style_prefer_auto_properties = true:warning
 dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
 dotnet_style_prefer_conditional_expression_over_return = true:suggestion
 dotnet_style_prefer_compound_assignment = true:suggestion
-dotnet_style_prefer_simplified_interpolation = true:suggestion
+dotnet_style_prefer_simplified_interpolation = true:warning
 dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
 dotnet_style_prefer_inferred_tuple_names = true:suggestion
 dotnet_style_prefer_inferred_anonymous_type_member_names = true:suggestion
@@ -232,6 +232,13 @@ dotnet_diagnostic.IDE0060.severity = warning
 # #if NET9_0_OR_GREATER 分支出锁字段的类型，net8.0 下保持 object。
 dotnet_diagnostic.IDE0330.severity = warning
 
+# IDE0071（简化插值）：对应 dotnet_style_prefer_simplified_interpolation。
+# `$"{x.ToString()}"` 可写成 `$"{x}"` —— 插值本身就会调 ToString()，再显式写一遍是冗余。
+# 注意：只对**无参** ToString() 生效；`ToString("R", CultureInfo.InvariantCulture)` 这类
+# 带格式/文化的调用语义不同（插值默认走 CurrentCulture），不会被报出，也不该改写。
+# 风格选项已带 :warning 后缀（见上方「C# 代码风格」段），此处再显式重申一次。
+dotnet_diagnostic.IDE0071.severity = warning
+
 # ---------------------------------------------------------------------------
 # 编译器 / 分析器诊断（非 IDE 风格规则，参与 dotnet build，不受 EnforceCodeStyleInBuild 影响）
 # ---------------------------------------------------------------------------
@@ -260,10 +267,23 @@ dotnet_diagnostic.CA2263.severity = warning
 # 只在「类型完全由本程序集掌控」时才会报，故不会波及对外暴露的公开契约。
 dotnet_diagnostic.CA1859.severity = warning
 
+# CA1861（避免把常量数组作为实参）：.NET 分析器的性能规则，默认只是 Info。
+# 把 `new[] { ... }` / `[...]` 这样的常量数组字面量直接写在调用实参里，每次调用都会
+# 重新分配一个数组（即使元素全是常量、内容完全相同）；改成 static readonly 字段后
+# 数组只在类型初始化时分配一次，热路径上省掉每次调用的堆分配与 GC 压力。
+dotnet_diagnostic.CA1861.severity = warning
+
 # CA1869（缓存并复用 JsonSerializerOptions 实例）：.NET 分析器的性能规则，默认只是 Info。
 # JsonSerializerOptions 首次参与序列化后会冻结并缓存反射得到的元数据；每次调用都 new 一个
 # 等于把这份缓存重建一遍，热路径上开销显著。改为 static readonly 字段（或注入的共享实例）。
 dotnet_diagnostic.CA1869.severity = warning
+
+# CA1870（缓存并复用 SearchValues 实例）：.NET 分析器的性能规则，默认只是 Info。
+# 把字符集合（`new[] { 'a', 'b' }`、常量字符串）直接传给 IndexOfAny / ContainsAnyExcept
+# 这类 Span 搜索方法时，每次调用都要重新分配数组并线性比对；改成 static readonly
+# SearchValues<char> 字段（SearchValues.Create("ab")）后，查找表在类型初始化时构建一次，
+# 搜索走向量化实现。
+dotnet_diagnostic.CA1870.severity = warning
 
 # RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
 # src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。

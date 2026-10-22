@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lenfon/StronglyTypedId/security/advisories/new
+    about: Report privately. Do not open a public issue for a security problem.
+  - name: Usage question
+    url: https://github.com/lenfon/StronglyTypedId#table-of-contents
+    about: The README covers validation, normalization, serialization, EF Core, Dapper, MVC and the diagnostics.
+  - name: Migration from another library
+    url: https://github.com/lenfon/StronglyTypedId#migrating-from-another-library
+    about: Side-by-side mapping from Vogen, Andrew Lock's StronglyTypedId, and hand-rolled ids.

@@ -1,17 +1,12 @@
-# This workflow will build a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
+# 发布到 nuget.org：tag 触发 → 校验版本号 → 打包 → OIDC 换短期密钥 → 推包与符号包。
 
 name: publish nuget
 
-# 只有形如 1.2.3 / v1.2.3 / 1.2.3-beta.1 的 tag 才触发发布。
+# 只有形如 1.2.3 / v1.2.3 / 1.2.3-beta.1 的 tag 才触发发布：原先写 '*' 时任何 tag（test、
+# release-notes、1.0.0-rc）都会走完整发布流程，而 nuget.org 的版本号不可回收 —— 推错只能 unlist。
 #
-# 原先写 '*'：任何 tag（手滑打的 test、release-notes、1.0.0-rc）都会走完整发布流程，而 nuget.org
-# 的版本号不可回收 —— 推错了只能 unlist，永久污染版本序列。
-#
-# 这里只做粗筛「以数字开头」或「v + 数字开头」，不写成 [0-9]*.[0-9]*.[0-9]* 那样的精细形态：
-# Actions 的 filter pattern 里 '*' 的语义（「零或多个字符」还是「前一字符的量词」）在两处官方
-# 表述下不一致，写细了有可能连 1.2.3-beta.1 都匹配不上 —— 那种失败是静默的（tag 打了但不发布）。
-# 精度交给第一步的正则校验，它才是真正的闸门，且在任何副作用之前执行。
+# 这里只粗筛「以数字开头」或「v + 数字开头」：Actions filter pattern 里 '*' 的语义在两处官方表述
+# 下不一致，写细了可能连 1.2.3-beta.1 都匹配不上，而那种失败是静默的。精度交给第一步的正则校验。
 on:
   push:
     tags:
@@ -27,19 +22,17 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    # 人工闸门：在仓库 Settings → Environments 里建一个名为 nuget 的环境并配上 required
-    # reviewers，发布就必须有人点同意。环境不存在时 GitHub 会自动创建且不带任何保护规则
-    # （job 照常跑），所以加这一行不会让现有流程变红。
+    # 人工闸门：仓库 Settings → Environments 里建名为 nuget 的环境并配 required reviewers，发布就必须
+    # 有人点同意。环境不存在时 GitHub 会自动创建且不带保护规则（job 照常跑），故这行不会让流程变红。
     environment: nuget
 
     steps:
-    # tag 名是唯一的外部输入，也是唯一能决定「往 nuget.org 推什么版本号」的东西。
-    # 触发器只做了粗筛，filter pattern 表达不了「恰好三段数字」，这里补一道严格判定。
-    # 放在 checkout 之前：不合法就在克隆仓库之前红，2 秒出结果，不留任何副作用。
+    # tag 名是唯一的外部输入，也是唯一能决定「往 nuget.org 推什么版本号」的东西。触发器只做了粗筛，
+    # 这里补一道严格判定，放在 checkout 之前：不合法就在克隆仓库前红，2 秒出结果，不留副作用。
     - name: Validate tag format
       env:
-        # 走 env 中转，绝不把 ${{ }} 直接拼进 run: —— Actions 在交给 shell 之前就做文本替换，
-        # 而 tag 名允许包含 $ ( ) ; | & 等字符，名为 '1.0.0$(curl ... | sh)' 的 tag 会被求值执行。
+        # 走 env 中转，绝不把 ${{ }} 直接拼进 run: —— Actions 在交给 shell 之前就做文本替换，而 tag 名
+        # 允许包含 $ ( ) ; | & 等字符，名为 '1.0.0$(curl ... | sh)' 的 tag 会被求值执行。
         TAG_NAME: ${{ github.ref_name }}
       run: |
         set -eu
@@ -48,29 +41,24 @@ jobs:
           exit 1
         fi
 
-    # 第三方 action 一律钉 40 位 commit sha，不用 @v7 这类可变 ref。
-    # @v7 可以被上游重新指向：上游账号被盗或维护者被社工后推一个恶意 v7 tag，下一次 CI 就执行
-    # 攻击者代码 —— 而这个 job 同时持有 id-token: write、NUGET_USER 与 bin/Release/*.nupkg 的
-    # 推送权，投毒的 action 能直接发布一个带后门的包。注释里的版本号供 dependabot 的
-    # github-actions 生态识别，由它提 SHA 升级 PR（既钉死又不失维护）。
+    # 第三方 action 一律钉 40 位 commit sha（理由见 build-and-test.yml 顶部）。本 job 同时持有
+    # id-token: write、NUGET_USER 与 nupkg 推送权，投毒的 action 能直接发布一个带后门的包。
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install dotnet tool
       # 钉版本：不钉的话 TagToVersion 的行为变化会在某次发布时静默改变版本号推导结果。
       run: dotnet tool install -g dotnetCampus.TagToVersion --version 1.0.11
     - name: Set tag to version
-      # 同时把 Assembly 版本号主段（major.minor.0.0）推导并写入 env，供 build/pack 透传。
-      # 原因：dotnet pack 的 ApiCompat 校验（CP0003）要求 AssemblyVersion ≥ 基线 1.3.0.0；
-      # 若不把程序集版本号抬到与包版本号主号一致，tag 发布（Version ≥ 1.3.0）挂上基线后
-      # 会直接报 CP0003。
+      # 同时把 Assembly 版本主段（major.minor.0.0）写入 env 供 build/pack 透传：dotnet pack 的 ApiCompat
+      # 校验（CP0003）要求 AssemblyVersion ≥ 基线 1.3.0.0，否则 tag 发布挂上基线后会直接报 CP0003。
       env:
         GIT_REF: ${{ github.ref }}
       run: |
         set -eu
         dotnet TagToVersion -t "$GIT_REF" -f version.props
         PKG_VERSION=$(grep -oP '(?<=<Version>)[^<]+' version.props | head -n1)
-        # 推导失败时 TagToVersion 会落到兜底版本号 —— 那是一个「真实存在」的版本，推上去就再也
-        # 收不回来。所以推导结果必须再过一遍形状校验，不能只信上一步的 tag 校验。
+        # 推导失败时 TagToVersion 会落到兜底版本号 —— 那是真实存在的版本，推上去收不回来。
+        # 所以推导结果必须再过一遍形状校验，不能只信上一步的 tag 校验。
         if ! printf '%s' "$PKG_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
           echo "::error::version.props 推导出的版本号 '$PKG_VERSION' 不合法，已中止发布"
           exit 1
@@ -85,27 +73,37 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
-        # net8.0 与 net10.0 两个目标框架都要打包，显式安装两者 SDK，
-        # 与 build-and-test.yml 保持一致，避免依赖 runner 镜像预装的 .NET 环境。
+        # net8.0 与 net10.0 都要打包，显式安装两者 SDK，与 build-and-test.yml 一致。
+        # 10.0.401 必须与 global.json 的 sdk.version 一致，否则 dotnet 找不到要求的 SDK 直接失败
+        # （rollForward=latestPatch 不跨特性带）。升级时两处同改。
         dotnet-version: |
           8.0.x
-          10.0.x
+          10.0.401
     - name: Restore dependencies
       run: dotnet restore ./Len.StronglyTypedId.slnx
-    # Release 配置触发 GeneratePackageOnBuild（common.props），pack 在此阶段完成；
-    # 透传 AssemblyVersion / FileVersion，使 CP0003 与基线 1.3.0.0 对齐。
-    # 只有 IsPackable=true 的工程会成包（common.props 默认 false，仅主包与生成器包打开），
-    # 因此这一步只会往 bin/Release 里放两个 .nupkg。
-    # 版本号一律走 shell 变量（$ASSEMBLY_VERSION）而不是 ${{ env.ASSEMBLY_VERSION }}：
-    # 后者同样是「交给 shell 之前做文本替换」，虽然这里的值由我们自己算出、形状已校验，
-    # 但没有理由在发布链路上留第二处可插值的位置。
+    # 构建与打包分两步，且不使用统一 OutputPath：原先的 `--property:OutputPath=../../bin/Release/`
+    # 配合 Release 下打开的 GeneratePackageOnBuild，正是 build-and-test.yml 判定会撞 NU5026 的组合
+    # （多 TFM 的 dll 收集到同一目录）。当前两个 TFM 的 dll 文件名不同，侥幸没撞；一旦加第三个 TFM 或
+    # 调整 TargetsForTfmSpecificBuildOutput，就会在打 tag 那一刻炸 —— 而那时版本号已经推出去了。
+    #
+    # 版本号一律走 shell 变量（$ASSEMBLY_VERSION）而不是 ${{ env.ASSEMBLY_VERSION }}：后者同样是交给
+    # shell 之前的文本替换，没有理由在发布链路上留第二处可插值的位置。
     - name: Build
-      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore --property:OutputPath=../../bin/Release/ -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
+      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore -p:GeneratePackageOnBuild=false -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
 
-    # 发布目录里只允许出现这两个包。
-    # common.props 已把 IsPackable 默认设为 false，但「给新工程打开 IsPackable」这类改动
-    # 不会让本地构建报错，只会在下次打 tag 时把垃圾包静默推到 nuget.org —— 那里撤不回
-    # （只能 unlist）。所以在换取 API 密钥之前先做一次硬断言，让它在 CI 就红。
+    # 逐项目 pack：每个工程用默认输出路径收集 dll，两个 TFM 各归其位。生成器包在前 —— 主包的
+    # InjectGeneratorsPackageDependency 只写 nuspec 依赖条目、不读生成器包本体，但与 build-and-test.yml
+    # 保持同序以减少差异面。PackageOutputPath 指到 bin/Release：下面两步都按这个目录找包。
+    - name: Pack
+      run: |
+        set -eu
+        OUT="$PWD/bin/Release"
+        dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
+        dotnet pack ./src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
+
+    # 发布目录里只允许出现这两个包。common.props 已把 IsPackable 默认设为 false，但「给新工程打开
+    # IsPackable」不会让本地构建报错，只会在下次打 tag 时把垃圾包静默推到 nuget.org（撤不回，只能
+    # unlist）。故在换取 API 密钥之前先做一次硬断言。
     - name: Verify packaged set
       run: |
         set -eu
@@ -120,29 +118,24 @@ jobs:
         fi
         printf 'OK: %s\n' "$(echo "$actual" | tr '\n' ' ')"
 
-    # 通过 OIDC 向 nuget.org 换取短期 API 密钥（无需存储长期密钥）。
-    # 注意：私有仓库首次创建受信任发布策略后，会进入「待完全激活」状态，
-    # 仅有 7 天临时激活窗口；在窗口内成功发布一次即永久激活，否则自动失效（可随时重启）。
+    # 通过 OIDC 向 nuget.org 换取短期 API 密钥（无需存储长期密钥）。私有仓库首次创建受信任发布策略后
+    # 进入「待完全激活」状态，只有 7 天激活窗口；窗口内成功发布一次即永久激活，否则自动失效（可重启）。
     - name: NuGet login (OIDC → 临时 API 密钥)
       uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841  # v1.2.0
       id: login
       with:
         user: ${{ secrets.NUGET_USER }}  # nuget.org 用户名（配置文件名），不是邮箱
 
-    # --skip-duplicate：重跑同一 tag 的 workflow 时，主包已存在会让 nuget.org 返回 409，
-    # 该选项把 409 降级为警告并继续，使发布步骤幂等。
-    #
-    # 密钥走 env 而不是把 ${{ steps.login.outputs... }} 拼进命令行：OIDC 换来的短期密钥不是
-    # 注册过的 secret，Actions 不会自动打码，拼在命令行上有被日志回显的风险。
+    # --skip-duplicate：重跑同一 tag 时主包已存在会让 nuget.org 返回 409，该选项把 409 降级为警告，
+    # 使发布步骤幂等。密钥走 env 而不是拼进命令行：OIDC 换来的短期密钥不是注册过的 secret，Actions
+    # 不会自动打码，拼在命令行上有被日志回显的风险。
     - name: Publish the package to nuget.org
       env:
         NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
       run: dotnet nuget push bin/Release/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
-    # 符号包必须单独再推一次：通配符 *.nupkg 不匹配 *.snupkg（结尾是 .snupkg 而非 .nupkg）。
-    # 顺序上必须在主包之后——nuget.org 要求符号包对应的包已存在。
-    # --skip-duplicate：nuget.org 对同一版本符号包「已有待验证副本」时返回 409，
-    # 该选项把 409 降级为警告，避免因重跑或上次校验未完成而让整个发布失败。
+    # 符号包必须单独再推一次：通配符 *.nupkg 不匹配 *.snupkg。顺序上必须在主包之后 —— nuget.org
+    # 要求符号包对应的包已存在。--skip-duplicate 把「已有待验证副本」的 409 降级为警告。
     - name: Publish the symbol package to nuget.org
       env:
         NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}

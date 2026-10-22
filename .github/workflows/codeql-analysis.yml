@@ -1,13 +1,13 @@
 # CodeQL 静态扫描。
 #
-# 路径过滤器必须用 `**` 递归匹配：本仓源码全在 src/ test/ tools/ samples/ 下，
-# 原先写的 `"*.cs"` 只匹配仓库根目录 —— 本工作流自建立起一次都没触发过（2026-10-19 修正）。
+# 路径过滤器必须用 `**` 递归匹配：源码全在 src/ test/ tools/ samples/ 下，原先写的 `"*.cs"` 只匹配
+# 仓库根目录 —— 本工作流自建立起一次都没触发过（2026-10-19 修正）。
 #
-# 不用 autobuild：runner 预装的 SDK 未必含 net10.0，而本仓双目标 net8.0;net10.0，
-# autobuild 会在还原阶段失败。改为显式安装两个 SDK 后手动 build，与 build-and-test.yml 一致。
+# 不用 autobuild：runner 预装的 SDK 未必含 net10.0，而本仓双目标 net8.0;net10.0，autobuild 会在
+# 还原阶段失败。改为显式安装两个 SDK 后手动 build。
 #
-# 第三方 action 一律钉 40 位 commit sha，不用 @v4 这类可变 ref（理由见 build-and-test.yml 顶部）；
-# 注释里的版本号供 dependabot 的 github-actions 生态识别并提 SHA 升级 PR。
+# 第三方 action 一律钉 40 位 commit sha（理由见 build-and-test.yml 顶部）；注释里的版本号供
+# dependabot 的 github-actions 生态识别并提 SHA 升级 PR。
 name: "CodeQL"
 
 on:
@@ -48,8 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         language: [ 'csharp' ]
-        # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby' ]
-        # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
 
     steps:
     - name: Checkout repository
@@ -62,38 +60,29 @@ jobs:
           8.0.x
           10.0.x
 
-    # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
       with:
         languages: ${{ matrix.language }}
-        # 只报 src / tools 的告警：test / bench / samples 不是攻击面（测试代码与示例从不进入
-        # 使用者的进程），把它们留在结果里只会稀释真正的信号。下面的 Build 也同步只编译
-        # src 与 tools，两处口径保持一致 —— 否则会出现「提取了却不许上报」的白费功夫。
+        # 只报 src / tools 的告警：test / bench / samples 不是攻击面，留在结果里只会稀释信号。下面的
+        # Build 也同步只编译 src 与 tools，两处口径一致。
         #
-        # 过滤规则必须写在配置文件里：`with:` 只接受标量映射，写成 YAML 序列会被 workflow
-        # 校验拒绝（Invalid workflow file ... A sequence was not expected），而且
-        # `paths-ignore` 也不是 codeql-action/init 的输入。查询集同样在配置文件里调整。
+        # 过滤规则必须写在配置文件里：`with:` 只接受标量映射，写成 YAML 序列会被 workflow 校验拒绝，
+        # 而且 `paths-ignore` 也不是 codeql-action/init 的输入。
         config-file: ./.github/codeql/codeql-config.yml
 
     # 顺序不可颠倒：CodeQL 的 C# 提取器挂在编译过程上，必须在 init 之后、analyze 之前完成构建。
-    #
-    # restore 走全量：restore 不编译，代价小，且能让所有工程的 assets 齐全，
-    # 避免下面按工程 build 时撞 NETSDK1047（assets 里没有对应 TFM）。
+    # restore 走全量：restore 不编译、代价小，且能让所有工程 assets 齐全，避免按工程 build 时撞
+    # NETSDK1047（assets 里没有对应 TFM）。
     - name: Restore dependencies
       run: dotnet restore
 
-    # 只编译 src 与 tools —— 也就是 paths-ignore 之后真正会被上报的那批代码。
+    # 只编译 src 与 tools —— 也就是真正会被上报的那批代码。不直接 build 整个解决方案：test / bench /
+    # samples 占了编译时间大头，而它们的告警已被 paths-ignore 滤掉；曾试过 `-p:TargetFrameworks=net10.0`
+    # 收敛单目标，但该属性是全局的，src 主包被压成只剩 net10.0 后 samples 里 net8.0 的工程引用它会报
+    # 「net10.0 的项目不能被 net8.0 的项目引用」。
     #
-    # 为什么不直接 `dotnet build` 整个解决方案：
-    #   1. test / bench / samples 占了编译时间的大头，而它们的告警已经被 paths-ignore 滤掉，
-    #      编译它们纯粹是给提取器喂不会被上报的代码；
-    #   2. 曾尝试用 `-p:TargetFrameworks=net10.0` 把双目标收敛成单目标来减半提取量，
-    #      但该属性是全局的：src 主包被压成只剩 net10.0 后，samples 里 net8.0 的工程
-    #      引用它会直接报「net10.0 的项目不能被 net8.0 的项目引用」。故放弃收敛，改为缩范围。
-    #
-    # 逐个工程列出而不是 `dotnet build src`：src 目录下没有解决方案文件，
-    # MSBuild 不会递归查找，直接给目录会报「找不到项目」。
+    # 逐个工程列出而不是 `dotnet build src`：src 下没有解决方案文件，MSBuild 不会递归查找。
     - name: Build
       run: |
         dotnet build src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj --no-restore

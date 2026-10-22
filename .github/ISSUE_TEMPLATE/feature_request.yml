@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose a capability, an integration, or a change to the generated surface.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the **problem** first. Requests framed as "add method X" are hard to evaluate, because
+        anything added to the generated surface is a permanent contract for every consumer.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you unable to express today, and what do you do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The API or behaviour you have in mind. Sketch the generated member if it helps.
+      render: csharp
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried, other libraries you compared against, or why they do not fit.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Generator (core id members)
+        - Analyzer / diagnostics
+        - Code fix / refactoring
+        - Serialization (System.Text.Json / Newtonsoft.Json)
+        - Persistence (EF Core / Dapper)
+        - ASP.NET Core (MVC / Minimal API / OpenAPI / Swashbuckle)
+        - Testing helpers
+        - Packaging / tooling / CI
+        - Documentation
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Compatibility
+      options:
+        - label: This changes the shape of already-generated code (breaking for consumers).
+        - label: This adds a new diagnostic.
+        - label: This requires a new package dependency.
+        - label: I am willing to submit a pull request for this.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I read the Limitations section of the README and this is not covered there.
+          required: true

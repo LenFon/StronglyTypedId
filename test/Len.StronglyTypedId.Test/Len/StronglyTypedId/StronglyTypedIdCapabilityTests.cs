@@ -757,7 +757,7 @@ public class StronglyTypedIdCapabilityTests
         destination[..charsWritten].ToString().Should().Be($"ord_{_lowGuid}");
 
         // 显式格式串只作用于基元部分，前缀仍在。
-        ((IFormattable)id).ToString("N", CultureInfo.InvariantCulture).Should().Be($"ord_{_lowGuid.ToString("N")}");
+        ((IFormattable)id).ToString("N", CultureInfo.InvariantCulture).Should().Be($"ord_{_lowGuid:N}");
     }
 
     /// <summary>
