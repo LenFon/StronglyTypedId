@@ -6,8 +6,7 @@ namespace Len.StronglyTypedId;
 /// 集成测试共用的「每种基元取一个普通值」样本表。
 /// </summary>
 /// <remarks>
-/// 两个矩阵测试（Dapper / EF Core 与 MessagePack / BSON）都要按基元逐个喂值，样本表放一处才不会各自漂移：
-/// 新增一种基元时漏改一边，另一边就会静默地少覆盖一种。
+/// 两个矩阵测试都要按基元逐个喂值，样本表放一处才不会各自漂移：新增基元时漏改一边，另一边会静默少覆盖一种。
 /// </remarks>
 internal static class IntegrationSampleValues
 {

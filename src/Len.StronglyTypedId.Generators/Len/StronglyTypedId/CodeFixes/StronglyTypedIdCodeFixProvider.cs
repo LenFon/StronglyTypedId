@@ -278,8 +278,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 把 class / struct 关键字转成对应的 record，使其通过 STIA0000。
     /// </summary>
     /// <remarks>
-    /// struct 必须转成 <c>record struct</c>：一律写成 <c>record</c> 会把值类型悄悄换成引用类型（装箱行为、
-    /// 默认值、<c>==</c> 语义全变）；<c>readonly struct</c> 更是直接编译不过（CS8809）。
+    /// struct 必须转成 <c>record struct</c>：写成 <c>record</c> 会把值类型悄悄换成引用类型，<c>readonly struct</c> 更是直接 CS8809。
     /// </remarks>
     private static async Task<Document> ConvertToRecordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {

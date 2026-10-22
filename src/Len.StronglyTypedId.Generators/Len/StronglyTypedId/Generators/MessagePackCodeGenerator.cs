@@ -6,16 +6,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 MessagePack 的 <c>IMessagePackFormatter&lt;TId&gt;</c> 与选项装配入口。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 格式化器放在 <c>StronglyTypedIds</c> 里而不是嵌进 Id 自己名下，与 Dapper 的处理器同构。这样做的代价是
-/// 少了 <c>[MessagePackFormatter]</c> 那条零配置捷径，换来的是<b>引用程序集里的 Id 也能拿到格式化器</b> ——
-/// 嵌套类型只能加在本次编译声明的类型上，外部 Id 根本没法重开 partial 声明。
-/// </para>
-/// <para>
-/// 二进制载荷存放基元值本身（<c>value.Value</c>），而不是规范文本形：文本前缀是文本形的装饰，
-/// 二进制格式里没有「文本」可言。唯一的例外是 <see cref="StronglyTypedIdInfo.IsBinaryTextPrimitive"/> ——
-/// MessagePack 没有这些基元的格式化器，只能退回规范文本。
-/// </para>
+/// 格式化器放在 <c>StronglyTypedIds</c> 里而非嵌进 Id 名下，代价是少了 <c>[MessagePackFormatter]</c> 的零配置捷径，换来引用程序集里的 Id 也能拿到格式化器。
+/// 载荷存放基元值本身；例外是 <see cref="StronglyTypedIdInfo.IsBinaryTextPrimitive"/>，那些基元没有格式化器，只能退回规范文本。
 /// </remarks>
 internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 {
@@ -28,8 +20,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
     /// <c>GetFormatterWithVerify&lt;T&gt;</c> 所在的静态类。
     /// </summary>
     /// <remarks>
-    /// 它是个扩展方法，而产物文件不带 <c>using</c>（见 <see cref="GeneratedCode.Header"/>），
-    /// 扩展方法语法在这里解析不到，只能按静态调用写全名。
+    /// 它是扩展方法，而产物文件不带 <c>using</c>，扩展方法语法解析不到，只能按静态调用写全名。
     /// </remarks>
     private const string FormatterResolverExtensions = "global::MessagePack.FormatterResolverExtensions";
 
@@ -136,7 +127,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
     /// 取 <c>Serialize</c> 成员的完整文本（含签名与成员级缩进）。
     /// </summary>
     /// <remarks>
-    /// 原始字符串模板里的插值洞不会随模板一起重新缩进，多行洞必须自带缩进，洞本身写在去缩进基准列上。
+    /// 原始字符串模板里的插值洞不会随模板重新缩进，多行洞必须自带缩进，洞本身写在去缩进基准列上。
     /// </remarks>
     private static string GetSerializeMember(StronglyTypedIdInfo idInfo, string version)
     {

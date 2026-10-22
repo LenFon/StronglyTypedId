@@ -24,13 +24,8 @@ public class AspNetCoreMvcCodeGeneratorTests
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
-        // 显式 seed 若干 ASP.NET Core 程序集，确保它们出现在合成编译引用里（即使尚未被 AppDomain 延迟加载）。
-        //   · MvcOptions   所在程序集（net10 为 Microsoft.AspNetCore.Mvc.Core，net8 为 Abstractions）—— 门控触发来源；
-        //   · IModelBinder  所在程序集（Microsoft.AspNetCore.Mvc.Abstractions）—— 生成代码里 IModelBinder / IModelBinderProvider 的来源；
-        //   · IRouteConstraint 所在程序集（Microsoft.AspNetCore.Routing.Abstractions）—— IRouteConstraint / IRouter 的来源；
-        //   · RouteOptions / HttpContext 所在程序集—— ApplyTo(RouteOptions) 与 Match(HttpContext) 的来源。
-        // 三者任一被加载即代表 MVC 可用，本文件刻意保留这些真实框架程序集（不在 ShouldReferenceAssembly 排除之列），
-        // 使「真实引用 MVC 的消费者」画像成立，生成的 MvcOptions / RouteOptions 注册代码亦能编译。
+        // 显式 seed 若干 ASP.NET Core 程序集，确保它们出现在合成编译引用里（即使尚未被延迟加载）。
+        // MvcOptions / IModelBinder / IRouteConstraint / RouteOptions 所在程序集任一被加载即代表 MVC 可用，本文件刻意保留这些真实框架程序集。
         var seedAssemblies = new[]
         {
             typeof(StronglyTypedIdAttribute).Assembly,
@@ -267,12 +262,8 @@ public class AspNetCoreMvcCodeGeneratorTests
 
         result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
 
-        // 编译「全部」生成产物：真实消费者会把所有生成文件一起编译，核心文件
-        // Len.StronglyTypedId.OrderId.g.cs 提供的 IParsable<OrderId> 实现正是 MVC 产物里
-        // where TId : IParsable<TId> 约束所依赖的。只 Emit MVC 单文件会因 OrderId 未满足约束
-        // 而 CS0315；只比对文本又抓不到 CS8926 这类静态抽象接口成员访问缺陷。
-        // 本用例刻意排除 EF Core / Swagger / Newtonsoft / 内置 OpenApi，故它们的生成器闸门不触发，
-        // 实际只会产出「核心 + MVC」两类文件，均可在此编译。
+        // 编译「全部」生成产物：核心文件提供的 IParsable<OrderId> 正是 MVC 产物里 where TId : IParsable<TId> 约束所依赖的。
+        // 只 Emit MVC 单文件会 CS0315；只比对文本又抓不到 CS8926 这类静态抽象接口成员访问缺陷。
         var generatedTrees = result.Results[0].GeneratedSources
             .Select(source => CSharpSyntaxTree.ParseText(source.SourceText.ToString(), path: source.HintName))
             .ToArray();

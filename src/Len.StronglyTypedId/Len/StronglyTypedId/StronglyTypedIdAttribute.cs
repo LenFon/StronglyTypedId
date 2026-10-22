@@ -22,10 +22,7 @@ public class StronglyTypedIdAttribute : Attribute
     /// takes a single <see cref="string"/> message. Defaults to <see cref="ArgumentException"/>.
     /// </summary>
     /// <remarks>
-    /// Only the validator rejection in <c>Create</c> uses this type. <c>Parse</c> throws
-    /// <see cref="FormatException"/> instead, following the <see cref="IParsable{TSelf}"/> convention:
-    /// its failure covers text that is not a valid id at all, which is a malformed-input error rather
-    /// than a domain-rule violation.
+    /// Only the validator rejection in <c>Create</c> uses this type; <c>Parse</c> throws <see cref="FormatException"/> per <see cref="IParsable{TSelf}"/>.
     /// </remarks>
     public Type? ExceptionType { get; set; }
 
@@ -34,11 +31,8 @@ public class StronglyTypedIdAttribute : Attribute
     /// exception message. The default is <see langword="false"/>, which keeps the value in the message.
     /// </summary>
     /// <remarks>
-    /// The rejected text travels with the exception message into logs, APM traces and error reports. For an
-    /// id wrapping <see cref="string"/> that text is user input — an e-mail address, a phone number, a token
-    /// fragment — often rejected precisely because it is malformed, but still personal data. Turning this on
-    /// yields <c>The value is not a valid OrderId.</c> instead of
-    /// <c>The value '...' is not a valid OrderId.</c>.
+    /// The rejected text reaches logs and APM traces; for a <see cref="string"/> id that text is user input.
+    /// Turning this on yields <c>The value is not a valid OrderId.</c> instead of embedding the value.
     /// </remarks>
     public bool RedactValidationMessage { get; set; }
 
@@ -54,10 +48,8 @@ public class StronglyTypedIdAttribute : Attribute
     /// references".
     /// </summary>
     /// <remarks>
-    /// This is a filter, not a switch: an integration is only generated when the compilation references its
-    /// assembly <em>and</em> the corresponding flag is set. <see cref="StronglyTypedIdIntegrations.None"/>
-    /// suppresses every integration but leaves the core implementation untouched, and does not affect an
-    /// explicitly enabled <see cref="TypeConverter"/>.
+    /// A filter, not a switch: an integration is generated only when its assembly is referenced <em>and</em> the flag is set.
+    /// <see cref="StronglyTypedIdIntegrations.None"/> suppresses every integration but leaves the core and an explicit <see cref="TypeConverter"/> untouched.
     /// </remarks>
     public StronglyTypedIdIntegrations Integrations { get; set; }
 

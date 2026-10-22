@@ -16,7 +16,6 @@ public class OrderController(SampleDbContext db) : ControllerBase
     /// <summary>
     /// 添加订单
     /// </summary>
-    /// <param name="input">订单输入，包含买家 Id 与订单行。</param>
     [HttpPost]
     public async Task Post([FromBody] AddOrderInput input)
     {

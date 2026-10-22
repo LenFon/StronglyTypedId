@@ -6,15 +6,8 @@ namespace Len.StronglyTypedId;
 /// 把命名实例声明的文本值翻译成生成代码里的表达式，并在编译期完成校验。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 生成器跑在 netstandard2.0 上，<c>Half</c> / <c>Int128</c> / <c>UInt128</c> / <c>DateOnly</c> /
-/// <c>TimeOnly</c> 在那里并不存在，无法直接调用它们的 <c>TryParse</c>。这五种改为手写文本校验，
-/// 再生成运行期 <c>Parse</c> 调用 —— 入参已被编译期校验过，运行期不会失败。
-/// </para>
-/// <para>
-/// 其余基元一律翻译成字面量或构造函数表达式，运行期零解析。校验与发射共用同一份代码，
-/// 分析器据此报 <c>STIA0021</c>，生成器据此决定是否跳过该成员。
-/// </para>
+/// 生成器跑在 netstandard2.0 上，<c>Half</c> / <c>Int128</c> / <c>UInt128</c> / <c>DateOnly</c> / <c>TimeOnly</c> 在那里不存在，故手写文本校验后生成运行期 <c>Parse</c>。
+/// 其余基元翻译成字面量或构造函数表达式，运行期零解析；校验与发射共用同一份代码。
 /// </remarks>
 internal static class InstanceValueEmitter
 {
@@ -31,12 +24,6 @@ internal static class InstanceValueEmitter
     /// <summary>
     /// 把实例声明的文本值翻译成可直接写进生成代码的表达式。
     /// </summary>
-    /// <param name="primitiveType">强类型 Id 所包装的基元类型。</param>
-    /// <param name="text">实例声明的文本值。</param>
-    /// <param name="expression">
-    /// 成功时为表达式文本（单行、无缩进）；失败时为 <see langword="null"/>。
-    /// </param>
-    /// <returns>文本是该基元的合法取值时为 <see langword="true"/>。</returns>
     internal static bool TryEmit(ITypeSymbol primitiveType, string text, out string? expression)
     {
         expression = null;
@@ -298,8 +285,7 @@ internal static class InstanceValueEmitter
     /// 生成 <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 的表达式。
     /// </summary>
     /// <remarks>
-    /// 这三种在 netstandard2.0 里不存在，无法在编译期真正解析，故手写十进制校验后生成运行期 <c>Parse</c>。
-    /// 入参已校验过，运行期不会失败。
+    /// 这三种在 netstandard2.0 里不存在，只能手写十进制校验后生成运行期 <c>Parse</c>；入参已校验，运行期不会失败。
     /// </remarks>
     private static bool TryEmitBigIntegerLike(string text, string typeName, bool isSigned, out string? expression)
     {

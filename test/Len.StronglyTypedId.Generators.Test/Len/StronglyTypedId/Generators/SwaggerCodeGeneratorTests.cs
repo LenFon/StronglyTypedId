@@ -19,10 +19,10 @@ public class SwaggerCodeGeneratorTests
     #region 辅助：驱动生成器并捕获 Swagger 产物
 
     private static MetadataReference Swagger6Reference { get; }
-        = MetadataReference.CreateFromFile(typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions).Assembly.Location);
+        = AssemblyReferenceCache.FromAssembly(typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions).Assembly);
 
     private static MetadataReference OpenApiReference { get; }
-        = MetadataReference.CreateFromFile(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly.Location);
+        = AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly);
 
     private static CSharpCompilation CreateCompilation(string sourceCode, params MetadataReference[] extraReferences)
     {
@@ -46,7 +46,7 @@ public class SwaggerCodeGeneratorTests
             .Distinct()
             .Where(a => !a.IsDynamic)
             .Where(ShouldReferenceAssembly)
-            .Select(a => MetadataReference.CreateFromFile(a.Location))
+            .Select(AssemblyReferenceCache.FromAssembly)
             .Cast<MetadataReference>()
             .Concat(extraReferences)
             .ToArray();
@@ -89,11 +89,8 @@ public class SwaggerCodeGeneratorTests
 
     #region V1（Microsoft.OpenApi 1.x / Swashbuckle 6.x–9.x）：覆盖全部基元分支
 
-    // 源码必须带 using System;：否则 Guid 在合成编译里是「错误类型符号」，
-    // SymbolDisplayFormat.FullyQualifiedFormat 会把它渲染成裸 Guid，与真实消费者环境
-    // （global::System.Guid）不一致，令按短名匹配的基元分支「恰好」命中而掩盖缺陷。
-    // 映射口径对齐 System.Text.Json 的默认写出形态：整数 → integer，浮点/decimal → number，
-    // 日期时间 → string 加 format。枚举另有用例（需要先声明枚举类型）。
+    // 源码必须带 using System;：否则 Guid 在合成编译里是「错误类型符号」，会被渲染成裸 Guid，令按短名匹配的基元分支「恰好」命中而掩盖缺陷。
+    // 映射口径对齐 System.Text.Json 的默认写出形态；枚举另有用例。
     [Theory]
     [InlineData("Guid", "string", "uuid")]
     [InlineData("string", "string", null)]
@@ -185,9 +182,11 @@ public class SwaggerCodeGeneratorTests
 
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.ProductId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" });");
-        // 两个调用之间应有换行 + 缩进分隔（string.Join 的分隔符）。
-        // 断言写 \n 而非 \r\n：产物行尾随检出（CRLF / LF）而定，而 \n 在两种检出的产物里都成立。
-        generated.Should().Contain("\n\t\t");
+        // 两个调用之间应有换行 + 缩进分隔（string.Join 的分隔符）。断言跨到第二个调用，
+        // 否则首个调用前面的换行也能满足它，等于什么都没锁。
+        // 先把行尾归一化成 \n：产物行尾随检出（CRLF / LF）而定，而跨行断言里的「;\n」在 CRLF 产物中并不成立。
+        generated.Replace("\r\n", "\n")
+            .Should().Contain(";\n        options.MapType<global::Len.StronglyTypedId.ProductId>(");
     }
 
     /// <summary>
@@ -420,6 +419,35 @@ public class SwaggerCodeGeneratorTests
 
         generated.Should().Contain(
             "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String });");
+    }
+
+    #endregion
+
+    #region 产物格式
+
+    /// <summary>
+    /// 注册入口的方法体此前用制表符缩进，且左大括号后带一个尾随空格，与其余生成物的 4 空格风格不一致。
+    /// </summary>
+    /// <remarks>
+    /// 断言里带上换行与空白：只匹配 <c>options.MapType&lt;...&gt;(</c> 的子串对缩进完全免疫。
+    /// </remarks>
+    [Fact]
+    public void Swagger_ApplyTo_Should_UseSpacesForIndentation()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        GetSwaggerGeneratedCode(code, Swagger6Reference).Replace("\r\n", "\n")
+            .Should().Contain(
+                "\n    {\n        options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });\n    }")
+            .And.NotContain("\t")
+            .And.NotContain("    { \n");
     }
 
     #endregion

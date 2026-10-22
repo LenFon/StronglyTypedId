@@ -24,15 +24,12 @@ internal readonly record struct DiscoveredIds
     /// <summary>
     /// 在 <see cref="External"/> 的基础上再按 <c>Integrations</c> 过滤，只留下选中了该集成的 Id。
     /// </summary>
-    /// <param name="integration">单个集成标志，见 <see cref="IntegrationFlags"/>。</param>
     public ImmutableArray<StronglyTypedIdInfo> ExternalFor(int integration)
         => [.. External.Where(idInfo => idInfo.Supports(integration))];
 
     /// <summary>
     /// 合并「引用程序集中已实现 <c>IStronglyTypedId</c> 的类型」与「本次编译声明的强类型 Id」并去重，一次算出两份视图。
     /// </summary>
-    /// <param name="declaredInfos">本次编译中声明的强类型 Id 集合。</param>
-    /// <param name="modules">当前编译引用的全部模块。</param>
     public static DiscoveredIds Create(
         ImmutableArray<StronglyTypedIdInfo> declaredInfos,
         ImmutableArray<ModuleInfo> modules)

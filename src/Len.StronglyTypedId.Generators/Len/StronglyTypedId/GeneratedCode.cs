@@ -16,8 +16,7 @@ internal static class GeneratedCode
     /// 写入 <c>GeneratedCodeAttribute</c> 的生成器版本。
     /// </summary>
     /// <remarks>
-    /// 提到这里是因为 <see cref="StronglyTypedIdInfo"/> 也要渲染带该特性的成员（命名实例），
-    /// 而它是增量缓存的键，只能持有已渲染好的文本，拿不到 <c>Generate</c> 的 <c>version</c> 形参。
+    /// 提到这里是因为 <see cref="StronglyTypedIdInfo"/> 也要渲染带该特性的成员，而它只能持有已渲染好的文本。
     /// </remarks>
     internal static readonly string Version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
 
@@ -33,11 +32,6 @@ internal static class GeneratedCode
     /// 各生成器产出的源文件统一文件头：<c>// &lt;auto-generated /&gt;</c> 注释、命名空间声明与 <c>#nullable
     /// enable</c>，并以两个空行收尾，便于直接拼接类型声明块。
     /// </summary>
-    /// <param name="namespaceName">生成代码所在命名空间。</param>
-    /// <param name="preamble">
-    /// 可选的前导段（如 Swagger 生成器需要的 <c>using Microsoft.Extensions.DependencyInjection;</c>），
-    /// 置于 <c>// &lt;auto-generated /&gt;</c> 与命名空间声明之间；为空时省略。
-    /// </param>
     public static string Header(string namespaceName, string? preamble = null)
     {
         var builder = new StringBuilder();
@@ -62,8 +56,6 @@ internal static class GeneratedCode
     /// <summary>
     /// 取单个 <c>[GeneratedCode("生成器名", "版本")]</c> 特性文本（不含缩进、不含行尾）。
     /// </summary>
-    /// <param name="generatorName">生成器类名（通常传 <c>nameof(生成器)</c>）。</param>
-    /// <param name="version">写入特性的生成器版本。</param>
     public static string GeneratedCodeAttribute(string generatorName, string version)
         => $"[global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"{generatorName}\", \"{version}\")]";
 
@@ -71,7 +63,7 @@ internal static class GeneratedCode
     /// 把 <c>[Flags]</c> 枚举的「未定义位掩码」渲染成 C# 字面量。
     /// </summary>
     /// <remarks>
-    /// 定长十六进制而非十进制：掩码常常接近满位，十进制写法既难核对又容易数错位数。
+    /// 定长十六进制而非十进制：掩码常常接近满位，十进制既难核对又容易数错位数。
     /// </remarks>
     public static string UndefinedBitsLiteral(ulong mask)
         => "0x" + mask.ToString("X16", System.Globalization.CultureInfo.InvariantCulture) + "UL";
@@ -79,11 +71,6 @@ internal static class GeneratedCode
     /// <summary>
     /// 把在命名空间层级书写的强类型 Id 声明块嵌进各层包含类型里，并按嵌套层数整体缩进。
     /// </summary>
-    /// <param name="idInfo">强类型 Id 描述，提供包含类型链。</param>
-    /// <param name="declarationBlock">
-    /// 自 <c>partial record …</c> 起、到该类型自身的收尾大括号为止的声明块，书写在 0 缩进处；
-    /// 附在 Id 上的特性（如 <c>[JsonConverter]</c>）属于签名的一部分，一并含在其中。
-    /// </param>
     public static string NestInContainingTypes(StronglyTypedIdInfo idInfo, string declarationBlock)
     {
         if (idInfo.NestingDepth == 0)

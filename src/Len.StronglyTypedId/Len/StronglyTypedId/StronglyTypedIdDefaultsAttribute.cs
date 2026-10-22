@@ -27,9 +27,8 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     /// <see langword="false"/>，即保留原始值。
     /// </summary>
     /// <remarks>
-    /// 原始值会随异常消息进入日志、APM 与错误上报。对 <see cref="string"/> 基元的 Id 来说，那往往是
-    /// 用户输入（邮箱、手机号、token 片段）—— 常常正因为不合法才被拒，但它依然是个人信息。整库统一
-    /// 脱敏时用本属性；单个 Id 需要例外时在类型上显式写 <see cref="StronglyTypedIdAttribute.RedactValidationMessage"/>。
+    /// 原始值会随异常消息进入日志与 APM；对 <see cref="string"/> 基元来说那往往是用户输入。
+    /// 整库脱敏用本属性；单个 Id 需要例外时在类型上写 <see cref="StronglyTypedIdAttribute.RedactValidationMessage"/>。
     /// </remarks>
     public bool RedactValidationMessage { get; set; }
 
@@ -38,9 +37,8 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     /// <see cref="StronglyTypedIdIntegrations.Default"/>，即「引用了就生成」。
     /// </summary>
     /// <remarks>
-    /// 逐类型上的 <see cref="StronglyTypedIdAttribute.Integrations"/> 只要不是
-    /// <see cref="StronglyTypedIdIntegrations.Default"/> 就覆盖此处的设置；想在被本属性关掉之后
-    /// 为单个 Id 重新打开，写 <see cref="StronglyTypedIdIntegrations.All"/>。
+    /// 逐类型的 <see cref="StronglyTypedIdAttribute.Integrations"/> 只要不是 <see cref="StronglyTypedIdIntegrations.Default"/> 就覆盖此处设置。
+    /// 被本属性关掉后要为单个 Id 重开，写 <see cref="StronglyTypedIdIntegrations.All"/>。
     /// </remarks>
     public StronglyTypedIdIntegrations Integrations { get; set; }
 }

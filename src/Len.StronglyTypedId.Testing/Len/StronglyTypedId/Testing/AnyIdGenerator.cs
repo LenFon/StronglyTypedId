@@ -40,13 +40,6 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// Initializes a new instance with the specified options.
     /// </summary>
-    /// <param name="options">The options controlling seeding, string length and value generation.</param>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="options"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <see cref="AnyIdOptions.StringLength"/> or <see cref="AnyIdOptions.MaxAttempts"/> is less than 1.
-    /// </exception>
     public AnyIdGenerator(AnyIdOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -64,11 +57,6 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// Creates a strongly typed id of type <typeparamref name="TId"/>.
     /// </summary>
-    /// <typeparam name="TId">The strongly typed id type.</typeparam>
-    /// <returns>A new id wrapping a generated primitive value.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// The id's validator rejected every generated value within <see cref="AnyIdOptions.MaxAttempts"/> attempts.
-    /// </exception>
     public TId Id<TId>()
         where TId : IStronglyTypedId<TId>
         => (TId)Create(typeof(TId));
@@ -76,10 +64,6 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// Creates <paramref name="count"/> strongly typed ids of type <typeparamref name="TId"/>.
     /// </summary>
-    /// <typeparam name="TId">The strongly typed id type.</typeparam>
-    /// <param name="count">The number of ids to create.</param>
-    /// <returns>The created ids, in generation order.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is negative.</exception>
     public IReadOnlyList<TId> Ids<TId>(int count)
         where TId : IStronglyTypedId<TId>
     {
@@ -98,12 +82,6 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// Creates a strongly typed id of the specified runtime type.
     /// </summary>
-    /// <param name="idType">A type implementing <see cref="IStronglyTypedId{TSelf, TPrimitiveId}"/>.</param>
-    /// <returns>A new id wrapping a generated primitive value.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="idType"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException"><paramref name="idType"/> is not a strongly typed id.</exception>
     public object Create(Type idType)
     {
         ArgumentNullException.ThrowIfNull(idType);
@@ -116,13 +94,6 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// Registers an explicit factory for <typeparamref name="TId"/>, overriding value generation.
     /// </summary>
-    /// <typeparam name="TId">The strongly typed id type.</typeparam>
-    /// <param name="factory">
-    /// The factory invoked on every subsequent request for <typeparamref name="TId"/>.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="factory"/> is <see langword="null"/>.
-    /// </exception>
     public void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
     {

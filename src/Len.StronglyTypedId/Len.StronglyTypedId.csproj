@@ -4,23 +4,23 @@
 		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<!-- 可发布包之一（common.props 默认 IsPackable=false，这里显式打开）。 -->
+		<IsPackable>true</IsPackable>
 		<!--
-		  声明运行时库兼容 Native AOT 与裁剪（trimming）：强类型 Id 的核心类型与生成的转换器在 AOT 下
-		  零动态代码生成、零按名加载类型。开启后 MSBuild 会对本程序集自身跑裁剪 / AOT 分析器，
-		  本库唯一用到反射的 StronglyTypedIdExtensions（GetInterfaces/GetGenericTypeDefinition）不走
+		  声明运行时库兼容 Native AOT 与裁剪：核心类型与生成的转换器在 AOT 下零动态代码生成、零按名加载类型。
+		  开启后 MSBuild 会对本程序集跑裁剪 / AOT 分析器；唯一用到反射的 StronglyTypedIdExtensions 不走
 		  RequiresUnreferencedCode 路径，故不产生 IL2026 / IL3050。
 		-->
 		<IsAotCompatible>true</IsAotCompatible>
 		<!--
-		  RS0016/RS0017 由 Microsoft.CodeAnalysis.PublicApiAnalyzers 报出，默认是警告。本仓库的基线是
-		  「0 警告」，靠默认严重级别等于没有约束（一次 NoWarn 或一次 WarningsNotAsErrors 就绕过去了），
-		  因此显式升为错误：公开 API 的新增与删除都必须落在 PublicAPI.*.txt 里被评审到。
+		  RS0016/RS0017 由 PublicApiAnalyzers 报出，默认是警告。本仓基线是「0 警告」，靠默认严重级别等于没有
+		  约束（一次 NoWarn 就绕过去了），故显式升为错误：公开 API 的新增与删除都必须落在 PublicAPI.*.txt 里
+		  被评审到。
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
 		<!--
-		  符号单独成包（.snupkg）而不是塞进主包：主包只留使用者运行期真正需要的东西，
-		  调试符号按需从 nuget.org 符号服务器下载。这里刻意不再用
-		  AllowedOutputExtensionsInPackageBuildOutputFolder 把 .pdb 塞进 lib/（上一代的 1.2.x 正是那么发的，
+		  符号单独成包（.snupkg）而不是塞进主包：主包只留运行期真正需要的东西，符号按需从符号服务器下载。
+		  刻意不用 AllowedOutputExtensionsInPackageBuildOutputFolder 把 .pdb 塞进 lib/（1.2.x 正是那么发的，
 		  结果是每个使用者的还原目录里都躺着一份用不上的 pdb）。
 		-->
 		<IncludeSymbols>true</IncludeSymbols>
@@ -31,7 +31,7 @@
 		<PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
 	</ItemGroup>
 	<ItemGroup>
-		<!-- 开发期：让生成器/分析器在本解决方案内可用（不参与打包依赖） -->
+		<!-- 开发期：让生成器/分析器在本解决方案内可用（不参与编译引用，也不参与打包依赖） -->
 		<ProjectReference Include="..\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 
@@ -41,27 +41,106 @@
 	</ItemGroup>
 
 	<!--
-	  打包后让 Len.StronglyTypedId 依赖 Len.StronglyTypedId.Generators。
-	  原因：上面的 ProjectReference 标记了 OutputItemType=Analyzer，打包时不会被写入 nuspec 的
-	  <dependencies>；而 Generators 项目本身 IncludeBuildOutput=false，普通 ProjectReference 同样不会
-	  产生包依赖。Pack 内部会重新生成 nuspec，因此只能在 Pack 完成后（AfterTargets=Pack）直接修补
-	  产物 .nupkg 里的 nuspec。两者始终同源同版本，依赖版本取 $(Version)。
+	  让主包依赖 Len.StronglyTypedId.Generators。
+
+	  ── 为什么不能声明式解决 ──
+	  上面那条 ProjectReference 必须同时满足：① 作为 Analyzer 参与编译；② 不进编译引用 —— 否则生成器带的
+	  Roslyn 程序集会与 net8.0 的引用程序集撞版本（实测一片 MSB3277）。同时满足的唯一写法是
+	  ReferenceOutputAssembly=false，而 NuGet 构建 restore 图时只收 ReferenceOutputAssembly 为空或 true 的
+	  项目引用（GetRestoreProjectReferencesTask），打包侧的依赖列表又是从 assets 的 framework.ProjectReferences
+	  循环出来的（PackTaskLogic.InitializeProjectDependencies），因此无论怎么摆弄 MSBuild item 都不会自动产生
+	  这条依赖。这是 NuGet 的机制限制，别再把这段改回「往 _ProjectReferencesWithVersions 里塞一项」。
+
+	  ── 因此只能修补产物，但修补必须「响亮失败」──
+	  Pack 内部会重新生成 nuspec，唯一可干预的位置是产物 .nupkg。修补不可避免，但绝不能在前提不成立时静默
+	  跳过 —— 那正是「使用者装包后拿不到生成器却没有任何报错」的来源。每一步都先断言再动手：产物包必须存在；
+	  nuspec 必须有 <dependencies><group>；已存在该依赖则跳过（幂等）；重压到临时文件成功后才替换原包；
+	  写完后立刻读回确认依赖落进 nuspec。任一步不成立都以 <Error> 中止构建。
+
+	  依赖版本取 $(PackageVersion)，与主包同源同版本。第二道哨兵：Packaging.Test 的
+	  MainPackage_Should_DependOnGeneratorsPackage_ForEveryTargetFramework 逐 TFM 断言 id 与版本。
 	-->
 	<Target Name="InjectGeneratorsPackageDependency" AfterTargets="Pack">
 		<PropertyGroup>
-			<_PkgPath>$([MSBuild]::EnsureTrailingSlash('$(PackageOutputPath)'))$(PackageId).$(PackageVersion).nupkg</_PkgPath>
-			<_PkgPatchDir>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch\</_PkgPatchDir>
+			<_PkgPath>$([MSBuild]::EnsureTrailingSlash('$(PackageOutputAbsolutePath)'))$(PackageId).$(PackageVersion).nupkg</_PkgPath>
+			<!--
+			  临时目录必须一次性：主包双目标，两个进程同时 pack 同一工程（CI 矩阵、并行构建）时共享路径会让
+			  RemoveDir / Unzip 互相踩踏（表现为 NU5026 或半成品包）。用 Guid 而非进程 ID：MSBuild 没有可靠的进程
+			  ID 属性，Guid 每次求值唯一。不拼 $(TargetFramework)：Pack 跑在外层构建，那里它是空的。残留竞态仍在
+			  （两个进程先后 Delete + Move 同一个最终包），内容等价、最坏一次瞬时失败；真要并行 pack 请在调用方串行化。
+			-->
+			<_PkgPatchDir>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch-$([System.Guid]::NewGuid())\</_PkgPatchDir>
+			<_PkgRepackedPath>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch-$([System.Guid]::NewGuid()).repacked.nupkg</_PkgRepackedPath>
+			<_PkgDependencyId>Len.StronglyTypedId.Generators</_PkgDependencyId>
 		</PropertyGroup>
+
+		<!--
+		  签名与「重压产物」互斥：包签名对整个 zip 做，重压后必然失效，而 dotnet nuget verify 只在发布之后才报
+		  —— 那时版本号已推上 nuget.org。宁可在打包阶段就红。
+		-->
+		<Error Condition="'$(PackageSigningCert)' != '' or '$(PackageSigningCertName)' != ''"
+		       Text="InjectGeneratorsPackageDependency：已配置包签名（PackageSigningCert / PackageSigningCertName），而本目标会重压 nupkg 使签名失效。请改成「先注入依赖、再签名」的流程，或关闭签名。" />
+
+		<!--
+		  已知取舍：ZipDirectory 用默认压缩参数，条目顺序与原 PackTask 的包不逐字节等价。不影响 NuGet 消费，
+		  但同一 commit 两次打包 hash 不同 —— 不要把包 hash 当缓存键。
+		-->
+		<Error Condition="!Exists('$(_PkgPath)')"
+		       Text="InjectGeneratorsPackageDependency：找不到待修补的包 '$(_PkgPath)'。这条依赖只能靠修补产物注入，路径对不上就意味着包会缺少生成器依赖。" />
+
 		<RemoveDir Directories="$(_PkgPatchDir)" Condition="Exists('$(_PkgPatchDir)')" />
 		<Unzip SourceFiles="$(_PkgPath)" DestinationFolder="$(_PkgPatchDir)" />
 		<ItemGroup>
 			<_PkgNuspec Include="$(_PkgPatchDir)*.nuspec" />
 		</ItemGroup>
-		<XmlPoke XmlInputPath="@(_PkgNuspec)"
+
+		<!-- 断言 1：nuspec 里确实有 <dependencies><group>，否则下面的 XmlPoke 会静默匹配不到 -->
+		<XmlPeek XmlInputPath="@(_PkgNuspec)"
+		         Query="//*[local-name()='package']/*[local-name()='metadata']/*[local-name()='dependencies']/*[local-name()='group']/@targetFramework">
+			<Output TaskParameter="Result" PropertyName="_PkgFirstDependencyGroupTfm" />
+		</XmlPeek>
+		<Error Condition="'$(_PkgFirstDependencyGroupTfm)' == ''"
+		       Text="InjectGeneratorsPackageDependency：nuspec 里没有 &lt;dependencies&gt;&lt;group&gt; 节点，依赖注入会静默失效。请检查 PackageReference 与目标框架配置。" />
+
+		<!-- 断言 2：幂等 —— 已经有这条依赖就不再注入 -->
+		<XmlPeek XmlInputPath="@(_PkgNuspec)"
+		         Query="//*[local-name()='dependency'][@id='$(_PkgDependencyId)']/@version">
+			<Output TaskParameter="Result" PropertyName="_PkgExistingDependencyVersion" />
+		</XmlPeek>
+
+		<XmlPoke Condition="'$(_PkgExistingDependencyVersion)' == ''"
+		         XmlInputPath="@(_PkgNuspec)"
 		         Query="//*[local-name()='package']/*[local-name()='metadata']/*[local-name()='dependencies']/*[local-name()='group']"
-		         Value="&lt;dependency id='Len.StronglyTypedId.Generators' version='$(Version)' /&gt;" />
-		<Delete Files="$(_PkgPath)" />
-		<ZipDirectory SourceDirectory="$(_PkgPatchDir)" DestinationFile="$(_PkgPath)" Overwrite="true" />
+		         Value="&lt;dependency id='$(_PkgDependencyId)' version='$(PackageVersion)' /&gt;" />
+
+		<!--
+		     断言 3：写完立刻读回，确认依赖真的落进 nuspec（XmlPoke 静默无效时在这里炸）。XmlPeek 对多个匹配节点
+		     用 ';' 拼接，这里只断言「读到了」，逐 TFM 的版本正确性交给 Packaging.Test 守 —— 在 MSBuild 条件里做
+		     字符串拆分既难读又容易踩 MSB4092。
+		-->
+		<XmlPeek Condition="'$(_PkgExistingDependencyVersion)' == ''"
+		         XmlInputPath="@(_PkgNuspec)"
+		         Query="//*[local-name()='dependency'][@id='$(_PkgDependencyId)']/@version">
+			<Output TaskParameter="Result" PropertyName="_PkgInjectedDependencyVersion" />
+		</XmlPeek>
+		<Error Condition="'$(_PkgExistingDependencyVersion)' == '' and '$(_PkgInjectedDependencyVersion)' == ''"
+		       Text="InjectGeneratorsPackageDependency：依赖写入后读回为空，XmlPoke 没有真正改动 nuspec。包已损坏，构建中止。" />
+
+		<!-- 断言 4：先重压到临时文件，成功后再替换原包，避免中途失败留下半个包 -->
+		<Delete Files="$(_PkgRepackedPath)" Condition="Exists('$(_PkgRepackedPath)')" />
+		<ZipDirectory Condition="'$(_PkgExistingDependencyVersion)' == ''"
+		              SourceDirectory="$(_PkgPatchDir)"
+		              DestinationFile="$(_PkgRepackedPath)"
+		              Overwrite="true" />
+		<!--
+		     MSBuild 的 Move 没有 Overwrite 参数，目标存在时会直接失败，故先删再移。ZipDirectory 已在临时路径成功
+		     产出，这里删掉的只是待替换的旧包，窗口极短。
+		-->
+		<Delete Condition="'$(_PkgExistingDependencyVersion)' == ''" Files="$(_PkgPath)" />
+		<Move Condition="'$(_PkgExistingDependencyVersion)' == ''"
+		      SourceFiles="$(_PkgRepackedPath)"
+		      DestinationFiles="$(_PkgPath)" />
+
 		<RemoveDir Directories="$(_PkgPatchDir)" />
 	</Target>
 </Project>

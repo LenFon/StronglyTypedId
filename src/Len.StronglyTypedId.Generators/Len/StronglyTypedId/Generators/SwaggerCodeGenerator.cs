@@ -7,6 +7,11 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 {
     private const string OpenApiAssemblyName = "Microsoft.OpenApi.dll";
 
+    /// <summary>
+    /// <c>ApplyTo</c> 方法体内语句的缩进（产物中为 8 空格）。
+    /// </summary>
+    private static readonly string _registrationIndent = new(' ', 8);
+
     internal static readonly IIntegrationCodeGenerator Instance = new SwaggerCodeGenerator();
 
     public int Order { get; } = 4;
@@ -29,17 +34,22 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // MapType<T> 是该命名空间下的扩展方法，只能用 using 引入。Web SDK 的隐式 using 恰好含它，
-        // 类库 / 控制台消费者缺此 using 会 CS1061；该命名空间由 Swashbuckle 的传递依赖提供。
+        // MapType<T> 是该命名空间下的扩展方法，只能用 using 引入；类库 / 控制台消费者缺此 using 会 CS1061。
+        // 注册语句经插值洞注入，洞本身写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
+        var registrations = string.Join("\n", mapTypeCalls.Select(call => _registrationIndent + call));
+
         var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
             internal static partial class StronglyTypedIds
             {
-                /// <summary>Employ strongly typed IDs in Swagger.</summary>
+                /// <summary>
+                /// Employ strongly typed IDs in Swagger.
+                /// </summary>
                 /// <param name="options"><see cref="global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SwaggerCodeGenerator), version)}}
                 public static void ApplyTo(global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions options)
-                { {{$"\n\t\t{string.Join("\n\t\t", mapTypeCalls)}"}}
+                {
+            {{registrations}}
                 }
             }
             """;

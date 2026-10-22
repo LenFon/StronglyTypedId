@@ -373,7 +373,7 @@ public class StronglyTypedIdInfoTests
     /// 空 / 纯空白前缀按「未设置」归一为 <see langword="null"/>。
     /// </summary>
     /// <remarks>
-    /// 空串连分析器也不再报警（生成器与它口径一致）；纯空白仍报 STIA0013，那确实是笔误。
+    /// 空串连分析器也不再报警（与生成器口径一致）；纯空白仍报 STIA0013。
     /// </remarks>
     [Theory]
     [InlineData("")]

@@ -1041,8 +1041,13 @@ public class StronglyTypedIdGeneratorTests
             .Should().Contain("ValueConverter<global::Len.StronglyTypedId.OrderId, int>");
     }
 
+    /// <summary>
+    /// 回归用例：门控只看是否引用 EF Core，不再看源码里有没有 <c>ConfigureConventions</c> 重写。
+    /// 否则「context 只用 <c>OnModelCreating</c>」这一最常见形态反而拿不到任何产物 —— 而那正是
+    /// <c>ApplyTo(ModelBuilder)</c> 存在的意义。
+    /// </summary>
     [Fact]
-    public void EfCore_Should_NotGenerate_WhenNoConfigureConventions()
+    public void EfCore_Should_Generate_WhenNoConfigureConventions()
     {
         var code = """
             using System;
@@ -1052,11 +1057,20 @@ public class StronglyTypedIdGeneratorTests
 
             [StronglyTypedId]
             public partial record struct OrderId(Guid Value);
+
+            public class TestDbContext : DbContext
+            {
+                protected override void OnModelCreating(ModelBuilder modelBuilder) { }
+            }
             """;
 
         var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
 
-        generated.Keys.Should().NotContain(k => k.EndsWith(".EntityFrameworkCore.g.cs"));
+        generated.Should().ContainKey("Len.StronglyTypedId.OrderId.EntityFrameworkCore.g.cs");
+
+        generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
+            .Should().Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
+            .And.Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)");
     }
 
     /// <summary>
@@ -1438,7 +1452,7 @@ public class StronglyTypedIdGeneratorTests
     /// <c>RedactValidationMessage</c> 打开后，拒绝消息不再内插被拒绝的原文。
     /// </summary>
     /// <remarks>
-    /// 原文会随异常消息进入日志、APM 与错误上报；对 <c>string</c> 基元的 Id 来说那往往是用户输入。
+    /// 原文会随异常消息进入日志与 APM；对 <c>string</c> 基元的 Id 来说那往往是用户输入。
     /// </remarks>
     [Fact]
     public void Generator_Should_OmitRejectedValue_WhenRedactValidationMessageIsSet()
@@ -1522,8 +1536,7 @@ public class StronglyTypedIdGeneratorTests
     /// 逐类型的 <c>false</c> 不能撤销装配级脱敏——脱敏是安全策略，不是逐类型偏好。
     /// </summary>
     /// <remarks>
-    /// 属性是 <c>bool</c>，未写时读到的同样是 <c>false</c>，生成器无法区分「没写」与「写了 false」；
-    /// 因此逐类型只能单向打开。这条断言把这个取舍固定下来，避免日后被当成缺陷「修正」。
+    /// 属性是 <c>bool</c>，未写时读到的同样是 <c>false</c>，生成器无法区分「没写」与「写了 false」，故逐类型只能单向打开。
     /// </remarks>
     [Fact]
     public void Generator_Should_KeepAssemblyRedaction_WhenTypeSetsFalse()
@@ -1551,9 +1564,8 @@ public class StronglyTypedIdGeneratorTests
     /// <c>Create</c> 必须缩进一层。
     /// </summary>
     /// <remarks>
-    /// 模板里的占位符落在原始字符串的去缩进基准列上：首行拿不到模板缩进，多行内容更是逐行原样插入，
-    /// 所以缩进只能由生成端补齐。表达式体分支曾漏补，产物里该行顶格；这类缺陷不影响编译，
-    /// 只有逐字符断言才拦得住（此前全是 <c>Contain</c> 子串断言，天然看不见行首空白）。
+    /// 占位符落在去缩进基准列上，缩进只能由生成端补齐；表达式体分支曾漏补，产物里该行顶格。
+    /// 这类缺陷不影响编译，只有逐字符断言才拦得住（此前全是 <c>Contain</c> 子串断言，看不见行首空白）。
     /// </remarks>
     [Theory]
     [InlineData("")]
@@ -1591,9 +1603,7 @@ public class StronglyTypedIdGeneratorTests
     /// 产物里的 XML 文档注释必须遵循 C# 惯例：<c>&lt;summary&gt;</c> 独占一行，正文另起一行。
     /// </summary>
     /// <remarks>
-    /// 单行写法既能编译，也能被 <c>Contain</c> 子串断言命中，所以只能按「行首形状」断言：
-    /// 任何以 <c>/// &lt;summary&gt;</c> 开头却不是纯 <c>/// &lt;summary&gt;</c> 的行都算违规。
-    /// 用引用类型 Id 是为了同时覆盖 <c>CompareValues</c> 与 <c>TypeConverter</c> 两处注释。
+    /// 单行写法既能编译也能被 <c>Contain</c> 命中，故只能按「行首形状」断言：以 <c>/// &lt;summary&gt;</c> 开头却不是纯该行的都算违规。
     /// </remarks>
     [Fact]
     public void Generator_Should_EmitMultiLineSummaryComments()
@@ -2809,7 +2819,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 构造「只提供 [StronglyTypedId] 属性、但不引用任何核心生成器依赖程序集」的编译，使 
+    /// 构造「只提供 [StronglyTypedId] 属性、但不引用任何核心生成器依赖程序集」的编译，使
     /// <see cref="StronglyTypedIdGenerator.GetCodeGenerators"/> 返回空集。
     /// </summary>
     private static CSharpCompilation CreateCompilationWithoutCoreGenerators(string sourceCode, MetadataReference fakeAttributeReference)

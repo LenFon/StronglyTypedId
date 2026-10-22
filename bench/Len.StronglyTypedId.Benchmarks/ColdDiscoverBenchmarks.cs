@@ -9,14 +9,7 @@ namespace Len.StronglyTypedId.Benchmarks;
 /// 也就是冷状态下的成本：符号由元数据惰性实现，第一次枚举要为「实现这些符号」额外付费。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 每次迭代重建一个编译，因此每次都从「符号尚未实现」起步——这正是真实构建每次都会遇到的起点，
-/// 而 <see cref="DiscoveryBenchmarks"/> 里的热枚举是同一编译内的第二次调用。
-/// </para>
-/// <para>
-/// PE 文件的解析不在被测范围内：<see cref="MetadataReference"/> 在进程内创建一次并在编译之间复用，
-/// 解析结果随它缓存；只有符号层的实现成本是每次重建编译才会重复支付的。
-/// </para>
+/// 每次迭代重建编译，从「符号尚未实现」起步；PE 解析不在被测范围内（引用实例进程内复用）。
 /// </remarks>
 [MemoryDiagnoser]
 public class ColdDiscoverBenchmarks

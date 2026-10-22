@@ -4,40 +4,45 @@ using Len.StronglyTypedId.DocGen.Changelog;
 namespace Len.StronglyTypedId.DocGen;
 
 /// <summary>
-/// 文档工具：README 三张表的生成器 + <c>CHANGELOG.md</c> / <c>CHANGELOG.zh-CN.md</c> 的结构校验与草稿。
+/// 文档工具：文档里由源码派生的四张表的生成器 + <c>CHANGELOG.md</c> / <c>CHANGELOG.zh-CN.md</c> 的结构校验与草稿。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 用法：
-/// </para>
+/// 用法（退出码：<c>0</c> 一致，<c>1</c> 不一致，<c>2</c> 运行出错）：
 /// <code>
-/// dotnet run --project tools/Len.StronglyTypedId.DocGen                          # 重新生成两张 README 的表格
-/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify              # CI 门禁：README 与源码不一致则退出码 1
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen                          # 重新生成 README 与 docs 里的表格
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify              # CI 门禁：文档与源码不一致则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-changelog    # CI 门禁：tag 与两份 CHANGELOG 的小节对不上则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-package-readme  # CI 门禁：PACKAGE.md 与源码不一致则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --draft-changelog     # 打印 [Unreleased] 草稿（按 Conventional Commits 分类）
 /// </code>
-/// <para>
-/// 退出码：<c>0</c> 一致（或已更新），<c>1</c> 校验发现不一致，<c>2</c> 运行出错。
-/// </para>
 /// </remarks>
 internal static class Program
 {
     /// <summary>
-    /// 需要维护的 README 及其目标区域性。中文版取 <c>zh-CN</c>，与生成器内嵌的
-    /// <c>Locales/zh-CN.txt</c> 同名，诊断标题才能取到中文文案。
+    /// 需要维护的文档、其目标区域性，以及该文件承载的生成区块。
+    /// 中文版取 <c>zh-CN</c>，与生成器内嵌的 <c>Locales/zh-CN.txt</c> 同名，诊断标题才能取到中文文案。
     /// </summary>
-    private static readonly (string File, string Culture)[] _targets =
+    /// <remarks>
+    /// 区块按文件分配：README 只留导览级两张表，诊断表与生成文件表随章节搬到 <c>docs/</c>；漏写某个文件不会静默放过，<see cref="ReadmeBlocks.Replace"/> 找不到标记就直接抛异常。
+    /// </remarks>
+    private static readonly (string File, string Culture, string[] Blocks)[] _targets =
     [
-        ("README.md", "en"),
-        ("README.zh-CN.md", "zh-CN"),
+        ("README.md", "en", ["primitive-types", "generated-code"]),
+        ("README.zh-CN.md", "zh-CN", ["primitive-types", "generated-code"]),
+        ("docs/generated-code.md", "en", ["generated-files"]),
+        ("docs/zh-CN/generated-code.md", "zh-CN", ["generated-files"]),
+        ("docs/diagnostics.md", "en", ["diagnostics"]),
+        ("docs/zh-CN/diagnostics.md", "zh-CN", ["diagnostics"]),
     ];
 
-    /// <summary>区块 ID 与对应的渲染函数，顺序即替换顺序（彼此独立，不影响结果）。</summary>
+    /// <summary>
+    /// 区块 ID 与对应的渲染函数，顺序即替换顺序（彼此独立，不影响结果）。
+    /// </summary>
     private static readonly (string BlockId, Func<CultureInfo, string> Render)[] _blocks =
     [
         ("primitive-types", DocumentationRenderer.RenderPrimitiveTypes),
         ("generated-code", DocumentationRenderer.RenderGeneratedCode),
+        ("generated-files", DocumentationRenderer.RenderGeneratedFiles),
         ("diagnostics", DocumentationRenderer.RenderDiagnostics),
     ];
 
@@ -71,7 +76,7 @@ internal static class Program
     {
         var stale = false;
 
-        foreach (var (file, cultureName) in _targets)
+        foreach (var (file, cultureName, blocks) in _targets)
         {
             var path = Path.Combine(root, file);
             var current = File.ReadAllText(path);
@@ -79,9 +84,9 @@ internal static class Program
             var culture = CultureInfo.GetCultureInfo(cultureName);
             var generated = current;
 
-            foreach (var (blockId, render) in _blocks)
+            foreach (var blockId in blocks)
             {
-                generated = ReadmeBlocks.Replace(generated, blockId, render(culture), newLine);
+                generated = ReadmeBlocks.Replace(generated, blockId, Render(blockId, culture), newLine);
             }
 
             if (string.Equals(generated, current, StringComparison.Ordinal))
@@ -113,6 +118,13 @@ internal static class Program
 
         return stale ? 1 : 0;
     }
+
+    /// <summary>
+    /// 按区块 ID 取渲染函数。<paramref name="blockId"/> 拼错会在第一次运行时炸出来，
+    /// 而不是留下一段永远不再更新的文档。测试复用同一入口，避免两处各写一份映射。
+    /// </summary>
+    internal static string Render(string blockId, CultureInfo culture)
+        => _blocks.First(entry => string.Equals(entry.BlockId, blockId, StringComparison.Ordinal)).Render(culture);
 
     /// <summary>
     /// 定位仓库根目录：优先取 <c>--root &lt;path&gt;</c>，否则从程序集所在目录逐级上溯找解决方案文件。

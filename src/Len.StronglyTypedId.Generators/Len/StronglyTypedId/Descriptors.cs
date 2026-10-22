@@ -227,8 +227,7 @@ internal static class Descriptors
     /// 显式启用了某个集成，但当前编译没有引用其程序集，该集成不会生成任何代码。
     /// </summary>
     /// <remarks>
-    /// 按集成聚合后只能在编译结束时上报（要等所有 Id 的请求都到齐），故必须带上
-    /// <see cref="WellKnownDiagnosticTags.CompilationEnd"/>，否则 RS1037 会报错。
+    /// 按集成聚合后只能等编译结束上报，故必须带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/>，否则 RS1037 报错。
     /// </remarks>
     public static readonly DiagnosticDescriptor IntegrationUnavailable
         = new(IntegrationUnavailableId,
@@ -291,16 +290,8 @@ internal static class Descriptors
     /// <c>[StronglyTypedId(Integrations = …)]</c> 的取值含有未定义的位。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 越界位既不匹配任何集成、也不会被任何生成器读到：不报就是「写了却什么都没发生」，而使用者
-    /// 会以为自己打开了某个集成。级别取 Warning 而非 Error —— 这段代码本身合法，只是不生效。
-    /// </para>
-    /// <para>
-    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/>：逐类型的越界位在符号回调里就能报，但
-    /// 程序集级默认值（<c>[assembly: StronglyTypedIdDefaults]</c>）只能等到编译结束才知道，而同一个
-    /// 描述符不能按调用点换标签（RS1037 要求「用于上报编译结束诊断的描述符」必须带该标签）。代价是
-    /// IDE 里的波浪线要等整轮编译结束才出现，与 STIA0019 一致。
-    /// </para>
+    /// 越界位不匹配任何集成、也不会被任何生成器读到：不报就是「写了却什么都没发生」。级别取 Warning —— 代码本身合法，只是不生效。
+    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/> 是因为程序集级默认值只能等到编译结束才知道，代价是 IDE 波浪线延后。
     /// </remarks>
     public static readonly DiagnosticDescriptor UnknownIntegration
         = new(UnknownIntegrationId,

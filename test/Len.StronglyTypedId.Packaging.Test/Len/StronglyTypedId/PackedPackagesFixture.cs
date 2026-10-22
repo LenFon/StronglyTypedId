@@ -140,13 +140,8 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     {
         var projectPath = Path.Combine(RepositoryRoot, relativeProjectPath.Replace('/', Path.DirectorySeparatorChar));
 
-        // GeneratePackageOnBuild 在 Release 下会把包同时写进项目默认输出目录，这里显式关掉，
-        // 让产物只落在我们指定的临时目录里，不污染仓库。
-        //
-        // EnablePackageValidation 也关掉：本测试断言的是「包内容清单」，与 API 兼容性校验无关
-        // （后者由 CI 的 pack job 在真实基线下覆盖）。开着它会让本地占位版本号（1.0.0 < 基线
-        // 1.3.0-preview.5）下的基线抑制被判为「不必要」（CP0021），把一个与内容无关的失败
-        // 混进来。
+        // 关掉 GeneratePackageOnBuild，让包只落在指定的临时目录里，不污染仓库。
+        // 也关掉 EnablePackageValidation：本测试断言的是包内容清单，开着会让本地占位版本号下的基线抑制被判为「不必要」（CP0021），混进与内容无关的失败。
         var arguments = new[]
         {
             "pack",

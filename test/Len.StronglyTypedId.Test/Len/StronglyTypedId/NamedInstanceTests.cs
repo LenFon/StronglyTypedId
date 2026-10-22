@@ -18,6 +18,24 @@ public class NamedInstanceTests
     }
 
     /// <summary>
+    /// 特性本身也是公开 API：反射读到的 <c>Name</c> / <c>Value</c> 必须与声明逐字一致，
+    /// 且 <c>AllowMultiple</c> 让同一个 Id 能挂多条实例声明。
+    /// </summary>
+    [Fact]
+    public void InstanceAttribute_Should_ExposeDeclaredNameAndValue()
+    {
+        var attributes = (StronglyTypedIdInstanceAttribute[])Attribute.GetCustomAttributes(
+            typeof(InstanceInt32Id),
+            typeof(StronglyTypedIdInstanceAttribute));
+
+        attributes.Should().HaveCount(2);
+        attributes[0].Name.Should().Be("Unspecified");
+        attributes[0].Value.Should().Be("-1");
+        attributes[1].Name.Should().Be("Anonymous");
+        attributes[1].Value.Should().Be("0");
+    }
+
+    /// <summary>
     /// <c>long.MinValue</c> 是字面量发射最容易写错的边界：一元负号必须作用于整个字面量。
     /// </summary>
     [Fact]
@@ -40,8 +58,7 @@ public class NamedInstanceTests
     /// 硬不变式：实例是 <c>Create</c> 的产物，故规范文本形一定读得回来。
     /// </summary>
     /// <remarks>
-    /// 时间基元不在此列：无参 <c>ToString()</c> 走默认格式串，"G" 会丢掉亚秒与 <c>Kind</c>，
-    /// 文本往返本来就有损（见 K1 的既有结论），与实例无关。
+    /// 时间基元不在此列：无参 <c>ToString()</c> 走默认格式串，"G" 会丢掉亚秒与 <c>Kind</c>，文本往返本来就有损。
     /// </remarks>
     [Fact]
     public void Instance_Should_RoundTripThroughCanonicalText()
@@ -137,8 +154,7 @@ public class NamedInstanceTests
     /// 验证器拒绝哨兵值时，类型初始化器抛 <see cref="TypeInitializationException"/>。
     /// </summary>
     /// <remarks>
-    /// 这是 N2 的既定取舍：编译期无法静态判定「验证器会不会接受这个值」（验证器是任意用户代码），
-    /// 与其让一个不可能存在的 Id 悄悄流进领域模型，不如在第一次触碰时立刻失败。
+    /// 这是 N2 的既定取舍：验证器是任意用户代码，编译期无法静态判定它会不会接受该值，故宁可第一次触碰时立刻失败。
     /// </remarks>
     [Fact]
     public void Instance_Should_ThrowTypeInitializationException_WhenValidatorRejectsValue()

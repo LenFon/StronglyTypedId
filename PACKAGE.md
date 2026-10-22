@@ -6,8 +6,8 @@
 `Len.StronglyTypedId` is a Roslyn source generator (with analyzer + code fixes) that turns a one-line
 `record` declaration into a fully featured strongly typed identifier. It generates the
 `IStronglyTypedId<TSelf, TPrimitiveId>` and `IParsable<TSelf>` implementation plus System.Text.Json /
-Newtonsoft.Json / EF Core / Dapper / Swashbuckle / ASP.NET Core integrations — so a `Guid` can never be
-passed where an `OrderId` is expected, and vice versa.
+Newtonsoft.Json / EF Core / Dapper / Swashbuckle / ASP.NET Core / MessagePack / MongoDB integrations — so a
+`Guid` can never be passed where an `OrderId` is expected, and vice versa.
 
 ## Install
 
@@ -15,8 +15,9 @@ passed where an `OrderId` is expected, and vice versa.
 dotnet add package Len.StronglyTypedId
 ```
 
-One package is enough — it already depends on `Len.StronglyTypedId.Generators`. Requires .NET 8.0+ SDK
-and a target framework `net8.0` / `net10.0`. Integrations are generated only when the matching package
+One package is enough — it already depends on `Len.StronglyTypedId.Generators`. Requires a compiler that
+provides **Roslyn 5.9 or newer** (verified with .NET SDK 10.0.401; older SDKs fail with `CS9057`) and a
+target framework `net8.0` / `net10.0`. Integrations are generated only when the matching package
 is referenced.
 
 ## Quick start
@@ -96,11 +97,13 @@ Generated only when the matching package is referenced; `Integrations` can narro
 - **Binary serialization** — `MessagePack` and `MongoDb`: a generated `IMessagePackFormatter<TId>` /
   `IBsonSerializer<TId>`, wired up by `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` and
   `StronglyTypedIds.RegisterBsonSerializers()`. Both write the primitive value itself — the text prefix
-  belongs to the text form (`ToString()` / JSON) and never reaches the payload.
+  belongs to the text form (`ToString()` / JSON) and does not reach the payload. The exception is
+  `BigInteger`, `Int128` and `UInt128`: they have no native MessagePack / BSON representation, so those
+  ids are stored as their invariant-culture text, prefix included.
 - **EF Core** — `EntityFrameworkCore`: `StronglyTypedIds.ApplyTo(configurationBuilder)` from
   `ConfigureConventions`, plus a model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from
-  `OnModelCreating`. Both overloads are generated together whenever a `DbContext` overrides
-  `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced.
+  `OnModelCreating` for contexts that do not override `ConfigureConventions`. Both overloads are
+  generated whenever EF Core ≥ 7.0.0 is referenced.
 - **Dapper** — `Dapper`: `StronglyTypedIds.ApplyTo()` registers `TypeHandler`s in Dapper's process-wide
   registry, so it only needs to run once. The `ApplyTo(IDbConnection)` overload is kept for source
   compatibility and ignores its argument.
@@ -119,9 +122,9 @@ and `Len.StronglyTypedId.Testing.AutoFixture` wires the same generator into Auto
 
 The runtime library is marked `<IsAotCompatible>true</IsAotCompatible>`: the core types and every
 generated converter avoid dynamic code generation and loading types by name, so strongly typed ids
-work in Native AOT and trimmed applications. The only reflection entry point,
-`StronglyTypedIdExtensions.TryGetPrimitiveIdType` / `GetPrimitiveIdType` / `IsStronglyTypedId`,
-is annotated with `[DynamicallyAccessedMembers(Interfaces)]` so the interface metadata that identifies
+work in Native AOT and trimmed applications. The only reflection entry points —
+`StronglyTypedIdExtensions.TryGetPrimitiveIdType`, `GetPrimitiveIdType` and `IsStronglyTypedId` — are
+annotated with `[DynamicallyAccessedMembers(Interfaces)]` so the interface metadata that identifies
 a strongly typed id is preserved under trimming.
 
 ## Changelog

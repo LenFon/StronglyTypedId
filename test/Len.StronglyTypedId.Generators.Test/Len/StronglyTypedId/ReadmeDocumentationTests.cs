@@ -7,26 +7,37 @@ using Len.StronglyTypedId.Generators;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// README 三张表与源码的一致性守卫。
+/// 文档里由 DocGen 维护的表格与源码的一致性守卫。
 /// </summary>
+/// <remarks>
+/// 区块按文件分配：README 只留导览级两张表，诊断表在 <c>docs/diagnostics.md</c>，生成文件表在 <c>docs/generated-code.md</c>。
+/// 新增或搬动区块时，这里的 <c>InlineData</c> 与 <see cref="Program"/> 的 targets 必须一起改。
+/// </remarks>
 public class ReadmeDocumentationTests
 {
     [Theory]
-    [InlineData("README.md", "en")]
-    [InlineData("README.zh-CN.md", "zh-CN")]
-    public void Readme_Should_MatchGeneratedTables(string fileName, string cultureName)
+    [InlineData("README.md", "en", "primitive-types,generated-code")]
+    [InlineData("README.zh-CN.md", "zh-CN", "primitive-types,generated-code")]
+    [InlineData("docs/generated-code.md", "en", "generated-files")]
+    [InlineData("docs/zh-CN/generated-code.md", "zh-CN", "generated-files")]
+    [InlineData("docs/diagnostics.md", "en", "diagnostics")]
+    [InlineData("docs/zh-CN/diagnostics.md", "zh-CN", "diagnostics")]
+    public void Document_Should_MatchGeneratedTables(string fileName, string cultureName, string blockIds)
     {
         var path = Path.Combine(RepositoryRoot(), fileName);
 
-        File.Exists(path).Should().BeTrue($"测试前提：{fileName} 必须位于仓库根目录");
+        File.Exists(path).Should().BeTrue($"测试前提：{fileName} 必须存在于仓库中");
 
         var text = File.ReadAllText(path);
         var newLine = ReadmeBlocks.DetectNewLine(text);
         var culture = CultureInfo.GetCultureInfo(cultureName);
 
-        var expected = ReadmeBlocks.Replace(text, "primitive-types", DocumentationRenderer.RenderPrimitiveTypes(culture), newLine);
-        expected = ReadmeBlocks.Replace(expected, "generated-code", DocumentationRenderer.RenderGeneratedCode(culture), newLine);
-        expected = ReadmeBlocks.Replace(expected, "diagnostics", DocumentationRenderer.RenderDiagnostics(culture), newLine);
+        var expected = text;
+
+        foreach (var blockId in blockIds.Split(','))
+        {
+            expected = ReadmeBlocks.Replace(expected, blockId, Program.Render(blockId, culture), newLine);
+        }
 
         ShouldMatch(text, expected, $"{fileName} 的表格已过期，请运行 `dotnet run --project tools/Len.StronglyTypedId.DocGen`");
     }
@@ -90,6 +101,21 @@ public class ReadmeDocumentationTests
         {
             registration.Condition.Zh.Should().NotBeNullOrWhiteSpace($"{registration.AssemblyName} 的触发条件缺少中文");
             registration.Documentation.Zh.Should().NotBeNullOrWhiteSpace($"{registration.AssemblyName} 的产物说明缺少中文");
+            registration.FileNames.Zh.Should().NotBeNullOrWhiteSpace($"{registration.AssemblyName} 的产物文件名缺少中文");
+        }
+    }
+
+    /// <summary>
+    /// 每个成行的登记项都必须登记文件名：<c>docs/generated-code.md</c> 的「Generated files」表
+    /// 与 README 的表共用同一批行，漏填会让那一格变成空白而不是报错。
+    /// </summary>
+    [Fact]
+    public void DocumentedGenerators_Should_RegisterFileNames()
+    {
+        foreach (var registration in StronglyTypedIdGenerator.DocumentedGenerators)
+        {
+            registration.FileNames.IsEmpty.Should().BeFalse(
+                $"{registration.AssemblyName} 已在 README 表中成行，必须同时登记产物文件名");
         }
     }
 

@@ -2167,9 +2167,7 @@ public class StronglyTypedIdAnalyzerTests
     /// 必须报告 STIA0020。
     /// </summary>
     /// <remarks>
-    /// 这条用例守着一个具体的回归：撞名判定原先靠「滤掉带 <c>[GeneratedCode]</c> 的成员」来避免
-    /// 「实例撞上自己刚生成的字段」，但那个过滤把生成器产出的**方法**也一并放过了 —— 于是
-    /// <c>CompareValues</c> 被当成「不撞名」，分析器沉默，直到生成代码里冒出 CS0102。
+    /// 守着一次具体回归：撞名判定原先靠「滤掉带 <c>[GeneratedCode]</c> 的成员」，把生成器产出的方法也一并放过，于是 <c>CompareValues</c> 被当成不撞名，直到生成代码里冒出 CS0102。
     /// </remarks>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInstanceNameCollidesWithGeneratedComparisonHelper()

@@ -12,18 +12,9 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// <see cref="MetadataReferenceExtensions.GetModules"/> 的单元测试：覆盖两个实际可达分支
-/// （CompilationReference 与 PortableExecutableReference/AssemblyMetadata）以及 PE 引用未登记进编译时
-/// Assembly 为 null 的路径。
+/// <see cref="MetadataReferenceExtensions.GetModules"/> 的单元测试：覆盖两个实际可达分支（CompilationReference 与
+/// PortableExecutableReference/AssemblyMetadata）以及 PE 引用未登记进编译时 Assembly 为 null 的路径。
 /// </summary>
-/// <remarks>
-/// 第三个防御性分支（返回空集合）作用于无法识别的引用类型（如 <see cref="PortableExecutableReference"/>
-/// 之外、或 <see cref="PortableExecutableReference.GetMetadata"/> 不返回 <see cref="AssemblyMetadata"/> 的引用）。
-/// 模块级（netmodule）引用虽会经 <see cref="PortableExecutableReference.GetMetadata"/> 返回被包裹的
-/// <see cref="AssemblyMetadata"/>，但其模块不含程序集清单，已在 <see cref="MetadataReferenceExtensions.GetModules"/>
-/// 内部按 <see cref="System.Reflection.Metadata.MetadataKind"/> 过滤为安全返回空集合，不再抛异常（见下方
-/// <c>GetModules_Should_ReturnEmpty_ForModuleOnlyNetmoduleReference</c>）。
-/// </remarks>
 public class MetadataReferenceExtensionsTests
 {
     #region 分支一：CompilationReference
@@ -164,12 +155,9 @@ public class MetadataReferenceExtensionsTests
     #region 分支三：元数据形态异常的 PE 引用
 
     /// <summary>
-    /// <c>GetMetadata()</c> 返回的不是 <see cref="AssemblyMetadata"/> 时，<see cref="MetadataReferenceExtensions.GetModules"/>
-    /// 必须安全返回空集合，而不是抛异常或返回 null。
+    /// <c>GetMetadata()</c> 返回的不是 <see cref="AssemblyMetadata"/> 时，
+    /// <see cref="MetadataReferenceExtensions.GetModules"/> 必须安全返回空集合，而不是抛异常或返回 null。
     /// </summary>
-    /// <remarks>
-    /// 真实引用里走不到这条路径，故用 <see cref="StubbedPortableExecutableReference"/> 构造出该形态。
-    /// </remarks>
     [Fact]
     public void GetModules_Should_ReturnEmpty_ForNonAssemblyMetadata()
     {
@@ -182,13 +170,6 @@ public class MetadataReferenceExtensionsTests
     /// <summary>
     /// 程序集元数据里含有「不含程序集清单」的模块（模块级 netmodule）时，该模块必须被跳过而非令整个调用崩溃。
     /// </summary>
-    /// <remarks>
-    /// 这与上方 <c>GetModules_Should_ReturnEmpty_ForModuleOnlyNetmoduleReference</c> 覆盖的是不同环节：
-    /// 那条走真实文件引用、由 Roslyn 在 <c>AssemblyMetadata.GetModules()</c> 内部就把无清单模块滤掉；
-    /// 这条则把无清单模块直接塞进 <see cref="AssemblyMetadata"/>，从而真正执行到
-    /// <c>GetAssemblyDefinition()</c> 的失败兜底（<see cref="BadImageFormatException"/> /
-    /// <see cref="InvalidOperationException"/>）——不同运行时抛其中一种。
-    /// </remarks>
     [Fact]
     public void GetModules_Should_SkipModuleWithoutAssemblyManifest()
     {
@@ -205,12 +186,6 @@ public class MetadataReferenceExtensionsTests
     /// <summary>
     /// 可控的 <see cref="PortableExecutableReference"/> 替身：<c>GetMetadata()</c> 的返回值由构造参数决定。
     /// </summary>
-    /// <remarks>
-    /// <see cref="MetadataReference"/> 的构造函数是 <c>internal</c>，测试程序集无法直接继承；
-    /// <see cref="PortableExecutableReference"/> 的构造函数是 <c>protected</c>，可以继承并在
-    /// <c>GetMetadataImpl</c> 里返回任意 <see cref="Metadata"/>。三个抽象成员中只有第一个参与本测试，
-    /// 另外两个是基类契约要求的占位实现。
-    /// </remarks>
     private sealed class StubbedPortableExecutableReference : PortableExecutableReference
     {
         private readonly Func<Metadata> _metadataFactory;
@@ -262,11 +237,10 @@ public class MetadataReferenceExtensionsTests
     {
         var seed = new[] { typeof(object).Assembly, typeof(StronglyTypedIdAttribute).Assembly };
 
-        return AppDomain.CurrentDomain.GetAssemblies()
+        return [.. AppDomain.CurrentDomain.GetAssemblies()
             .Union(seed)
             .Distinct()
             .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))
-            .ToImmutableArray();
+            .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))];
     }
 }

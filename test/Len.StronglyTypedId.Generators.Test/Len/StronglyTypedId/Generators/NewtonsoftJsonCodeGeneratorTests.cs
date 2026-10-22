@@ -11,23 +11,9 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// <see cref="NewtonsoftJsonCodeGenerator"/> 的单元测试：覆盖顺序属性、真实 Newtonsoft.Json 引用下的产物形态
-/// （[JsonConverter] 特性 + 内嵌 <c>NewtonsoftJsonConverter</c> 的 ReadJson / WriteJson），
-/// 多 Id 生成，以及消费者可编译性。
+/// <see cref="NewtonsoftJsonCodeGenerator"/> 的单元测试：覆盖顺序属性、真实 Newtonsoft.Json 引用下的产物形态（[JsonConverter] 特性 +
+/// 内嵌 <c>NewtonsoftJsonConverter</c> 的 ReadJson / WriteJson），多 Id 生成，以及消费者可编译性。
 /// </summary>
-/// <remarks>
-/// <para>
-/// 本文件与 <see cref="CodeGeneratorModuleGateTests"/> 的 Newtonsoft.Json 闸门用例互补：后者用合成
-/// <c>Newtonsoft.Json</c> 程序集验证「版本门控是否生效」（≥13 才生成），本文件则在真实
-/// Newtonsoft.Json 引用下验证「生成的 JsonConverter 确实能编译、形态正确」。
-/// </para>
-/// <para>
-/// Newtonsoft 产物是「内嵌式」：把 <c>[JsonConverter(typeof(NewtonsoftJsonConverter))]</c> 特性
-/// 与 <c>NewtonsoftJsonConverter</c> 类内嵌进强类型 Id 的 partial 声明里（而非独立聚合文件），
-/// 故产物文件名为 <c>Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs</c>，与核心文件
-/// <c>Len.StronglyTypedId.OrderId.g.cs</c> 互为 partial。
-/// </para>
-/// </remarks>
 public class NewtonsoftJsonCodeGeneratorTests
 {
     #region 辅助：驱动生成器并捕获 Newtonsoft 产物
@@ -66,7 +52,7 @@ public class NewtonsoftJsonCodeGeneratorTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
-    private static IReadOnlyDictionary<string, string> GetGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
+    private static Dictionary<string, string> GetGeneratedCode(string sourceCode, params MetadataReference[] extraReferences)
     {
         var compilation = CreateCompilation(sourceCode, extraReferences);
 
@@ -120,10 +106,7 @@ public class NewtonsoftJsonCodeGeneratorTests
     #region 顺序属性
 
     [Fact]
-    public void NewtonsoftJson_Should_HaveOrderTwo()
-    {
-        NewtonsoftJsonCodeGenerator.Instance.Order.Should().Be(2);
-    }
+    public void NewtonsoftJson_Should_HaveOrderTwo() => NewtonsoftJsonCodeGenerator.Instance.Order.Should().Be(2);
 
     #endregion
 
@@ -223,7 +206,7 @@ public class NewtonsoftJsonCodeGeneratorTests
     }
 
     /// <summary>
-    /// 默认（基元形态）下产物不含任何对象形态痕迹 —— 引入本开关不改变既有产物。
+    /// 默认（基元形态）下产物不含任何对象形态痕迹——引入本开关不改变既有产物。
     /// </summary>
     [Fact]
     public void JsonShape_Primitive_Should_NotGenerateObjectShape_ForNewtonsoftJson()
@@ -244,12 +227,6 @@ public class NewtonsoftJsonCodeGeneratorTests
     /// <summary>
     /// 回归用例：Newtonsoft 产物在「真实引用 Newtonsoft.Json」的消费者里必须能编译。
     /// </summary>
-    /// <remarks>
-    /// 生成文件里所有 Newtonsoft 符号都用 <c>global::</c> 全限定，不依赖任何隐式 using，
-    /// 因此 Web SDK 与非 Web SDK 消费者都通。必须真正 Emit 一次产物（而非只比对文本），
-    /// 才能抓住「类型 / 命名空间不可解析」这类真机缺陷。Newtonsoft 产物与核心文件互为 partial，
-    /// 故必须一起编译。
-    /// </remarks>
     [Fact]
     public void NewtonsoftJson_Should_Compile_WhenConsumerReferencesNewtonsoft()
     {

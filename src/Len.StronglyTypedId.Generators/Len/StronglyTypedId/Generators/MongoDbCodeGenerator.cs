@@ -6,16 +6,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 MongoDB BSON 的 <c>IBsonSerializer&lt;TId&gt;</c> 与注册入口。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 与 MessagePack 集成同构：序列化器放在 <c>StronglyTypedIds</c> 里，靠 <c>RegisterBsonSerializers()</c>
-/// 注册进 <c>BsonSerializer</c> 的进程级注册表。不走 <c>[BsonSerializer]</c> 特性是因为它只能加在本次编译
-/// 声明的类型上 —— 引用程序集里的 Id 没法重开 partial 声明，那样一来「库作者声明、消费者使用」这条最常见的
-/// 路径反而没有序列化器。
-/// </para>
-/// <para>
-/// 载荷存放基元值本身（<c>value.Value</c>）；<see cref="StronglyTypedIdInfo.IsBinaryTextPrimitive"/>
-/// 的三种基元没有 BSON 序列化器，改写成规范文本（BSON string）。
-/// </para>
+/// 与 MessagePack 同构：序列化器放在 <c>StronglyTypedIds</c> 里，靠 <c>RegisterBsonSerializers()</c> 注册进进程级注册表。
+/// 不走 <c>[BsonSerializer]</c> 是因为它只能加在本次编译声明的类型上，「库作者声明、消费者使用」这条路径反而没有序列化器。
 /// </remarks>
 internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
 {

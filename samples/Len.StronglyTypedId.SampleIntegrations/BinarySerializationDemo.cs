@@ -9,9 +9,8 @@ namespace Len.StronglyTypedId.SampleIntegrations;
 /// 二进制序列化：MessagePack 与 MongoDB BSON。
 /// </summary>
 /// <remarks>
-/// 与 EF Core / Dapper 的区别在「谁决定编码」：那两个把 Id 拆成裸基元交给列类型，这两个库自己编码，
-/// 故生成器提供的是格式化器 / 序列化器，而不是值转换器。共同点是载荷里只有基元值 ——
-/// 文本前缀不进二进制，改前缀不会让已落盘的数据读不回来。
+/// 与 EF Core / Dapper 的区别在「谁决定编码」：那两个把 Id 拆成裸基元交给列类型，这两个库自己编码。
+/// 载荷里只有基元值 —— 文本前缀不进二进制，改前缀不会让已落盘的数据读不回来。
 /// </remarks>
 internal static class BinarySerializationDemo
 {

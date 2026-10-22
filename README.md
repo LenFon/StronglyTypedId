@@ -1,6 +1,6 @@
 # StronglyTypedId
 
-> 📖 中文文档：[README.zh-CN.md](README.zh-CN.md)
+> 📖 中文文档：[README.zh-CN.md](README.zh-CN.md) · 🌐 Docs site: [lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
 
 [![codecov][badge-codecov]](https://app.codecov.io/gh/LenFon/StronglyTypedId/tree/main)
 [![NuGet][badge-nuget]][nuget-package]
@@ -20,30 +20,8 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - [Getting started](#getting-started)
 - [Supported primitive types](#supported-primitive-types)
 - [What gets generated](#what-gets-generated)
-- [Value validation](#value-validation)
-- [Value normalization](#value-normalization)
-- [Named instances](#named-instances)
-- [TryCreate & UTF-8 interfaces](#trycreate-and-utf8)
-- [TypeConverter](#type-converter)
-- [Assembly-level defaults](#assembly-defaults)
-- [Turning integrations off](#integrations-filter)
-- [Nested types](#nested-types)
-- [Serialization](#serialization)
-- [Entity Framework Core](#entity-framework-core)
-- [Swashbuckle](#swashbuckle)
-- [Dapper](#dapper)
-- [ASP.NET Core MVC](#aspnet-core-mvc)
-- [Minimal API](#minimal-api)
-- [ASP.NET Core OpenAPI](#aspnetcore-openapi)
-- [Using the interface](#using-the-interface)
-- [Reflection helpers](#reflection-helpers)
-- [Testing](#testing)
-- [Samples](#samples)
-- [Diagnostics](#diagnostics)
-- [Migrating from another library](#migrating-from-another-library)
-- [Comparison with other libraries](#comparison-with-other-libraries)
+- [Documentation](#documentation)
 - [Limitations](#limitations)
-- [FAQ](#faq)
 - [License](#license)
 
 <a id="features"></a>
@@ -51,22 +29,23 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
-- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and most of the
-  twenty-three rules come with a code fix that repairs the declaration for you (see [Diagnostics](#diagnostics)).
+- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and sixteen of
+  its twenty-five rules come with a code fix that repairs the declaration for you (see [Diagnostics](docs/diagnostics.md#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
-  and `ISpanFormattable` for every primitive that has them (all but `string`).
+  and `ISpanFormattable` whenever the primitive itself implements them — `string` does not, and
+  enum-backed ids skip both because `System.Enum`'s inherited members are `[Obsolete]`.
 - **Comparison & ordering** — each id implements `IComparable<TSelf>` and the four comparison operators,
   so `OrderBy`, `SortedSet<T>` and ranges work without a custom comparer.
 - **Value validation** — point `Validator` at a static method of the id to make `Create` and `TryParse`
-  reject invalid values (see [Value validation](#value-validation)).
+  reject invalid values (see [Value validation](docs/declaration.md#value-validation)).
 - **Custom failure type** — `ExceptionType` swaps the `ArgumentException` that `Create` throws when the
   validator rejects a value for an exception of your own.
 - **Value normalization** — point `Normalizer` at a static method to repair incoming values (trim, case-fold,
-  strip separators) before they are validated and stored (see [Value normalization](#value-normalization)).
+  strip separators) before they are validated and stored (see [Value normalization](docs/declaration.md#value-normalization)).
 - **Named instances** — `[StronglyTypedIdInstance("Unspecified", "-1")]` declares `public static readonly`
   fields that are built through `Create`, so they honour the normalizer and validator and always parse
-  back (see [Named instances](#named-instances)).
+  back (see [Named instances](docs/declaration.md#named-instances)).
 - **`TryCreate` factory** — the non-throwing counterpart of `Create`: on a failed parse it returns `false`
   and sets `result` to `default` instead of throwing.
 - **UTF-8 interfaces** — for primitives that expose them (`Guid` from .NET 10, for example),
@@ -79,29 +58,22 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
   validator for the whole assembly.
 - **Per-id integration filter** — `[StronglyTypedId(Integrations = ...)]` narrows which integration code an
   id gets (`None`, a whitelist, or `All`), with an assembly-level default
-  (see [Turning integrations off](#integrations-filter)).
-- **Dapper integration** — when `Dapper` ≥ 2.0.0 is referenced, `TypeHandler`s and a process-wide `ApplyTo()` are generated.
-- **ASP.NET Core MVC integration** — when `Microsoft.AspNetCore.Mvc` (or its `Microsoft.AspNetCore.Mvc.Core` facade) ≥ 2.0.0 is referenced, a model-binder provider and per-id route constraints are generated so `[FromRoute]`/`[FromQuery]` and `{id:OrderId}` bind correctly.
-- **Minimal API support** — nothing extra to generate: route/query parameters bind through `IParsable<T>`, and `{id:OrderId}` route constraints reuse the `RouteOptions` registration emitted by the MVC integration.
-- **ASP.NET Core OpenAPI integration** — when `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced,
-  `ApplyTo(OpenApiOptions)` schema mappings are generated.
+  (see [Turning integrations off](docs/declaration.md#integrations-filter)).
+- **Seven more integrations** — Entity Framework Core, Dapper, Swashbuckle, ASP.NET Core MVC (which
+  also powers Minimal API route constraints), ASP.NET Core OpenAPI, MessagePack and MongoDB. Each is emitted
+  only when its package is referenced, and each ships a `StronglyTypedIds.ApplyTo(...)` entry point
+  (see [Integrations](docs/integrations.md)).
 - **Serialization** — `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
-  automatically, including `System.Text.Json` dictionary-key support; both also expose an explicit registration
-  entry point (`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` and `settings.AddStronglyTypedId()`), and the
-  JSON shape is configurable per id (see [JSON shape](#serialization)).
-- **Text prefix** — set `[StronglyTypedId(Prefix = "ord_")]` to give an id a canonical textual form
+  automatically, including dictionary-key support; both expose an explicit registration entry point, and
+  the JSON shape is configurable per id (see [Serialization](docs/serialization.md#serialization)).
+- **Text prefix** — `[StronglyTypedId(Prefix = "ord_")]` gives an id a canonical textual form
   (`"ord_3f2c…"`) that flows through `ToString`, `Parse`, JSON and every other text path
-  (see [Text prefix](#serialization)).
-- **Entity Framework Core** — value converters for EF Core (≥ 7.0.0) are generated when needed.
-- **Swagger / OpenAPI** — schema mappings for Swashbuckle.AspNetCore are generated when referenced,
-  for both Microsoft.OpenApi 1.x and 2.x.
+  (see [Text prefix](docs/serialization.md#serialization)).
 - **Runtime reflection helpers** — inspect any type at runtime and get the primitive id behind it.
-- **Native AOT & trimming** — the runtime library is marked AOT-compatible and avoids loading types by
-  name or emitting dynamic code, so strongly typed ids work in Native AOT and trimmed applications.
-  Note that `System.Text.Json` disables reflection-based serialization under AOT, so an AOT app must
-  supply a source-generated `JsonSerializerContext`; that is a `System.Text.Json` requirement rather
-  than something specific to this library (see `test/Len.StronglyTypedId.Aot.SmokeTest` for a minimal,
-  CI-verified example).
+- **Native AOT & trimming** — the runtime library is marked AOT-compatible and loads no types by name, so
+  ids work in Native AOT and trimmed applications. `System.Text.Json` still needs a source-generated
+  `JsonSerializerContext` under AOT, which is its own requirement rather than this library's
+  (see [Native AOT and trimming](docs/aot.md)).
 - **Zero third-party dependencies** — the package ships only the generator/analyzer assembly plus a
   small runtime library; nothing is added to your application's dependency graph.
 
@@ -112,7 +84,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 | Component                              | Requirement                                                                              |
 | -------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Target framework of your project       | **`net8.0`, `net10.0`**, or a later compatible framework (the runtime library targets `net8.0` and `net10.0`). |
-| .NET SDK                               | **8.0 or later** (the generator targets `netstandard2.0` and needs **Roslyn 4.4+**, which the .NET 8 SDK and later provide). A consuming project must target `net8.0`/`net10.0` or later — see the row above. |
+| .NET SDK                               | **A compiler that provides Roslyn 5.9 or newer.** The generator is compiled against `Microsoft.CodeAnalysis` 5.9, so an older compiler cannot load it: the build reports `CS9057` and then fails with a missing `Create` method. Verified with .NET SDK **10.0.401**; SDK 10.0.201 (Roslyn 5.3) and 9.0.308 (Roslyn 4.14) both fail. |
 | Newtonsoft.Json                        | ≥ **13.0.0** (only when using the Newtonsoft.Json converter).                            |
 | EntityFrameworkCore                    | ≥ **7.0.0** (only when using the EF Core converter).                                     |
 | Swashbuckle.AspNetCore.SwaggerGen      | ≥ **6.0.0** (only when generating Swagger schema mappings).                              |
@@ -132,12 +104,10 @@ the generator's much lower `netstandard2.0` baseline.
    CLI             : dotnet add package Len.StronglyTypedId
    ```
 
-   One package is enough: `Len.StronglyTypedId` already depends on `Len.StronglyTypedId.Generators`,
-   which carries the generator, the analyzer and the code fixes. The dependency is transitive, so
-   **every project that references `Len.StronglyTypedId` also gets the analyzer** — including projects
-   that only consume `IStronglyTypedId<,>` and declare no ids of their own. That is deliberate: an id
-   declared further downstream still needs the generator. A project that wants none of the diagnostics
-   can silence them per project in `.editorconfig`.
+   One package is enough: `Len.StronglyTypedId` depends on `Len.StronglyTypedId.Generators`, which carries
+   the generator, the analyzer and the code fixes. The dependency is transitive, so **every project that
+   references the main package also gets the analyzer** — see [Packages](docs/packages.md) for why, and for
+   how to silence the diagnostics in a project that wants none of them.
 
 2. Declare a strongly typed id with a single primary constructor parameter named `Value`:
 
@@ -151,10 +121,9 @@ the generator's much lower `netstandard2.0` baseline.
    public partial record OrderId(Guid Value);
    ```
 
-   > **`record` vs `record struct`** — `record struct` produces a value type (cannot be `null`,
-   > no boxing on interface calls), while `record` produces a reference type (can be `null`).
-   > Both are structurally comparable and usable as dictionary keys. Choose the one that matches your
-   > nullability and performance expectations; both expose the same generated members.
+   > **`record` vs `record struct`** — a value type versus a reference type, with exactly the same
+   > generated members either way. See [The declaration](docs/declaration.md#the-declaration) for the
+   > trade-off.
 
    The generated type exposes `Value`, a static `Create(...)` factory, and `Parse` / `TryParse`.
    Use it anywhere you would otherwise pass a bare primitive:
@@ -172,7 +141,7 @@ the generator's much lower `netstandard2.0` baseline.
    ```
 
    The `Value` parameter may keep its `Nullable` context, but it may not be a nullable type:
-   `OrderId(Guid? Value)` is rejected by the analyzer ([STIA0006](#diagnostics)).
+   `OrderId(Guid? Value)` is rejected by the analyzer ([STIA0006](docs/diagnostics.md#diagnostics)).
 
 <a id="supported-primitive-types"></a>
 
@@ -211,10 +180,9 @@ The wrapped `Value` parameter may be one of:
 
 The type is matched by its name, so writing `System.Guid` (or an aliased using) works exactly the same.
 Only the types above are recognised — a type of your own that merely happens to be called `Guid` is not
-supported, and is rejected by [STIA0008](#diagnostics). Any `enum` is supported as well: enum ids are
-parsed with `Enum.TryParse<TEnum>` and keep `IComparable<TSelf>`, `IParsable<TSelf>` and
-`ISpanParsable<TSelf>`, but omit `IFormattable`/`ISpanFormattable` because `Enum.ToString(string,
-IFormatProvider)` is obsolete.
+supported, and is rejected by [STIA0008](docs/diagnostics.md#diagnostics). Any `enum` is supported as well;
+how enum ids parse and which interfaces they skip is in
+[Enum-backed ids](docs/generated-code.md#enum-backed-ids).
 
 <a id="what-gets-generated"></a>
 
@@ -222,1103 +190,67 @@ IFormatProvider)` is obsolete.
 
 For each annotated type the generator emits a `partial` declaration in the **same namespace** as the id —
 nested ids are declared back inside their containing types instead (see
-[Nested types](#nested-types)) —
+[Nested types](docs/declaration.md#nested-types)) —
 your own declaration is never modified. What is emitted depends on what the compilation references:
 
 <!-- BEGIN GENERATED:generated-code -->
-| Condition in the compilation                                                                                       | Generated code                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Always                                                                                                             | Core implementation → `<Namespace>.<TypeName>.g.cs`                                                                                                                                                               |
-| `System.Text.Json` is referenced                                                                                   | Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`                                    |
-| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                                           | Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`                   |
-| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`       | Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs` |
-| `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                                          | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`                                                                                                                                   |
-| `Dapper` ≥ 2.0.0 is referenced                                                                                     | Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`                                                                                               |
-| `MessagePack` ≥ 2.0.0 is referenced                                                                                | `{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`                                                       |
-| `MongoDB.Bson` ≥ 3.0.0 is referenced                                                                               | `{TypeName}BsonSerializer` → `…MongoDb.g.cs`, plus `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`                                                                                 |
-| `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                                               | `StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                                                                                                            |
-| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)                                                              |
+| Condition in the compilation                                                                                       | Generated code                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Always                                                                                                             | Core implementation                                                                                                                   |
+| `System.Text.Json` is referenced                                                                                   | Nested `SystemTextJsonConverter` + `[JsonConverter]`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)`                          |
+| `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                                           | Nested `NewtonsoftJsonConverter` + `[JsonConverter]`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)`         |
+| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced                                                              | Nested `{TypeName}Converter`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` |
+| `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                                          | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)`                                                                                         |
+| `Dapper` ≥ 2.0.0 is referenced                                                                                     | Nested `{TypeName}TypeHandler`, plus `StronglyTypedIds.ApplyTo()`                                                                     |
+| `MessagePack` ≥ 2.0.0 is referenced                                                                                | `{TypeName}MessagePackFormatter`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)`                                       |
+| `MongoDB.Bson` ≥ 3.0.0 is referenced                                                                               | `{TypeName}BsonSerializer`, plus `StronglyTypedIds.RegisterBsonSerializers()`                                                         |
+| `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                                               | `StronglyTypedIds.ApplyTo(OpenApiOptions)`                                                                                            |
+| `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` (also powers Minimal API route constraints)                          |
 <!-- END GENERATED:generated-code -->
 
-The core implementation adds:
+The table above is the inventory. The generated file names, and what each generated member actually
+does — the interfaces it implements, how `Parse` treats a `null` provider, how `[Flags]` enums are
+tightened, what `ToString()` prints — are documented in [Generated code](docs/generated-code.md).
 
-- Implementation of `IStronglyTypedId<TSelf, TPrimitiveId>`, `IParsable<TSelf>`, `ISpanParsable<TSelf>`,
-  `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
-  `IComparisonOperators<TSelf, TSelf, bool>`.
-- `IFormattableStronglyTypedId<TSelf>` (which extends `IFormattable`) and `ISpanFormattable` as well —
-  except for `string`-backed ids, since `string` implements neither, so those members are emitted only for
-  primitives that have them. The marker interface exists so generic code can format an id without naming
-  its primitive: `static string Render<TId>(TId id) where TId : IFormattableStronglyTypedId<TId>`.
-  `IStronglyTypedId<TSelf>` deliberately stays free of `IFormattable`, so it still accepts every id.
-- `IUtf8SpanFormattable` (available since net8.0) and `IUtf8SpanParsable<TSelf>` (`Guid` implements it only
-  from .NET 10, so it is emitted per primitive) — providing `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
-- A static `Create(TPrimitiveId value)` factory.
-- A static `TryCreate(TPrimitiveId value, out TSelf result)` factory — on a failed parse it returns `false` and sets `result` to `default`.
-- A `public static readonly TSelf` field per `[StronglyTypedIdInstance]`, initialized through `Create`.
-- `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
-  `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
-  round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
-  For `string`-backed ids, `null` and empty strings are not accepted by `TryParse`.
-- `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value.
-- `ToString()` returning the invariant-culture text of the wrapped value (not the record's
-  `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
-  `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and
-  `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
-  A non-empty `format` is forwarded to the primitive and the text keeps its shape otherwise: on a
-  `Guid`-backed id `ToString("N")` yields the dash-less GUID, and on a prefixed id the prefix is still
-  there (`ord_d8ac85d4…`), so formatting never falls back to the bare primitive.
-  String interpolation is **not** `ToString()`: `$"{id}"` goes through
-  `IFormattable.ToString(null, CultureInfo.CurrentCulture)` and therefore follows the ambient culture
-  (a `decimal`-backed id prints `1234,5` under de-DE), while `id.ToString()` does not.
-- A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
-  round-tripping between string and the id through `TypeDescriptor`; a `null` reference-type id resolves back to `default`.
+<a id="documentation"></a>
 
-Enum-backed ids keep `IComparable<TSelf>`, `IParsable<TSelf>` and `ISpanParsable<TSelf>` (parsing uses
-`Enum.TryParse<TEnum>`), but deliberately skip `IFormattable`/`ISpanFormattable` because `Enum`'s
-`ToString(string, IFormatProvider)` is marked obsolete — their `ToString()` simply returns the
-underlying value's text.
+## Documentation <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
-`Enum.TryParse` accepts any numeric text, so the generated `TryParse` tightens it: a plain enum must name a
-defined member (`Enum.IsDefined`), while a `[Flags]` enum may combine members but must not set a bit that no
-member occupies — `Read | Write` parses, `999` does not. The bit mask is computed at compile time from the
-members' constants and trimmed to the enum's underlying type, so it costs one bitwise-and at run time; an enum
-that defines every bit (typically `All = -1`) gets no check at all.
+Everything past the quick start lives in `docs/`, and is published at
+[lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/):
 
-Beyond that check the semantics are `Enum.TryParse`'s own: surrounding whitespace and numeric text are
-accepted as long as the resulting value passes the check above, comma-separated combinations are accepted
-for `[Flags]` enums, and member names are matched **case-sensitively**. So `" 1 "` and `"01"` parse when
-`1` is a defined member, and `"Read, Write"` parses on a flags enum; `ToString()` is what writes the
-canonical member name.
-
-The integration entry points are emitted into a single generated class —
-`internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
-`ApplyTo` overloads live side by side no matter how many ids the project declares. Add
-`using Len.StronglyTypedId;` (already required for the attribute itself) to call them.
-
-<a id="value-validation"></a>
-
-## Value validation <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-The generator constrains the *shape* of an id, not the *values* it may hold. Point `Validator` at a
-static method of the id itself, and the generated entry points will refuse invalid values:
-
-```csharp
-[StronglyTypedId(Validator = nameof(Validate))]
-public partial record struct OrderId(Guid Value)
-{
-    private static bool Validate(Guid value) => value != Guid.Empty;
-}
-
-OrderId.Create(Guid.Empty);                            // throws ArgumentException
-OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // false, no exception
-```
-
-The method must be a static member of the id with the signature `static bool Validate(TPrimitiveId value)`,
-returning `true` for an acceptable value. It is called from `Create` and from both `TryParse` overloads,
-so `TryParse` keeps its contract and returns `false` instead of throwing. The JSON and Entity Framework
-Core integrations construct through `Create`, so deserialization rejects invalid values as well.
-
-One thing a source generator cannot do is intercept your primary constructor: `new OrderId(...)` bypasses
-the validator. Route values through `Create` (or the parsing members) when they come from outside your
-code.
-
-Leaving `Validator` unset emits no validation code at all — the generated members then behave exactly as
-if the property did not exist.
-
-### Choosing the exception type
-
-`Create` throws `ArgumentException` when the validator rejects a value. A domain library that wants its own
-error type can point `ExceptionType` at it:
-
-```csharp
-public sealed class DomainRuleViolationException(string message) : Exception(message);
-
-[StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainRuleViolationException))]
-public partial record struct OrderId(Guid Value)
-{
-    private static bool Validate(Guid value) => value != Guid.Empty;
-}
-
-OrderId.Create(Guid.Empty);   // throws DomainRuleViolationException
-```
-
-The type must derive from `System.Exception`, must not be abstract, and must expose an accessible constructor
-taking a single `string` message; anything else is reported as [STIA0018](#diagnostics) at the declaration.
-Only `Create` uses it — `Parse` throws `FormatException` instead, following the `IParsable<TSelf>` convention
-(the same as `int.Parse` / `Guid.Parse`), because its failure also covers text that is not an id at all.
-Like the other options it can be set for the whole assembly with
-`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`.
-
-### Keeping rejected values out of the message
-
-The rejection message interpolates the value that failed validation:
-`The value 'alice@example' is not a valid EmailAddress.` That text travels with the exception into logs,
-APM traces and error reports — and for an id wrapping `string` it is user input, often rejected precisely
-because it is malformed, but still personal data. Set `RedactValidationMessage` to drop it:
-
-```csharp
-[StronglyTypedId(Validator = nameof(IsEmail), RedactValidationMessage = true)]
-public partial record struct EmailAddress(string Value)
-{
-    private static bool IsEmail(string value) => value.Contains('@');
-}
-
-EmailAddress.Create("alice@example");   // The value is not a valid EmailAddress.
-```
-
-The default is `false`, so existing messages are unchanged. `[assembly: StronglyTypedIdDefaults(
-RedactValidationMessage = true)]` turns it on for a whole assembly; a type-level `false` cannot undo that,
-because redaction is a safety policy rather than a per-type preference. `Parse` already reports
-`Could not parse supplied value.` without echoing the input, and the ASP.NET Core model binder echoes the
-raw value into `ModelState` — that message is shown back to the caller who sent it, not written to logs.
-
-<a id="value-normalization"></a>
-
-## Value normalization <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-`Validator` can only *reject* a value. Point `Normalizer` at a static method of the id and the generated
-entry points will *repair* it first — trim whitespace, fold case, drop separators — then validate, then
-construct:
-
-```csharp
-[StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
-public partial record struct EmailAddress(string Value)
-{
-    private static string Normalize(string value) => value.Trim().ToLowerInvariant();
-
-    private static bool Validate(string value) => value.Contains('@');
-}
-
-EmailAddress.Create("  Alice@Example.COM  ").Value;  // "alice@example.com"
-```
-
-The method must be a static member of the id with the signature `static TPrimitiveId Normalize(TPrimitiveId value)`.
-The order is fixed and it matters: **normalize → validate → construct**. Validation therefore sees the value
-that actually gets stored, and `"  a@b.com  "` is accepted instead of rejected. `Create`, `TryCreate`, `Parse`
-and every `TryParse` overload (string, span and UTF-8) go through it.
-
-The normalizer runs exactly once per entry point — the result is kept in a local rather than re-invoked, so a
-normalizer that appends a prefix cannot apply it twice.
-
-Leaving `Normalizer` unset emits no normalization code at all. Like `Validator`, it can also be set for the
-whole assembly with `[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]`.
-
-<a id="named-instances"></a>
-
-## Named instances <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Some ids have values the domain talks about by name — an unspecified tenant, a system account, an
-anonymous user. Declare them with `[StronglyTypedIdInstance]` (repeatable) and the generator emits one
-`public static readonly` field per instance:
-
-```csharp
-[StronglyTypedId]
-[StronglyTypedIdInstance("Unspecified", "-1")]
-[StronglyTypedIdInstance("Anonymous", "0")]
-public partial record struct TenantId(int Value);
-
-TenantId.Unspecified.Value;                     // -1
-TenantId.Unspecified == TenantId.Create(-1);    // true
-```
-
-The value is the **primitive** value in its invariant text form — the same text `Parse` accepts, but
-**without** the `Prefix`, because a prefix decorates the canonical text form while an instance carries a
-primitive value. It is checked at compile time and translated into a literal (or a constructor call), so
-nothing is parsed at run time.
-
-Every instance is built through `Create`, and that is what makes the guarantee hold: an instance is never
-a privileged value, so it goes through the same `Normalizer` and `Validator` as any other value, and
-`Parse(instance.ToString())` always reads back. A value the validator rejects is not caught at compile
-time — the type initializer throws `TypeInitializationException` on first use instead, which is
-deliberately louder than quietly handing out an id that cannot exist.
-
-Names must be valid identifiers, unique within the id, and must not collide with the id type itself or
-with an existing or generated member (`STIA0020`); values must be valid for the primitive (`STIA0021`);
-a name that is not PascalCase is reported as `STIA0022` (`Info`).
-
-<a id="trycreate-and-utf8"></a>
-
-## TryCreate & UTF-8 interfaces <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-`Create` throws; `TryCreate` does not — it returns `false` on a failed parse and sets `result` to `default`:
-
-```csharp
-OrderId.TryCreate(Guid.NewGuid(), out var id);              // true
-OrderId.TryCreate(badValue, out var invalid);               // false, result is default(OrderId)
-```
-
-`Guid` implements `IUtf8SpanParsable<Guid>` from .NET 10, so the generator also emits `IUtf8SpanFormattable`
-(available since net8.0) and `IUtf8SpanParsable<GuidId>` for `GuidId`, together with `ReadOnlySpan<byte>`
-`Parse` / `TryParse`. `string`-backed ids emit neither (because `string` implements neither):
-
-```csharp
-var utf8 = Encoding.UTF8.GetBytes(orderId.Value.ToString());
-var same = OrderId.Parse(utf8, CultureInfo.InvariantCulture); // IUtf8SpanParsable<TSelf>
-```
-
-<a id="type-converter"></a>
-
-## TypeConverter <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-By default only JSON converters are generated. When you need round-tripping through `TypeDescriptor` — config
-binding, `XmlSerializer`, the Newtonsoft dictionary-key read path, and so on — enable it per type with
-`TypeConverter = true`:
-
-```csharp
-[StronglyTypedId(TypeConverter = true)]
-public partial record struct ConvertibleGuidId(Guid Value);
-```
-
-The generated nested `XxxTypeConverter` carries a `[TypeConverter(typeof(XxxTypeConverter))]` attribute, so
-`TypeDescriptor.GetConverter(typeof(ConvertibleGuidId))` can convert between string and the id, and a `null`
-reference-type id resolves back to `default`. Both directions use the invariant culture — matching the generated
-`ToString()` — so a value written under one culture reads back under another.
-
-> This converter covers only the "string ↔ id" path; it does not replace the JSON converters, which remain
-> independent and active.
-
-<a id="assembly-defaults"></a>
-
-## Assembly-level defaults (StronglyTypedIdDefaults) <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-When many ids in an assembly share the same validator, set a default at the assembly level instead of repeating
-it on each one:
-
-```csharp
-[assembly: StronglyTypedIdDefaults(Validator = "MyValidators.NonEmpty")]
-```
-
-`StronglyTypedIdDefaults.Validator` is only a **default**: an id that declares
-`[StronglyTypedId(Validator = ...)]` keeps its own validator; the assembly default is used only when neither
-the attribute nor the assembly default is set.
-
-`Normalizer` follows the same precedence rule:
-
-```csharp
-[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
-```
-
-`ExceptionType` follows it too: `[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
-applies to every id that does not name its own.
-
-> The validator method must still satisfy the [Value validation](#value-validation) signature convention
-> (`static bool Validate(TPrimitiveId value)`), otherwise [STIA0010](#diagnostics) is reported. Likewise a
-> normalizer must be `static TPrimitiveId Normalize(TPrimitiveId value)`, otherwise [STIA0017](#diagnostics)
-> is reported.
-
-<a id="integrations-filter"></a>
-
-## Turning integrations off <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Every integration is generated only when the compilation references its package, but sometimes that is not
-enough: a host application may reference EF Core for its own sake while a particular id should never get a
-value converter. `Integrations` narrows the set **per id**:
-
-```csharp
-[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
-public partial record struct TenantId(Guid Value);          // core only: no EF, Dapper, JSON, Swagger…
-
-[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.Dapper | StronglyTypedIdIntegrations.SystemTextJson)]
-public partial record struct OrderId(Guid Value);           // exactly these two
-```
-
-`Integrations` is a **filter, not a switch**: it can only remove integrations that the referenced packages
-would otherwise enable, never add one whose package is missing. Requesting an integration whose assembly is
-not referenced is reported as [STIA0019](#diagnostics) so the mistake is not silent.
-
-| Value | Effect |
+| Page | What it covers |
 | --- | --- |
-| *(not set)* | Generate everything the referenced packages allow — the behaviour before this option existed |
-| `None` | No integration code at all; the core implementation is unaffected |
-| `Dapper \| SystemTextJson` | Only the listed integrations (still requires the packages) |
-| `All` | Explicitly everything; useful to restore a single id under an assembly default of `None` |
-
-The same option exists on `StronglyTypedIdDefaults`, and the usual precedence applies: the per-type value
-wins, otherwise the assembly default, otherwise `All`.
-
-```csharp
-[assembly: StronglyTypedIdDefaults(Integrations = StronglyTypedIdIntegrations.None)]
-```
-
-> `TypeConverter` is **not** part of `Integrations`. It is an explicit opt-in
-> (`TypeConverter = true`), not something a referenced package turns on, so `Integrations = None` leaves it
-> alone.
-
-> An id declared in a referenced assembly honours **its own** assembly-level default: if a domain library
-> ships `[assembly: StronglyTypedIdDefaults(Integrations = None)]`, consumers stop generating integration
-> code for its ids.
-
-<a id="nested-types"></a>
-
-## Nested types <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-A strongly typed id may be declared inside a class, struct, record or interface. Since all parts of a
-`partial` type must share the same container, the generated declaration is **nested back into the
-original containing types** rather than emitted at namespace level:
-
-```csharp
-public partial class OrderAggregate          // the container must be partial
-{
-    [StronglyTypedId]
-    public partial record struct OrderId(Guid Value);
-}
-
-var id = OrderAggregate.OrderId.Create(value);   // used through its nested name, like any other type
-```
-
-The only prerequisite is that **every containing type can be reopened verbatim** by the generated code:
-each level must be `partial` and not a `file`-local type. Violations are reported by
-[STIA0009](#diagnostics) (missing `partial`, or `file`-local), which comes with a code fix that adds `partial`.
-
-**Generic containers.** The containing type may be generic (for example `Outer<T>`): the generator
-reopens it with its type parameter list, so an id declared inside a generic container compiles and keeps
-every capability the core generator produces — comparison and ordering, formatting and span parsing, and
-System.Text.Json dictionary keys. JSON is the one exception: the converter classes are generated, but the
-`[JsonConverter]` attribute cannot be emitted (an attribute argument may not reference a converter that
-carries the container's type parameter — CS0416), and the `AddStronglyTypedId` / `ApplyTo` entry points
-skip such ids because an open generic type cannot be passed as a type argument. Register the converter
-yourself for the closed type you use:
-
-```csharp
-options.Converters.Add(new Outer<int>.InnerId.SystemTextJsonConverter());
-```
-
-The external-reference integrations — EF Core, Swagger, Dapper, MVC and OpenAPI — skip ids declared
-inside generic containers for the same reason; for those, declare the id at namespace level or in a
-non-generic container.
-
-Plain (non-generic) nesting affects nothing: comparison and ordering, formatting and span parsing, both
-JSON serializers and System.Text.Json dictionary keys all work as usual.
-
-<a id="serialization"></a>
-
-## Serialization <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-### System.Text.Json
-
-The converter is applied via a generated `[JsonConverter]` attribute — no extra configuration required.
-
-```csharp
-var json = JsonSerializer.Serialize(new OrderId(Guid.NewGuid())); // "..."
-var id   = JsonSerializer.Deserialize<OrderId>(json);
-```
-
-### Newtonsoft.Json (≥ 13.0.0)
-
-Same zero-config behavior through a generated `[JsonConverter]` attribute.
-
-```csharp
-var json = JsonConvert.SerializeObject(new OrderId(Guid.NewGuid()));
-var id   = JsonConvert.DeserializeObject<OrderId>(json);
-```
-
-### Primitives the serializers do not know
-
-Six primitives have no native JSON representation in one of the two libraries, so their converters write
-the invariant-culture text instead of the raw value — the same text `ToString()` produces:
-
-| Primitive                                     | Library          | Raw value would…                                              |
-| --------------------------------------------- | ---------------- | ------------------------------------------------------------- |
-| `BigInteger`                                  | System.Text.Json | serialize as `{"IsPowerOfTwo":false,…,"Sign":1}` and read back as `default` |
-| `Int128`, `UInt128`, `Half`, `DateOnly`, `TimeOnly` | Newtonsoft.Json | throw `JsonWriterException: Unsupported type`                  |
-
-```csharp
-JsonSerializer.Serialize(BigIntegerId.Create(42));       // "42"
-JsonConvert.SerializeObject(HalfId.Create((Half)1.5));   // "1.5"
-```
-
-Both directions go through the same canonical text, so the round trip is lossless; the only consequence
-is that these ids appear as JSON strings rather than numbers. Every other primitive keeps its natural
-shape (numbers stay numbers, `Guid` stays a string, enums stay numbers).
-
-### Dictionary keys
-
-A `JsonConverter<T>` does not see dictionary keys by default — `System.Text.Json` only knows the built-in
-key types and throws `NotSupportedException` for anything else — so the generated converter overrides
-`ReadAsPropertyName` / `WriteAsPropertyName` as well:
-
-```csharp
-var cart = new Dictionary<OrderId, int> { [id] = 3 };
-
-var json = JsonSerializer.Serialize(cart);                        // {"3f2c…":3}
-var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
-```
-
-Keys are written as the invariant-culture text of the primitive value, so the same data always produces
-the same key no matter the current culture. A `string`-backed id uses the string itself, so an empty
-string round-trips; a key that cannot be parsed throws `JsonException`.
-
-An `enum`-backed id follows `System.Text.Json`'s own convention for enum keys: the key is the member name
-(`"Active"`), while the value is the underlying number (`1`) unless your `JsonSerializerOptions` say
-otherwise. The asymmetry is inherent to JSON — object keys can only be strings — and it is exactly what a
-plain `Dictionary<MyEnum, MyEnum>` produces, so ids and raw enums stay interchangeable in the same document.
-
-Newtonsoft.Json routes dictionary keys through `TypeConverter` / `ToString()` rather than through
-`JsonConverter`, so its keys never reach the generated converter. Enable `TypeConverter = true` on the id so
-Newtonsoft can restore keys on read. The key text is the same invariant-culture text the converter writes:
-the generated `ToString()` is invariant, and the generated `TypeConverter` reads and writes invariantly too, so
-keys stay stable across cultures.
-
-Both converters serialize the id as its underlying primitive value rather than as an object, so the JSON
-payload keeps the same shape it had before the id was introduced. A `null` reference-type id is written
-as JSON `null`.
-
-### JSON shape
-
-By default an id is **shape-compatible with its primitive**: `OrderId` backed by `Guid` serializes to the
-same JSON string a bare `Guid` would, so introducing the id does not change the wire format. When an
-existing contract has already promised the object form — typically a client that sends
-`{ "value": "3f2c…" }` — opt into it per id:
-
-```csharp
-[StronglyTypedId(JsonShape = JsonShape.Object)]
-public partial record struct OrderId(Guid Value);
-
-// JsonShape.Primitive (default): "3f2c…"
-// JsonShape.Object:             {"value":"3f2c…"}
-```
-
-The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to dictionary keys as well.
-`JsonShape.Object` reads and writes a single `value` property; a payload that is not an object, or an
-object without `value`, throws (`JsonException` / `JsonSerializationException`). Because the primitive
-form is the default, existing payloads are unaffected unless you ask for the object form.
-
-### Text prefix
-
-Opt into a textual prefix per id. The prefix becomes part of the id's **canonical text form** —
-`ToString()` writes it, `Parse` / `TryParse` strip it — so every text-based path picks it up
-automatically:
-
-```csharp
-[StronglyTypedId(Prefix = "ord_")]
-public partial record struct OrderId(Guid Value);
-
-var id = OrderId.Create(guid);
-
-id.ToString();                              // "ord_3f2c…"
-id.ToString("N");                           // "ord_3f2c…"  (dash-less GUID, prefix kept)
-OrderId.Parse("ord_3f2c…");                 // OrderId
-OrderId.Parse("3f2c…");                     // OrderId  (lenient read, the default)
-JsonSerializer.Serialize(id);                // "ord_3f2c…"
-```
-
-The prefix is part of every text form, not just `ToString()`: `ToString(format, provider)` and
-`TryFormat(...)` prepend it too, so `$"{id:N}"` and structured-logging output stay recognisable as ids.
-
-Because the prefix lives in the canonical text form, integrations that go through text need no extra
-configuration: MVC model binding, route constraints and the generated `TypeConverter` all accept and emit
-the prefixed form. Integrations that go through the primitive **value** — EF Core and Dapper — are
-unaffected and keep storing the bare primitive, so existing columns and rows stay valid.
-
-Reading is **lenient by default**: `TryParse` accepts both the prefixed and the bare form, so existing
-payloads and stored text keep round-tripping while new text is always written with the prefix. Switch to
-strict per id when you want the prefix to be mandatory:
-
-```csharp
-[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
-public partial record struct OrderId(Guid Value);
-
-OrderId.TryParse("ord_3f2c…", null, out _);  // true
-OrderId.TryParse("3f2c…", null, out _);       // false
-```
-
-> **Breaking change when opted in.** For numeric, enum and date primitives the JSON representation changes
-> from a JSON number to a JSON string, because the prefixed form is text. Database storage is unaffected.
-> Leave `Prefix` unset and the generated code is byte-for-byte identical to before.
-
-An empty or whitespace-only prefix is treated as "no prefix" and reported as `STIA0013`.
-
-### Explicit registration
-
-The `[JsonConverter]` attribute covers the common case, but it is ignored when you supply your own
-`JsonSerializerOptions` / `JsonSerializerSettings` and want this library's converters attached to them anyway.
-Both serializers therefore expose a registration entry point on the generated `StronglyTypedIds` class, in
-parallel to the EF Core / Swagger / Dapper / MVC / OpenAPI `ApplyTo` family:
-
-```csharp
-// System.Text.Json
-var options = new JsonSerializerOptions();
-StronglyTypedIds.ApplyTo(options);          // adds every id's converter to options.Converters
-
-// Newtonsoft.Json
-var settings = new JsonSerializerSettings();
-settings.AddStronglyTypedId();              // adds every id's converter to settings.Converters
-```
-
-Each entry point is generated only when the corresponding serializer is referenced, and only when the
-compilation declares at least one id.
-
-<a id="entity-framework-core"></a>
-
-## Entity Framework Core <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Register the generated value converters for all strongly typed ids (≥ 7.0.0) in your `DbContext`:
-
-```csharp
-protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-{
-    base.ConfigureConventions(configurationBuilder);
-
-    // Registers a ValueConverter for every strongly typed id in the project.
-    StronglyTypedIds.ApplyTo(configurationBuilder);
-
-    // Convention configuration still applies to an id after it has been registered.
-    configurationBuilder.Properties<UserId>().HaveMaxLength(100);
-}
-
-A model-scanning overload is generated alongside it, in case you prefer to register converters from
-`OnModelCreating` instead of conventions:
-
-```csharp
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    base.OnModelCreating(modelBuilder);
-
-    // Walks every entity's properties and assigns the generated converter wherever the CLR type is a strongly typed id.
-    StronglyTypedIds.ApplyTo(modelBuilder);
-}
-```
-
-> The EF Core integration (both `ApplyTo` overloads above) is generated only when a `DbContext` overrides
-> `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced, so `StronglyTypedIds.ApplyTo(...)` is available
-> exactly when you can call it. Referencing `Microsoft.EntityFrameworkCore` alone is not enough.
-
-Each id gets a `ValueConverter<{Id}, {Primitive}>` nested in the generated `StronglyTypedIds` class, named
-`{TypeName}Converter`. If two ids with the same short name exist in different namespaces, the converter
-names would collide inside that single class, so only then are they disambiguated as
-`{Namespace_With_Underscores}_{TypeName}Converter` (for example `Domain_OrderIdConverter`). The converters
-are implementation details of `ApplyTo`, generated as private nested types — you never reference them by
-name, and no action is required from you in either case.
-
-<a id="swashbuckle"></a>
-
-## Swashbuckle <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Map every strongly typed id to its underlying primitive schema (Swashbuckle.AspNetCore) in Swagger:
-
-```csharp
-services.AddSwaggerGen(options =>
-{
-    StronglyTypedIds.ApplyTo(options);
-});
-
-// method groups work too:
-services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
-```
-
-The mapping is generated whenever `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced, and it works
-with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.x and later).
-
-| Primitive  | OpenAPI `type` | `format` |
-| ---------- | -------------- | -------- |
-| `Guid`            | `string`       | `uuid`      |
-| `string`, `char`  | `string`       | —           |
-| `byte`            | `integer`      | `byte`      |
-| `sbyte`           | `integer`      | `sbyte`     |
-| `short`           | `integer`      | `int16`     |
-| `ushort`          | `integer`      | `uint16`    |
-| `int`             | `integer`      | `int32`     |
-| `uint`            | `integer`      | `uint32`    |
-| `long`            | `integer`      | `int64`     |
-| `ulong`           | `integer`      | `uint64`    |
-| `Int128`, `UInt128`, `BigInteger` | `integer` | —     |
-| `decimal`         | `number`       | —           |
-| `double`          | `number`       | `double`    |
-| `float`           | `number`       | `float`     |
-| `Half`            | `number`       | —           |
-| `DateTime`, `DateTimeOffset` | `string` | `date-time` |
-| `DateOnly`        | `string`       | `date`      |
-| `TimeOnly`        | `string`       | `time`      |
-| `TimeSpan`        | `string`       | —           |
-| any `enum`        | `integer`      | —           |
-
-The table describes what the converters actually write, not what the CLR type is called: `decimal` and
-the floating-point primitives are JSON numbers, an enum is its underlying number, and `Int128` /
-`UInt128` / `BigInteger` have no bounded `int64` / `uint64` range to advertise, so they get a bare
-`integer` with no `format`. An id with a `Prefix` is always `string` with no `format`, because its
-canonical text form is text.
-
-<a id="dapper"></a>
-
-## Dapper <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-When `Dapper` ≥ 2.0.0 is referenced, a `TypeHandler` is generated for every strongly typed id, along with a
-single entry point:
-
-```csharp
-using Dapper;
-
-// Register TypeHandlers for all strongly typed ids. Dapper keeps them in a process-wide
-// registry, so this only needs to run once per process.
-StronglyTypedIds.ApplyTo();
-
-connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Create(Guid.NewGuid()) });
-```
-
-Each id's `TypeHandler` writes the wrapped primitive into the parameter, and reconstructs the id through
-`Create` when reading. Ids with the same short name in different namespaces get a "namespace-underscored"
-prefix on their `TypeHandler` to avoid collisions (the same disambiguation used for EF Core converters).
-
-Drivers rarely hand back the primitive's own CLR type — SQLite returns `long` for an enum column, `string`
-for `char` / `Guid` and `double` for `decimal`. The generated `Parse` therefore converts the incoming value
-to the primitive before calling `Create` (`System.Convert` for the numeric and date/time primitives,
-`Enum.ToObject` / `Enum.Parse` for enums, and the primitive's `IParsable` entry point for `Guid`,
-`DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Int128`, `UInt128`, `Half` and `BigInteger`). Values
-that already arrive as the primitive take a direct path, and `NULL` — either `DBNull` or a bare `null` —
-maps to `default`.
-
-> Registration is global, not per connection. `ApplyTo(IDbConnection)` is still generated for source
-> compatibility, but it ignores its argument and forwards to `ApplyTo()`. Calling either one more than once
-> is harmless: Dapper replaces the handler for each type instead of appending, so the registry does not grow.
-
-> Referencing `Dapper` with a major version below 2.0.0 emits nothing, to avoid incompatibility with the
-> older `SqlMapper.TypeHandler` API.
-
-<a id="aspnet-core-mvc"></a>
-
-## ASP.NET Core MVC <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-When `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (on .NET 8 / .NET 10 the `Microsoft.AspNetCore.Mvc.Core`
-and `Microsoft.AspNetCore.Mvc.Abstractions` assemblies also satisfy the gate), the generator emits a single
-model-binder provider plus one route constraint per id, so strongly typed ids bind and validate without any
-per-type boilerplate:
-
-```csharp
-using Microsoft.Extensions.DependencyInjection;
-
-// Register the model-binder provider and the per-id route constraints.
-builder.Services.AddControllers(options => StronglyTypedIds.ApplyTo(options));
-builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
-```
-
-```csharp
-[ApiController]
-[Route("api/orders")]
-public class OrdersController : ControllerBase
-{
-    // "ABC123" from the route or query is bound into OrderId via IParsable<OrderId>.TryParse.
-    [HttpGet("{id}")]
-    public IActionResult Get([FromRoute] OrderId id) => Ok(id);
-
-    // The {id:OrderId} constraint validates the segment format before the action runs.
-    [HttpGet("v2/{id:OrderId}")]
-    public IActionResult GetV2([FromRoute] OrderId id) => Ok(id);
-}
-```
-
-> The binder only takes over for types that implement `IStronglyTypedId<TSelf, TPrimitiveId>`; every other
-> type falls through to MVC's default binding chain. The bind itself reuses the `IParsable<TSelf>` member that
-> every id already has, so there is no per-request reflection beyond a one-time type check at registration.
-
-<a id="minimal-api"></a>
-
-## Minimal API <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Minimal API needs **no extra generation**. Its parameter-binding convention accepts any type with a static
-`TryParse(string?, IFormatProvider?, out TSelf)` — which every id already has through `IParsable<TSelf>` — so
-route and query parameters bind out of the box:
-
-```csharp
-// "ABC123" from the route is bound into OrderId via IParsable<OrderId>.TryParse;
-// malformed text yields 400 before the handler runs.
-app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value));
-
-// [AsParameters] binds each id property from the matching route / query value.
-app.MapGet("/orders", ([AsParameters] OrderQuery query) => Results.Ok(query.Id.Value));
-
-public record OrderQuery(OrderId Id);
-```
-
-Route constraints are shared with MVC: the generated `ApplyTo(RouteOptions)` registers one constraint per id,
-so `{id:OrderId}` works in Minimal API templates too (the `Microsoft.AspNetCore.Mvc.*` assemblies ship in the
-ASP.NET Core shared framework, so the gate is satisfied in a Minimal API project):
-
-```csharp
-builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
-
-app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value));
-```
-
-<a id="aspnetcore-openapi"></a>
-
-## ASP.NET Core OpenAPI <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-When `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced, OpenAPI schema mappings are generated for every
-strongly typed id, in parallel to Swashbuckle's `ApplyTo(SwaggerGenOptions)`:
-
-```csharp
-builder.Services.AddOpenApi(options =>
-{
-    StronglyTypedIds.ApplyTo(options);
-});
-```
-
-Each id is mapped to the schema of its underlying primitive, with the same `format` values as in the
-[Swashbuckle](#swashbuckle) section.
-
-> This integration is independent of Swashbuckle: either, both, or neither may be present, and each generates
-> its own `ApplyTo` overload.
-
-<a id="using-the-interface"></a>
-
-## Using the interface <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Every generated id implements `IStronglyTypedId<TSelf, TPrimitiveId>`, so you can write generic
-code that works over any strongly typed id:
-
-```csharp
-public class Repository<TId>
-    where TId : IStronglyTypedId<TId, Guid>
-{
-    public TId CreateId(Guid value) => TId.Create(value);
-}
-```
-
-Every id also implements the single-parameter `IStronglyTypedId<TSelf>`, so a constraint can say "some
-strongly typed id" without naming the primitive — useful for logging, caching and validation helpers that
-treat the id as an opaque value. `IFormattableStronglyTypedId<TSelf>` narrows that to ids whose primitive
-can be formatted.
-
-<a id="reflection-helpers"></a>
-
-## Reflection helpers <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-The package also exposes `StronglyTypedIdExtensions` for inspecting types at runtime:
-
-- `bool IsStronglyTypedId(this Type type)`
-- `Type? GetPrimitiveIdType(this Type type)`
-- `bool TryGetPrimitiveIdType(this Type type, out Type? primitiveIdType)`
-
-```csharp
-if (typeof(OrderId).IsStronglyTypedId())
-{
-    Type primitive = typeof(OrderId).GetPrimitiveIdType()!; // typeof(Guid)
-}
-```
-
-The check is based on the implemented interface, so it also recognises ids generated in other assemblies.
-Interfaces, abstract types, enums and arrays are never reported as strongly typed ids. A nullable id
-(`OrderId?`) is judged by its underlying id type, so `typeof(OrderId?)` reports the same primitive as
-`typeof(OrderId)` — the same answer the MVC model binder and the EF Core converters give.
-
-<a id="testing"></a>
-
-## Testing <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-`Len.StronglyTypedId.Testing` builds ids for arrange blocks, so tests do not need
-`OrderId.Create(Guid.NewGuid())` everywhere:
-
-```csharp
-using Len.StronglyTypedId.Testing;
-
-OrderId orderId = Any.Id<OrderId>();
-IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
-```
-
-Values are derived from the primitive exposed by `IStronglyTypedId<TSelf, TPrimitiveId>`, so ids
-declared in any assembly work — including ones compiled after the testing package. Every supported
-primitive is covered, plus `enum`. Values are deliberately ordinary (finite floats of either sign,
-non-empty strings, dates inside 1970–2100) to avoid failures unrelated to the code under test.
-
-- **Reproducible** — `Any.Id<OrderId>(seed: 42)` returns the same value for a given runtime version;
-  use one `AnyIdGenerator` instance (or `Any.Ids<T>(count, seed)`) when a whole sequence must repeat.
-- **Validator-aware** — generation retries up to `AnyIdOptions.MaxAttempts` (100 by default) and then
-  throws with a message pointing at `Any.Register<T>(factory)`. A rejection is recognised by exception
-  type alone, so a validator that throws `ArgumentException` for an unrelated reason is retried too.
-- **Overridable** — `AnyIdOptions.PrimitiveValueFactory` replaces the value source per primitive type;
-  returning `null` falls back to the built-in generator.
-- **Boundary-aware on demand** — `AnyIdOptions.IncludeBoundaryValues` mixes in the primitive's
-  `MinValue` / `MaxValue` (about one value in sixteen). Off by default: extremes make uniqueness
-  assertions flaky, and ordinary values are what most tests want.
-
-For AutoFixture, add `Len.StronglyTypedId.Testing.AutoFixture` and enable the customization:
-
-```csharp
-var fixture = new Fixture().WithStronglyTypedIds();
-
-OrderId orderId = fixture.Create<OrderId>();
-```
-
-See [TESTING.md](TESTING.md) for the full guide.
-
-<a id="samples"></a>
-
-## Samples <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-Every feature described above has a runnable counterpart under [`samples/`](samples):
-
-| Project | Target | Demonstrates |
-|---|---|---|
-| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | Guided tour of the core surface: `Create` / `TryCreate` / `Parse`, formatting, equality and ordering, deconstruction, validators, named instances, text prefixes, `TypeConverter`, System.Text.Json and Newtonsoft.Json, nesting, generic containers, reflection helpers and the testing package. |
-| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core (`ApplyTo(ModelConfigurationBuilder)`) and Dapper (`ApplyTo()`) against in-memory SQLite, plus assembly-level `StronglyTypedIdDefaults`. |
-| `Len.StronglyTypedId.Sample1` | `net8.0` | MVC model binding and `{id:OrderId}` route constraints, Newtonsoft.Json as the MVC formatter, EF Core (SQL Server) and Swashbuckle 6. Needs a reachable SQL Server to start. |
-| `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API: `IParsable` binding, `[AsParameters]`, route constraints, JSON bodies and the built-in OpenAPI transformer (`AddOpenApi(ApplyTo)`). |
-| `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10 (Microsoft.OpenApi 2.x) schema mapping. |
-
-```shell
-dotnet run --project samples/Len.StronglyTypedId.SampleConsole
-dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
-```
-
-The console samples print each step and exit. The web samples publish their document at
-`/openapi/v1.json` (Sample2) or `/swagger/v1/swagger.json` (Sample1, Sample3).
-
-<a id="diagnostics"></a>
-
-## Diagnostics <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-The analyzer enforces the following rules; `STIA0012` is the one exception, reported by the generator
-when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
-will not compile; `STIA0011`, `STIA0013` and `STIA0019` are warnings, and the advisory ones (`STIA0014`,
-`STIA0015`, `STIA0016`, `STIA0022`) are informational. Every level can be tuned per project in
-`.editorconfig`. Diagnostics are localized for English and Chinese according to the compiler culture.
-
-A few rules fire in narrower circumstances than their titles suggest: `STIA0011` needs the id to declare
-a `Validator` or a `Normalizer` (without either, constructing it directly is not a bypass) and covers
-`new Xxx(...)`, target-typed `new(...)` and `default` / `default(T)` alike — a `default` that is only
-compared against (`id == default`) is not reported; `STIA0014` is **off by default** and must be enabled
-explicitly with `dotnet_diagnostic.STIA0014.severity = suggestion`; and `STIA0016` reports once per group
-of ids sharing a primitive, on the ordinally first member.
-
-<!-- BEGIN GENERATED:diagnostics -->
-| Rule ID  | Description                                                           | Code fix                                                  |
-| -------- | --------------------------------------------------------------------- | --------------------------------------------------------- |
-| STIA0000 | Type must be defined as a record                                      | Convert to `record`                                       |
-| STIA0001 | Type must be defined as partial                                       | Add `partial`                                             |
-| STIA0002 | Type cannot be declared abstract                                      | Remove `abstract`                                         |
-| STIA0003 | Type cannot be declared as generic                                    | Remove the type parameter list                            |
-| STIA0004 | Type must be declared in a namespace                                  | Wrap in a namespace                                       |
-| STIA0005 | Type must have a primary constructor with exactly one parameter       | Add a primary constructor                                 |
-| STIA0006 | Parameter must not be nullable                                        | Remove the `?` suffix                                     |
-| STIA0007 | Parameter name should be ‘Value’.                                     | Rename the parameter                                      |
-| STIA0008 | Parameter type is not valid                                           | Change the type to `Guid`                                 |
-| STIA0009 | Containing type must be declared as partial                           | Add `partial` to the container                            |
-| STIA0010 | Validator method must be a valid static bool method                   | Remove the `Validator` argument                           |
-| STIA0011 | Strongly typed id constructed directly                                | Replace with `Create(...)`                                |
-| STIA0012 | Strongly typed id code generation failed                              | —                                                         |
-| STIA0013 | Prefix value is blank                                                 | Remove the `Prefix` argument or give it a non-blank value |
-| STIA0014 | Validator can be bypassed                                             | Narrow the type to `internal`                             |
-| STIA0015 | Type name should end with 'Id'                                        | —                                                         |
-| STIA0016 | Several strongly typed ids share the same primitive type              | —                                                         |
-| STIA0017 | Normalizer method must be a valid static method                       | Remove the `Normalizer` argument                          |
-| STIA0018 | Exception type must be a concrete exception with a string constructor | Remove the `ExceptionType` argument                       |
-| STIA0019 | Requested integration is not available                                | —                                                         |
-| STIA0020 | Named instance name is not usable                                     | —                                                         |
-| STIA0021 | Named instance value is not valid for the primitive type              | —                                                         |
-| STIA0022 | Named instance name should be PascalCase                              | —                                                         |
-| STIA0023 | Prefix overlaps the primitive text                                    | —                                                         |
-| STIA0024 | Integration mask contains undefined bits                              | —                                                         |
-<!-- END GENERATED:diagnostics -->
-
-Every rule that reports an error offers a fix, but a few only when the repair is unambiguous —
-`STIA0003` is offered only when the id itself is generic (removing the *containing* type's type parameters
-would change your design), `STIA0005` only when the type declares no explicit constructor (adding a primary
-constructor next to an existing one would collide with `CS0111`), and `STIA0009` only when the containing
-type is actually missing `partial` (otherwise the fix would insert a second `partial`). `STIA0023` offers
-none on purpose: the only mechanical repair is deleting `Prefix`, which changes the canonical text form and
-makes data already written with that prefix unreadable — picking a safe replacement is a decision only you
-can make. The two naming hints (`STIA0015`, `STIA0016`) deliberately offer none: renaming a type correctly
-means renaming every reference to it, and "these ids look alike" has no mechanical repair.
-
-Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
-project / solution**. A type may be declared across several `partial` blocks: type-level rules are
-evaluated once for the whole type, and parameter-level rules only against the block that declares the
-primary constructor, so adding members in a separate block is perfectly legal.
-
-<a id="migrating-from-another-library"></a>
-
-## Migrating from another library <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-The migrations below assume you are moving an existing, persisted id. Read
-[Things that change for every migration](#things-that-change-for-every-migration) first — the text form is
-a data contract, and it is the one thing that cannot be fixed by a compiler error.
-
-### From a hand-rolled record
-
-If you already have `public record struct OrderId(Guid Value);`, the migration is additive:
-
-1. Add `[StronglyTypedId]` and the `partial` modifier.
-2. Delete your hand-written `Parse`, `TryParse`, `ToString`, `CompareTo`, `==`/`!=` and any JSON converter —
-   the generator emits all of them.
-3. Keep your validator and normalizer as `static` methods and point the attribute at them
-   (`Validator = nameof(...)`, `Normalizer = nameof(...)`).
-4. **Check what `ToString()` produced before.** A hand-rolled record prints `OrderId { Value = … }`; the
-   generated one prints the primitive's invariant text. Logs, snapshot tests, cache keys and any
-   `string.Join` over ids will change.
-
-### From Andrew Lock's `StronglyTypedId`
-
-That package also uses a `[StronglyTypedId]` attribute, so the two cannot share a file without an alias.
-The namespace and the arguments differ:
-
-| Before | After |
-| --- | --- |
-| `using StronglyTypedId;` | `using Len.StronglyTypedId;` |
-| `[StronglyTypedId(StronglyTypedIdBackingType.Guid)]` | `[StronglyTypedId]` — the primitive is read from the constructor parameter |
-| `[StronglyTypedId(converters: StronglyTypedIdConverter.SystemTextJson)]` | nothing — integrations are detected from the compilation, and `Integrations` only subtracts |
-| `public partial struct OrderId` | `public partial record struct OrderId(Guid Value)` |
-| `OrderId.New()` | `OrderId.Create(Guid.NewGuid())` |
-| `OrderId.Empty` | `default` |
-| `OrderId.Parse(text)` | unchanged (`IParsable<TSelf>`) |
-| `orderId.Value` | unchanged (the positional record property) |
-
-Two behavioural differences are worth knowing before you switch:
-
-- **`New()` is gone.** Random generation is not part of the contract: `Create` takes a value. In tests,
-  `Any.Id<OrderId>()` from `Len.StronglyTypedId.Testing` fills the gap.
-- **Converters are no longer opt-in flags.** If the compilation references `System.Text.Json`, the
-  converter is generated. Use `Integrations` to remove what you do not want, rather than to add what you
-  do.
-
-### From Vogen
-
-Vogen wraps a value in a `struct` or `class` with a `Value` property and a `From` factory; this library
-wraps it in a `record` whose single constructor parameter *is* the primitive.
-
-| Vogen | Here |
-| --- | --- |
-| `[ValueObject<Guid>] public partial struct OrderId` | `[StronglyTypedId] public partial record struct OrderId(Guid Value)` |
-| `OrderId.From(guid)` | `OrderId.Create(guid)` |
-| `From` throwing `ValueObjectValidationException` | `Create` throwing `ArgumentException` (choose the type with `ExceptionType`) |
-| `private static Validation Validate(Guid value)` | `[StronglyTypedId(Validator = nameof(IsValid))]` plus a `static bool` method |
-| `private static Guid NormalizeInput(Guid value)` | `[StronglyTypedId(Normalizer = nameof(Normalize))]` |
-| `[Instance("Empty", "00000000-0000-0000-0000-000000000000")]` | `[StronglyTypedIdInstance(nameof(Empty), "00000000-0000-0000-0000-000000000000")]` |
-| `id.Value` | `id.Value` |
-
-`From` → `Create` is the mechanical part. The validation hook is the part that needs thought: Vogen's
-`Validate` returns a `Validation` carrying a message, whereas here the validator is a plain predicate and
-the message is generated (and can be redacted with `RedactValidationMessage`).
-
-### Things that change for every migration
-
-- **The canonical text form is a data contract.** Once ids are persisted, `ToString()` decides what is in
-  the database. Decide on `Prefix` *before* the first write — changing it afterwards makes existing rows
-  unreadable, which is why `STIA0023` refuses to offer a code fix that removes it.
-- **Culture.** `ToString()` and `Parse` are invariant by default; string interpolation is not. If the code
-  you are migrating used `$"{id}"`, check what it produced — a `decimal`-backed id prints `1234,5` under
-  `de-DE` through interpolation and `1234.5` through `ToString()`.
-- **Analyzers arrive with the package.** Installing the runtime package also brings the source generator,
-  the analyzers and the code fixes into every project that references it, including projects that only use
-  `IStronglyTypedId<,>` and declare no ids of their own.
-- **Nullable ids are ids.** `typeof(OrderId?).IsStronglyTypedId()` is `true`, and `GetPrimitiveIdType()`
-  returns the underlying primitive — the same answer MVC binding and the EF converter give.
-
-<a id="comparison-with-other-libraries"></a>
-
-## Comparison with other libraries <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-> Competitor capabilities are recorded as of **2026-10** and describe each project's documented surface at
-> that time. They change; check their current documentation before choosing. Cells marked **—** mean the
-> capability is not part of that library's documented surface, not that it is impossible to achieve there.
-
-| | This library | Vogen | Andrew Lock's `StronglyTypedId` | Hand-rolled `record` |
-| --- | --- | --- | --- | --- |
-| Declaration | `partial record` (class or struct) | `partial struct` / `class` | `partial struct` | anything |
-| Primitive selection | inferred from the single constructor parameter | generic argument or `typeof` | `StronglyTypedIdBackingType` enum | n/a |
-| Supported primitives | 24, including `enum` | wide, including custom types | a fixed set of backing types | any |
-| Validation hook | `Validator` predicate | `Validate` returning a `Validation` | — | manual |
-| Normalization hook | `Normalizer` | `NormalizeInput` | — | manual |
-| Text prefix | `Prefix`, with an ambiguity analyzer | — | — | manual |
-| Named instances | `[StronglyTypedIdInstance]` | `[Instance]` | `Empty` | manual |
-| System.Text.Json | generated when referenced | yes | opt-in flag | manual |
-| Newtonsoft.Json | generated when referenced | yes | opt-in flag | manual |
-| EF Core | generated when referenced | yes | opt-in flag | manual |
-| Dapper | generated when referenced | — | — | manual |
-| Swashbuckle / OpenAPI / MVC binding | generated when referenced | — | — | manual |
-| Analyzers | 25 ids (`STIA0000`–`STIA0024`), with code fixes and a refactoring | yes | limited | — |
-| Test data helpers | `Any.Id<T>()` (`Len.StronglyTypedId.Testing`) | — | — | — |
-| Trimming / AOT | declared `IsAotCompatible`, no reflective converters | — | — | depends on your code |
-
-The honest summary of the trade-offs:
-
-- **Choose Vogen** if you need a custom type as the underlying value, or if you want the `ValueObject`
-  base type and its hoisting of instance methods. It is the more general tool.
-- **Choose this library** if you want the id to *be* a record — structural equality, `with` expressions and
-  pattern matching come from the language rather than from generated members — and if you want the
-  integrations to appear because the compilation references the package, instead of being enumerated in an
-  attribute.
-- **Hand-rolling** stays reasonable for one or two ids. It stops being reasonable once you need parsing,
-  comparison operators, a JSON converter, an EF converter and a Dapper handler for each of them, and it
-  stops being *safe* once the text form has to survive a culture change.
+| [Packages](docs/packages.md) | The four NuGet packages, why the generator is separate, and how the analyzer reaches every project. |
+| [Declaring an id](docs/declaration.md) | Validation, normalization, named instances, exception types, assembly-level defaults, turning integrations off, nested types, `TryCreate` / UTF-8 interfaces and `TypeConverter`. |
+| [Generated code](docs/generated-code.md) | What each generated member does: the interfaces, `Parse` and culture, `[Flags]` enum tightening, `ToString()` and the integration entry point. |
+| [Serialization](docs/serialization.md) | System.Text.Json, Newtonsoft.Json, dictionary keys, JSON shape, the text prefix, explicit registration, and the primitives the serializers do not know. |
+| [Integrations](docs/integrations.md) | Entity Framework Core, Swashbuckle, Dapper, MessagePack, MongoDB, ASP.NET Core MVC, Minimal API and ASP.NET Core OpenAPI. |
+| [Runtime](docs/runtime.md) | Constraining generics with `IStronglyTypedId<,>`, and the reflection helpers. |
+| [Native AOT and trimming](docs/aot.md) | What survives trimming, the reflection helpers, and the `JsonSerializerContext` an AOT app must supply. |
+| [Testing](docs/testing.md) | `Any.Id<T>()`, the AutoFixture integration, and the sample projects. |
+| [Diagnostics](docs/diagnostics.md) | Every rule, its severity, and whether it ships a code fix. |
+| [Performance](docs/performance.md) | What the generator costs at build time, what the generated code costs at run time, and the allocation-based regression gate. |
+| [Troubleshooting](docs/troubleshooting.md) | Symptom-first: nothing generated, a missing integration, stale analyzers, parsing surprises. |
+| [Limitations](docs/limitations.md) | What a source generator cannot do — `Value` visibility, the closed primitive list, the unguarded constructor — and the workaround for each. |
+| [FAQ](docs/faq.md) | The questions that come up most often. |
 
 <a id="limitations"></a>
 
 ## Limitations <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 **`Value` is always public.** The property comes from the positional record's primary constructor, and a
-source generator cannot change the accessibility of a member you declared. Making it `internal` would
-mean hand-writing the type — giving up the one-line declaration that is the point of this library. Treat
-`Value` as the escape hatch it is: reach for it in persistence mappings and interop, keep it out of
-domain signatures. When you need a hard boundary, declare the id `internal` and expose only the
-operations your application actually needs; `STIA0014` flags externally visible ids whose validator
-`new` can bypass (off by default).
+source generator cannot change the accessibility of a member you declared. Declare the id `internal` when
+you need a hard boundary; `STIA0014` flags externally visible ids whose validator `new` can bypass.
 
-**Only the listed primitives are supported.** Arbitrary custom types are not accepted, and `Uri` is
+**Only the listed primitives are supported.** Arbitrary custom types are rejected, and `Uri` is
 deliberately absent: `Uri.Equals` ignores the fragment and normalises case and default ports, so two
-different URIs would compare equal and silently collapse into the same id. Wrap such a value in a
-supported primitive (usually `string`) and validate the format in a validator.
+different URIs would compare equal and silently collapse into the same id.
 
 **The primary constructor is not guarded.** `new OrderId(...)` bypasses both `Normalizer` and `Validator`;
-only `Create`, `Parse` and `TryParse` enforce them — see [Value normalization](#value-normalization).
+only `Create`, `Parse` and `TryParse` enforce them.
 
-<a id="faq"></a>
-
-## FAQ <a href="#table-of-contents" style="float:right">↑ Back to top</a>
-
-**Q: Which package should I install?**
-
-A: Just `Len.StronglyTypedId`. It depends on `Len.StronglyTypedId.Generators`, which contains the
-generator, the analyzer and the code fixes; the runtime library is what you reference from code.
-
-**Q: The analyzer didn't pick up my latest changes — why?**
-
-A: This is usually a Visual Studio cache issue. **Clean the solution** and rebuild. The compiled
-assembly always contains the latest generated code, so it is safe to ignore in the meantime.
-
-**Q: `StronglyTypedIds.ApplyTo` is not found.**
-
-A: Each `ApplyTo` overload is generated together with its integration, and both live in the
-`Len.StronglyTypedId` namespace. Check that (1) `using Len.StronglyTypedId;` is in scope,
-(2) for EF Core a `DbContext` overrides `ConfigureConventions`, and (3) for Swagger the project
-references `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0. The JSON entry points follow the same rule:
-`ApplyTo(JsonSerializerOptions)` needs `System.Text.Json` referenced, and `AddStronglyTypedId()` needs
-`Newtonsoft.Json` ≥ 13.0.0.
-
-**Q: The EF Core converter / column mapping is missing even though EF Core is referenced.**
-
-A: EF Core conversion is gated on a `DbContext` that overrides `ConfigureConventions`. Add the override
-and call `StronglyTypedIds.ApplyTo(configurationBuilder)` — the converters are generated at the same time.
-
-**Q: All generated code disappeared and I only see a CS8785 warning.**
-
-A: `CS8785` means the generator threw while running, and every file it produced for that generation was
-discarded. Please open an issue with the compiler output and a minimal reproduction.
-
-**Q: Is the id usable as a `Dictionary`/`HashSet` key?**
-
-A: Yes. `record` and `record struct` both generate structural equality, `GetHashCode`, `==` and `!=`
-over the wrapped `Value`. Serializing a dictionary keyed by an id is supported as well — see
-[Dictionary keys](#serialization).
-
-**Q: Can I order ids, or use them in a `SortedSet<T>`?**
-
-A: Yes. Every id implements `IComparable<TSelf>` plus `<`, `>`, `<=` and `>=` over the wrapped value, so
-`OrderBy`, `SortedSet<T>` and range checks work without a custom comparer. Reference-type ids treat
-`null` as the smallest value, matching `Comparer<T>.Default`.
-
-**Q: What does `ToString()` print?**
-
-A: The invariant-culture text of the wrapped primitive value (`"42"`, `"3f2c…"`, `"1.5"`) rather than
-the record's default `OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated
-strings. It is deliberately culture-independent so it matches the serialized form and round-trips through
-`Parse(id.ToString())` — `Parse` / `TryParse` treat a `null` provider as the invariant culture for exactly
-this reason. Pass a culture to `ToString(string?, IFormatProvider?)` for culture-specific output.
-
-**Q: I set `Validator`, but `new OrderId(...)` still accepts an invalid value.**
-
-A: The primary constructor belongs to your declaration, and a source generator cannot inject code into
-it, so only the generated entry points are validated. JSON, EF Core and user input all come in through
-`Create` / `Parse` / `TryParse`, where the validator does apply — see [Value validation](#value-validation).
+Workarounds for all three, plus the generic-container caveat, are in [Limitations](docs/limitations.md).
 
 <a id="license"></a>
 

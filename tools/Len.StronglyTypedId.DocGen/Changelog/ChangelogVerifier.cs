@@ -4,15 +4,18 @@ namespace Len.StronglyTypedId.DocGen.Changelog;
 /// <c>CHANGELOG.md</c> 与 <c>CHANGELOG.zh-CN.md</c> 的结构校验：每个 tag 都有小节、日期与 tag 提交日期一致、链接定义齐全。
 /// </summary>
 /// <remarks>
-/// 只校验可机械判定的部分，不评判正文措辞 —— 变更说明是人写的，工具不该假装能生成它。
-/// 两份文件各自独立校验：中文版漏了某个版本小节同样会让 CI 失败，避免译文静默落后于英文版。
+/// 只校验可机械判定的部分；两份文件各自独立校验，中文版漏了某个版本小节同样会让 CI 失败。
 /// </remarks>
 internal static class ChangelogVerifier
 {
-    /// <summary>需要校验的变更日志；顺序即报告顺序。</summary>
+    /// <summary>
+    /// 需要校验的变更日志；顺序即报告顺序。
+    /// </summary>
     private static readonly string[] _files = ["CHANGELOG.md", "CHANGELOG.zh-CN.md"];
 
-    /// <summary>校验并输出结果；返回进程退出码（0 通过，1 有问题）。</summary>
+    /// <summary>
+    /// 校验并输出结果；返回进程退出码（0 通过，1 有问题）。
+    /// </summary>
     public static int Verify(string root)
     {
         var tags = GitRepository.ReadTags(root);

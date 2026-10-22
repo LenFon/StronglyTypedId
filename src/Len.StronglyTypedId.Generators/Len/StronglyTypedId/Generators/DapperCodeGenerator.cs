@@ -104,7 +104,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             registrations.Append($"\n{_registrationIndent}global::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
         }
 
-            var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
+        var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
@@ -136,7 +136,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// 取 <c>Parse</c> 方法体的完整文本（含两侧大括号），各行自带产物中的绝对缩进。
     /// </summary>
     /// <remarks>
-    /// 原始字符串模板里的插值洞不会随模板一起重新缩进，多行洞必须自带缩进，洞本身写在去缩进基准列上。
+    /// 原始字符串模板里的插值洞不会随模板重新缩进，多行洞必须自带缩进，洞本身写在去缩进基准列上。
     /// </remarks>
     private static string GetParseBody(StronglyTypedIdInfo idInfo)
     {
@@ -189,9 +189,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// <see cref="GetParseBody"/> 里单独成段）。
     /// </summary>
     /// <remarks>
-    /// 不能直接写 <c>(TPrimitive)value!</c>：那是拆箱语义，只有驱动恰好返回该 CLR 类型时才成立。
-    /// 实测 SQLite 下枚举列返回 <c>long</c>、<c>char</c> / <c>Guid</c> 列返回 <c>string</c>、
-    /// <c>decimal</c> 列返回 <c>double</c>，四种基元全部抛 <see cref="InvalidCastException"/>。
+    /// 不能直接写 <c>(TPrimitive)value!</c>：那是拆箱语义，SQLite 下枚举列返回 <c>long</c>、<c>char</c> / <c>Guid</c> 列返回 <c>string</c>、<c>decimal</c> 列返回 <c>double</c>，四种基元全抛 <see cref="InvalidCastException"/>。
     /// </remarks>
     private static string GetConversionExpression(StronglyTypedIdInfo idInfo)
     {
@@ -220,8 +218,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// 取 <c>System.Convert</c> 上对应的转换表达式；没有对应重载时返回 <see langword="null"/>。
     /// </summary>
     /// <remarks>
-    /// <paramref name="primitiveShortName"/> 来自 <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/>，
-    /// 因此 C# 有对应关键字的基元呈现为关键字（<c>int</c> / <c>decimal</c>），其余为类型名（<c>Guid</c>）。
+    /// <paramref name="primitiveShortName"/> 来自 <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/>，故 C# 有关键字的基元呈现为关键字（<c>int</c>），其余为类型名（<c>Guid</c>）。
     /// </remarks>
     private static string? GetConvertExpression(string primitiveShortName)
     {

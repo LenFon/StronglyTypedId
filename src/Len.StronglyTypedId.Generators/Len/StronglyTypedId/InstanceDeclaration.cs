@@ -35,16 +35,8 @@ internal enum InstanceIssue
 /// 一条 <c>[StronglyTypedIdInstance]</c> 声明：名字、原始文本、翻译出的表达式与校验结论。
 /// </summary>
 /// <remarks>
-/// <para>
 /// 生成器与分析器共用这一份读取逻辑，保证「报错的那条」与「跳过不生成的那条」永远是同一条。
-/// 它只活在单次分析/生成过程中，不进 <see cref="StronglyTypedIdInfo"/> —— 后者是增量缓存的键，
-/// 只能持有稳定值（见 <see cref="StronglyTypedIdInfo.InstancesBlock"/>）。
-/// </para>
-/// <para>
-/// 刻意用普通 <see langword="readonly"/> 结构体而非位置记录：生成器跑在 netstandard2.0 上，
-/// 位置记录会为每个属性合成 <c>init</c> 访问器，进而要求 <c>IsExternalInit</c> —— 那个类型在
-/// netstandard2.0 里并不存在。
-/// </para>
+/// 刻意用普通 <see langword="readonly"/> 结构体而非位置记录：生成器跑在 netstandard2.0 上，位置记录需要的 <c>IsExternalInit</c> 在那里不存在。
 /// </remarks>
 internal readonly struct InstanceDeclaration
 {
@@ -79,9 +71,7 @@ internal readonly struct InstanceDeclaration
     /// 仅引用类型 Id 才会产出的成员名。
     /// </summary>
     /// <remarks>
-    /// 引用类型的比较运算符要容忍 <see langword="null"/> 操作数，因而额外生成一个私有的
-    /// <c>CompareValues</c> 辅助方法；值类型直连基元比较，没有这个成员。放在单独的清单里而不是并进
-    /// <see cref="_reservedNames"/>，是为了不给值类型 Id 制造「本来不存在的撞名」。
+    /// 引用类型的比较运算符要容忍 <see langword="null"/>，故额外生成 <c>CompareValues</c>；单独成表是为了不给值类型 Id 制造「本来不存在的撞名」。
     /// </remarks>
     private static readonly string[] _referenceTypeReservedNames =
     [
@@ -91,10 +81,6 @@ internal readonly struct InstanceDeclaration
     /// <summary>
     /// 初始化一条实例声明。
     /// </summary>
-    /// <param name="name">声明的名字。</param>
-    /// <param name="value">声明的原始文本值。</param>
-    /// <param name="expression">翻译出的生成代码表达式；非法时为 <see langword="null"/>。</param>
-    /// <param name="issue">校验结论。</param>
     internal InstanceDeclaration(string name, string value, string? expression, InstanceIssue issue)
     {
         Name = name;
@@ -126,9 +112,6 @@ internal readonly struct InstanceDeclaration
     /// <summary>
     /// 读取并逐条校验 <paramref name="type"/> 上的全部 <c>[StronglyTypedIdInstance]</c>，保持声明顺序。
     /// </summary>
-    /// <param name="type">强类型 Id 类型。</param>
-    /// <param name="primitiveType">该 Id 包装的基元类型。</param>
-    /// <returns>与属性一一对应的结论；没有声明时为空数组。</returns>
     internal static ImmutableArray<InstanceDeclaration> Read(INamedTypeSymbol type, ITypeSymbol primitiveType)
     {
         var attributes = AttributeReader.FindAll(type, AttributeReader.StronglyTypedIdInstanceAttributeName);
@@ -181,17 +164,8 @@ internal readonly struct InstanceDeclaration
     /// 判断名字是否会与类型自身、既有成员或即将生成的成员撞名。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 与类型同名会触发 CS0542（成员名不能与包含类型同名），与既有成员同名会触发 CS0102。
-    /// <c>type.GetMembers</c> 覆盖用户自己写的成员与 record 合成成员（<c>Value</c> / <c>Equals</c> /
-    /// <c>&lt;Clone&gt;$</c> 等），保留名清单覆盖生成器稍后才产出的那些。
-    /// </para>
-    /// <para>
-    /// 必须滤掉生成器自己产出的命名实例字段：分析器跑在**已包含生成代码**的编译上，否则每条实例都会撞上
-    /// 它自己刚刚生成的那个字段，于是全部被判成撞名。过滤范围只限「生成器产出的静态只读字段」这一种形态 ——
-    /// 生成器产出的方法与嵌套类型必须照常参与判定，否则用户给实例取这些名字时分析器会沉默，
-    /// 直到生成代码里冒出 CS0102。
-    /// </para>
+    /// 与类型同名触发 CS0542，与既有成员同名触发 CS0102；保留名清单覆盖生成器稍后才产出的成员。
+    /// 必须滤掉生成器自己产出的命名实例字段，否则每条实例都会撞上它自己刚生成的那个字段；但生成的方法与嵌套类型必须照常参与判定。
     /// </remarks>
     private static bool IsReservedName(INamedTypeSymbol type, string name)
         => name == type.Name
@@ -204,8 +178,7 @@ internal readonly struct InstanceDeclaration
     /// 判断成员是否是生成器为某条命名实例产出的字段（<c>public static readonly</c> + <c>[GeneratedCode]</c>）。
     /// </summary>
     /// <remarks>
-    /// 只认字段：命名实例是唯一的「与实例同名」的产物，其余生成成员（<c>Create</c> / <c>Parse</c> /
-    /// <c>CompareValues</c> / <c>XxxTypeConverter</c> 等）都与实例名争同一个声明空间，必须参与撞名判定。
+    /// 只认字段：命名实例是唯一「与实例同名」的产物，其余生成成员都与实例名争同一个声明空间。
     /// </remarks>
     private static bool IsGeneratedInstanceField(ISymbol member)
         => member is IFieldSymbol { IsStatic: true, IsReadOnly: true }
@@ -216,12 +189,8 @@ internal readonly struct InstanceDeclaration
     /// 判断名字是否符合 PascalCase，并在不符合时给出建议名。
     /// </summary>
     /// <remarks>
-    /// 判定刻意保守：只看首字符是否大写、以及是否含下划线。全大写缩写（<c>URL</c>）不算违规 ——
-    /// 它已经是 PascalCase 的一种常见写法，强行要求改成 <c>Url</c> 只会制造噪音。
+    /// 判定刻意保守：只看首字符是否大写、是否含下划线；全大写缩写（<c>URL</c>）不算违规。
     /// </remarks>
-    /// <param name="name">实例名。</param>
-    /// <param name="suggestion">不符合时给出的 PascalCase 写法；符合时为空串。</param>
-    /// <returns>符合 PascalCase 时为 <see langword="true"/>。</returns>
     internal static bool IsPascalCase(string name, out string suggestion)
     {
         suggestion = string.Empty;
