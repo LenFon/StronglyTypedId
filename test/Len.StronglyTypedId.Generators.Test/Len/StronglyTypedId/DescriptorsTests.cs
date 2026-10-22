@@ -33,9 +33,7 @@ public partial class DescriptorsTests
             descriptor.Id.Should().MatchRegex(RuleIdPattern(), "规则 ID 是对外承诺，不能改号");
             descriptor.Category.Should().Be("StronglyTypedIdAnalyzer");
 
-            // STIA0014（ValidatorCanBeBypassed）默认关闭：public 的 Id 类型是完全正常的用法
-            // （API 契约、DTO、跨程序集传递都需要），默认开启会在绝大多数项目上制造噪声，
-            // 只应由需要「验证器不可绕过」这一强保证的项目在 .editorconfig 里显式开启。
+            // STIA0014（ValidatorCanBeBypassed）默认关闭：public 的 Id 是正常用法，默认开启只会在绝大多数项目上制造噪声。
             // 其余规则一律默认启用。
             if (descriptor.Id == Descriptors.ValidatorCanBeBypassedId)
             {
@@ -46,15 +44,8 @@ public partial class DescriptorsTests
                 descriptor.IsEnabledByDefault.Should().BeTrue();
             }
 
-            // STIA0011（BypassCreate）是「告警性」诊断：仅当 Id 设了 Validator 时提示绕过 Create 的构造，
-            // 默认 Warning —— 不阻断构建，但 build 与 CI 都能看见（各项目可在 .editorconfig 里调级）。
-            // STIA0013（InvalidPrefix）同样是「告警性」诊断：空前缀没有语义、纯空白前缀几乎必然是笔误。
-            // STIA0019（IntegrationUnavailable）也是告警：显式 opt-in 却因缺包静默失效，必须可见但不阻断构建。
-            // STIA0024（UnknownIntegration）同理：掩码里的越界位什么都不选中，代码本身合法，只是不生效。
-            // STIA0014（ValidatorCanBeBypassed）为建议性诊断，默认 Info。
-            // STIA0015 / STIA0016 是纯命名风格提示（名字不以 Id 结尾、同命名空间共用基元），
-            // 与「声明是否合法」无关，默认 Info。
-            // 其余规则一律 Error。
+            // STIA0011 / STIA0013 / STIA0019 / STIA0024 是「告警性」诊断：默认 Warning，不阻断构建但 build 与 CI 都看得见。
+            // STIA0014 / STIA0015 / STIA0016 是建议性或纯命名风格提示，默认 Info；其余规则一律 Error。
             switch (descriptor.Id)
             {
                 case Descriptors.BypassCreateId:

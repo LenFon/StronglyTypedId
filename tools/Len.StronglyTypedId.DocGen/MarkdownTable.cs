@@ -6,8 +6,7 @@ namespace Len.StronglyTypedId.DocGen;
 /// 把二维数据渲染成与仓库现有风格一致的 Markdown 表格（列宽对齐、左对齐）。
 /// </summary>
 /// <remarks>
-/// 对齐宽度按<b>显示宽度</b>而非字符数计算：中日韩字符在等宽字体下占两格，按字符数补齐会让
-/// 中文表格的竖线错位。Markdown 渲染器本身不在意这点，但对齐后的纯文本 diff 更容易读。
+/// 对齐宽度按<b>显示宽度</b>而非字符数计算：中日韩字符在等宽字体下占两格，按字符数补齐会让中文表格的竖线错位。
 /// </remarks>
 internal static class MarkdownTable
 {
@@ -85,8 +84,7 @@ internal static class MarkdownTable
     /// 判断字符是否占据两个等宽字符位（CJK 统一表意文字、假名、谚文、全角标点等）。
     /// </summary>
     /// <remarks>
-    /// 采用 <c>wcwidth</c> 的经典近似区间。刻意<b>不</b>把东亚「模糊宽度」字符（如 <c>→</c> U+2192）
-    /// 计入宽字符：它们在多数西文终端与编辑器里按一格显示，算成两格反而会错位。
+    /// 采用 <c>wcwidth</c> 的经典近似区间；刻意<b>不</b>把东亚「模糊宽度」字符（如 <c>→</c>）计入宽字符，它们在多数编辑器里按一格显示。
     /// </remarks>
     private static bool IsWide(char character)
         => character is >= '\u1100' and <= '\u115F'

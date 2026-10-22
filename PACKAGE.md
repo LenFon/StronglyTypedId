@@ -102,8 +102,8 @@ Generated only when the matching package is referenced; `Integrations` can narro
   ids are stored as their invariant-culture text, prefix included.
 - **EF Core** — `EntityFrameworkCore`: `StronglyTypedIds.ApplyTo(configurationBuilder)` from
   `ConfigureConventions`, plus a model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from
-  `OnModelCreating`. Both overloads are generated together whenever a `DbContext` overrides
-  `ConfigureConventions` and EF Core ≥ 7.0.0 is referenced.
+  `OnModelCreating` for contexts that do not override `ConfigureConventions`. Both overloads are
+  generated whenever EF Core ≥ 7.0.0 is referenced.
 - **Dapper** — `Dapper`: `StronglyTypedIds.ApplyTo()` registers `TypeHandler`s in Dapper's process-wide
   registry, so it only needs to run once. The `ApplyTo(IDbConnection)` overload is kept for source
   compatibility and ignores its argument.

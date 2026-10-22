@@ -7,9 +7,7 @@ namespace Len.StronglyTypedId;
 /// 枚举基元的解析契约：非 <c>[Flags]</c> 枚举只接受已定义的成员，<c>[Flags]</c> 枚举接受位组合但拒绝未定义的位。
 /// </summary>
 /// <remarks>
-/// <c>Enum.TryParse</c> 本身对 <c>"999"</c>、<c>"1,2"</c>、<c>" Active "</c> 都返回 <see langword="true"/>，
-/// 生成器若不补校验就会造出不对应任何合法取值的 Id：非 <c>[Flags]</c> 枚举补 <c>Enum.IsDefined</c>，
-/// <c>[Flags]</c> 枚举补「未定义位掩码」按位与。
+/// <c>Enum.TryParse</c> 对 <c>"999"</c>、<c>"1,2"</c>、<c>" Active "</c> 都返回 <see langword="true"/>，故非 <c>[Flags]</c> 枚举补 <c>Enum.IsDefined</c>，<c>[Flags]</c> 枚举补「未定义位掩码」按位与。
 /// </remarks>
 public class EnumPrimitiveTests
 {

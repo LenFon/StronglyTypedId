@@ -7,9 +7,6 @@ namespace Len.StronglyTypedId.DocGen.Changelog;
 /// <summary>
 /// 一个 git tag 及其对应的包版本与提交日期。
 /// </summary>
-/// <param name="Tag">仓库里的原始 tag 名（可能是 <c>v1.0.5</c>）。</param>
-/// <param name="Version">去掉前导 <c>v</c> 后的版本号，与 <c>CHANGELOG.md</c> 的小节标题对应。</param>
-/// <param name="Date">tag 指向提交的日期（<c>yyyy-MM-dd</c>）。</param>
 internal sealed record GitTag(string Tag, string Version, string Date);
 
 /// <summary>
@@ -41,7 +38,9 @@ internal static class GitRepository
         return tags;
     }
 
-    /// <summary>最近一个可从 <c>HEAD</c> 到达的 tag；没有 tag 时返回 <see langword="null"/>。</summary>
+    /// <summary>
+    /// 最近一个可从 <c>HEAD</c> 到达的 tag；没有 tag 时返回 <see langword="null"/>。
+    /// </summary>
     public static string? FindLatestTag(string root)
     {
         var result = TryRun(root, out _, "describe", "--tags", "--abbrev=0");
@@ -49,7 +48,9 @@ internal static class GitRepository
         return string.IsNullOrWhiteSpace(result) ? null : result.Trim();
     }
 
-    /// <summary>取出区间内的提交标题（<c>%s</c>），保持 git 的默认顺序（新到旧）。</summary>
+    /// <summary>
+    /// 取出区间内的提交标题（<c>%s</c>），保持 git 的默认顺序（新到旧）。
+    /// </summary>
     public static IReadOnlyList<string> ReadSubjects(string root, string? range)
     {
         var arguments = range is null
@@ -63,7 +64,9 @@ internal static class GitRepository
             .ToArray();
     }
 
-    /// <summary>去掉 <c>v</c> / <c>V</c> 前缀：早期 tag 是 <c>v1.0.5</c>，1.3.0 起不带前缀。</summary>
+    /// <summary>
+    /// 去掉 <c>v</c> / <c>V</c> 前缀：早期 tag 是 <c>v1.0.5</c>，1.3.0 起不带前缀。
+    /// </summary>
     public static string NormalizeVersion(string tag) =>
         tag.Length > 1 && (tag[0] == 'v' || tag[0] == 'V') ? tag[1..] : tag;
 

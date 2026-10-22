@@ -13,16 +13,8 @@ namespace Len.StronglyTypedId;
 /// 二进制序列化矩阵：把生成器为「每一个 Id」产出的 MessagePack 格式化器与 BSON 序列化器全部拿出来跑一遍。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 与 Dapper / EF Core 的矩阵同构，但这两条链路有一处独有的风险：格式化器是<b>按基元委托</b>给上游库的
-/// （<c>GetFormatterWithVerify&lt;TPrimitive&gt;</c> / <c>LookupSerializer&lt;TPrimitive&gt;</c>），
-/// 而「上游库有没有这个基元的原生表示」只能在运行期才知道。编译通过不代表 <c>Half</c>、<c>DateOnly</c>
-/// 这些较新的基元真的能序列化，所以这里必须逐个真跑一遍。
-/// </para>
-/// <para>
-/// 断言分两层：一是往返能还原同一个 Id；二是<b>载荷里只有基元值本身</b> —— 文本前缀是文本形的装饰，
-/// 一旦漏进二进制格式，改前缀就会让已落盘的数据读不回来。
-/// </para>
+/// 这两条链路的风险在于格式化器是<b>按基元委托</b>给上游库的，「上游有没有该基元的原生表示」只有运行期才知道，故必须逐个真跑。
+/// 断言分两层：往返还原同一个 Id；载荷里只有基元值本身（前缀一旦漏进二进制，改前缀就让已落盘数据读不回来）。
 /// </remarks>
 public class BinarySerializationTests
 {
@@ -42,9 +34,7 @@ public class BinarySerializationTests
     /// BSON 的序列化器注册在进程级注册表里，整个测试类只注册一次。
     /// </summary>
     /// <remarks>
-    /// <c>Guid</c> 还要额外指定表示形式：driver 3.0 起没有全局默认值，未指定时序列化会直接抛
-    /// <c>BsonSerializationException</c>。这里按新库的惯例选 <c>Standard</c>，真实应用应按既有数据的
-    /// 表示形式来选。
+    /// <c>Guid</c> 还要额外指定表示形式：driver 3.0 起没有全局默认值，未指定会抛 <c>BsonSerializationException</c>。
     /// </remarks>
     static BinarySerializationTests()
     {
@@ -245,8 +235,7 @@ public class BinarySerializationTests
     /// 把单个值写成一个只含 <c>v</c> 字段的 BSON 文档。
     /// </summary>
     /// <remarks>
-    /// BSON 的根必须是文档，裸标量写不进 <see cref="BsonDocumentWriter"/>，故统一包一层。
-    /// 这也正是真实用法：Id 总是某个文档的字段。
+    /// BSON 的根必须是文档，裸标量写不进 <see cref="BsonDocumentWriter"/>，故统一包一层 —— 这也正是真实用法。
     /// </remarks>
     private static BsonDocument WriteDocument(Type nominalType, object value)
     {

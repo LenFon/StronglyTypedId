@@ -5,14 +5,14 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<!--
-		  测试辅助包，刻意不声明 IsAotCompatible：造值要靠反射把「Id 类型 + 基元类型」组合成
-		  泛型方法（MakeGenericMethod），这在 Native AOT 下必然触发 IL3050。测试代码从不做 AOT 发布，
-		  为它背上一堆 RequiresDynamicCode 标注只会让 API 面变脏。
+		  测试辅助包，刻意不声明 IsAotCompatible：造值要靠反射把「Id 类型 + 基元类型」组合成泛型方法
+		  （MakeGenericMethod），在 Native AOT 下必然触发 IL3050。测试代码从不做 AOT 发布，为它背一堆
+		  RequiresDynamicCode 标注只会让 API 面变脏。
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
 		<!--
-		  包说明与主包分开：PACKAGE.md 讲的是生成器与运行时能力，直接复用到测试辅助包会让
-		  NuGet 页面误导使用者。common.props 里那条 None 是按主包写的，这里先移除再换成自己的。
+		  包说明与主包分开：PACKAGE.md 讲的是生成器与运行时能力，复用到测试辅助包会误导使用者。common.props 里
+		  那条 None 是按主包写的，这里先移除再换成自己的。
 		-->
 		<PackageReadmeFile>TESTING.md</PackageReadmeFile>
 		<Description>Test-time helpers for Len.StronglyTypedId: generate arbitrary but realistic id values for any strongly typed id, with reproducible seeds and validator-aware retries.</Description>

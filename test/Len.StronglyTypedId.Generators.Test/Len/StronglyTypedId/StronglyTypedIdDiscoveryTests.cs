@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// <see cref="StronglyTypedIdDiscovery.Discover"/> 的单元测试：确认只把运行时的 
+/// <see cref="StronglyTypedIdDiscovery.Discover"/> 的单元测试：确认只把运行时的
 /// <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 纳入发现结果。
 /// </summary>
 public class StronglyTypedIdDiscoveryTests

@@ -21,12 +21,6 @@ public sealed class StronglyTypedIdCustomization : ICustomization
     /// <summary>
     /// Initializes a new instance backed by the specified generator.
     /// </summary>
-    /// <param name="generator">
-    /// The generator used to create ids, typically seeded for reproducibility.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="generator"/> is <see langword="null"/>.
-    /// </exception>
     public StronglyTypedIdCustomization(AnyIdGenerator generator)
     {
         ArgumentNullException.ThrowIfNull(generator);

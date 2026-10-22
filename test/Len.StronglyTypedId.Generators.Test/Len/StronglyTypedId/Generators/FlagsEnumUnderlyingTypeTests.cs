@@ -12,16 +12,8 @@ namespace Len.StronglyTypedId.Generators;
 /// <c>[Flags]</c> 枚举的「未定义位掩码」按底层类型宽度裁剪的契约。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 掩码由全部成员的常量按位或取反得出。若不按底层宽度裁剪，<c>sbyte</c> 的 <c>-1</c> 在
-/// <see cref="ulong"/> 里是满位，取反后得到 0 —— 掩码整个消失；反之不裁剪也会把高位当成「未定义」，
-/// 让 <c>All = -1</c> 这类「全位已定义」的枚举被误判成非法。
-/// </para>
-/// <para>
-/// 每种底层类型都必须单独验证：<c>GetIntegralBitWidth</c> 与 <c>ToBits</c> 各有一张按类型分派的表，
-/// 漏掉一个分支的表现是「某种底层类型的 [Flags] 枚举永远拒绝合法位组合」—— 而这在只测 <c>int</c>
-/// 的用例里完全看不出来。
-/// </para>
+/// 掩码由全部成员常量按位或取反得出，必须按底层宽度裁剪：<c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，不裁剪会把掩码整个吃掉。
+/// 每种底层类型都要单独验证：<c>GetIntegralBitWidth</c> 与 <c>ToBits</c> 各有一张分派表，漏一个分支的表现是某种底层类型的 <c>[Flags]</c> 永远拒绝合法位组合。
 /// </remarks>
 public class FlagsEnumUnderlyingTypeTests
 {

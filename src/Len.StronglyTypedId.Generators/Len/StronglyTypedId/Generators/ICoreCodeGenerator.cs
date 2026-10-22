@@ -13,10 +13,6 @@ internal interface ICoreCodeGenerator
     /// <summary>
     /// 为单个强类型 Id 生成源码。
     /// </summary>
-    /// <param name="stronglyTypedIdInfo">当前强类型 Id 的描述。</param>
-    /// <param name="modules">当前编译引用的全部模块，用于按依赖程序集决定生成内容。</param>
-    /// <param name="context">源码生成上下文。</param>
-    /// <param name="version">写入 <c>GeneratedCodeAttribute</c> 的生成器版本号。</param>
     void Generate(
         StronglyTypedIdInfo stronglyTypedIdInfo,
         ImmutableArray<ModuleInfo> modules,

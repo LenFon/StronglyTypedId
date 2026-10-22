@@ -212,12 +212,8 @@ public class IntegrationRuntimeTests
     [Fact]
     public void EfCore_ConverterTypeIsGeneratedAndInheritsValueConverter()
     {
-        // 生成的转换器是 internal 嵌套类（StronglyTypedIds+IntegrationGuidIdConverter），
-        // 经 typeof(IntegrationGuidId).Assembly.GetTypes() 在 internal 容器下可能拿不到，
-        // 故改用「编译通过」作为运行时验证：本测试工程引了 EF Core 包（门控触发），
-        // 生成器产物已编译进本程序集，若转换器类型在 EF Core 真实包下不存在，
-        // 编译阶段即会失败（CS0246/CS0012 等），不会跑到这里。
-        // 行为（双向映射 GuidId ↔ Guid）由 CodeGeneratorModuleGateTests 的文本契约锁定。
+        // 生成的转换器是 internal 嵌套类，经 Assembly.GetTypes() 在 internal 容器下可能拿不到，故改用「编译通过」作为运行时验证：转换器类型若在真实包下不存在，编译阶段即失败。
+        // 行为由 CodeGeneratorModuleGateTests 的文本契约锁定。
         var expectedType = typeof(Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<IntegrationGuidId, Guid>);
 
         expectedType.Should().NotBeNull("EF Core 的 ValueConverter 泛型类型必须可在真实包引用下解析");
@@ -432,7 +428,9 @@ public class IntegrationRuntimeTests
             ValueProvider = new SingleValueProvider(name, rawValue),
         };
 
-    /// <summary>只为绑定器测试提供单个键值的最小 <see cref="Microsoft.AspNetCore.Mvc.ModelBinding.IValueProvider"/>。</summary>
+    /// <summary>
+    /// 只为绑定器测试提供单个键值的最小 <see cref="Microsoft.AspNetCore.Mvc.ModelBinding.IValueProvider"/>。
+    /// </summary>
     private sealed class SingleValueProvider(string name, string? rawValue) : Microsoft.AspNetCore.Mvc.ModelBinding.IValueProvider
     {
         /// <inheritdoc/>

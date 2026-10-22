@@ -223,12 +223,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 生成基元 <c>TryFormat</c> 的调用表达式。
     /// </summary>
-    /// <param name="kind">基元的直呼形态，见 <see cref="TryFormatKind"/>。</param>
-    /// <param name="isUtf8">目标是 UTF-8 缓冲区（<see cref="TryFormatKind.Interface"/> 时决定强转哪个接口）。</param>
-    /// <param name="destination">目标缓冲区表达式，可含 <c>.Slice(n)</c>。</param>
-    /// <param name="writtenArgument">
-    /// <c>out</c> 实参写法：<c>charsWritten</c> / <c>bytesWritten</c> / <c>var written</c>。
-    /// </param>
     private static string GetTryFormatCall(TryFormatKind kind, bool isUtf8, string destination, string writtenArgument)
         => kind switch
         {
@@ -241,7 +235,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
     /// <summary>
     /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 无条件附加，
-    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> 仅在 
+    /// <see cref="System.ComponentModel.TypeConverterAttribute"/> 仅在
     /// <see cref="StronglyTypedIdInfo.HasTypeConverter"/> 开启时附加。
     /// </summary>
     private static string GetTypeAttributes(StronglyTypedIdInfo idInfo)
@@ -289,8 +283,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 取完整的 <c>Create</c> 成员（含签名）。
     /// </summary>
     /// <remarks>
-    /// 返回值自带 <see cref="_memberBodyIndent"/>：模板里的占位符落在原始字符串的去缩进基准列上，
-    /// 首行拿不到模板的缩进，多行内容更是逐行原样插入 —— 缩进只能由这里补齐。
+    /// 返回值自带 <see cref="_memberBodyIndent"/>：占位符落在去缩进基准列上，首行拿不到模板缩进，多行内容逐行原样插入，缩进只能由这里补齐。
     /// </remarks>
     private static string GetCreateMember(StronglyTypedIdInfo idInfo)
     {
@@ -556,9 +549,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 取一个比较运算符的完整声明行。
     /// </summary>
     /// <remarks>
-    /// 引用类型 Id 的操作数可以是 <c>null</c>，直接取 <c>left.Value</c> 会抛 <see cref="NullReferenceException"/>；
-    /// 这里改走 <c>CompareValues</c>，与 <c>CompareTo</c> 的「null 最小」约定保持一致。值类型不存在 null 操作数，
-    /// 保持直连基元比较，避免多一层调用。
+    /// 引用类型 Id 的操作数可以是 <c>null</c>，直接取 <c>left.Value</c> 会抛 <see cref="NullReferenceException"/>，故改走 <c>CompareValues</c>，与 <c>CompareTo</c> 的「null 最小」一致。
     /// </remarks>
     private static string GetComparisonOperator(StronglyTypedIdInfo idInfo, string @operator, string comparison)
     {
@@ -865,12 +856,6 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 向 <paramref name="builder"/> 追加一个带生成器标注的成员。
     /// </summary>
-    /// <param name="builder">目标缓冲区。</param>
-    /// <param name="version">写入 <c>GeneratedCodeAttribute</c> 的生成器版本。</param>
-    /// <param name="docLines">XML 文档注释内容行，不含 <c>/// </c> 前缀。</param>
-    /// <param name="declarationLines">
-    /// 成员自身的各行（不含缩进）；<see cref="string.Empty"/> 表示空行，不补缩进以免留下行尾空白。
-    /// </param>
     private static void AppendMember(
         StringBuilder builder,
         string version,

@@ -15,7 +15,7 @@ title: 生成产物
 | 始终                                                                                                     | `<命名空间>.<类型名>.g.cs`                                               |
 | 引用了 `System.Text.Json`                                                                                | `…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`           |
 | 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                                        | `…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`           |
-| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`    | `…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0                                                           | `…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                                       | `StronglyTypedIds.Swagger.g.cs`                                          |
 | 引用了 `Dapper` ≥ 2.0.0                                                                                  | `…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`                           |
 | 引用了 `MessagePack` ≥ 2.0.0                                                                             | `…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`                 |

@@ -31,12 +31,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             .WithComparer(new ModuleInfo.Comparer())
             .Collect();
 
-        // 只需知道「是否存在」，故把匹配结果收敛为单个布尔值。
-        var hasDbContextConventions = context.SyntaxProvider
-            .CreateSyntaxProvider(CouldBeEfCoreDbContext, static (_, _) => true)
-            .Collect()
-            .Select(static (matches, _) => !matches.IsDefaultOrEmpty);
-
         // 枚举全部引用程序集的类型是发现阶段的主要开销，这里一次算好，交给各集成生成器取用。
         var discoveredIds = stronglyTypedIdInfos
             .Collect()
@@ -48,7 +42,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         // 各集成生成器是否启用，只由是否引用了对应程序集决定（见 _generatorCatalog）。
         context.RegisterSourceOutput(idsAndModules, GenerateCoreCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules.Combine(hasDbContextConventions), GenerateEfCoreCode);
+        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateEfCoreCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateSwaggerCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateDapperCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateAspNetCoreOpenApiCode);
@@ -58,17 +52,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateMessagePackCode);
         context.RegisterSourceOutput(discoveredIdsAndModules, GenerateMongoDbCode);
     }
-
-    private static bool CouldBeEfCoreDbContext(SyntaxNode syntaxNode, CancellationToken _)
-        => syntaxNode is MethodDeclarationSyntax
-            {
-                Identifier.ValueText: "ConfigureConventions",
-                Modifiers: var modifiers and not [],
-                Parent: ClassDeclarationSyntax,
-                ParameterList.Parameters.Count: 1,
-            }
-            && modifiers.Any(SyntaxKind.OverrideKeyword)
-            && modifiers.Any(SyntaxKind.ProtectedKeyword);
 
     private static bool CouldBeStronglyTypedId(SyntaxNode syntaxNode, CancellationToken _)
     {
@@ -145,15 +128,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
     private static void GenerateEfCoreCode(
         SourceProductionContext context,
-        ((DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) Integration, bool HasDbContextConventions) args)
-    {
-        if (!args.HasDbContextConventions)
-        {
-            return;
-        }
-
-        GenerateIntegrationCode(context, args.Integration, "Microsoft.EntityFrameworkCore.dll");
-    }
+        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
+        => GenerateIntegrationCode(context, args, "Microsoft.EntityFrameworkCore.dll");
 
     private static void GenerateSwaggerCode(
         SourceProductionContext context,
@@ -302,8 +278,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             static modules => modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7),
             EfCoreCodeGenerator.Instance,
             new DocText(
-                "`Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`",
-                "引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`"),
+                "`Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced",
+                "引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0"),
             new DocText(
                 "Nested `{TypeName}Converter`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)`",
                 "嵌套 `{TypeName}Converter`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)`"),
@@ -464,9 +440,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         /// docs 的「Generated files」表「Generated files」列的文案：该集成产出的文件名。
         /// </summary>
         /// <remarks>
-        /// 与 <see cref="Documentation"/> 分开存放，是因为两者的读者不同：README 首屏只需要
-        /// 「生成什么 + 入口签名」，文件名属于调试 <c>EmitCompilerGeneratedFiles</c> 时才查的细节。
-        /// 合在一列会让 README 表格宽到必须横向滚动（实测 330 字符）。
+        /// 与 <see cref="Documentation"/> 分开存放是因为读者不同：README 首屏只要「生成什么 + 入口签名」，文件名属于调试细节，合在一列会让表格宽到必须横向滚动。
         /// </remarks>
         public DocText FileNames { get; }
     }

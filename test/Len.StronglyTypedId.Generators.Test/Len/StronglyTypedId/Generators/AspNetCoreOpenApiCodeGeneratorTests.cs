@@ -10,8 +10,8 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// <see cref="AspNetCoreOpenApiCodeGenerator"/> 的单元测试：覆盖 
-/// <see cref="AspNetCoreOpenApiCodeGenerator.GetTypeLiteral"/> 与 
+/// <see cref="AspNetCoreOpenApiCodeGenerator"/> 的单元测试：覆盖
+/// <see cref="AspNetCoreOpenApiCodeGenerator.GetTypeLiteral"/> 与
 /// <see cref="AspNetCoreOpenApiCodeGenerator.GetFormatLiteral"/> 的全部基元类型分支（含默认分支）。
 /// </summary>
 public class AspNetCoreOpenApiCodeGeneratorTests

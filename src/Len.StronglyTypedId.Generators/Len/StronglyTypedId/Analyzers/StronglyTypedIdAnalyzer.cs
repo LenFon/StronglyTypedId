@@ -131,10 +131,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // 不能用 type.Constructors[0]：它含静态构造与用户额外写的实例构造，顺序不保证主构造在前，
-        // 取 [0].Parameters[0] 会越界并抛 AD0001，把该类型的全部 STIA 诊断一起吞掉。
-        // GetSingleParameterType 遍历 InstanceConstructors 并按「单参数且参数类型不是自身」过滤，
-        // 顺带跳过 record 编译器合成的拷贝构造。
+        // 不能用 type.Constructors[0]：顺序不保证主构造在前，取 [0].Parameters[0] 会越界抛 AD0001，把该类型的全部 STIA 诊断一起吞掉。
+        // GetSingleParameterType 遍历 InstanceConstructors 并按「单参数且类型不是自身」过滤，顺带跳过 record 合成的拷贝构造。
         var constructorParameterType = GetSingleParameterType(type);
 
         if (constructorParameterType is null || !SupportedPrimitiveTypes.IsSupported(constructorParameterType))
@@ -319,16 +317,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 校验 <c>[StronglyTypedId(Prefix = …)]</c>：纯空白前缀报 STIA0013，与基元文本重叠的前缀报 STIA0023。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 空串<b>不</b>报：生成器侧 <c>NormalizePrefix</c> 把空串与纯空白一并视为「未设置」，产物与不写
-    /// <c>Prefix</c> 逐字符相同。既然删掉实参和不删完全等价，报出来只会让人以为必须动它（D10）。
-    /// 纯空白才是笔误，仍然报。
-    /// </para>
-    /// <para>
-    /// 前缀直接参与 <c>ToString()</c> 拼接与 <c>Parse</c> 剥离，中间没有分隔符。若前缀本身也可能是基元
-    /// 文本的开头，那么「不带前缀的文本」在宽松读取模式下会被当成「带前缀」而剥掉一段，静默得到另一个值
-    /// （<c>Prefix = "-"</c> + <c>int</c>：<c>Parse("-5")</c> 得 5 而非 -5）。这类前缀必须挡住。
-    /// </para>
+    /// 空串<b>不</b>报：生成器侧把空串与纯空白都视为「未设置」，删掉实参与不删完全等价；纯空白才是笔误，仍然报。
+    /// 前缀直接参与 <c>ToString()</c> 拼接与 <c>Parse</c> 剥离且无分隔符，若前缀本身可能是基元文本的开头，会被静默剥掉一段（<c>Prefix = "-"</c> 时 <c>Parse("-5")</c> 得 5）。
     /// </remarks>
     private static void ValidatePrefix(
         SymbolAnalysisContext context,
@@ -363,9 +353,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 判断是否存在某个基元取值，其文本形式以该前缀开头 —— 即前缀与基元文本不可区分。
     /// </summary>
     /// <remarks>
-    /// 只看首字符就够了：文本的首字符决定了「有没有可能以该前缀开头」，多字符前缀只有在首字符可作开头时
-    /// 才需要进一步考虑（<c>NaN</c> / <c>Infinity</c> 这两个字母开头的特例单独处理）。
-    /// 这样 <c>"DT-"</c>（日期）与 <c>"INV-"</c>（数值）这类合法前缀不会被误伤。
+    /// 只看首字符就够了：多字符前缀只有在首字符可作开头时才需进一步考虑（<c>NaN</c> / <c>Infinity</c> 单独处理），故 <c>"DT-"</c> / <c>"INV-"</c> 不会被误伤。
     /// </remarks>
     private static bool CanBeginPrimitiveText(string prefix, ITypeSymbol primitiveType)
     {
@@ -449,8 +437,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 改名建议（STIA0022）。
     /// </summary>
     /// <remarks>
-    /// 逐条按属性顺序上报，位置落在对应的那条 attribute 上 —— 一个类型上可以写很多条实例，
-    /// 报在类型声明处等于让人自己猜是哪一条写错了。
+    /// 逐条按属性顺序上报，位置落在对应的那条 attribute 上 —— 报在类型声明处等于让人自己猜是哪一条写错了。
     /// </remarks>
     private static void ValidateInstances(
         SymbolAnalysisContext context,
@@ -508,9 +495,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 登记 <c>[StronglyTypedId(Integrations = …)]</c> 请求的集成（STIA0019）。
     /// </summary>
     /// <remarks>
-    /// 只在逐类型显式写出该参数时登记；未写出时生效的是程序集默认值，由
-    /// <see cref="ReportIntegrationProblems"/> 统一登记。这里只收集不上报 —— 要等整个编译的请求
-    /// 都到齐，才能按集成聚合。
+    /// 只在逐类型显式写出该参数时登记；未写出时生效的是程序集默认值，由 <see cref="ReportIntegrationProblems"/> 统一登记。
     /// </remarks>
     private static void ValidateIntegrations(
         SymbolAnalysisContext context,
@@ -553,8 +538,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 汇总整个编译的集成请求，为每个「请求了但没有引用」的集成报一条 STIA0019。
     /// </summary>
     /// <remarks>
-    /// 逐类型逐集成上报时，50 个 Id 配 <c>Integrations = All</c> 会得到 350 条同义诊断，真正缺的包
-    /// 反而被淹没。这里按集成去重，把所有请求方合并进同一条消息，条数上限就是集成总数（7 条）。
+    /// 逐类型逐集成上报时，50 个 Id 配 <c>Integrations = All</c> 会得到 350 条同义诊断；按集成去重后上限就是集成总数。
     /// </remarks>
     private static void ReportIntegrationProblems(CompilationAnalysisContext context, ConcurrentBag<IntegrationRequest> requests)
     {
@@ -784,9 +768,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 在 <c>[StronglyTypedId(&lt;argumentName&gt; = …)]</c> 里定位指定命名实参的语法位置。
     /// </summary>
     /// <remarks>
-    /// 特性是否属于本库由符号层的 <see cref="AttributeData.AttributeClass"/> 判定，语法层只负责在命中的
-    /// attribute 内部找实参 —— 按名字后缀匹配会把第三方的同名特性（例如 <c>Acme.Domain.StronglyTypedIdAttribute</c>）
-    /// 也算进来，使诊断位置落到一个无关的特性上。这里也不调 <c>Compilation.GetSemanticModel</c>（RS1030）。
+    /// 特性归属由符号层的 <see cref="AttributeData.AttributeClass"/> 判定，语法层只负责找实参；按名字后缀匹配会把第三方同名特性也算进来。
     /// </remarks>
     private static Location? FindNamedArgumentLocation(INamedTypeSymbol type, string argumentName)
     {

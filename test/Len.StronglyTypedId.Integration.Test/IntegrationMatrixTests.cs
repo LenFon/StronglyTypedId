@@ -11,10 +11,8 @@ namespace Len.StronglyTypedId;
 /// 集成矩阵：把生成器为「每一种基元」产出的 Dapper 处理器与 EF Core 转换器全部拿出来跑一遍。
 /// </summary>
 /// <remarks>
-/// 集成产物是按 Id 逐个生成的，单点用例只覆盖被点名的那几个 Id。历史上 Dapper 的读取路径就因为
-/// 只测了 <c>string</c> 基元，把「直接拆箱强转」的缺陷藏了很久（枚举列返回 <c>long</c>、
-/// <c>char</c> / <c>Guid</c> 列返回 <c>string</c>、<c>decimal</c> 列返回 <c>double</c>）。
-/// 这里的做法是反射枚举本编译里生成的全部处理器/转换器，按「驱动真实返回的形状」逐个喂值。
+/// 集成产物按 Id 逐个生成，单点用例只覆盖被点名的几个。Dapper 的读取路径曾因只测 <c>string</c> 基元而把「直接拆箱强转」的缺陷藏了很久。
+/// 这里反射枚举本编译生成的全部处理器/转换器，按「驱动真实返回的形状」逐个喂值。
 /// </remarks>
 public class IntegrationMatrixTests
 {

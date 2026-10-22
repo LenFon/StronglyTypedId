@@ -10,8 +10,7 @@ namespace Len.StronglyTypedId;
 /// 文档里由 DocGen 维护的表格与源码的一致性守卫。
 /// </summary>
 /// <remarks>
-/// 区块是按文件分配的：README 只留导览级的两张表，诊断表在 <c>docs/diagnostics.md</c>，
-/// 生成文件表在 <c>docs/generated-code.md</c>。
+/// 区块按文件分配：README 只留导览级两张表，诊断表在 <c>docs/diagnostics.md</c>，生成文件表在 <c>docs/generated-code.md</c>。
 /// 新增或搬动区块时，这里的 <c>InlineData</c> 与 <see cref="Program"/> 的 targets 必须一起改。
 /// </remarks>
 public class ReadmeDocumentationTests

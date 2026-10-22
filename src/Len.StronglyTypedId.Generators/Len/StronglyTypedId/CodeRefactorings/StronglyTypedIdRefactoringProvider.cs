@@ -73,17 +73,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// 判断特性名是否**精确**指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 只认这几种确定写法，不做任意后缀匹配 —— 按 <c>.StronglyTypedIdAttribute</c> 后缀认特性会把第三方的
-    /// 同名特性（例如 <c>Acme.Domain.StronglyTypedIdAttribute</c>）当成自家的，而 Inline 重构会把它物理删掉：
-    /// 用户点一下，别人的特性就没了，且没有任何提示。
-    /// </para>
-    /// <para>
-    /// 这里刻意不查语义模型。<c>SemanticModel.GetSymbolInfo(AttributeSyntax)</c> 在特性名被同名命名空间遮蔽时
-    /// 返回的不是特性类型（实测：源码位于 <c>namespace Len.StronglyTypedId.Tests</c> 时，<c>[StronglyTypedId]</c>
-    /// 解析成命名空间 <c>Len.StronglyTypedId</c>，符号为 <see langword="null"/>），判定会整体失效。
-    /// 精确白名单在语法层就能给出确定答案。
-    /// </para>
+    /// 只认这几种确定写法，不做任意后缀匹配 —— 否则 Inline 重构会把第三方的同名特性物理删掉，且没有任何提示。
+    /// 刻意不查语义模型：特性名被同名命名空间遮蔽时 <c>GetSymbolInfo</c> 返回 <see langword="null"/>，判定会整体失效。
     /// </remarks>
     private static bool IsStronglyTypedIdAttributeName(NameSyntax name)
         => name.ToString() is AttributeName
@@ -282,11 +273,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// 判断文件里是否还有标识符绑定到 <c>Len.StronglyTypedId</c> 命名空间下的符号。
     /// </summary>
     /// <remarks>
-    /// 该命名空间除 <c>[StronglyTypedId]</c> 之外还导出 <c>IStronglyTypedId&lt;,&gt;</c>、<c>Any</c>、
-    /// <c>StronglyTypedIdDefaults</c>、<c>StronglyTypedIdIntegrations</c> 等。只按「文件里还有没有带特性的
-    /// record」判断，会把只用这些类型的文件里的 using 一并删掉，产出 CS0246。
-    /// 待内联的 record 自己的特性列表必须排除：它马上就要被摘掉，而 <c>StronglyTypedIdAttribute</c>
-    /// 本身就属于该命名空间。
+    /// 该命名空间还导出 <c>IStronglyTypedId&lt;,&gt;</c>、<c>Any</c> 等，只按「还有没有带特性的 record」判断会误删仍在用的 using，产出 CS0246。
+    /// 待内联的 record 自己的特性列表必须排除：它马上要被摘掉，而 <c>StronglyTypedIdAttribute</c> 本身就属于该命名空间。
     /// </remarks>
     private static async Task<bool> UsesNamespaceAsync(
         Document document,
@@ -329,15 +317,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// 判断某个标识符是否指向直接声明在 <c>Len.StronglyTypedId</c> 命名空间下的**类型**。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 只认类型、不认命名空间：<c>namespace Len.StronglyTypedId.Tests;</c> 里的 <c>Tests</c> 绑定到命名空间
-    /// <c>Len.StronglyTypedId.Tests</c>，它的 <c>ContainingNamespace</c> 恰好就是 <c>Len.StronglyTypedId</c> ——
-    /// 按命名空间判会把「文件自己就在这个命名空间下」当成「还在用这条 using」，using 永远删不掉。
-    /// </para>
-    /// <para>
-    /// 只比相等、不回溯祖先：声明在 <c>Len.StronglyTypedId.Tests</c> 这类子命名空间里的类型本来就不需要
-    /// 这条 using。
-    /// </para>
+    /// 只认类型、不认命名空间：<c>namespace Len.StronglyTypedId.Tests;</c> 的 <c>ContainingNamespace</c> 恰好是 <c>Len.StronglyTypedId</c>，按命名空间判会让 using 永远删不掉。
+    /// 只比相等、不回溯祖先：声明在子命名空间里的类型本来就不需要这条 using。
     /// </remarks>
     private static bool NeedsNamespace(ISymbol? symbol)
         => symbol is INamedTypeSymbol { ContainingNamespace: { } containingNamespace }

@@ -10,9 +10,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- 集成包引用：使 DapperCodeGenerator / AspNetCoreOpenApiCodeGenerator /
-		     EfCoreCodeGenerator / SwaggerCodeGenerator / AspNetCoreMvcCodeGenerator
-		     在本工程编译里被门控触发，生成 StronglyTypedIds 的集成 ApplyTo 产物。 -->
+		<!--
+		     集成包引用：使 Dapper / AspNetCoreOpenApi / EfCore / Swagger / AspNetCoreMvc 五个 CodeGenerator 在本
+		     工程编译里被门控触发，生成 StronglyTypedIds 的集成 ApplyTo 产物。
+		-->
 		<PackageReference Include="Dapper" />
 		<!-- 真实 SQLite：Dapper 的读取路径只有在驱动返回「非基元 CLR 类型」时才会暴露转换缺陷，
 		     内存库是最小的可复现载体（枚举列 long / char、Guid 列 string / decimal 列 double）。 -->
@@ -25,23 +26,23 @@
 		<PackageReference Include="MongoDB.Bson" />
 		<!-- 测试断言库。 -->
 		<PackageReference Include="FluentAssertions" />
-		<!-- 显式钉定 Roslyn 版本，与生成器/CodeFix 程序集保持一致（5.9.0）。
-		     TestBase 经 ProjectReference 传递引入 Microsoft.CodeAnalysis.CSharp.Analyzer.Testing 1.1.4，
-		     其最低依赖 Microsoft.CodeAnalysis.Common / Workspaces.Common 1.0.1 只有 net45/net452 资产，
-		     会带来 NU1701（回退到 .NETFramework 还原）、MSB3277（1.0.0.0 与 5.9.0.0 程序集冲突）
-		     以及 AD0001（旧版 FixerWithFixAllAnalyzer 类型初始化失败）。钉定后统一解析到 5.9.0。 -->
+		<!--
+		     显式钉定 Roslyn 版本（5.9.0），与生成器/CodeFix 程序集一致。TestBase 经 ProjectReference 传递引入
+		     Analyzer.Testing 1.1.4，其最低依赖 Microsoft.CodeAnalysis.Common / Workspaces.Common 1.0.1 只有
+		     net45/net452 资产，会带来 NU1701、MSB3277（1.0.0.0 与 5.9.0.0 冲突）与 AD0001。钉定后统一解析到 5.9.0。
+		-->
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
-		<!-- ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」
-		     的消费者画像下可被触发，并提供可编译的命名空间和类型（MvcOptions / IModelBinder /
-		     IRouteConstraint 等）。 -->
+		<!--
+		     ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」的消费者画像下可被触发，并提供
+		     MvcOptions / IModelBinder / IRouteConstraint 等可编译类型。
+		-->
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<!-- 把 Generators 作为 Analyzer 引入，使 [Generator] 在本工程编译里被 Roslyn 加载。
 		     同时保留编译期引用（ReferenceOutputAssembly 默认 true）供测试代码引用生成器类型。 -->
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" />
 		<!-- 主库：提供 IStronglyTypedId / StronglyTypedIdAttribute 等运行时类型。 -->
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
-		<!-- TestBase：提供 [StronglyTypedId] 标注的 Id 声明，生成器据此产出核心与集成产物。
-		     恢复引用，扩回 10+ 个 Id 全量验证。 -->
+		<!-- TestBase：提供 [StronglyTypedId] 标注的 Id 声明，生成器据此产出核心与集成产物。 -->
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
 	</ItemGroup>
 

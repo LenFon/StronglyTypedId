@@ -128,14 +128,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 二进制序列化（MessagePack / BSON）没有可靠原生表示的基元。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 实测 MessagePack 2.5.302 缺 <c>Int128</c> / <c>UInt128</c> 的格式化器（默认解析器会抛
-    /// <c>FormatterNotRegisteredException</c>）；MongoDB.Bson 3.2.1 除这两个之外还缺 <c>BigInteger</c>。
-    /// </para>
-    /// <para>
-    /// 三个类型在两种二进制格式里统一改走规范文本形，而不是各维护一份例外清单：差异只在于「谁缺」，
-    /// 而两种格式的载荷本来就不互通，统一之后产物更容易核对。
-    /// </para>
+    /// MessagePack 2.5.302 缺 <c>Int128</c> / <c>UInt128</c> 的格式化器，MongoDB.Bson 3.2.1 还缺 <c>BigInteger</c>；三者统一改走规范文本形，产物更容易核对。
     /// </remarks>
     private static readonly ImmutableHashSet<string> _binaryTextPrimitives = ImmutableHashSet.Create(
         StringComparer.Ordinal,
@@ -321,8 +314,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 基元类型是否为 <c>System.Numerics.BigInteger</c>。
     /// </summary>
     /// <remarks>
-    /// System.Text.Json 没有 BigInteger 的内置转换器，<c>JsonSerializer</c> 会退化成按公开属性序列化
-    /// （<c>{"IsPowerOfTwo":false,…,"Sign":1}</c>），读回来又是 <c>default</c>。故它的转换器改走规范文本形。
+    /// System.Text.Json 没有 <c>BigInteger</c> 的转换器，会退化成按公开属性序列化且读回 <c>default</c>，故改走规范文本形。
     /// </remarks>
     public bool IsBigIntegerPrimitive { get; }
 
@@ -331,8 +323,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// <c>DateOnly</c> / <c>TimeOnly</c>）。
     /// </summary>
     /// <remarks>
-    /// 这些类型没有对应的 <c>PrimitiveTypeCode</c>，<c>JsonWriter.WriteValue</c> 会抛
-    /// <c>JsonWriterException</c>。它们的转换器改走规范文本形，读写都经 <c>Id.TryParse</c>。
+    /// 这些类型没有对应的 <c>PrimitiveTypeCode</c>，<c>JsonWriter.WriteValue</c> 会抛异常，故改走规范文本形。
     /// </remarks>
     public bool IsNewtonsoftTextPrimitive { get; }
 
@@ -340,8 +331,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 基元是否缺少 MessagePack / BSON 的原生表示（<c>BigInteger</c> / <c>Int128</c> / <c>UInt128</c>）。
     /// </summary>
     /// <remarks>
-    /// 为 <see langword="true"/> 时，这两种二进制格式的序列化器改走 Id 的规范文本形（读写都经
-    /// <c>ToString()</c> / <c>TryParse</c>），否则会在运行期抛「格式化器未注册」。
+    /// 为 <see langword="true"/> 时两种二进制格式改走规范文本形，否则会在运行期抛「格式化器未注册」。
     /// </remarks>
     public bool IsBinaryTextPrimitive { get; }
 
@@ -360,7 +350,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// <c>[Flags]</c> 枚举里没有任何成员占用的位。运行期只要 <c>(value &amp; mask) != 0</c> 就说明出现了未定义的位。
     /// </summary>
     /// <remarks>
-    /// 全部位都已定义时（典型是 <c>All = -1</c>）为 <see langword="null"/>，调用方据此跳过校验、产物与加入该能力之前一致。
+    /// 全部位都已定义时（典型是 <c>All = -1</c>）为 <see langword="null"/>，调用方据此跳过校验。
     /// </remarks>
     public ulong? FlagsEnumUndefinedBitsMask { get; }
 
@@ -445,8 +435,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 验证失败消息是否隐去被拒绝的原始值。
     /// </summary>
     /// <remarks>
-    /// 打开后 <c>Create</c> 抛出的消息是 <c>The value is not a valid OrderId.</c>，不再内插原始值 ——
-    /// 后者会随异常消息进入日志与 APM，而它往往是用户输入。
+    /// 打开后 <c>Create</c> 的消息是 <c>The value is not a valid OrderId.</c>，不再内插原始值 —— 后者往往是用户输入。
     /// </remarks>
     public bool RedactsValidationMessage { get; }
 
@@ -460,13 +449,8 @@ internal readonly record struct StronglyTypedIdInfo
     /// 自带产物中的绝对缩进（成员级 4 空格），块首是两个换行。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 存渲染后的文本而非实例集合，是因为本类型是 <c>readonly record struct</c>，成员级相等性就是增量缓存的键：
-    /// <see cref="ImmutableArray{T}"/> 的相等性是引用比较，放进来会让该 Id 的缓存永久失效。
-    /// </para>
-    /// <para>
-    /// 未声明任何实例、或声明的全部非法时为空串，此时生成产物与加入该能力之前逐字节一致。
-    /// </para>
+    /// 存渲染后的文本而非实例集合：本类型是 <c>readonly record struct</c>，<see cref="ImmutableArray{T}"/> 的引用相等性会让缓存永久失效。
+    /// 未声明实例或全部非法时为空串，产物与加入该能力之前逐字节一致。
     /// </remarks>
     public string InstancesBlock { get; }
 
@@ -474,8 +458,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 渲染全部合法命名实例的成员块；没有合法实例时为空串。
     /// </summary>
     /// <remarks>
-    /// 非法项静默跳过：分析器会为它们报 <c>STIA0020</c> / <c>STIA0021</c>（Error，构建必然失败）。
-    /// 生成器绝不能为此抛异常 —— 那会降级成 <c>STIA0012</c>，把真正的原因盖掉。
+    /// 非法项静默跳过：分析器会为它们报 <c>STIA0020</c> / <c>STIA0021</c>；生成器绝不能抛异常，那会降级成 <c>STIA0012</c> 盖掉真正原因。
     /// </remarks>
     private static string RenderInstancesBlock(ITypeSymbol type, ITypeSymbol primitiveType)
     {
@@ -535,9 +518,6 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 解析强类型 Id 所包装的基元类型符号。
     /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// 该类型既未实现 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>，也不具备单参数构造函数。
-    /// </exception>
     private static ITypeSymbol GetPrimitiveIdType(ITypeSymbol type)
     {
         if (type is INamedTypeSymbol namedType)
@@ -627,9 +607,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 把类型显示名净化成合法的 hint 名：剔除尖括号、逗号与空格。
     /// </summary>
     /// <remarks>
-    /// 剔除会让不同的全名塌陷到同一个 hint 名（<c>Ns.Outer&lt;T&gt;.Inner</c> 与 <c>Ns.OuterT.Inner</c> 都会变成
-    /// <c>Ns.OuterT.Inner</c>），撞名时 <c>AddSource</c> 抛重复 hint 名，最终降级成 STIA0012。因此只要确实剔掉了字符，
-    /// 就在末尾追加原始全名的稳定哈希，把塌陷的两个名字重新分开。
+    /// 剔除会让不同全名塌陷到同一 hint 名，撞名时 <c>AddSource</c> 抛异常并降级成 STIA0012；故只要确实剔掉了字符，就追加原始全名的稳定哈希。
     /// </remarks>
     private static string SanitizeHintName(string fullName)
     {
@@ -649,7 +627,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 计算与进程无关的 32 位 FNV-1a 哈希，用作 hint 名的消歧后缀。
     /// </summary>
     /// <remarks>
-    /// 不能用 <see cref="string.GetHashCode()"/>：它按进程随机化，会让同一份源码在不同构建之间产出不同的 hint 名。
+    /// 不能用 <see cref="string.GetHashCode()"/>：它按进程随机化，会让同一份源码产出不同的 hint 名。
     /// </remarks>
     private static string ComputeStableHash(string value)
     {
@@ -699,17 +677,9 @@ internal readonly record struct StronglyTypedIdInfo
     /// 计算 <c>[Flags]</c> 枚举里「没有任何成员占用」的位，供 <c>TryParse</c> 做位校验。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <c>Enum.TryParse</c> 对任意数值文本都返回 <see langword="true"/>，<c>[Flags]</c> 枚举又不能用
-    /// <c>Enum.IsDefined</c> 收紧（位组合本身就是合法取值），于是改成「不许出现未定义的位」：
-    /// 掩码由全部成员的常量按位或取反得出，编译期算好，运行期只剩一次按位与。
-    /// </para>
-    /// <para>
-    /// 掩码按底层类型的宽度裁剪。<c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，不裁剪就会把整个掩码
-    /// 吃掉；裁剪后 <c>All = -1</c> 这类「全位已定义」的枚举得到 0，调用方据此跳过校验。
-    /// </para>
+    /// <c>Enum.TryParse</c> 接受任意数值文本，<c>[Flags]</c> 又不能用 <c>Enum.IsDefined</c> 收紧，故改为「不许出现未定义的位」。
+    /// 掩码按底层类型宽度裁剪：<c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，不裁剪会把整个掩码吃掉。
     /// </remarks>
-    /// <returns>未定义位的掩码；全部位都已定义（或无法确定底层类型）时为 <see langword="null"/>。</returns>
     internal static ulong? GetFlagsEnumUndefinedBitsMask(ITypeSymbol enumType)
     {
         if (enumType is not INamedTypeSymbol { EnumUnderlyingType: { } underlying } namedEnum)
@@ -786,8 +756,6 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 判定基元 <c>TryFormat</c> 的直呼形态，用于避免值类型基元在格式化时装箱。
     /// </summary>
-    /// <param name="type">基元类型。</param>
-    /// <param name="spanElementType">目标缓冲区元素类型：UTF-16 为 <c>char</c>，UTF-8 为 <c>byte</c>。</param>
     internal static TryFormatKind GetTryFormatKind(ITypeSymbol type, SpecialType spanElementType)
     {
         var hasProviderOverload = false;

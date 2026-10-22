@@ -5,7 +5,6 @@ namespace Len.StronglyTypedId;
 /// <summary>
 /// Defines an interface with a strongly typed id, without exposing the underlying primitive type.
 /// </summary>
-/// <typeparam name="TSelf">The strongly typed id type that implements this interface.</typeparam>
 public interface IStronglyTypedId<TSelf> : IParsable<TSelf>, IEqualityOperators<TSelf, TSelf, bool>
     where TSelf : IStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
 {
@@ -14,8 +13,6 @@ public interface IStronglyTypedId<TSelf> : IParsable<TSelf>, IEqualityOperators<
 /// <summary>
 /// Defines an interface with a strongly typed id.
 /// </summary>
-/// <typeparam name="TSelf">The strongly typed id type that implements this interface.</typeparam>
-/// <typeparam name="TPrimitiveId">The underlying primitive type wrapped by the strongly typed id.</typeparam>
 public interface IStronglyTypedId<TSelf, TPrimitiveId> : IStronglyTypedId<TSelf>
     where TSelf : IStronglyTypedId<TSelf, TPrimitiveId>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
     where TPrimitiveId : notnull, IComparable
@@ -28,15 +25,12 @@ public interface IStronglyTypedId<TSelf, TPrimitiveId> : IStronglyTypedId<TSelf>
     /// <summary>
     /// Creates a new strongly typed id that wraps the specified primitive value.
     /// </summary>
-    /// <param name="value">The primitive value to wrap.</param>
-    /// <returns>A new strongly typed id wrapping <paramref name="value"/>.</returns>
     abstract static TSelf Create(TPrimitiveId value);
 }
 
 /// <summary>
 /// Defines a strongly typed id whose wrapped primitive supports culture-aware formatting.
 /// </summary>
-/// <typeparam name="TSelf">The strongly typed id type that implements this interface.</typeparam>
 public interface IFormattableStronglyTypedId<TSelf> : IStronglyTypedId<TSelf>, IFormattable
     where TSelf : IFormattableStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
 {

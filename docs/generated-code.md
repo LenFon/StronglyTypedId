@@ -15,7 +15,7 @@ declaration is never modified. **Which** files appear depends on what the compil
 | Always                                                                                                             | `<Namespace>.<TypeName>.g.cs`                                            |
 | `System.Text.Json` is referenced                                                                                   | `…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`           |
 | `Newtonsoft.Json` ≥ 13.0.0 is referenced                                                                           | `…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`           |
-| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`       | `…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs` |
+| `Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced                                                              | `…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs` |
 | `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced                                                          | `StronglyTypedIds.Swagger.g.cs`                                          |
 | `Dapper` ≥ 2.0.0 is referenced                                                                                     | `…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`                           |
 | `MessagePack` ≥ 2.0.0 is referenced                                                                                | `…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`                 |

@@ -117,8 +117,7 @@ internal static class AttributeReader
     /// 取枚举型命名实参的底层值；未指定或类型不符时为 <see langword="null"/>。
     /// </summary>
     /// <remarks>
-    /// 与 <see cref="GetEnumFlag"/> 的区别在于「未指定」与「指定为 0」是可区分的：
-    /// 前者返回 <see langword="null"/>，后者返回 0。标志枚举需要靠这一点区分「没写」与「写了 None」。
+    /// 与 <see cref="GetEnumFlag"/> 的区别是能区分「未指定」（<see langword="null"/>）与「指定为 0」。
     /// </remarks>
     internal static int? GetEnumValue(AttributeData? attribute, string argumentName)
         => GetNamedArgument(attribute, argumentName) is { Value: int value } ? value : null;

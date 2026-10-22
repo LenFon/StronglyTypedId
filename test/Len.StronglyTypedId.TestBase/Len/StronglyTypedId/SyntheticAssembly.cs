@@ -15,11 +15,6 @@ public static class SyntheticAssembly
     /// <summary>
     /// 取得指定程序集名与版本的合成引用。
     /// </summary>
-    /// <param name="assemblyName">
-    /// 不含 <c>.dll</c> 后缀的程序集名，须与生成器判据里的字面量一致
-    /// （判据比较的是模块名，即带 <c>.dll</c> 后缀的形式）。
-    /// </param>
-    /// <param name="version">程序集版本，形如 <c>6.0.0.0</c>；生成器只读取其主版本号。</param>
     public static MetadataReference GetOrCreate(string assemblyName, string version)
         => _references.GetOrAdd(
             assemblyName + "|" + version,

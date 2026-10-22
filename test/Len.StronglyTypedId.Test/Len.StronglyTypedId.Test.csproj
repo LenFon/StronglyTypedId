@@ -8,10 +8,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- 显式钉定 Roslyn 版本：经 TestBase -> Generators（Workspaces 5.9.0）传递进来的
-		     System.Collections.Immutable / System.Reflection.Metadata 为 10.0，
-		     否则解析时只能匹配到 net8.0 框架引用包的 8.0，产生 MSB3277 版本冲突警告。
-		     与 TestBase / Generators.Test 的既有做法保持一致（PrivateAssets=all，不外传）。 -->
+		<!--
+		     显式钉定 Roslyn 版本：经 TestBase -> Generators（Workspaces 5.9.0）传递进来的
+		     System.Collections.Immutable / System.Reflection.Metadata 为 10.0，否则只能匹配到 net8.0 框架引用包的
+		     8.0，产生 MSB3277。与 TestBase / Generators.Test 一致（PrivateAssets=all，不外传）。
+		-->
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
 	</ItemGroup>
 

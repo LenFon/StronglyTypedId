@@ -7,19 +7,14 @@ namespace Len.StronglyTypedId.DocGen;
 /// 从生成器内部的判定数据渲染文档里由 DocGen 维护的四张表。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 每张表的事实来源都在生成器工程里，且都是「判定逻辑本身」而非另抄一份的文档副本：
-/// </para>
-/// <list type="bullet">
-///   <item>基元表 ← <see cref="SupportedPrimitiveTypes.DocumentedTypes"/>（<c>IsSupported</c> 的匹配集合由它派生）；</item>
-///   <item>集成触发表 ← <see cref="StronglyTypedIdGenerator.DocumentedGenerators"/>（模块闸门登记表）；</item>
-///   <item>生成文件表 ← 同上，取 <c>FileNames</c> 列；</item>
-///   <item>诊断表 ← <see cref="Descriptors"/>（规则 ID / 严重级别 / 标题）+ <see cref="DiagnosticDocumentation"/>（代码修复文案）。</item>
-/// </list>
+/// 每张表的事实来源都在生成器工程里，且都是判定逻辑本身而非另抄一份的文档副本：
+/// 基元表 ← <see cref="SupportedPrimitiveTypes.DocumentedTypes"/>；集成触发表与生成文件表 ← <see cref="StronglyTypedIdGenerator.DocumentedGenerators"/>；诊断表 ← <see cref="Descriptors"/> + <see cref="DiagnosticDocumentation"/>。
 /// </remarks>
 internal static class DocumentationRenderer
 {
-    /// <summary>渲染「Supported primitive types」表。</summary>
+    /// <summary>
+    /// 渲染「Supported primitive types」表。
+    /// </summary>
     public static string RenderPrimitiveTypes(CultureInfo culture)
     {
         var rows = new List<IReadOnlyList<string>>();
@@ -37,7 +32,9 @@ internal static class DocumentationRenderer
             rows);
     }
 
-    /// <summary>渲染 README 的「What gets generated」表（只含产物与入口签名，不含文件名）。</summary>
+    /// <summary>
+    /// 渲染 README 的「What gets generated」表（只含产物与入口签名，不含文件名）。
+    /// </summary>
     public static string RenderGeneratedCode(CultureInfo culture)
     {
         var rows = new List<IReadOnlyList<string>>();
@@ -71,7 +68,9 @@ internal static class DocumentationRenderer
             rows);
     }
 
-    /// <summary>渲染「Diagnostics」表。</summary>
+    /// <summary>
+    /// 渲染「Diagnostics」表。
+    /// </summary>
     public static string RenderDiagnostics(CultureInfo culture)
     {
         var fixes = DiagnosticDocumentation.Entries.ToDictionary(static entry => entry.RuleId, StringComparer.Ordinal);

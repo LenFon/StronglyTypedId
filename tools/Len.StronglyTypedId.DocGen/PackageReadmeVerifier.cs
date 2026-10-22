@@ -9,18 +9,8 @@ namespace Len.StronglyTypedId.DocGen;
 /// 校验 <c>PACKAGE.md</c>（NuGet 详情页正文）与源码的一致性。
 /// </summary>
 /// <remarks>
-/// <para>
-/// <c>PACKAGE.md</c> 是手写的，不参与 README 那套「区块整体重写」，因此改基元、改集成标志、改目标框架
-/// 时都不会被 <c>--verify</c> 拦住 —— 而它随包发布后无法回滚。这里只校验三段「纯枚举」的事实：
-/// </para>
-/// <list type="bullet">
-///   <item>支持的基元类型清单 ← <see cref="SupportedPrimitiveTypes.DocumentedTypes"/>；</item>
-///   <item>集成标志清单 ← <see cref="IntegrationFlags"/> 的常量名；</item>
-///   <item>目标框架清单 ← 运行时工程的 <c>TargetFrameworks</c>。</item>
-/// </list>
-/// <para>
-/// 不校验散文措辞：机器判断不了「说得对不对」，只判断「有没有漏、有没有多」。
-/// </para>
+/// <c>PACKAGE.md</c> 是手写的，不参与 README 那套区块重写，改基元 / 集成标志 / 目标框架时不会被 <c>--verify</c> 拦住，而它随包发布后无法回滚。
+/// 这里只校验三段纯枚举事实（基元清单、集成标志清单、目标框架清单），不校验散文措辞。
 /// </remarks>
 internal static partial class PackageReadmeVerifier
 {
@@ -119,8 +109,7 @@ internal static partial class PackageReadmeVerifier
     /// 取以 <paramref name="marker"/> 开头的**那一句**（到第一个句号加空格为止）。
     /// </summary>
     /// <remarks>
-    /// 不能整段取：基元那句后面紧跟「Use `record struct` for a value type, `record` for a reference
-    /// type.」，整段扫反引号会把 <c>record struct</c> / <c>record</c> 当成多余的基元类型报出来。
+    /// 不能整段取：基元那句后面紧跟「Use `record struct` ...」，整段扫反引号会把 <c>record struct</c> / <c>record</c> 当成多余的基元类型报出来。
     /// </remarks>
     private static string Sentence(string text, string marker)
     {

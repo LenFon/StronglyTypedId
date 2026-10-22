@@ -89,11 +89,8 @@ public class SwaggerCodeGeneratorTests
 
     #region V1（Microsoft.OpenApi 1.x / Swashbuckle 6.x–9.x）：覆盖全部基元分支
 
-    // 源码必须带 using System;：否则 Guid 在合成编译里是「错误类型符号」，
-    // SymbolDisplayFormat.FullyQualifiedFormat 会把它渲染成裸 Guid，与真实消费者环境
-    // （global::System.Guid）不一致，令按短名匹配的基元分支「恰好」命中而掩盖缺陷。
-    // 映射口径对齐 System.Text.Json 的默认写出形态：整数 → integer，浮点/decimal → number，
-    // 日期时间 → string 加 format。枚举另有用例（需要先声明枚举类型）。
+    // 源码必须带 using System;：否则 Guid 在合成编译里是「错误类型符号」，会被渲染成裸 Guid，令按短名匹配的基元分支「恰好」命中而掩盖缺陷。
+    // 映射口径对齐 System.Text.Json 的默认写出形态；枚举另有用例。
     [Theory]
     [InlineData("Guid", "string", "uuid")]
     [InlineData("string", "string", null)]

@@ -3,25 +3,18 @@
 	<PropertyGroup>
 		<RootNamespace />
 		<!--
-		  发布物查全链：src 下这四个工程产出的包会被别人引用，它们的传递依赖同样是使用者的
-		  依赖，因此这里覆盖掉 Directory.Build.props 的 direct，改为 all（含传递依赖）。
-
-		  之所以敢开 all：实测 src 四个工程在当前锁定的版本下零漏洞。一旦将来某个传递依赖
-		  被披露漏洞，restore 会直接报 NU1902/NU1903 警告 —— 这正是我们要的信号，
-		  而不是像 test / samples / bench 那样被淹没在开发期工具链的噪音里。
+		  发布物查全链：src 下四个工程产出的包会被别人引用，其传递依赖也是使用者的依赖，故覆盖
+		  Directory.Build.props 的 direct 改为 all。敢开 all 是因为实测这四个工程零漏洞；将来某个
+		  传递依赖被披露漏洞时 restore 会直接报 NU1902/NU1903，这正是要的信号。
 		-->
 		<NuGetAuditMode>all</NuGetAuditMode>
 
 		<!--
-		  默认不打包，只有真正要发布的两个包在自己 csproj 里显式打开 IsPackable：
-		    · src/Len.StronglyTypedId
-		    · src/Len.StronglyTypedId.Generators
-
-		  为什么要在公共 props 里关掉：Release 配置下 GeneratePackageOnBuild 是开的（见下方），
-		  而 IsPackable 默认是 true —— 于是 `dotnet build -c Release` 会把 test / samples / bench /
-		  tools 以及尚未发布的 Testing 系列全部打成 .nupkg。这些垃圾包不仅拖慢构建，还会被
-		  publish-nuget.yml 的 `dotnet nuget push bin/Release/*.nupkg` 一并推到 nuget.org。
-		  新增工程默认落在「不打包」这一侧，要发布时必须显式声明，避免再犯同样的错。
+		  默认不打包，只有真正要发布的两个包（src/Len.StronglyTypedId、src/Len.StronglyTypedId.Generators）
+		  在自己 csproj 里显式打开 IsPackable。原因：Release 下 GeneratePackageOnBuild 是开的，而 IsPackable
+		  默认 true —— `dotnet build -c Release` 会把 test / samples / bench / tools 与尚未发布的 Testing 系列
+		  全打成 .nupkg，还会被 publish-nuget.yml 的 `dotnet nuget push bin/Release/*.nupkg` 一并推到 nuget.org。
+		  新增工程默认落在「不打包」一侧，要发布必须显式声明。
 		-->
 		<IsPackable>false</IsPackable>
 		<Authors>lenfon</Authors>
@@ -34,84 +27,68 @@
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
 		<!--
-		  包图标：路径是「包内路径」，不是磁盘路径 —— 真正的文件由下面那条 None 以 PackagePath="\" 放进包根，
-		  两者必须同名，否则 pack 报 NU5046（找不到 PackageIcon 指定的文件）。
-		  用 $(MSBuildThisFileDirectory) 而不是 ..\..\：本文件被 src / test / tools 下深度不一的工程导入，
-		  相对路径的层级取决于导入方，只有属性函数给出的绝对路径与导入方无关。
+		  包图标：路径是「包内路径」而非磁盘路径 —— 真正的文件由下面那条 None 以 PackagePath="\" 放进包根，
+		  两者必须同名，否则 pack 报 NU5046。用 $(MSBuildThisFileDirectory) 而非 ..\..\：本文件被深度不一的
+		  工程导入，只有属性函数给出的绝对路径与导入方无关。
 		-->
 		<PackageIcon>icon.png</PackageIcon>
 		<!--
-		  发布说明指向 CHANGELOG 而不是内联一段文本：内联就得在每次发版时手工同步，而 CHANGELOG 已经由
-		  DocGen 的 verify-changelog 门禁守着（tag 与两份 CHANGELOG 的小节必须对得上），指向它等于复用了那道门禁。
+		  指向 CHANGELOG 而不是内联文本：内联要每次发版手工同步，而 CHANGELOG 已由 DocGen 的 verify-changelog
+		  门禁守着（tag 与两份 CHANGELOG 的小节必须对得上），指向它等于复用了那道门禁。
 		-->
 		<PackageReleaseNotes>See https://github.com/lenfon/StronglyTypedId/blob/main/CHANGELOG.md</PackageReleaseNotes>
 		<!--
-		  生成器产物这类未纳入版本控制的源文件也嵌入 pdb，否则 F11 只能停在「找不到源代码」。
-		  符号包本身只在 Len.StronglyTypedId 项目里开启：分析器包除 analyzers/dotnet/cs 下的 dll 外没有任何
-		  打包内容，开符号包会直接撞 NU5017（既无依赖项也无内容的包）。
+		  生成器产物这类未纳入版本控制的源文件也嵌入 pdb，否则 F11 只能停在「找不到源代码」。符号包只在
+		  Len.StronglyTypedId 项目里开启：分析器包除 analyzers/dotnet/cs 下的 dll 外无打包内容，开符号包会撞
+		  NU5017（既无依赖项也无内容的包）。
 		-->
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<!--
-		  打包时做 API 兼容性校验（SDK 内置，无需额外包）：任何「删成员 / 改签名 / 去掉目标框架 /
-		  降低程序集版本」都会在 dotnet pack 阶段直接报错，而不是等使用者升级后才发现。
-		  基线取同一代的最近一次发布（1.3.0-preview.5，同为 net8.0;net10.0）。刻意不用更早的 1.2.1：
-		  它尚支持 net7.0，与之比对会命中 PKV006，那是上一代与本代的差异，不是待修的回归。
+		  打包时做 API 兼容性校验（SDK 内置）：删成员 / 改签名 / 去目标框架 / 降程序集版本都会在 pack 阶段
+		  直接报错。基线取同一代的最近一次发布（1.3.0-preview.5，同为 net8.0;net10.0）；不用 1.2.1 是因为它
+		  尚支持 net7.0，比对会命中 PKV006 —— 那是上一代与本代的差异，不是待修的回归。
 
-		  但基线只在「当前版本号 ≥ 基线」时才挂上。version.props 里的版本号是本地占位值
-		  （发布流程才用 TagToVersion 按 git tag 覆写它），占位号必然低于任何已发布版本，
-		  此时挂上基线只会得到 CP0003「程序集版本应等于或高于基线」——那是「本地版本号本来
-		  就不代表任何发布」的必然结果，不是待修的回归。低于基线时不挂基线，
-		  退化为包内一致性校验（同名程序集在各 TFM 之间是否一致）；发布流水线覆写版本号后，
-		  自动恢复为完整的跨版本比对。
+		  基线只在「当前版本号 ≥ 基线」时才挂上：version.props 的版本号是本地占位值（发布流程才用 TagToVersion
+		  按 tag 覆写），必然低于任何已发布版本，此时挂基线只会得到 CP0003。低于基线时不挂，退化为包内一致性
+		  校验；发布流水线覆写版本号后自动恢复跨版本比对。
 
-		  跨版本比对拦截到的破坏性变更若属有意为之（如为支持 enum 放宽
-		  IStronglyTypedId 的 TPrimitiveId 约束），处理方式是重建一次
-		  `dotnet build -c Release -p:Version=<高于基线> -p:ApiCompatGenerateSuppressionFile=true`，
-		  把生成的 src/Len.StronglyTypedId/CompatibilitySuppressions.xml 入库——
-		  该文件存在时 SDK 自动加载（条目不含版本号，随版本升级持续生效），禁止用 NoWarn 压制。
+		  有意为之的破坏性变更（如为支持 enum 放宽 TPrimitiveId 约束）用
+		  `dotnet build -c Release -p:Version=<高于基线> -p:ApiCompatGenerateSuppressionFile=true` 重建
+		  CompatibilitySuppressions.xml 并入库 —— 该文件存在时 SDK 自动加载，禁止用 NoWarn 压制。
 		-->
 		<EnablePackageValidation>true</EnablePackageValidation>
 		<StronglyTypedIdPackageValidationBaseline>1.3.0-preview.5</StronglyTypedIdPackageValidationBaseline>
 		<!--
-		  新包（如 Len.StronglyTypedId.Testing）在基线版本里并不存在，挂上基线只会让 pack 去
-		  nuget.org 找一个从未发布过的包而失败。这类项目在自己的 csproj 里把
-		  StronglyTypedIdPackageValidationBaseline 置空即可退出跨版本比对，包内一致性校验仍然生效。
+		  新包（如 Testing）在基线版本里并不存在，挂基线只会让 pack 去 nuget.org 找一个从未发布过的包而失败。
+		  这类项目在自己的 csproj 里把 StronglyTypedIdPackageValidationBaseline 置空即可退出跨版本比对，
+		  包内一致性校验仍然生效。
 		-->
 		<PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and '$(StronglyTypedIdPackageValidationBaseline)' != '' and $([MSBuild]::VersionGreaterThanOrEquals('$(Version)', '$(StronglyTypedIdPackageValidationBaseline)'))">$(StronglyTypedIdPackageValidationBaseline)</PackageValidationBaselineVersion>
 		<!--
-		  没挂基线时放过「不必要的抑制」告警（CP0021，含 [Baseline] 变体）。
-
-		  原因：SDK 只要发现项目目录下有 CompatibilitySuppressions.xml 就会自动加载它
-		  （Microsoft.NET.ApiCompat.Common.targets 里那条「Pass in a default suppression file, if it exists」），
-		  与是否挂基线无关。而本地占位版本号（Version=1.0.0 < 基线 1.3.0-preview.5）不挂基线，
-		  抑制条目就没有对应的基线比对可比，于是每条都被判成「不必要的抑制」，让本地 `dotnet pack` 直接失败。
-		  抑制文件本身就是为基线比对准备的，没挂基线时它自然「不必要」—— 这不是待修的回归。
-
-		  挂上基线（发布流水线用 TagToVersion 覆写版本号）后此属性为空，抑制照常参与校验：
-		  条目真的失效了仍会报 CP0021，不会被这条设置掩盖。
+		  没挂基线时放过「不必要的抑制」告警（CP0021，含 [Baseline] 变体）：SDK 只要发现项目目录下有
+		  CompatibilitySuppressions.xml 就会自动加载它（Microsoft.NET.ApiCompat.Common.targets），与是否挂基线
+		  无关；本地占位版本号不挂基线，抑制条目没有对应的基线可比，于是每条都被判成「不必要」而让
+		  `dotnet pack` 直接失败。挂上基线后此属性为空，条目真失效了仍会报 CP0021，不会被掩盖。
 		-->
 		<ApiCompatPermitUnnecessarySuppressions Condition="'$(PackageValidationBaselineVersion)' == ''">true</ApiCompatPermitUnnecessarySuppressions>
 		<!--
-		  程序集版本号默认 1.0.0.0（与 MSBuild 默认一致，显式声明以防被 IDE 工具意外改动）。
-		  本地占位 Version=1.0.0 未挂 ApiCompat 基线，CP0003 不触发。
-		  发布 / CI 的 pack 步骤会用 -p:AssemblyVersion=<major.minor.0.0> 透传与包版本号主号
-		  一致的 assembly 版本（见 build-and-test.yml pack job），使 CP0003「程序集版本 ≥ 基线
-		  1.3.0.0」通过；此 Condition 保证外部传入值优先、不被默认值覆盖。
+		  程序集版本号默认 1.0.0.0（显式声明以防被 IDE 工具改动）。发布 / CI 的 pack 步骤用
+		  -p:AssemblyVersion=<major.minor.0.0> 透传与包版本号主号一致的值（见 build-and-test.yml pack job），
+		  使 CP0003 通过；Condition 保证外部传入值优先。
 		-->
 		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">1.0.0.0</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">1.0.0.0</FileVersion>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 		<!--
-		  只在 Release 下隐式打包（Debug 保持纯构建）。真正生效的前提是 IsPackable=true，
-		  因此这里虽然对所有工程生效，实际只会打出上面那两个包。
+		  只在 Release 下隐式打包（Debug 保持纯构建）。真正生效的前提是 IsPackable=true，故实际只打出那两个包。
 		-->
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	</PropertyGroup>
 	<!--
-	  CI 上开启确定性构建：编译进 pdb / 程序集的路径改写为源码管理路径（/_/…），
-	  这样同一份源码在任何机器上都能产出逐字节一致的程序集，且符号服务器能据此定位到 GitHub 上的源文件。
-	  只在 CI 环境启用是因为它要求工作树可追溯到远端仓库，本地未提交的实验性改动会被它挡住（发警告）。
+	  CI 上开启确定性构建：pdb / 程序集里的路径改写为源码管理路径（/_/…），同一份源码在任何机器上产出
+	  逐字节一致的程序集，符号服务器也能据此定位 GitHub 上的源文件。只在 CI 启用是因为它要求工作树可追溯
+	  到远端仓库，本地未提交的改动会被它挡住。
 	-->
 	<PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == '' and '$(CI)' == 'true'">
 		<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>

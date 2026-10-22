@@ -3,12 +3,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// 只为触发 EF Core 集成生成器而存在的上下文：生成器的门控条件是「引用了
-/// <c>Microsoft.EntityFrameworkCore</c> ≥ 7 且存在重写 <c>ConfigureConventions</c> 的 <c>DbContext</c>」。
+/// 承载 EF Core 集成运行时断言的上下文：生成器的门控条件只是「引用了
+/// <c>Microsoft.EntityFrameworkCore</c> ≥ 7」，与是否重写 <c>ConfigureConventions</c> 无关。
 /// </summary>
 /// <remarks>
-/// 没有它，本工程里根本不会产出 <c>*Converter</c> 与 <c>StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)</c>，
-/// EF Core 侧的运行时断言就只能退化成「类型能解析」这种恒真检查。
+/// 仍重写 <c>ConfigureConventions</c>，是因为运行时用例要走约定注册这条路：没有它，<c>ApplyTo(ModelConfigurationBuilder)</c> 就没有调用点。
 /// </remarks>
 internal sealed class IntegrationDbContext : DbContext
 {

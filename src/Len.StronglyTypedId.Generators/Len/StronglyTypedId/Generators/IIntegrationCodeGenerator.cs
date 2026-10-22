@@ -13,10 +13,6 @@ internal interface IIntegrationCodeGenerator
     /// <summary>
     /// 为全部强类型 Id 生成源码。
     /// </summary>
-    /// <param name="discoveredIds">当前编译的强类型 Id 发现结果。</param>
-    /// <param name="modules">当前编译引用的全部模块，用于按依赖程序集决定生成内容。</param>
-    /// <param name="context">源码生成上下文。</param>
-    /// <param name="version">写入 <c>GeneratedCodeAttribute</c> 的生成器版本号。</param>
     void Generate(
         DiscoveredIds discoveredIds,
         ImmutableArray<ModuleInfo> modules,

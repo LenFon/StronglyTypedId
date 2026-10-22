@@ -10,14 +10,8 @@ namespace Len.StronglyTypedId.Benchmarks;
 /// 端到端锚点：完整跑一次生成器（核心 + System.Text.Json + Newtonsoft.Json + EfCore + Swagger 全部启用）。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 前几组用例给出「重复枚举值多少」，本组给出分母——一次真实生成器运行总共要花多少，两者相除才知道
-/// 这件事值不值得动。分母里包含符号收集、两个生成器各自的 Discover、以及所有生成文本的拼装。
-/// </para>
-/// <para>
-/// 每次迭代重建编译与驱动器：增量驱动器的状态随驱动器保存，复用一次就会命中缓存、量到的就不再是
-/// 一次构建的成本。
-/// </para>
+/// 本组给出分母：一次真实生成器运行的总成本（符号收集 + 两次 Discover + 文本拼装）。
+/// 每次迭代重建编译与驱动器，复用会命中缓存、量到的就不是一次构建的成本。
 /// </remarks>
 [MemoryDiagnoser]
 public class GeneratorRunBenchmarks

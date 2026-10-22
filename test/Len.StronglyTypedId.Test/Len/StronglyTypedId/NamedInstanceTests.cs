@@ -58,8 +58,7 @@ public class NamedInstanceTests
     /// 硬不变式：实例是 <c>Create</c> 的产物，故规范文本形一定读得回来。
     /// </summary>
     /// <remarks>
-    /// 时间基元不在此列：无参 <c>ToString()</c> 走默认格式串，"G" 会丢掉亚秒与 <c>Kind</c>，
-    /// 文本往返本来就有损（见 K1 的既有结论），与实例无关。
+    /// 时间基元不在此列：无参 <c>ToString()</c> 走默认格式串，"G" 会丢掉亚秒与 <c>Kind</c>，文本往返本来就有损。
     /// </remarks>
     [Fact]
     public void Instance_Should_RoundTripThroughCanonicalText()
@@ -155,8 +154,7 @@ public class NamedInstanceTests
     /// 验证器拒绝哨兵值时，类型初始化器抛 <see cref="TypeInitializationException"/>。
     /// </summary>
     /// <remarks>
-    /// 这是 N2 的既定取舍：编译期无法静态判定「验证器会不会接受这个值」（验证器是任意用户代码），
-    /// 与其让一个不可能存在的 Id 悄悄流进领域模型，不如在第一次触碰时立刻失败。
+    /// 这是 N2 的既定取舍：验证器是任意用户代码，编译期无法静态判定它会不会接受该值，故宁可第一次触碰时立刻失败。
     /// </remarks>
     [Fact]
     public void Instance_Should_ThrowTypeInitializationException_WhenValidatorRejectsValue()

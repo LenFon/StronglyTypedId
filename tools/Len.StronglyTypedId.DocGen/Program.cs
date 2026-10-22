@@ -7,9 +7,7 @@ namespace Len.StronglyTypedId.DocGen;
 /// 文档工具：文档里由源码派生的四张表的生成器 + <c>CHANGELOG.md</c> / <c>CHANGELOG.zh-CN.md</c> 的结构校验与草稿。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 用法：
-/// </para>
+/// 用法（退出码：<c>0</c> 一致，<c>1</c> 不一致，<c>2</c> 运行出错）：
 /// <code>
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen                          # 重新生成 README 与 docs 里的表格
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify              # CI 门禁：文档与源码不一致则退出码 1
@@ -17,9 +15,6 @@ namespace Len.StronglyTypedId.DocGen;
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-package-readme  # CI 门禁：PACKAGE.md 与源码不一致则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --draft-changelog     # 打印 [Unreleased] 草稿（按 Conventional Commits 分类）
 /// </code>
-/// <para>
-/// 退出码：<c>0</c> 一致（或已更新），<c>1</c> 校验发现不一致，<c>2</c> 运行出错。
-/// </para>
 /// </remarks>
 internal static class Program
 {
@@ -28,8 +23,7 @@ internal static class Program
     /// 中文版取 <c>zh-CN</c>，与生成器内嵌的 <c>Locales/zh-CN.txt</c> 同名，诊断标题才能取到中文文案。
     /// </summary>
     /// <remarks>
-    /// 区块是按文件分配的：README 只留导览级的两张表，诊断表与生成文件表随章节一起搬到了 <c>docs/</c>。
-    /// 漏写某个文件不会静默放过 —— <see cref="ReadmeBlocks.Replace"/> 找不到标记就直接抛异常。
+    /// 区块按文件分配：README 只留导览级两张表，诊断表与生成文件表随章节搬到 <c>docs/</c>；漏写某个文件不会静默放过，<see cref="ReadmeBlocks.Replace"/> 找不到标记就直接抛异常。
     /// </remarks>
     private static readonly (string File, string Culture, string[] Blocks)[] _targets =
     [
@@ -41,7 +35,9 @@ internal static class Program
         ("docs/zh-CN/diagnostics.md", "zh-CN", ["diagnostics"]),
     ];
 
-    /// <summary>区块 ID 与对应的渲染函数，顺序即替换顺序（彼此独立，不影响结果）。</summary>
+    /// <summary>
+    /// 区块 ID 与对应的渲染函数，顺序即替换顺序（彼此独立，不影响结果）。
+    /// </summary>
     private static readonly (string BlockId, Func<CultureInfo, string> Render)[] _blocks =
     [
         ("primitive-types", DocumentationRenderer.RenderPrimitiveTypes),

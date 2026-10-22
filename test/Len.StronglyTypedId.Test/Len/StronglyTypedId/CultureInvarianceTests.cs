@@ -7,9 +7,7 @@ namespace Len.StronglyTypedId;
 /// 文化不变性：规范文本形与解析入口都不受 <see cref="CultureInfo.CurrentCulture"/> 影响。
 /// </summary>
 /// <remarks>
-/// 这是「静默错值」最危险的一类缺陷 —— de-DE 下小数分隔符是逗号、千位分隔符是句点，
-/// 一旦生成代码漏掉 <see cref="CultureInfo.InvariantCulture"/>，<c>"1.5"</c> 会被读成 <c>15</c>，
-/// 既不抛异常也不改变类型，只在业务数据里留下错误金额。故对每个文化敏感基元逐个文化验证。
+/// 这是「静默错值」最危险的一类缺陷：de-DE 下漏掉 <see cref="CultureInfo.InvariantCulture"/> 会把 <c>"1.5"</c> 读成 <c>15</c>，不抛异常也不改类型，只在业务数据里留下错误金额。
 /// </remarks>
 public class CultureInvarianceTests
 {

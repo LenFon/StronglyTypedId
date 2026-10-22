@@ -868,7 +868,7 @@ public class StronglyTypedIdCodeFixProviderTests
     /// STIA0013：<c>Prefix = "   "</c>（纯空白）时删掉 <c>Prefix</c> 命名实参（等同「未设置」）。
     /// </summary>
     /// <remarks>
-    /// 用纯空白而非空串：空串在生成器侧本就等价于「未设置」，分析器不再为它报警（见 STIA0013 的 D10 修正）。
+    /// 用纯空白而非空串：空串在生成器侧等价于「未设置」，分析器不再为它报警。
     /// </remarks>
     [Fact]
     public async Task CodeFix_Should_RemovePrefixArgument_WhenPrefixIsBlank()
@@ -979,8 +979,7 @@ public class StronglyTypedIdCodeFixProviderTests
     /// 类型），而非删掉实参。桩方法用全限定名渲染基元类型，避免与任何同名局部类型冲突。
     /// </summary>
     /// <remarks>
-    /// 桩体必须是 <c>throw</c> 而不是 <c>=&gt; true</c>：Fix All 会把这条桩铺到几十个 Id 上，恒真的桩等于把校验整体架空，
-    /// 而「忘了填」要到第一次运行时才炸出来，比编译不过更难发现。
+    /// 桩体必须是 <c>throw</c> 而不是 <c>=&gt; true</c>：Fix All 会把桩铺到几十个 Id 上，恒真的桩等于把校验整体架空。
     /// </remarks>
     [Fact]
     public async Task CodeFix_Should_GenerateValidatorStub_WhenValidatorMethodMissing()

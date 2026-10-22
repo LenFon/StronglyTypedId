@@ -27,11 +27,6 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
     /// <summary>
     /// Creates a value for <paramref name="type"/>.
     /// </summary>
-    /// <param name="type">The primitive type to produce a value for.</param>
-    /// <returns>A value assignable to <paramref name="type"/>.</returns>
-    /// <exception cref="NotSupportedException">
-    /// <paramref name="type"/> is not a supported primitive.
-    /// </exception>
     public object? Create(Type type)
     {
         if (customFactory?.Invoke(type) is { } customValue)
@@ -86,9 +81,7 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
     /// 按 <see cref="BoundaryOdds"/> 的概率返回区间端点，否则走常规采样。
     /// </summary>
     /// <remarks>
-    /// 默认关闭，因为「偶尔蹦出个 <c>int.MaxValue</c>」会让
-    /// <c>Any.Ids&lt;Int32Id&gt;(100).Should().OnlyHaveUniqueItems()</c> 这类断言偶发失败 ——
-    /// 两个端点各占 1/32，100 个样本里撞上同一个端点的概率约 22%。需要边界覆盖时显式打开。
+    /// 默认关闭：「偶尔蹦出个 <c>int.MaxValue</c>」会让 <c>OnlyHaveUniqueItems()</c> 这类断言偶发失败（两个端点各占 1/32，100 个样本撞上同一端点约 22%）。
     /// </remarks>
     private T BoundaryOr<T>(T min, T max, Func<T> ordinary)
         => includeBoundaryValues && random.Next(BoundaryOdds) == 0

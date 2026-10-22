@@ -5,9 +5,6 @@ namespace Len.StronglyTypedId.DocGen.Changelog;
 /// <summary>
 /// <c>CHANGELOG.md</c> 的一个版本小节。
 /// </summary>
-/// <param name="Version">方括号里的版本号，或 <c>Unreleased</c>。</param>
-/// <param name="Date">发布日期；<c>Unreleased</c> 小节为 <see langword="null"/>。</param>
-/// <param name="LineIndex">标题所在行（从 0 开始），用于报告问题时定位。</param>
 internal sealed record ChangelogSection(string Version, string? Date, int LineIndex);
 
 /// <summary>
@@ -18,7 +15,9 @@ internal sealed record ChangelogSection(string Version, string? Date, int LineIn
 /// </remarks>
 internal static partial class ChangelogDocument
 {
-    /// <summary>未发布小节的固定名字。</summary>
+    /// <summary>
+    /// 未发布小节的固定名字。
+    /// </summary>
     public const string Unreleased = "Unreleased";
 
     /// <summary>
@@ -30,18 +29,26 @@ internal static partial class ChangelogDocument
         "未发布",
     };
 
-    /// <summary>判断小节标题是否代表「未发布」。</summary>
+    /// <summary>
+    /// 判断小节标题是否代表「未发布」。
+    /// </summary>
     public static bool IsUnreleased(string version) => _unreleasedNames.Contains(version);
 
-    /// <summary>匹配 <c>## [1.3.0] - 2026-10-07</c> 与 <c>## [Unreleased]</c>。</summary>
+    /// <summary>
+    /// 匹配 <c>## [1.3.0] - 2026-10-07</c> 与 <c>## [Unreleased]</c>。
+    /// </summary>
     [GeneratedRegex(@"^## \[(?<version>[^\]]+)\](?: - (?<date>\d{4}-\d{2}-\d{2}))?\s*$")]
     private static partial Regex HeadingPattern();
 
-    /// <summary>匹配文末的 <c>[1.3.0]: https://…</c>。</summary>
+    /// <summary>
+    /// 匹配文末的 <c>[1.3.0]: https://…</c>。
+    /// </summary>
     [GeneratedRegex(@"^\[(?<version>[^\]]+)\]:\s*\S+")]
     private static partial Regex LinkDefinitionPattern();
 
-    /// <summary>按出现顺序取出全部版本小节。</summary>
+    /// <summary>
+    /// 按出现顺序取出全部版本小节。
+    /// </summary>
     public static IReadOnlyList<ChangelogSection> ParseSections(string text)
     {
         var sections = new List<ChangelogSection>();
@@ -61,7 +68,9 @@ internal static partial class ChangelogDocument
         return sections;
     }
 
-    /// <summary>取出文末声明的链接标签集合（不含方括号）。</summary>
+    /// <summary>
+    /// 取出文末声明的链接标签集合（不含方括号）。
+    /// </summary>
     public static IReadOnlySet<string> ParseLinkDefinitions(string text)
     {
         var versions = new HashSet<string>(StringComparer.Ordinal);

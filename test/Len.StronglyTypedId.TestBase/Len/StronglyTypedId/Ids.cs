@@ -159,10 +159,8 @@ public partial record struct ObjectShapeGuidId(Guid Value);
 [StronglyTypedId(JsonShape = JsonShape.Object)]
 public partial record struct ObjectShapeStringId(string Value);
 
-// 嵌套类型的 Id：包含类型必须声明为 partial —— partial 的各段必须处于同一容器内，生成代码要补的
-// 成员只能逐层嵌回容器里，故容器得能被生成代码原样重开一次。
-// 三种容器种类各取一个，覆盖「种类关键字按符号判定」这条路径：record 与 class 的 TypeKind 同为 Class，
-// 只能靠 IsRecord 区分；struct 容器则用来验证不会给它加上非法的 sealed 修饰符。
+// 嵌套类型的 Id：包含类型必须声明为 partial，生成代码要补的成员只能逐层嵌回容器里。
+// 三种容器各取一个：record 与 class 的 TypeKind 同为 Class，只能靠 IsRecord 区分；struct 容器用来验证不会加上非法的 sealed。
 public partial class OrderAggregate
 {
     [StronglyTypedId]

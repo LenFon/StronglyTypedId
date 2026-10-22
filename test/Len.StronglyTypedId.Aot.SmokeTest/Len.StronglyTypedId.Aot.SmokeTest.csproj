@@ -7,12 +7,10 @@
 		<OutputType>Exe</OutputType>
 		<IsPackable>false</IsPackable>
 		<!--
-		  本工程是「Native AOT 端到端冒烟」：README / PACKAGE.md 宣称本库可在 AOT 与裁剪环境下工作，
-		  这里用真实的 PublishAot 产物把核心路径跑一遍，把宣称变成可验证的证据（CI 的 aot job）。
-
-		  PublishAot 会隐式打开 AOT / trim 分析器，因此本工程的代码必须自身零警告 —— 这正是想要的：
-		  分析器通过 + 运行时通过，才算「AOT 可用」。为此这里刻意不碰任何反射式序列化，
-		  而是直接调用生成器产出的 SystemTextJsonConverter。
+		  本工程是「Native AOT 端到端冒烟」：README / PACKAGE.md 宣称本库可在 AOT 与裁剪环境下工作，这里用真实的
+		  PublishAot 产物把核心路径跑一遍（CI 的 aot job）。PublishAot 会隐式打开 AOT / trim 分析器，故本工程代码
+		  必须自身零警告 —— 分析器通过 + 运行时通过才算「AOT 可用」，为此刻意不碰反射式序列化，直接调用生成器
+		  产出的 SystemTextJsonConverter。
 		-->
 		<PublishAot>true</PublishAot>
 		<InvariantGlobalization>true</InvariantGlobalization>

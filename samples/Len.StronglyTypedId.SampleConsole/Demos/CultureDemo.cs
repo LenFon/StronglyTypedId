@@ -16,11 +16,8 @@ internal static class CultureDemo
         {
             CultureInfo.CurrentCulture = german;
 
-            // de-DE 的小数分隔符是逗号：若生成代码漏掉不变文化，"1234.5" 会被读成 12345。
-            // 注意这里必须显式调用 ToString()：字符串插值会走 IFormattable.ToString(null, 当前区域)，
-            // 打印出来的是 de-DE 形态，看起来像「规范文本漂移了」，其实只是插值自己换了 provider。
-            // 所以下面几行的 `{x.ToString()}` 不能按 IDE0071 简化成 `{x}` —— 那会把不变文化换成
-            // 当前区域，正好抹平本示例要展示的差异。
+            // de-DE 的小数分隔符是逗号：漏掉不变文化，"1234.5" 会被读成 12345。
+            // 必须显式 ToString()：插值走 IFormattable + 当前区域，不能按 IDE0071 简化成 {x}。
 #pragma warning disable IDE0071 // 插值可以简化：此处显式 ToString() 是刻意的，与插值的 provider 不同
             Demo.Line($"de-DE 下 ToString()                -> {price.ToString()}");
             Demo.Line($"de-DE 下 $\"{{id}}\"（插值走当前区域）  -> {price}");

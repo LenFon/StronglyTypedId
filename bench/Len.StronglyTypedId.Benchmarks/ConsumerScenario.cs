@@ -10,17 +10,7 @@ namespace Len.StronglyTypedId.Benchmarks;
 /// 基准所模拟的「真实消费者编译」：引用集取自 <see cref="ConsumerProfile"/>，源码取自 <see cref="Source"/>。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 引用集特意不按「当前进程加载到的程序集」来拼。基准进程由 BenchmarkDotNet 在另一个目录下托管，
-/// 其输出目录里混着基准框架与 Roslyn 自身的程序集，按目录扫描就只能靠黑名单再把它们剔掉；
-/// 而 <see cref="ConsumerProfile"/> 交付的是编译器真正吃进去的那份 @(ReferencePath) 清单，
-/// 既准确又无需维护黑名单。
-/// </para>
-/// <para>
-/// 一次「生成器运行」= 一个全新编译。符号是惰性实现的，同一个编译里第二次枚举会明显快于第一次，
-/// 因此冷热两种成本分开测量：热枚举见 <see cref="DiscoveryBenchmarks"/>，
-/// 冷枚举见 <see cref="ColdDiscoverBenchmarks"/>。
-/// </para>
+/// 引用集取自编译器真实的 ReferencePath 清单，不做目录扫描；一次生成器运行 = 一个全新编译，冷热成本分开测。
 /// </remarks>
 internal static class ConsumerScenario
 {
@@ -28,8 +18,7 @@ internal static class ConsumerScenario
     /// 消费者源码：一个顶层 Id、一个嵌套 Id，以及 EF Core 生成器的闸门（<c>protected override ConfigureConventions</c>）。
     /// </summary>
     /// <remarks>
-    /// 约定配置的方法体刻意留空：EF Core 生成器只看「是否存在这个方法」，而方法体里能写的是生成产物
-    /// （转换器类名），一旦生成器改了命名，基准就会因为虚构的编译错误而失效。
+    /// 方法体刻意留空：EF Core 生成器只看方法是否存在，写进产物名会在改名后失效。
     /// </remarks>
     public const string Source = """
         using System;
@@ -56,14 +45,18 @@ internal static class ConsumerScenario
         }
         """;
 
-    /// <summary>本次编译声明的两个 Id，用元数据名直接取；嵌套类型的分隔符是 <c>+</c>。</summary>
+    /// <summary>
+    /// 本次编译声明的两个 Id，用元数据名直接取；嵌套类型的分隔符是 <c>+</c>。
+    /// </summary>
     private static readonly string[] _declaredTypeNames =
     [
         "Consumer.CustomerId",
         "Consumer.OrderAggregate+OrderId",
     ];
 
-    /// <summary>场景自检的期望产出：清单里出现 EfCore 与 Swagger 的生成文件，才说明 Discover 会被跑两遍。</summary>
+    /// <summary>
+    /// 场景自检的期望产出：清单里出现 EfCore 与 Swagger 的生成文件，才说明 Discover 会被跑两遍。
+    /// </summary>
     private static readonly string[] _expectedHintNames =
     [
         "Consumer.CustomerId.g.cs",
@@ -75,7 +68,9 @@ internal static class ConsumerScenario
         "StronglyTypedIds.Swagger.g.cs",
     ];
 
-    /// <summary>本次编译的引用集，由 <see cref="ConsumerProfile"/> 给出的路径清单一次性解析而来。</summary>
+    /// <summary>
+    /// 本次编译的引用集，由 <see cref="ConsumerProfile"/> 给出的路径清单一次性解析而来。
+    /// </summary>
     public static ImmutableArray<MetadataReference> References { get; } = CreateReferences();
 
     public static ImmutableArray<SyntaxTree> CreateSyntaxTrees() => [CSharpSyntaxTree.ParseText(Source)];
@@ -102,8 +97,7 @@ internal static class ConsumerScenario
     /// 本次编译声明的强类型 Id。
     /// </summary>
     /// <remarks>
-    /// 数量对成本没有实质影响（相对整个引用集的类型总数可以忽略），但带上它 <c>Discover</c> 的
-    /// <c>Union</c>/<c>Distinct</c> 段才不是空转，场景也更接近真实调用。
+    /// 数量对成本无实质影响，但能让 <c>Union</c>/<c>Distinct</c> 段不空转。
     /// </remarks>
     public static ImmutableArray<StronglyTypedIdInfo> GetDeclaredIds(CSharpCompilation compilation)
         => [.. _declaredTypeNames
@@ -132,8 +126,7 @@ internal static class ConsumerScenario
     /// 且生成后的编译零错误。
     /// </summary>
     /// <remarks>
-    /// 两个条件都必须成立，基准才量的是「一次真实构建」。若只断言编译通过，生成器一个都没跑也会「通过」；
-    /// 若只断言产出齐全，源码写错（例如 EF Core 的 API 用法变了）则不会被发现。
+    /// 两个条件都要断言：只验编译通过会放过「生成器没跑」，只验产出齐全会放过源码写错。
     /// </remarks>
     public static void VerifyScenario(
         ImmutableArray<MetadataReference> references,
@@ -173,7 +166,9 @@ internal static class ConsumerScenario
         }
     }
 
-    /// <summary>把基准场景的规模写进运行日志，让结果自带自变量。</summary>
+    /// <summary>
+    /// 把基准场景的规模写进运行日志，让结果自带自变量。
+    /// </summary>
     public static string Describe(int assemblyCount, int typeCount, int discoveredIdCount)
         => $"[scenario] assemblies={assemblyCount} types={typeCount} discoveredIds={discoveredIdCount}";
 

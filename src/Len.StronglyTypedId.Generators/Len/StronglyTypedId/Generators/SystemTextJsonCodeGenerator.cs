@@ -131,9 +131,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 该 Id 作字典键时是否需要应用 <c>JsonSerializerOptions.DictionaryKeyPolicy</c>。
     /// </summary>
     /// <remarks>
-    /// 只有枚举跟随 STJ。string / Guid 的键值是数据本身而非名字，改写它等于改写键值 ——
-    /// 写出去就读不回来（string 有损；Guid 虽可无损往返，但同样不该被当成命名风格处理）。
-    /// 带前缀时键文本含用户定义的前缀，policy 会把前缀一起改写，导致读回时前缀匹配失败，故一并排除。
+    /// 只有枚举跟随 STJ：string / Guid 的键值是数据本身而非名字，改写它等于改写键值，写出去就读不回来。
+    /// 带前缀时键文本含用户定义的前缀，policy 会连前缀一起改写导致读回匹配失败，故一并排除。
     /// </remarks>
     private static bool ShouldApplyDictionaryKeyPolicy(StronglyTypedIdInfo idInfo)
         => idInfo.IsEnum && !idInfo.HasPrefix;

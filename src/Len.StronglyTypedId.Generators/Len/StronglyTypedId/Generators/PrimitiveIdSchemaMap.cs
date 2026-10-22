@@ -5,19 +5,23 @@ namespace Len.StronglyTypedId.Generators;
 /// 避免两处各写一份 switch 而逐渐漂移。
 /// </summary>
 /// <remarks>
-/// 口径对齐 System.Text.Json 的默认写出形态：整数 → <c>integer</c>，浮点与 <c>decimal</c> → <c>number</c>，
-/// 枚举 → 底层整数（STJ 默认写数字，配了 <c>JsonStringEnumConverter</c> 才会变字符串），
-/// 日期时间 → <c>string</c> 加对应 format。有前缀时规范文本形恒为字符串，故一律 <c>string</c> 且不带 format。
+/// 口径对齐 System.Text.Json 的默认写出形态：整数 → <c>integer</c>，浮点与 <c>decimal</c> → <c>number</c>，枚举 → 底层整数，日期时间 → <c>string</c> 加 format；有前缀时恒为 <c>string</c> 且不带 format。
 /// </remarks>
 internal static class PrimitiveIdSchemaMap
 {
-    /// <summary>OpenAPI 的 <c>string</c> 类型关键字。</summary>
+    /// <summary>
+    /// OpenAPI 的 <c>string</c> 类型关键字。
+    /// </summary>
     public const string String = "string";
 
-    /// <summary>OpenAPI 的 <c>integer</c> 类型关键字。</summary>
+    /// <summary>
+    /// OpenAPI 的 <c>integer</c> 类型关键字。
+    /// </summary>
     public const string Integer = "integer";
 
-    /// <summary>OpenAPI 的 <c>number</c> 类型关键字。</summary>
+    /// <summary>
+    /// OpenAPI 的 <c>number</c> 类型关键字。
+    /// </summary>
     public const string Number = "number";
 
     /// <summary>

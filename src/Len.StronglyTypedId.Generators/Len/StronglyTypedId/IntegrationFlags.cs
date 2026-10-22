@@ -4,9 +4,7 @@ namespace Len.StronglyTypedId;
 /// 运行时 <c>StronglyTypedIdIntegrations</c> 的镜像值。
 /// </summary>
 /// <remarks>
-/// 生成器与分析器不引用运行时程序集（分析器包必须自包含），因此只能按底层整数匹配。
-/// 这里的取值必须与 <c>Len.StronglyTypedId.StronglyTypedIdIntegrations</c> 逐位一致，
-/// 由运行时侧的单元测试守护。
+/// 生成器与分析器不引用运行时程序集，只能按底层整数匹配；取值必须与 <c>StronglyTypedIdIntegrations</c> 逐位一致。
 /// </remarks>
 internal static class IntegrationFlags
 {

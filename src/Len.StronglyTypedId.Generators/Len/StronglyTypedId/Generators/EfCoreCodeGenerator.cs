@@ -72,7 +72,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                             configurationBuilder.Properties<{{idInfo.FullyQualifiedName}}>().HaveConversion(typeof({{converterName}}));
 
                         /// <summary>
-                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>).
+                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>). Only entity types already added to the model are scanned, so call it at the end of <c>OnModelCreating</c>.
                         /// </summary>
                         /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -114,7 +114,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when the context does not override <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
+                /// Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when the context does not override <c>ConfigureConventions(ModelConfigurationBuilder)</c>. Only entity types already added to the model are scanned, so call it at the end of <c>OnModelCreating</c>.
                 /// </summary>
                 /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -131,10 +131,6 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
     /// <summary>
     /// 取转换器的类名。
     /// </summary>
-    /// <param name="idInfo">强类型 Id 描述。</param>
-    /// <param name="requiresNamespaceQualifier">
-    /// 是否存在位于其它命名空间的同名强类型 Id，需要以命名空间前缀消歧。
-    /// </param>
     private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
             ? $"{idInfo.HintName.Replace('.', '_')}Converter"

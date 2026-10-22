@@ -104,7 +104,8 @@ public class EfCoreCodeGeneratorTests
             or "Dapper");
 
     /// <summary>
-    /// EF Core 集成生成器的示例源码：必须出现 <c>ConfigureConventions</c> 语法，否则不被选入。
+    /// EF Core 集成生成器的示例源码。是否产出只由引用的 <c>Microsoft.EntityFrameworkCore</c> 主版本决定，
+    /// 与源码里有没有 <c>ConfigureConventions</c> 重写无关；这里保留一个真实的 <c>DbContext</c> 只是为了贴近实际用法。
     /// </summary>
     private const string EfCoreSource = """
         using System;
@@ -193,8 +194,7 @@ public class EfCoreCodeGeneratorTests
     /// 注册入口的方法体此前用制表符缩进，与其余生成物的 4 空格风格不一致。
     /// </summary>
     /// <remarks>
-    /// 断言里带上换行与空白：<c>Contain("OrderIdConverter.ApplyTo(configurationBuilder);")</c> 这类子串匹配
-    /// 对缩进完全免疫，正是该缺陷此前没被发现的原因。
+    /// 断言里带上换行与空白：<c>Contain(...)</c> 这类子串匹配对缩进完全免疫，正是该缺陷此前没被发现的原因。
     /// </remarks>
     [Fact]
     public void EfCore_ApplyTo_Should_UseSpacesForIndentation()
@@ -246,9 +246,7 @@ public class EfCoreCodeGeneratorTests
     public void EfCore_Should_QualifyConverterName_WhenSameNameInDifferentNamespaces()
     {
         // 两个命名空间下各有一个 OrderId：转换器必须用「命名空间_类型名」消歧，避免 CS0102。
-        // 两个 Id 都放在「与运行时程序集命名空间 Len.StronglyTypedId 完全无关」的顶层命名空间
-        // （Domain.Orders / Domain.Inventory），彻底避开本库命名空间族的匹配歧义；
-        // 用块作用域 namespace 确保各自独立落到目标顶层命名空间、互不嵌套。
+        // 两个 Id 都放在与本库命名空间无关的顶层命名空间，并用块作用域 namespace 确保互不嵌套。
         var source = """
             using System;
             using Len.StronglyTypedId;

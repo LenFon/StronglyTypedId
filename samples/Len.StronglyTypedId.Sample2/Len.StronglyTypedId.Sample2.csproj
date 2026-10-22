@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<!-- OpenAPI 集成要求 Microsoft.AspNetCore.OpenApi ≥ 9.0.0，而 9.x 起只面向 net9.0+，
-		     故本示例直接以 net10.0 为目标。 -->
+		<!--
+		     OpenAPI 集成要求 Microsoft.AspNetCore.OpenApi ≥ 9.0.0，而 9.x 起只面向 net9.0+，故本示例以 net10.0 为目标。
+		-->
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>

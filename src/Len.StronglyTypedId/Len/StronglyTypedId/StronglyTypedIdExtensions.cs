@@ -16,14 +16,8 @@ public static class StronglyTypedIdExtensions
     /// <summary>
     /// Gets the primitive type wrapped by the specified strongly typed id.
     /// </summary>
-    /// <param name="type">The strongly typed id type to inspect.</param>
-    /// <returns>
-    /// The wrapped primitive type, or <see langword="null"/> when <paramref name="type"/> is not a strongly typed id.
-    /// </returns>
     /// <remarks>
-    /// A nullable strongly typed id (<see cref="Nullable{T}"/>) is judged by its underlying id type:
-    /// <c>typeof(OrderId?)</c> yields the same primitive type as <c>typeof(OrderId)</c>. This matches what the
-    /// ASP.NET Core model binder and the EF Core converters do with nullable ids.
+    /// A nullable id is judged by its underlying type, matching the ASP.NET Core model binder and the EF Core converters.
     /// </remarks>
     public static Type? GetPrimitiveIdType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type)
         => type.TryGetPrimitiveIdType(out var primitiveIdType) ? primitiveIdType : null;
@@ -31,29 +25,17 @@ public static class StronglyTypedIdExtensions
     /// <summary>
     /// Determines whether the specified type is a strongly typed id.
     /// </summary>
-    /// <param name="type">The type to inspect.</param>
     /// <remarks>
-    /// A nullable strongly typed id (<see cref="Nullable{T}"/>) counts as a strongly typed id, exactly like its
-    /// underlying id type.
+    /// A nullable id counts as a strongly typed id, exactly like its underlying type.
     /// </remarks>
     public static bool IsStronglyTypedId([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type) => type.TryGetPrimitiveIdType(out _);
 
     /// <summary>
     /// Attempts to get the primitive type wrapped by the specified strongly typed id.
     /// </summary>
-    /// <param name="type">The type to inspect.</param>
-    /// <param name="primitiveIdType">
-    /// The wrapped primitive type when this method returns <see langword="true"/>.
-    /// </param>
-    /// <returns>
-    /// <see langword="true"/> when <paramref name="type"/> is a strongly typed id; otherwise,
-    /// <see langword="false"/>.
-    /// </returns>
     /// <remarks>
-    /// A nullable strongly typed id (<see cref="Nullable{T}"/>) is judged by its underlying id type, so it reports
-    /// the same primitive type as the non-nullable form.
+    /// A nullable id reports the same primitive type as its non-nullable form.
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
     public static bool TryGetPrimitiveIdType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type, [NotNullWhen(true)] out Type? primitiveIdType)
     {
         ArgumentNullException.ThrowIfNull(type);

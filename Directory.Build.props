@@ -1,34 +1,24 @@
 <Project>
 
 	<!--
-	  IDE 风格分析器（IDE0xxx）默认只在 IDE 里跑，`dotnet build` 不报它们 —— 于是「0 警告基线」
-	  管不到代码风格，.editorconfig 里那些 `:warning` 的风格规则在构建里形同虚设。
-	  打开本开关把 IDE 分析器拉进构建，让 CI 的 0 警告基线一并覆盖风格。
-
-	  为什么放在 Directory.Build.props 而不是 common/test/bench.props：那三个 props 各管一类工程
-	  （src / test / bench），而 samples 下的 5 个工程一个都没引用，只有 Directory.Build.props
-	  能被 MSBuild 自动导入、一次覆盖全部工程。
+	  IDE 风格分析器（IDE0xxx）默认只在 IDE 里跑，`dotnet build` 不报它们 —— 于是「0 警告基线」管不到风格，
+	  .editorconfig 里的 `:warning` 规则在构建里形同虚设。打开本开关把 IDE 分析器拉进构建。
+	  放在这里而不是 common/test/bench.props：那三个各管一类工程，samples 下的 5 个工程一个都没引用，
+	  只有 Directory.Build.props 能被 MSBuild 自动导入、一次覆盖全部工程。
 	-->
 	<PropertyGroup>
 		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 	</PropertyGroup>
 
 	<!--
-	  NuGet Audit：还原阶段就把依赖里的已知漏洞（NU1901–NU1904）报出来。
+	  NuGet Audit：还原阶段就把依赖里的已知漏洞（NU1901–NU1904）报出来。.NET 8 起 SDK 默认开启，显式声明
+	  是为了把三个开关的取值钉在仓库里 —— 默认值漂移过（NuGetAuditMode 在 .NET 9 由 direct 改成 all）。
 
-	  .NET 8 起 SDK 已默认开启，这里显式声明是为了把三个开关的实际取值钉在仓库里：
-	  默认值随 SDK 版本漂移过（NuGetAuditMode 的默认值在 .NET 9 由 direct 改成 all），
-	  依赖默认值等于「换一次 SDK 就换一次行为」。
-
-	  Mode 取 direct 而不是 all，是有意的取舍：本仓现存漏洞全部落在 test / samples / bench
-	  的**传递**依赖里（EF Core 8.0.0 拉下来的 Azure.Identity、Microsoft.Data.SqlClient、
-	  System.Text.Json，以及测试栈里的 System.Security.Cryptography.Pkcs），
-	  这些不进任何发布包。把它们报成警告只会淹没真正的信号，并打破 0 警告基线。
-	  发布物的完整依赖链由 common.props 里的 all 单独把关 —— src 四个工程实测零漏洞。
-
-	  传递依赖的漏洞该由上游包作者修，我们能做的只有升级直接依赖，而那正是 Dependabot 的活。
-	  想看全量现状随时可以手动跑 `dotnet package list`，附加 vulnerable 与 include-transitive
-	  两个开关即可列出含传递依赖在内的全部已知漏洞。
+	  Mode 取 direct 是有意取舍：本仓现存漏洞全部落在 test / samples / bench 的**传递**依赖里（EF Core 8.0.0
+	  拉下来的 Azure.Identity、Microsoft.Data.SqlClient、System.Text.Json，以及测试栈里的
+	  System.Security.Cryptography.Pkcs），它们不进任何发布包，报成警告只会淹没真正的信号。发布物的完整
+	  依赖链由 common.props 的 all 单独把关。想看全量现状可手动跑 `dotnet package list`，附加 vulnerable
+	  与 include-transitive 两个开关即可。
 	-->
 	<PropertyGroup>
 		<NuGetAudit>true</NuGetAudit>

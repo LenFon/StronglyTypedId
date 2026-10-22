@@ -11,20 +11,8 @@ namespace Len.StronglyTypedId.Benchmarks;
 /// 生成器性能回归门槛：跑固定工作量，把「每次完整生成器运行的分配字节数」与「耗时」同入库基线比对。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 为什么不用 BenchmarkDotNet 做 CI 门槛：BDN 的价值在统计严谨（多轮迭代 + 离群剔除），代价是单次跑几分钟；
-/// 而 CI 跑在共享 runner 上，短作业的墙钟抖动本身就常常超过 ±20%，拿它做阻断式门槛只会制造假红。
-/// 这里换成「固定轮次的确定性指标」：
-/// </para>
-/// <para>
-/// <b>分配字节数是主判据</b> —— 同一份代码走同一条路径时分配量逐字节可复现，与机器快慢无关；
-/// 而 Roslyn 侧绝大多数性能退化（多枚举一遍符号、多拼一次字符串、多接一层 LINQ）都会体现在分配量上。
-/// <b>耗时只作数量级兜底</b>（容忍 10 倍），用于捕捉「分配没变但复杂度炸了」这种罕见情形。
-/// </para>
-/// <para>
-/// 用法：<c>dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate</c>；
-/// 有意改变性能特征后，用 <c>--update-baseline</c> 重写基线并连同改动一起提交。
-/// </para>
+/// 不用 BenchmarkDotNet 做 CI 门槛：单次跑几分钟，且共享 runner 的墙钟抖动常超 ±20%，只会制造假红。
+/// 改判确定性指标：分配字节数为主判据（逐字节可复现），耗时只作数量级兜底（容忍 10 倍）。
 /// </remarks>
 internal static class PerformanceGate
 {
@@ -41,31 +29,17 @@ internal static class PerformanceGate
     /// 分配量的容忍比例：超出基线 10% 即判为退化。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 这个数是量出来的，不是拍的。同一台机器连续跑，分配量逐次相差约 <b>0.005%</b>（5,553,704 / 5,553,536 /
-    /// 5,553,424 B），所以 10% 已经是观测噪声的两千倍，留足了跨机器余量。
-    /// </para>
-    /// <para>
-    /// 上限不能再放宽到 20%：把「一次枚举」故意改回「五次枚举」（本仓库历史上真实存在过的退化），
-    /// 分配量只涨 <b>16.3%</b> —— 20% 的门槛会放过它。原因是 Roslyn 的符号在同一个编译内是缓存的，
-    /// 重复遍历只付迭代器与包装对象的钱，不付符号解析的钱。10% 正好卡在噪声与最小可感退化之间。
-    /// </para>
+    /// 10% 是量出来的：同机连续跑分配量相差约 0.005%，已留足跨机器余量。
+    /// 不能放宽到 20%：把「一次枚举」改回「五次枚举」只涨 16.3%，会被放过。
     /// </remarks>
     private const double AllocatedBytesTolerance = 0.10;
 
-    /// <summary>耗时的容忍比例：只在数量级退化时报警（跨机器、跨 runner 的墙钟不可比）。</summary>
+    /// <summary>
+    /// 耗时的容忍比例：只在数量级退化时报警（跨机器、跨 runner 的墙钟不可比）。
+    /// </summary>
     /// <remarks>
-    /// <para>
-    /// 取 9.0（上限为基线的 10 倍）而不是更紧的值，是因为这个判据天生跨机器不可比。实测同一份代码、
-    /// 同一份基线：开发机 13.97 ms，GitHub 的 windows-latest 59.75 ms —— 相差 4.3 倍，而两者的分配量
-    /// 分别是 5,585,256 B 与 5,584,640 B（相差 0.011%）。原先取 3.0（上限 4 倍）时，CI 仅因 runner 较慢
-    /// 就被判红，是一次纯粹的假阳性。
-    /// </para>
-    /// <para>
-    /// 放宽到 10 倍不会放过真正关心的退化：本判据只负责兜住「分配量没变但复杂度炸了」的情形，
-    /// 而 O(n) 变 O(n²) 这类爆炸远超一个数量级。常规退化（多枚举一遍符号、多拼一次字符串、多接一层
-    /// LINQ）由分配量那条 10% 的判据负责，它的跨机器噪声只有 0.011%。
-    /// </para>
+    /// 取 9.0（上限 10 倍）：耗时跨机器不可比（实测 13.97 ms vs 59.75 ms），更紧的值会因 runner 慢而假红。
+    /// 放宽不会放过真正的退化：O(n)→O(n²) 远超一个数量级，常规退化由分配量那条 10% 判据负责。
     /// </remarks>
     private const double ElapsedTolerance = 9.0;
 
@@ -74,7 +48,6 @@ internal static class PerformanceGate
     /// <summary>
     /// 执行门槛检查。<paramref name="args"/> 里出现 <c>--update-baseline</c> 时改为重写基线。
     /// </summary>
-    /// <returns>0 通过（或基线已更新），1 检出退化。</returns>
     public static int Run(string[] args)
     {
         var updateBaseline = args.Contains("--update-baseline", StringComparer.Ordinal);

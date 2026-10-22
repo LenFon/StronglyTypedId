@@ -12,9 +12,6 @@ public static class ConsumerProfile
     /// <summary>
     /// 本工程解析出的编译引用路径（含框架引用程序集），顺序与编译器所见一致。
     /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// 嵌入清单不存在，说明生成本清单的 MSBuild 目标没有执行（需重新生成一次）。
-    /// </exception>
     public static IReadOnlyList<string> ReferencePaths()
     {
         using var stream = typeof(ConsumerProfile).Assembly.GetManifestResourceStream(ResourceName)
