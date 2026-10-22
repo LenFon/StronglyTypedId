@@ -101,6 +101,30 @@ public class NewtonsoftJsonCodeGeneratorTests
         public partial record struct OrderId(Guid Value);
         """;
 
+    /// <summary>
+    /// 对象形态 + 前缀：<c>value</c> 属性里存规范文本形，读回走 <c>TryParse</c>。
+    /// </summary>
+    private const string ObjectShapePrefixedIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId(Prefix = "ord_", JsonShape = JsonShape.Object)]
+        public partial record struct OrderId(Guid Value);
+        """;
+
+    /// <summary>
+    /// 对象形态 + Newtonsoft 不认识的基元（<c>Int128</c>）：同样退回规范文本形。
+    /// </summary>
+    private const string ObjectShapeBinaryTextIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId(JsonShape = JsonShape.Object)]
+        public partial record struct BigId(Int128 Value);
+        """;
+
     #endregion
 
     #region 顺序属性
@@ -218,6 +242,38 @@ public class NewtonsoftJsonCodeGeneratorTests
         code.Should()
             .NotContain("WriteStartObject")
             .And.NotContain("JObject.Load");
+    }
+
+    /// <summary>
+    /// 对象形态 + 前缀：<c>value</c> 属性里存的是<b>规范文本形</b>（含前缀），读回必须经 <c>TryParse</c>，
+    /// 不能走 <c>Create(基元)</c> —— 后者拿到的会是带前缀的字符串，与基元类型对不上。
+    /// </summary>
+    [Fact]
+    public void JsonShape_Object_WithPrefix_Should_ReadValueAsCanonicalText()
+    {
+        var generated = GetGeneratedCode(ObjectShapePrefixedIdSource);
+
+        var code = generated["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
+
+        code.Should()
+            .Contain("return valueToken.ToObject<string>() switch")
+            .And.Contain("{ } text when OrderId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,")
+            .And.NotContain("valueToken.ToObject<global::System.Guid?>()");
+    }
+
+    /// <summary>
+    /// 对象形态 + Newtonsoft 不认识的基元（<c>Int128</c>）：同样退回规范文本形。
+    /// </summary>
+    [Fact]
+    public void JsonShape_Object_WithNewtonsoftTextPrimitive_Should_ReadValueAsCanonicalText()
+    {
+        var generated = GetGeneratedCode(ObjectShapeBinaryTextIdSource);
+
+        var code = generated["Len.StronglyTypedId.BigId.NewtonsoftJson.g.cs"];
+
+        code.Should()
+            .Contain("return valueToken.ToObject<string>() switch")
+            .And.Contain("{ } text when BigId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,");
     }
 
     #endregion

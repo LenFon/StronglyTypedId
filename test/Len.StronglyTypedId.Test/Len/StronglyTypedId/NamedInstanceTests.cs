@@ -18,6 +18,24 @@ public class NamedInstanceTests
     }
 
     /// <summary>
+    /// 特性本身也是公开 API：反射读到的 <c>Name</c> / <c>Value</c> 必须与声明逐字一致，
+    /// 且 <c>AllowMultiple</c> 让同一个 Id 能挂多条实例声明。
+    /// </summary>
+    [Fact]
+    public void InstanceAttribute_Should_ExposeDeclaredNameAndValue()
+    {
+        var attributes = (StronglyTypedIdInstanceAttribute[])Attribute.GetCustomAttributes(
+            typeof(InstanceInt32Id),
+            typeof(StronglyTypedIdInstanceAttribute));
+
+        attributes.Should().HaveCount(2);
+        attributes[0].Name.Should().Be("Unspecified");
+        attributes[0].Value.Should().Be("-1");
+        attributes[1].Name.Should().Be("Anonymous");
+        attributes[1].Value.Should().Be("0");
+    }
+
+    /// <summary>
     /// <c>long.MinValue</c> 是字面量发射最容易写错的边界：一元负号必须作用于整个字面量。
     /// </summary>
     [Fact]

@@ -140,6 +140,39 @@ public class InstanceCodeGeneratorTests
         generated.Should().NotContain("TooBig");
     }
 
+    /// <summary>
+    /// 其余窄整型同样走「显式转换 + 目标类型边界校验」：字面量默认推断成 <c>int</c>，
+    /// 不加强制转换会让 <c>sbyte</c> / <c>ushort</c> 这类字段声明编译不过。
+    /// </summary>
+    [Theory]
+    [InlineData("sbyte", "-128", "(sbyte)(-128)")]
+    [InlineData("short", "-32768", "(short)(-32768)")]
+    [InlineData("ushort", "65535", "(ushort)(65535)")]
+    [InlineData("uint", "4294967295", "(uint)(4294967295)")]
+    public void Core_Should_EmitNarrowIntegralLiteral(string primitiveType, string value, string expression) =>
+        ShouldContainField(GetCore(Single(primitiveType, value)), "OrderId", "Sentinel", expression);
+
+    /// <summary>
+    /// 每种基元都有自己的「文本是否合法」判据，判据失效时最坏的后果是把非法文本发射成
+    /// 编译不过的字面量（例如 <c>new Guid("not-a-guid")</c> 是运行期异常，而 <c>(byte)(999)</c> 是编译错误）。
+    /// 本用例逐基元确认非法文本被整条跳过。
+    /// </summary>
+    [Theory]
+    [InlineData("sbyte", "128")]
+    [InlineData("short", "40000")]
+    [InlineData("ushort", "-1")]
+    [InlineData("uint", "-1")]
+    [InlineData("float", "abc")]
+    [InlineData("double", "abc")]
+    [InlineData("decimal", "abc")]
+    [InlineData("Guid", "not-a-guid")]
+    [InlineData("DateTime", "not-a-date")]
+    [InlineData("DateTimeOffset", "not-a-date")]
+    [InlineData("TimeSpan", "not-a-span")]
+    [InlineData("Half", "abc")]
+    public void Core_Should_SkipInstance_WhenTextIsNotParseable(string primitiveType, string value) =>
+        GetCore(Single(primitiveType, value, "Bad")).Should().NotContain("Bad");
+
     #endregion
 
     #region 浮点与 decimal
