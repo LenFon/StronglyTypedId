@@ -33,6 +33,12 @@ public class BinarySerializationTests
         StronglyTypedIds.ApplyTo(MessagePackSerializerOptions.Standard);
 
     /// <summary>
+    /// 普通数组载荷：用来验证「生成的格式化器找不到时退回原有解析器」。
+    /// 内容恒定，提成字段以免每次调用都重新分配一个数组（CA1861）。
+    /// </summary>
+    private static readonly int[] _plainInts = [1, 2, 3];
+
+    /// <summary>
     /// BSON 的序列化器注册在进程级注册表里，整个测试类只注册一次。
     /// </summary>
     /// <remarks>
@@ -193,7 +199,7 @@ public class BinarySerializationTests
     {
         // 装配入口是「先查生成的格式化器，再退回原有解析器」，不能把别人的解析能力挤掉。
         var bytes = MessagePackSerializer.Serialize(
-            new[] { 1, 2, 3 }, _messagePackOptions, TestContext.Current.CancellationToken);
+            _plainInts, _messagePackOptions, TestContext.Current.CancellationToken);
 
         MessagePackSerializer.Deserialize<int[]>(bytes, _messagePackOptions, TestContext.Current.CancellationToken)
             .Should().Equal(1, 2, 3);

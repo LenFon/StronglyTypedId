@@ -1,12 +1,10 @@
 # CodeQL 配置文件。
 #
-# 为什么不写在 workflow 的 `with:` 里：`with:` 只接受标量映射，写成 YAML 序列会被
-# GitHub 的 workflow 校验直接拒掉（"A sequence was not expected"）；而且 `paths-ignore`
-# 本来也不是 codeql-action/init 的输入，它属于 CodeQL 配置文件。
+# 为什么不写在 workflow 的 `with:` 里：`with:` 只接受标量映射，写成 YAML 序列会被 workflow 校验
+# 拒掉（"A sequence was not expected"）；`paths-ignore` 也不是 codeql-action/init 的输入。
 #
-# 只分析 src / tools：test / bench / samples 不是攻击面（测试代码与示例从不进入使用者
-# 的进程），留在结果里只会稀释真正的信号。workflow 里的 Build 步骤同步只编译 src 与
-# tools，两处口径保持一致。
+# 只分析 src / tools：test / bench / samples 不是攻击面，留在结果里只会稀释信号。workflow 里的
+# Build 步骤同步只编译 src 与 tools。
 name: "CodeQL config"
 
 paths-ignore:

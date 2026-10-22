@@ -34,6 +34,18 @@
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
 		<!--
+		  包图标：路径是「包内路径」，不是磁盘路径 —— 真正的文件由下面那条 None 以 PackagePath="\" 放进包根，
+		  两者必须同名，否则 pack 报 NU5046（找不到 PackageIcon 指定的文件）。
+		  用 $(MSBuildThisFileDirectory) 而不是 ..\..\：本文件被 src / test / tools 下深度不一的工程导入，
+		  相对路径的层级取决于导入方，只有属性函数给出的绝对路径与导入方无关。
+		-->
+		<PackageIcon>icon.png</PackageIcon>
+		<!--
+		  发布说明指向 CHANGELOG 而不是内联一段文本：内联就得在每次发版时手工同步，而 CHANGELOG 已经由
+		  DocGen 的 verify-changelog 门禁守着（tag 与两份 CHANGELOG 的小节必须对得上），指向它等于复用了那道门禁。
+		-->
+		<PackageReleaseNotes>See https://github.com/lenfon/StronglyTypedId/blob/main/CHANGELOG.md</PackageReleaseNotes>
+		<!--
 		  生成器产物这类未纳入版本控制的源文件也嵌入 pdb，否则 F11 只能停在「找不到源代码」。
 		  符号包本身只在 Len.StronglyTypedId 项目里开启：分析器包除 analyzers/dotnet/cs 下的 dll 外没有任何
 		  打包内容，开符号包会直接撞 NU5017（既无依赖项也无内容的包）。
@@ -112,5 +124,7 @@
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="..\..\PACKAGE.md" Pack="true" PackagePath="\"/>
+		<!-- 包图标：与上面 PackageIcon 声明的包内路径同名。Visible=false 免得在 IDE 里多出一个重复条目。 -->
+		<None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="\" Visible="false"/>
 	</ItemGroup>
 </Project>

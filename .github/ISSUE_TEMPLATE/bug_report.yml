@@ -1,0 +1,99 @@
+name: Bug report
+description: Something generated, parsed, serialized or diagnosed incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The single most useful thing you can provide is a **minimal reproduction**:
+        the `record` declaration, the attribute arguments, and the one call that misbehaves.
+
+        If this is a security issue, **stop here** and use the
+        [private advisory form](https://github.com/lenfon/StronglyTypedId/security/advisories/new) instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: The version shown in your `PackageReference` / `Directory.Packages.props`.
+      placeholder: 1.3.0-preview.5
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tfm
+    attributes:
+      label: Target framework
+      options:
+        - net8.0
+        - net10.0
+        - Both
+        - Other (described below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: declaration
+    attributes:
+      label: Id declaration
+      description: The full declaration, including every attribute argument that matters.
+      render: csharp
+      placeholder: |
+        [StronglyTypedId]
+        public partial record struct OrderId(Guid Value);
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: The shortest code that shows the problem. Include the failing call, not the whole application.
+      render: csharp
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: What you expected, and what happened instead. Paste the exception type and message verbatim.
+    validations:
+      required: true
+
+  - type: input
+    id: diagnostics
+    attributes:
+      label: Related diagnostics
+      description: Any `STIA####` warnings or errors in the build output, if applicable.
+      placeholder: STIA0016
+
+  - type: textarea
+    id: generated
+    attributes:
+      label: Generated code (optional)
+      description: |
+        If the problem is in the generated output, paste the relevant part. You can emit the files with
+        `-p:EmitCompilerGeneratedFiles=true -t:Rebuild`; they land under `obj/generated/`.
+      render: csharp
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, IDE and `dotnet --version`.
+      placeholder: Windows 11, VS 2026 18.0, SDK 10.0.401
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security issue (those go through the private advisory form).
+          required: true
+        - label: I reproduced this against the latest published version.
+          required: true

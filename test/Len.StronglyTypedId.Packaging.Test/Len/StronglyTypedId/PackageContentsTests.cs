@@ -18,6 +18,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     private const string MainPackageId = "Len.StronglyTypedId";
     private const string PackageVersion = "1.0.0";
     private const string ReadmeEntry = "PACKAGE.md";
+    private const string IconEntry = "icon.png";
 
     #region 生成器包：使用者能拿到生成器
 
@@ -230,6 +231,36 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
             .SingleOrDefault(element => element.Name.LocalName == "readme")?.Value;
 
         readme.Should().Be(ReadmeEntry, "nuspec 的 readme 应指向包内的 README 文件");
+    }
+
+    /// <summary>
+    /// 两个包都要把图标打进包并写进 nuspec。<c>PackageIcon</c> 声明的是「包内路径」，与真正被打包的文件
+    /// 是两条独立的配置 —— 只改一处时 pack 会报 NU5046，但若把文件放错目录、nuspec 仍指向它，
+    /// 就只有使用者看到默认灰块。这里同时校验条目、nuspec 指针与 PNG 魔数。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Package_Should_IncludeIcon(bool generators)
+    {
+        var packagePath = generators ? fixture.GeneratorsPackagePath : fixture.MainPackagePath;
+        var entries = PackedPackagesFixture.ReadEntries(packagePath);
+        var nuspec = PackedPackagesFixture.ReadNuspec(packagePath);
+
+        entries.Should().Contain(IconEntry);
+
+        var icon = Metadata(nuspec).Elements()
+            .SingleOrDefault(element => element.Name.LocalName == "icon")?.Value;
+
+        icon.Should().Be(IconEntry, "nuspec 的 icon 应指向包内的图标文件");
+
+        var bytes = PackedPackagesFixture.ReadEntryBytes(packagePath, IconEntry);
+
+        // NuGet 只接受 PNG / JPEG；这里钉 PNG，顺带挡住「占位文本文件被当成图标」的情况。
+        // 必须显式写成 byte[]：Equal 的 params 重载会把后面的 reason 当成第 9 个元素（CS1503）。
+        bytes.Take(8).Should().Equal(
+            new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A },
+            "图标必须是 PNG（NuGet 不接受其它格式）");
     }
 
     /// <summary>

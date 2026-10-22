@@ -1,4 +1,16 @@
 {
+  // 钉住 SDK 版本：仓库开了 EnforceCodeStyleInBuild，IDE 分析器会参与构建，
+  // 而 SDK 补丁/特性带的升级会带来新的 IDE0xxx、新的 CA 规则与不同的 AnalysisLevel 默认值 ——
+  // 表现是「什么都没改，0 警告基线突然红了」。
+  //
+  // rollForward=latestPatch：只在同一特性带（10.0.4xx）内向前滚动补丁号，不跨特性带。
+  // 跨带意味着换一批分析器，那正是要防的东西。
+  // 升级 SDK 时同步改这里与 .github/workflows 里 setup-dotnet 的版本号（两处必须一致，
+  // 否则 CI 装不到 global.json 要求的 SDK，直接以 SDK 解析失败告终）。
+  "sdk": {
+    "version": "10.0.401",
+    "rollForward": "latestPatch"
+  },
   "test": {
     "runner": "Microsoft.Testing.Platform"
   }

@@ -75,11 +75,32 @@
 	<Target Name="InjectGeneratorsPackageDependency" AfterTargets="Pack">
 		<PropertyGroup>
 			<_PkgPath>$([MSBuild]::EnsureTrailingSlash('$(PackageOutputAbsolutePath)'))$(PackageId).$(PackageVersion).nupkg</_PkgPath>
-			<_PkgPatchDir>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch\</_PkgPatchDir>
-			<_PkgRepackedPath>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch.repacked.nupkg</_PkgRepackedPath>
+			<!--
+			  临时目录必须是一次性的：主包双目标，只要有两个进程同时 pack 同一个工程（CI 矩阵、并行
+			  构建），共享路径就会让 RemoveDir / Unzip 互相踩踏 —— 表现为 NU5026 或一个半成品包。
+			  用 Guid 而不是进程 ID：MSBuild 没有可靠的进程 ID 属性，而 Guid 每次求值唯一，
+			  天然做到「一次 pack 一份目录」。
+			  不拼 $(TargetFramework)：Pack 跑在外层构建，那里 TargetFramework 是空的，
+			  拼进去只会得到「__pkgpatch-<空>-<guid>」这种看着像按 TFM 隔离、其实没隔离的路径。
+			  残留竞态：两个进程仍会先后 Delete + Move 同一个最终包。内容等价，最坏是一次瞬时失败；
+			  真要并行 pack 同一工程，请在调用方串行化，别指望这里兜住。
+			-->
+			<_PkgPatchDir>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch-$([System.Guid]::NewGuid())\</_PkgPatchDir>
+			<_PkgRepackedPath>$(BaseIntermediateOutputPath)$(Configuration)\__pkgpatch-$([System.Guid]::NewGuid()).repacked.nupkg</_PkgRepackedPath>
 			<_PkgDependencyId>Len.StronglyTypedId.Generators</_PkgDependencyId>
 		</PropertyGroup>
 
+		<!--
+		  签名与「重压产物」互斥：包签名是对整个 zip 做的，重压后必然失效，而 dotnet nuget verify
+		  只会在发布之后才报 —— 那时版本号已经推上 nuget.org，收不回来。宁可在打包阶段就红。
+		-->
+		<Error Condition="'$(PackageSigningCert)' != '' or '$(PackageSigningCertName)' != ''"
+		       Text="InjectGeneratorsPackageDependency：已配置包签名（PackageSigningCert / PackageSigningCertName），而本目标会重压 nupkg 使签名失效。请改成「先注入依赖、再签名」的流程，或关闭签名。" />
+
+		<!--
+		  已知取舍：ZipDirectory 用 MSBuild 默认压缩参数，条目顺序与原 PackTask 产出的包不逐字节等价。
+		  这不影响 NuGet 消费，但同一个 commit 两次打包的 hash 不同 —— 不要把包 hash 当缓存键或校验依据。
+		-->
 		<Error Condition="!Exists('$(_PkgPath)')"
 		       Text="InjectGeneratorsPackageDependency：找不到待修补的包 '$(_PkgPath)'。这条依赖只能靠修补产物注入，路径对不上就意味着包会缺少生成器依赖。" />
 
