@@ -18,15 +18,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
 
     - name: Install dotnet tool
       run: dotnet tool install -g dotnetCampus.TagToVersion
-    - name: Set tag to version  
-      run: dotnet TagToVersion -t ${{ github.ref }} -f version.props
+    - name: Set tag to version
+      # 同时把 Assembly 版本号主段（major.minor.0.0）推导并写入 env，供 build/pack 透传。
+      # 原因：dotnet pack 的 ApiCompat 校验（CP0003）要求 AssemblyVersion ≥ 基线 1.3.0.0；
+      # 若不把程序集版本号抬到与包版本号主号一致，tag 发布（Version ≥ 1.3.0）挂上基线后
+      # 会直接报 CP0003。
+      run: |
+        dotnet TagToVersion -t ${{ github.ref }} -f version.props
+        PKG_VERSION=$(grep -oP '(?<=<Version>)[^<]+' version.props | head -n1)
+        MAJOR=$(echo "$PKG_VERSION" | cut -d'.' -f1)
+        MINOR=$(echo "$PKG_VERSION" | cut -d'.' -f2 | cut -d'-' -f1)
+        ASM_VERSION="${MAJOR}.${MINOR}.0.0"
+        echo "PackageVersion=${PKG_VERSION}  AssemblyVersion=${ASM_VERSION}"
+        echo "ASSEMBLY_VERSION=${ASM_VERSION}" >> "$GITHUB_ENV"
+        echo "PACKAGE_VERSION=${PKG_VERSION}" >> "$GITHUB_ENV"
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         # net8.0 与 net10.0 两个目标框架都要打包，显式安装两者 SDK，
         # 与 build-and-test.yml 保持一致，避免依赖 runner 镜像预装的 .NET 环境。
@@ -35,8 +47,30 @@ jobs:
           10.0.x
     - name: Restore dependencies
       run: dotnet restore ./Len.StronglyTypedId.slnx
+    # Release 配置触发 GeneratePackageOnBuild（common.props），pack 在此阶段完成；
+    # 透传 AssemblyVersion / FileVersion，使 CP0003 与基线 1.3.0.0 对齐。
+    # 只有 IsPackable=true 的工程会成包（common.props 默认 false，仅主包与生成器包打开），
+    # 因此这一步只会往 bin/Release 里放两个 .nupkg。
     - name: Build
-      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore --property:OutputPath=../../bin/Release/
+      run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore --property:OutputPath=../../bin/Release/ -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+
+    # 发布目录里只允许出现这两个包。
+    # common.props 已把 IsPackable 默认设为 false，但「给新工程打开 IsPackable」这类改动
+    # 不会让本地构建报错，只会在下次打 tag 时把垃圾包静默推到 nuget.org —— 那里撤不回
+    # （只能 unlist）。所以在换取 API 密钥之前先做一次硬断言，让它在 CI 就红。
+    - name: Verify packaged set
+      run: |
+        set -eu
+        expected=$(printf '%s\n' \
+          "Len.StronglyTypedId.${PACKAGE_VERSION}.nupkg" \
+          "Len.StronglyTypedId.Generators.${PACKAGE_VERSION}.nupkg" | sort)
+        actual=$(find bin/Release -maxdepth 1 -name '*.nupkg' -printf '%f\n' | sort)
+        if [ "$actual" != "$expected" ]; then
+          echo "::error::bin/Release 下的包与预期不符，已中止发布"
+          printf 'expected:\n%s\nactual:\n%s\n' "$expected" "$actual"
+          exit 1
+        fi
+        printf 'OK: %s\n' "$(echo "$actual" | tr '\n' ' ')"
 
     # 通过 OIDC 向 nuget.org 换取短期 API 密钥（无需存储长期密钥）。
     # 注意：私有仓库首次创建受信任发布策略后，会进入「待完全激活」状态，
