@@ -1,0 +1,27 @@
+title: StronglyTypedId
+description: >-
+  A source generator, analyzer and code fix provider that turns a one-line record
+  declaration into a fully featured strongly typed id.
+url: "https://lenfon.github.io"
+baseurl: "/StronglyTypedId"
+
+theme: minima
+lang: en
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+# Lets the pages link to each other as `migration.md` while the published site
+# serves `migration.html` — the same source stays readable in the repository.
+plugins:
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: false
+
+exclude:
+  - Gemfile
+  - Gemfile.lock

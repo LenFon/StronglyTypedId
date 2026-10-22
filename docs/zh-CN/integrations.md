@@ -108,13 +108,16 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 因此只给裸 `integer` 而不带 `format`。带 `Prefix` 的 Id 一律是 `string` 且不带 `format`，因为它的规范
 文本形就是文本。
 
-`MapType<T>` 注册的是 Id **类型**的 schema，而不是某个端点的 schema：Id 出现在哪里都用同一份映射——
-DTO 上的属性、路由或查询参数、响应体、嵌套在另一个模型里的字段——因此没有逐端点要配的东西。
+`MapType<T>` 注册的是 Id **类型**的 schema，而不是某个端点的 schema，因此没有逐端点要配的东西。只要框架
+把 Id 类型交给 `ApiExplorer`——DTO 上的属性、响应体、嵌套在另一个模型里的字段、MVC 控制器参数——用的都是
+同一份映射。
 
-有一处实测出来的例外，来自 `samples/Len.StronglyTypedId.Sample4`（`net8.0` +
-`Microsoft.AspNetCore.OpenApi` 8.0.0）：**Minimal API** 的路由参数被 `ApiExplorer` 描述成 `string`——
+有一处实测出来的例外，来自 `samples/Len.StronglyTypedId.Sample4`（`net8.0` + Swashbuckle 6.5.0）：
+**Minimal API** 的路由参数被 `ApiExplorer` 描述成 `string`——
 框架认得出这是 `IParsable` 类型，于是按文本上报——`MapType` 因此没有机会生效，该参数的 schema 是裸的
-`type: string`，不带 `format`。请求 / 响应体与 DTO 属性不受影响，照常映射。
+`type: string`，不带 `format`。请求 / 响应体与 DTO 属性不受影响；MVC 控制器参数也照常映射，它以 Id 类型
+到达 `ApiExplorer`（`samples/Len.StronglyTypedId.Sample3` 里 `/api/products/{id}` 是
+`type: integer, format: int32`）。内置的 [ASP.NET Core OpenAPI](#aspnetcore-openapi) 集成没有这个缺口。
 
 <a id="dapper"></a>
 
@@ -324,8 +327,15 @@ builder.Services.AddOpenApi(options =>
 
 机制与 Swashbuckle 不同：这里是一个经 `AddSchemaTransformer` 挂上的 `IOpenApiSchemaTransformer`，只改写
 框架已经建好的 schema 上的 `type` 与 `format`，其余内容——描述、`nullable`、`required`、示例——原样保留。
-Swashbuckle 的 `MapType` 则是整份替换该类型的 schema，换上去的那份只带 `type` 与 `format`。两者都能在参数
-里（经参数描述）与请求 / 响应体里（经 JSON 类型信息）认出 Id，也都不会碰不是 Id 的 schema。
+又因为框架把这份 schema 保留为具名组件，请求体里的 Id 呈现为 `$ref: '#/components/schemas/OrderId'`，
+而不是内联对象。Swashbuckle 的 `MapType` 则是整份替换该类型的 schema，换上去的是一份只带 `type` 与
+`format` 的内联 schema。
+
+两者的覆盖面也不同。用 `samples/Len.StronglyTypedId.Sample2`（`net10.0` +
+`Microsoft.AspNetCore.OpenApi` 10.0.13）实测：路由参数与查询参数都拿到了 `type: string, format: uuid`。
+而 `net8.0` 上的 Swashbuckle（`Sample4`）会让 **Minimal API** 的路由参数停在裸的 `type: string`——
+`ApiExplorer` 把 `IParsable` 参数报成 `string`，而 `MapType` 是按 CLR 类型登记的，见该节的
+[实测例外](#swashbuckle)。两者都不会碰不是 Id 的 schema。
 
 > 该集成与 Swashbuckle 互不依赖：二者可单独或同时存在，各自生成自己的 `ApplyTo` 重载。
 

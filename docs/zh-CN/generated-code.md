@@ -47,7 +47,8 @@ title: 生成产物
 - 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂——`Create` 的不抛异常版本：
   失败时返回 `false` 并把 `result` 置为 `default`。
 - 每个 `[StronglyTypedIdInstance]` 对应一个 `public static readonly TSelf` 字段，经 `Create` 初始化。
-- `Deconstruct(out TPrimitiveId value)`，因此 `var (value) = id;` 可解构出基元值。
+- `Deconstruct(out TPrimitiveId value)`，因此 `id.Deconstruct(out var value);` 可解构出基元值。
+  （单元素的 `var (value) = id;` 不是合法 C# —— 解构声明至少要两个元素。）
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。`provider` 传 `null` 时按
   **不变文化**解析（而非当前文化），因此 `Parse(id.ToString())` 在任何区域设置下都能往返；需要按特定文化
   解析时显式传 provider。对于以 `string` 为基元的 Id，`TryParse` 不接受 `null` 与空字符串。`Parse` 对

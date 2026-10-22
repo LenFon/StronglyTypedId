@@ -49,7 +49,8 @@ carries the same inventory without the file names, as a one-glance list.
 - A static `TryCreate(TPrimitiveId value, out TSelf result)` factory — the non-throwing twin of `Create`:
   it returns `false` and sets `result` to `default` instead of throwing.
 - A `public static readonly TSelf` field per `[StronglyTypedIdInstance]`, initialized through `Create`.
-- `Deconstruct(out TPrimitiveId value)`, so `var (value) = id;` unwraps the primitive.
+- `Deconstruct(out TPrimitiveId value)`, so `id.Deconstruct(out var value);` unwraps the primitive.
+  (A single-element `var (value) = id;` is not legal C# — deconstruction declarations need at least two elements.)
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
   `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
   round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
