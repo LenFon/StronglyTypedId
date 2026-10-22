@@ -6,7 +6,7 @@
 
 	<!-- 打包 / 源码链接（common.props 引用） -->
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
+		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.402" />
 	</ItemGroup>
 
 	<!-- src：编译器层扩展与运行时库 -->
@@ -24,7 +24,7 @@
 		<!-- K1：属性测试（round-trip 不变式）。选 CsCheck 而非 FsCheck：纯 C#、无 F# 运行时依赖，
 		     且生成与收缩都基于 PCG，失败时能给出可复现的 seed。 -->
 		<PackageVersion Include="CsCheck" Version="4.9.1" />
-		<PackageVersion Include="Dapper" Version="2.1.35" />
+		<PackageVersion Include="Dapper" Version="2.1.89" />
 		<PackageVersion Include="FluentAssertions" Version="8.11.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />
@@ -33,17 +33,17 @@
 		     集成运行时测试用真实 SQLite 验证 Dapper 读写往返：驱动返回的 CLR 类型与基元不一致（枚举列 long、
 		     char / Guid 列 string、decimal 列 double），只有真库才能覆盖。版本必须与 EF Core 同一条 8.0.x 补丁线。
 		-->
-		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.32" />
+		<PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.13" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.32" />
 		<!--
 		     二进制序列化集成：MessagePack 与 BSON 的格式化器/序列化器都在「引用了才有」的门控之下，集成测试工程
 		     必须真的引用它们。两个都是 2026-10 的稳定版；MessagePack 2.5.302 缺 Int128 / UInt128 的格式化器，
 		     MongoDB.Bson 3.2.1 另外还缺 BigInteger —— 这正是 IsBinaryTextPrimitive 的由来。
 		-->
-		<PackageVersion Include="MessagePack" Version="2.5.302" />
-		<PackageVersion Include="MongoDB.Bson" Version="3.2.1" />
+		<PackageVersion Include="MessagePack" Version="3.1.12" />
+		<PackageVersion Include="MongoDB.Bson" Version="3.12.0" />
 		<PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
-		<PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.5.0" />
+		<PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.9.0" />
 		<!--
 		  不登记 Microsoft.NET.Test.Sdk / xunit.runner.visualstudio：.NET 10 SDK 起 MTP 不再支持 VSTest target，
 		  这两个包会把 dotnet test 拽回 VSTest 路径并直接报错。测试工程统一由 xunit.v3 自带的 MTP in-proc runner
@@ -66,6 +66,6 @@
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.32" />
-		<PackageVersion Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+		<PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0" />
 	</ItemGroup>
 </Project>
