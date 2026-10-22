@@ -1,0 +1,68 @@
+# Codecov 配置。放在仓库根，Codecov 自动读取。
+#
+# 覆盖率报告由 dotnet-coverage 采集，里面混着大量「跑测试用的代码」：测试工程自身、DocGen 工具，
+# 以及 Dapper / Microsoft.CodeAnalysis.Testing 这些测试依赖。它们把总覆盖率稀释到 40% 左右
+# （实测 6207/15491 行），于是「跌 1%」这种阈值永远不会被触发 —— 门槛形同虚设。
+#
+# 所以先用 ignore 把它们剔出去，只留真正发布到 nuget.org 的两个包：
+#   Len.StronglyTypedId / Len.StronglyTypedId.Generators
+# Testing 与 Testing.AutoFixture 尚未发布（common.props 里 IsPackable 默认 false，只有这两个包打开），
+# 把它们算进来只会稀释真实信号 —— 覆盖率应该衡量「发出去的东西」，而不是仓库里所有能编译的代码。
+#
+# 剔除后本机实测（2026-10-21，合并单报告口径，35 个文件 / 3919 行）：95.00%。
+# 拆开看：主包 18/21（85.71%）、生成器包 3705/3898（95.05%）。主包行数极少（几乎全是接口与特性），
+# 一个未覆盖的分支就能拉动 4 个百分点，看趋势时以生成器包为准。
+#
+# CI 按 TFM 分两条腿、各采一份报告、各带一个 flag（net8.0 / net10.0）上传，见 build-and-test.yml。
+# 两份报告在 Codecov 上是独立数据集：一份报告挂多个 flag 会把整份覆盖率重复计入每个 flag，所以必须
+# 「一条腿一份文件一个 flag」。合并后的整体覆盖率由 Codecov 自己按 flag 求并集，不需要本地合并。
+# （旧注释里的 96.83% / 3056 行是 2026-10-19 的口径，代码此后增长，已不适用。）
+
+coverage:
+  precision: 2
+  round: down
+  range: "90...100"
+
+  status:
+    # 整体覆盖率：与目标分支比较，允许 1% 的自然波动，不设绝对下限。
+    # 绝对下限（比如 95%）在重构、删代码、拆文件时会制造无意义的红。
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+        informational: false
+
+    # 新增/改动行：要求 80%，允许 5% 欠账。这条才是真正拦住「新代码没测试」的门槛。
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        informational: false
+
+comment:
+  # flags 段列出每个 flag 各自的覆盖率与行数，PR 里一眼能看出两条腿的差异。
+  layout: "reach,diff,flags,files"
+  behavior: default
+  # 覆盖率没变化就不发评论，避免每个 PR 都刷一条「0% 变化」。
+  require_changes: true
+
+# 两条腿在同一个 step 内并发跑，但两份报告仍是先后上传。不设这个值，Codecov 收到第一份报告就结算
+# 并评论，第二条腿的数字永远晚一步才补上（表现为评论里的整体覆盖率偏低、状态检查闪一下又变）。
+notify:
+  after_n_builds: 2
+
+# 只统计真正发布出去的两个包。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
+ignore:
+  - "test/**"
+  - "tools/**"
+  - "samples/**"
+  - "bench/**"
+  # 尚未发布的两个 Testing 包（见文件头）。它们有自己的测试，覆盖率很高，但既然不发出去，
+  # 就不该出现在发布物的覆盖率里 —— 否则「主包覆盖率」会被这两个包的行数摊薄。
+  - "src/Len.StronglyTypedId.Testing/**"
+  - "src/Len.StronglyTypedId.Testing.AutoFixture/**"
+  # 下面两条是保险：这两个依赖的源码路径来自嵌入 PDB 的虚拟路径（`/_/Dapper/...`），
+  # Codecov 通常无法映射回仓库而自动丢弃；显式写上，免得哪天映射规则变了又被算进来。
+  - "**/Dapper/**"
+  - "**/Microsoft.CodeAnalysis.Testing/**"
