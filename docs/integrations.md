@@ -118,15 +118,18 @@ the floating-point primitives are JSON numbers, an enum is its underlying number
 `integer` with no `format`. An id with a `Prefix` is always `string` with no `format`, because its
 canonical text form is text.
 
-`MapType<T>` registers the schema for the id **type**, not for one endpoint: the same mapping is used
-wherever the id appears — a property on a DTO, a route or query parameter, a response body, or a model
-nested inside another — so there is nothing per-endpoint to configure.
+`MapType<T>` registers the schema for the id **type**, not for one endpoint, so there is nothing
+per-endpoint to configure. Wherever the framework hands `ApiExplorer` the id type — a property on a DTO, a
+response body, a model nested inside another, an MVC controller parameter — the same mapping applies.
 
-One measured caveat, from `samples/Len.StronglyTypedId.Sample4` (`net8.0`,
-`Microsoft.AspNetCore.OpenApi` 8.0.0): a **Minimal API** route parameter is described by `ApiExplorer` as
+One measured caveat, from `samples/Len.StronglyTypedId.Sample4` (`net8.0`, Swashbuckle 6.5.0): a
+**Minimal API** route parameter is described by `ApiExplorer` as
 `string` — the framework sees an `IParsable` type and reports it as text — so `MapType` never gets a chance
 to apply, and that parameter's schema is a bare `type: string` with no `format`. Request and response
-bodies, and DTO properties, are mapped as usual.
+bodies, and DTO properties, are mapped as usual, and an MVC controller parameter is mapped too: it reaches
+`ApiExplorer` as the id type (`samples/Len.StronglyTypedId.Sample3` renders `/api/products/{id}` as
+`type: integer, format: int32`). The built-in [ASP.NET Core OpenAPI](#aspnetcore-openapi) integration does
+not have this gap.
 
 <a id="dapper"></a>
 
@@ -363,10 +366,16 @@ Each id is mapped to the schema of its underlying primitive, with the same `form
 
 The mechanism differs from Swashbuckle's: this one is an `IOpenApiSchemaTransformer` added through
 `AddSchemaTransformer`, so it rewrites only `type` and `format` on a schema the framework has already built
-and leaves everything else — description, `nullable`, `required`, examples — as it was. Swashbuckle's
-`MapType` instead replaces the schema for the type outright, with one that carries only `type` and `format`.
-Both recognise the id in parameters (through the parameter description) and in request / response bodies
-(through the JSON type info), and neither touches a schema that is not an id.
+and leaves everything else — description, `nullable`, `required`, examples — as it was. Because the framework
+keeps that schema as a named component, an id in a body shows up as `$ref: '#/components/schemas/OrderId'`
+rather than as an inline object. Swashbuckle's `MapType` instead replaces the schema for the type outright,
+with an inline one that carries only `type` and `format`.
+
+The two also differ in where they reach. Measured with `samples/Len.StronglyTypedId.Sample2` (`net10.0`,
+`Microsoft.AspNetCore.OpenApi` 10.0.13), route and query parameters do get `type: string, format: uuid`.
+Swashbuckle on `net8.0` (`Sample4`) leaves a **Minimal API** route parameter as a bare `type: string`,
+because `ApiExplorer` reports an `IParsable` parameter as `string` and `MapType` is keyed on the CLR type —
+see the [caveat](#swashbuckle) in that section. Neither integration touches a schema that is not an id.
 
 > This integration is independent of Swashbuckle: either, both, or neither may be present, and each generates
 > its own `ApplyTo` overload.

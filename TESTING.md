@@ -1,6 +1,6 @@
 # Len.StronglyTypedId.Testing
 
-Test helpers for [Len.StronglyTypedId](../README.md): create strongly typed ids with plausible values
+Test helpers for [Len.StronglyTypedId](https://github.com/lenfon/StronglyTypedId): create strongly typed ids with plausible values
 instead of hand-writing `OrderId.Create(Guid.NewGuid())` in every arrange block.
 
 Two packages:

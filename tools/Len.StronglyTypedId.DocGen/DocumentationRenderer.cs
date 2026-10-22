@@ -4,7 +4,7 @@ using Len.StronglyTypedId.Generators;
 namespace Len.StronglyTypedId.DocGen;
 
 /// <summary>
-/// 从生成器内部的判定数据渲染 README 的三张表。
+/// 从生成器内部的判定数据渲染文档里由 DocGen 维护的四张表。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,6 +13,7 @@ namespace Len.StronglyTypedId.DocGen;
 /// <list type="bullet">
 ///   <item>基元表 ← <see cref="SupportedPrimitiveTypes.DocumentedTypes"/>（<c>IsSupported</c> 的匹配集合由它派生）；</item>
 ///   <item>集成触发表 ← <see cref="StronglyTypedIdGenerator.DocumentedGenerators"/>（模块闸门登记表）；</item>
+///   <item>生成文件表 ← 同上，取 <c>FileNames</c> 列；</item>
 ///   <item>诊断表 ← <see cref="Descriptors"/>（规则 ID / 严重级别 / 标题）+ <see cref="DiagnosticDocumentation"/>（代码修复文案）。</item>
 /// </list>
 /// </remarks>
@@ -36,7 +37,7 @@ internal static class DocumentationRenderer
             rows);
     }
 
-    /// <summary>渲染「What gets generated」表。</summary>
+    /// <summary>渲染 README 的「What gets generated」表（只含产物与入口签名，不含文件名）。</summary>
     public static string RenderGeneratedCode(CultureInfo culture)
     {
         var rows = new List<IReadOnlyList<string>>();
@@ -48,6 +49,25 @@ internal static class DocumentationRenderer
 
         return MarkdownTable.Render(
             [Localize(culture, "Condition in the compilation", "编译中的条件"), Localize(culture, "Generated code", "生成的代码")],
+            rows);
+    }
+
+    /// <summary>
+    /// 渲染 docs 的「Generated files」表：与 <see cref="RenderGeneratedCode"/> 同一批登记项，
+    /// 但第二列换成文件名 —— 文件名只在调试 <c>EmitCompilerGeneratedFiles</c> 时才需要，
+    /// 放进 README 会把表格撑到必须横向滚动。
+    /// </summary>
+    public static string RenderGeneratedFiles(CultureInfo culture)
+    {
+        var rows = new List<IReadOnlyList<string>>();
+
+        foreach (var registration in StronglyTypedIdGenerator.DocumentedGenerators)
+        {
+            rows.Add([registration.Condition.For(culture), registration.FileNames.For(culture)]);
+        }
+
+        return MarkdownTable.Render(
+            [Localize(culture, "Condition in the compilation", "编译中的条件"), Localize(culture, "Generated files", "生成的文件")],
             rows);
     }
 

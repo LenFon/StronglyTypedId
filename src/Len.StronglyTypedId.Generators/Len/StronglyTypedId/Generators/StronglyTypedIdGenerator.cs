@@ -272,25 +272,30 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             static modules => modules.Any(static module => module.Name == "Len.StronglyTypedId.dll"),
             StronglyTypedIdCodeGenerator.Instance,
             new DocText("Always", "始终"),
-            new DocText(
-                "Core implementation → `<Namespace>.<TypeName>.g.cs`",
-                "核心实现 → `<命名空间>.<类型名>.g.cs`")),
+            new DocText("Core implementation", "核心实现"),
+            new DocText("`<Namespace>.<TypeName>.g.cs`", "`<命名空间>.<类型名>.g.cs`")),
         new CodeGeneratorRegistration(
             "System.Text.Json.dll",
             static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
             SystemTextJsonCodeGenerator.Instance,
             new DocText("`System.Text.Json` is referenced", "引用了 `System.Text.Json`"),
             new DocText(
-                "Nested `SystemTextJsonConverter` + `[JsonConverter]` → `…SystemTextJson.g.cs`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`",
-                "嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性 → `…SystemTextJson.g.cs`，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)` → `StronglyTypedIds.SystemTextJson.g.cs`")),
+                "Nested `SystemTextJsonConverter` + `[JsonConverter]`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)`",
+                "嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)`"),
+            new DocText(
+                "`…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`",
+                "`…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`")),
         new CodeGeneratorRegistration(
             "Newtonsoft.Json.dll",
             static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
             NewtonsoftJsonCodeGenerator.Instance,
             new DocText("`Newtonsoft.Json` ≥ 13.0.0 is referenced", "引用了 `Newtonsoft.Json` ≥ 13.0.0"),
             new DocText(
-                "Nested `NewtonsoftJsonConverter` + `[JsonConverter]` → `…NewtonsoftJson.g.cs`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`",
-                "嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性 → `…NewtonsoftJson.g.cs`，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)` → `StronglyTypedIds.NewtonsoftJson.g.cs`")),
+                "Nested `NewtonsoftJsonConverter` + `[JsonConverter]`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)`",
+                "嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)`"),
+            new DocText(
+                "`…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`",
+                "`…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`")),
         // 集成生成器走 HasModule（OrdinalIgnoreCase，模块名取自元数据读取器，大小写未必规范）。
         new CodeGeneratorRegistration(
             "Microsoft.EntityFrameworkCore.dll",
@@ -300,48 +305,64 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced **and** a `DbContext` overrides `ConfigureConventions`",
                 "引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0 **且**存在重写了 `ConfigureConventions` 的 `DbContext`"),
             new DocText(
-                "Nested `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs`",
-                "嵌套 `{TypeName}Converter` → `…EntityFrameworkCore.g.cs`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` → `StronglyTypedIds.EntityFrameworkCore.g.cs`")),
+                "Nested `{TypeName}Converter`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)`",
+                "嵌套 `{TypeName}Converter`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)`"),
+            new DocText(
+                "`…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs`",
+                "`…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs`")),
         new CodeGeneratorRegistration(
             "Swashbuckle.AspNetCore.SwaggerGen.dll",
             static modules => modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6),
             SwaggerCodeGenerator.Instance,
             new DocText("`Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced", "引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0"),
             new DocText(
-                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`",
-                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)` → `StronglyTypedIds.Swagger.g.cs`")),
+                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)`",
+                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)`"),
+            new DocText("`StronglyTypedIds.Swagger.g.cs`", "`StronglyTypedIds.Swagger.g.cs`")),
         new CodeGeneratorRegistration(
             "Dapper.dll",
             static modules => modules.HasModule("Dapper.dll", 2),
             DapperCodeGenerator.Instance,
             new DocText("`Dapper` ≥ 2.0.0 is referenced", "引用了 `Dapper` ≥ 2.0.0"),
             new DocText(
-                "Nested `{TypeName}TypeHandler` → `…Dapper.g.cs`, plus `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`",
-                "嵌套 `{TypeName}TypeHandler` → `…Dapper.g.cs`，以及 `StronglyTypedIds.ApplyTo()` → `StronglyTypedIds.Dapper.g.cs`")),
+                "Nested `{TypeName}TypeHandler`, plus `StronglyTypedIds.ApplyTo()`",
+                "嵌套 `{TypeName}TypeHandler`，以及 `StronglyTypedIds.ApplyTo()`"),
+            new DocText(
+                "`…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`",
+                "`…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`")),
         new CodeGeneratorRegistration(
             "MessagePack.dll",
             static modules => modules.HasModule("MessagePack.dll", 2),
             MessagePackCodeGenerator.Instance,
             new DocText("`MessagePack` ≥ 2.0.0 is referenced", "引用了 `MessagePack` ≥ 2.0.0"),
             new DocText(
-                "`{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`",
-                "`{TypeName}MessagePackFormatter` → `…MessagePack.g.cs`，以及 `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` → `StronglyTypedIds.MessagePack.g.cs`")),
+                "`{TypeName}MessagePackFormatter`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)`",
+                "`{TypeName}MessagePackFormatter`，以及 `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)`"),
+            new DocText(
+                "`…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`",
+                "`…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`")),
         new CodeGeneratorRegistration(
             "MongoDB.Bson.dll",
             static modules => modules.HasModule("MongoDB.Bson.dll", 3),
             MongoDbCodeGenerator.Instance,
             new DocText("`MongoDB.Bson` ≥ 3.0.0 is referenced", "引用了 `MongoDB.Bson` ≥ 3.0.0"),
             new DocText(
-                "`{TypeName}BsonSerializer` → `…MongoDb.g.cs`, plus `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`",
-                "`{TypeName}BsonSerializer` → `…MongoDb.g.cs`，以及 `StronglyTypedIds.RegisterBsonSerializers()` → `StronglyTypedIds.MongoDb.g.cs`")),
+                "`{TypeName}BsonSerializer`, plus `StronglyTypedIds.RegisterBsonSerializers()`",
+                "`{TypeName}BsonSerializer`，以及 `StronglyTypedIds.RegisterBsonSerializers()`"),
+            new DocText(
+                "`…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`",
+                "`…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`")),
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.OpenApi.dll",
             static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
             AspNetCoreOpenApiCodeGenerator.Instance,
             new DocText("`Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced", "引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0"),
             new DocText(
-                "`StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`",
-                "`StronglyTypedIds.ApplyTo(OpenApiOptions)` → `StronglyTypedIds.AspNetCoreOpenApi.g.cs`")),
+                "`StronglyTypedIds.ApplyTo(OpenApiOptions)`",
+                "`StronglyTypedIds.ApplyTo(OpenApiOptions)`"),
+            new DocText(
+                "`StronglyTypedIds.AspNetCoreOpenApi.g.cs`",
+                "`StronglyTypedIds.AspNetCoreOpenApi.g.cs`")),
         // MVC 的「门面 / 实现」拆分随 .NET 版本变化（.NET 8 落在 Abstractions、.NET 10 落在 Core），
         // 三者任一出现即视为 MVC 可用，保证真实消费者与测试画像判定一致。
         new CodeGeneratorRegistration(
@@ -354,8 +375,11 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade)",
                 "引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面）"),
             new DocText(
-                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs` (also powers Minimal API route constraints)",
-                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` → `StronglyTypedIds.AspNetCoreMvc.g.cs`（同时支撑 Minimal API 的路由约束）")),
+                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` (also powers Minimal API route constraints)",
+                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)`（同时支撑 Minimal API 的路由约束）"),
+            new DocText(
+                "`StronglyTypedIds.AspNetCoreMvc.g.cs`",
+                "`StronglyTypedIds.AspNetCoreMvc.g.cs`")),
         // 注册入口与核心生成器共用同一程序集门控，但分属两类；取集成生成器时按 IsCore 过滤，不会互相遮蔽。
         // 这两条不单独成行（DocText.Empty）：产物已写进对应核心生成器的 Documentation。
         new CodeGeneratorRegistration(
@@ -387,7 +411,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             Func<ImmutableArray<ModuleInfo>, bool> isEnabled,
             ICoreCodeGenerator generator,
             DocText condition,
-            DocText documentation)
+            DocText documentation,
+            DocText? fileNames = null)
         {
             AssemblyName = assemblyName;
             IsEnabled = isEnabled;
@@ -395,6 +420,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             IsCore = true;
             Condition = condition;
             Documentation = documentation;
+            FileNames = fileNames ?? DocText.Empty;
         }
 
         public CodeGeneratorRegistration(
@@ -402,7 +428,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             Func<ImmutableArray<ModuleInfo>, bool> isEnabled,
             IIntegrationCodeGenerator generator,
             DocText condition,
-            DocText documentation)
+            DocText documentation,
+            DocText? fileNames = null)
         {
             AssemblyName = assemblyName;
             IsEnabled = isEnabled;
@@ -410,6 +437,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             IsCore = false;
             Condition = condition;
             Documentation = documentation;
+            FileNames = fileNames ?? DocText.Empty;
         }
 
         public string AssemblyName { get; }
@@ -431,6 +459,16 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         /// README 集成表「Generated code」列的文案；空文案表示不单独成行。
         /// </summary>
         public DocText Documentation { get; }
+
+        /// <summary>
+        /// docs 的「Generated files」表「Generated files」列的文案：该集成产出的文件名。
+        /// </summary>
+        /// <remarks>
+        /// 与 <see cref="Documentation"/> 分开存放，是因为两者的读者不同：README 首屏只需要
+        /// 「生成什么 + 入口签名」，文件名属于调试 <c>EmitCompilerGeneratedFiles</c> 时才查的细节。
+        /// 合在一列会让 README 表格宽到必须横向滚动（实测 330 字符）。
+        /// </remarks>
+        public DocText FileNames { get; }
     }
 
     /// <summary>
