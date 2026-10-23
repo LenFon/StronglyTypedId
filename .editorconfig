@@ -102,7 +102,9 @@ dotnet_style_readonly_field = true:suggestion
 
 # 对象 / 集合初始化与空值处理。
 dotnet_style_object_initializer = true:suggestion
-dotnet_style_collection_initializer = true:suggestion
+# IDE0028（简化集合初始化）：`new List<int>() { 1, 2 }` → `new() { 1, 2 }`，`new int[] { … }` → `[…]`。
+# 提升为 warning 的理由与 IDE0022 相同：让「集合初始化该省掉重复类型名」这条习惯在错误列表里可见。
+dotnet_style_collection_initializer = true:warning
 dotnet_style_prefer_collection_expression = true:suggestion
 dotnet_style_coalesce_expression = true:suggestion
 dotnet_style_null_propagation = true:suggestion
@@ -184,6 +186,14 @@ dotnet_diagnostic.IDE0022.severity = warning
 #
 # IDE0007（用 var 代替显式类型）：对应 csharp_style_var_*。
 dotnet_diagnostic.IDE0007.severity = warning
+
+# IDE0028（简化集合初始化）：对应 dotnet_style_collection_initializer。
+# `var xs = new List<int>(); xs.Add(1);` 可写成 `new List<int> { 1 }`。
+# 与上面的风格声明是同一条规则的两种表达：`dotnet_diagnostic.*` 只管严重级别，
+# 不改变偏好方向。
+# 提升后暴露 1 处（StronglyTypedIdExtensions 的 ConditionalWeakTable 字段），已改为 `[]`，
+# 故不产生告警。注意该规则对 `new()` 与 `new T()` 都报，但对带参数的 `new(capacity)` 不报。
+dotnet_diagnostic.IDE0028.severity = warning
 
 # IDE0305（集合初始化可简化为集合表达式）：对应 dotnet_style_prefer_collection_expression。
 dotnet_diagnostic.IDE0305.severity = warning
