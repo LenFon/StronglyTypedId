@@ -38,6 +38,16 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 public static void ApplyTo(global::Microsoft.AspNetCore.Mvc.MvcOptions options)
                 {
+                    // 按类型去重：启动代码里重复调用（多个模块各自注册、或配置被复用）时，
+                    // 每次都 Insert 一个新实例会让 provider 列表无限增长，且绑定器被反复重建。
+                    foreach (var provider in options.ModelBinderProviders)
+                    {
+                        if (provider is StronglyTypedIdModelBinderProvider)
+                        {
+                            return;
+                        }
+                    }
+
                     options.ModelBinderProviders.Insert(0, new StronglyTypedIdModelBinderProvider());
                 }
 

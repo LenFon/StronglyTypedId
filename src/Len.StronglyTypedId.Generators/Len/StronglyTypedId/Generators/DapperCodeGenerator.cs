@@ -151,37 +151,167 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             _parseNestedIndent + $"return {defaultValue};",
             _parseStatementIndent + "}",
             string.Empty,
-
-            // 驱动已经返回基元本身的 CLR 类型时直接还原（SQL Server / PostgreSQL 的常规情形），
-            // 省掉一次转换；只有类型对不上时才走下面的逐基元转换。
-            _parseStatementIndent + $"if (value is {idInfo.PrimitiveIdTypeName} primitiveValue)",
-            _parseStatementIndent + "{",
-            _parseNestedIndent + $"return {create}(primitiveValue);",
-            _parseStatementIndent + "}",
-            string.Empty,
         };
 
         if (idInfo.IsEnum)
         {
-            // 枚举列通常以底层整数返回（SQLite 一律 Int64），也可能以成员名文本返回。
-            // 两条路径各自成句：拼成一个三元表达式会有近 300 字符的单行。
-            var primitive = idInfo.PrimitiveIdTypeName;
-
-            lines.Add(_parseStatementIndent + "if (value is string enumText)");
-            lines.Add(_parseStatementIndent + "{");
-            lines.Add(_parseNestedIndent + $"return {create}(({primitive})global::System.Enum.Parse(typeof({primitive}), enumText));");
-            lines.Add(_parseStatementIndent + "}");
-            lines.Add(string.Empty);
-            lines.Add(_parseStatementIndent + $"return {create}(({primitive})global::System.Enum.ToObject(typeof({primitive}), value!));");
+            AppendEnumParseBody(lines, idInfo, create);
         }
         else
         {
+            // 驱动已经返回基元本身的 CLR 类型时直接还原（SQL Server / PostgreSQL 的常规情形），
+            // 省掉一次转换；只有类型对不上时才走下面的逐基元转换。
+            lines.Add(_parseStatementIndent + $"if (value is {idInfo.PrimitiveIdTypeName} primitiveValue)");
+            lines.Add(_parseStatementIndent + "{");
+            lines.Add(_parseNestedIndent + $"return {create}(primitiveValue);");
+            lines.Add(_parseStatementIndent + "}");
+            lines.Add(string.Empty);
             lines.Add(_parseStatementIndent + $"return {create}({GetConversionExpression(idInfo)});");
         }
 
         lines.Add(_parseBodyIndent + "}");
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// 追加枚举基元的 <c>Parse</c> 方法体：直通路径、文本路径、数值路径，三者共用同一套「已定义」校验。
+    /// </summary>
+    /// <remarks>
+    /// 三条路径必须共用同一套收紧规则，否则同一个非法取值会因为驱动返回的 CLR 类型不同而被接受或拒绝：
+    /// <list type="bullet">
+    /// <item>文本路径：<c>Enum.TryParse</c> 对 <c>"999"</c>、<c>"1,2"</c> 一律返回 true，必须再校验已定义；</item>
+    /// <item>数值路径：<c>Enum.ToObject</c> 对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c> 枚举会变成 <c>44</c>，
+    /// 甚至恰好命中某个已定义成员），对浮点数静默截断（<c>1.5d</c> 变成 <c>0</c>）。故必须先按底层类型做范围检查，
+    /// 并拒绝带小数部分的取值，再校验已定义；</item>
+    /// <item>直通路径：驱动直接返回枚举类型时同样要校验，不能因为是「已经是枚举」就放行。</item>
+    /// </list>
+    /// </remarks>
+    private static void AppendEnumParseBody(List<string> lines, StronglyTypedIdInfo idInfo, string create)
+    {
+        var primitive = idInfo.PrimitiveIdTypeName;
+
+        // 底层整型：数值路径先按它做范围检查，再交给 Enum.ToObject。非枚举基元不会走到这里。
+        var underlying = idInfo.EnumUnderlyingTypeName
+            ?? throw new InvalidOperationException($"枚举基元“{primitive}”缺少底层类型信息。");
+
+        // 直通路径：驱动直接返回枚举类型。
+        AppendGuardedEnumReturn(lines, idInfo, create, $"value is {primitive} primitiveValue", "primitiveValue", _parseStatementIndent);
+
+        // 文本路径：忽略大小写（驱动的大小写约定各不相同，而 STJ 的字典键路径同样用 ignoreCase）。
+        var textConditions = new List<string>
+        {
+            $"global::System.Enum.TryParse<{primitive}>(enumText, ignoreCase: true, out var enumValue)",
+        };
+
+        if (GetEnumValidityCondition(idInfo, "enumValue") is { } textValidity)
+        {
+            textConditions.Add(textValidity);
+        }
+
+        lines.Add(_parseStatementIndent + "if (value is string enumText)");
+        lines.Add(_parseStatementIndent + "{");
+        lines.Add(_parseNestedIndent + "if (" + string.Join("\n" + _parseNestedIndent + "    && ", textConditions) + ")");
+        lines.Add(_parseNestedIndent + "{");
+        lines.Add(_parseNestedIndent + $"    return {create}(enumValue);");
+        lines.Add(_parseNestedIndent + "}");
+        lines.Add(string.Empty);
+        lines.Add(_parseNestedIndent + $"throw new global::System.ArgumentException($\"'{{enumText}}' is not a valid value for {{typeof({primitive})}}.\", nameof(value));");
+        lines.Add(_parseStatementIndent + "}");
+        lines.Add(string.Empty);
+
+        // 数值路径：先归一化成 decimal（覆盖全部数值 CLR 类型，并让 NaN / ±Infinity 抛 OverflowException），
+        // 拒绝带小数部分的取值，再按底层类型做范围检查 —— 这三步都在 Enum.ToObject 之前完成，
+        // 因为它自己既不检查范围也不检查小数。bool / char / DateTime 等非数值类型不进入这条路径。
+        lines.Add(_parseStatementIndent + "if (value is byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal)");
+        lines.Add(_parseStatementIndent + "{");
+        lines.Add(_parseNestedIndent + "try");
+        lines.Add(_parseNestedIndent + "{");
+        lines.Add(_parseNestedIndent + $"    var numeric = global::System.Convert.ToDecimal(value, {InvariantCulture});");
+        lines.Add(string.Empty);
+        lines.Add(_parseNestedIndent + "    if (numeric == global::System.Decimal.Truncate(numeric))");
+        lines.Add(_parseNestedIndent + "    {");
+        lines.Add(_parseNestedIndent + $"        var underlyingValue = ({underlying})global::System.Convert.ChangeType(numeric, typeof({underlying}), {InvariantCulture});");
+        lines.Add(_parseNestedIndent + $"        var enumValue = ({primitive})global::System.Enum.ToObject(typeof({primitive}), underlyingValue);");
+        lines.Add(string.Empty);
+
+        if (GetEnumValidityCondition(idInfo, "enumValue") is { } numericValidity)
+        {
+            lines.Add(_parseNestedIndent + $"        if ({numericValidity})");
+            lines.Add(_parseNestedIndent + "        {");
+            lines.Add(_parseNestedIndent + $"            return {create}(enumValue);");
+            lines.Add(_parseNestedIndent + "        }");
+        }
+        else
+        {
+            lines.Add(_parseNestedIndent + $"        return {create}(enumValue);");
+        }
+
+        lines.Add(_parseNestedIndent + "    }");
+        lines.Add(_parseNestedIndent + "}");
+        lines.Add(_parseNestedIndent + "catch (global::System.OverflowException)");
+        lines.Add(_parseNestedIndent + "{");
+        lines.Add(_parseNestedIndent + "}");
+        lines.Add(_parseNestedIndent + "catch (global::System.InvalidCastException)");
+        lines.Add(_parseNestedIndent + "{");
+        lines.Add(_parseNestedIndent + "}");
+        lines.Add(_parseStatementIndent + "}");
+        lines.Add(string.Empty);
+        lines.Add(_parseStatementIndent + $"throw new global::System.ArgumentException($\"'{{value}}' is not a valid value for {{typeof({primitive})}}.\", nameof(value));");
+    }
+
+    /// <summary>
+    /// 追加「匹配到枚举值且取值已定义就返回，否则落到后面的统一抛错」的语句块。
+    /// </summary>
+    /// <remarks>
+    /// 全部位都已定义的 <c>[Flags]</c> 枚举没有可校验的条件，此时直接返回、不产出抛错分支 ——
+    /// 否则 <c>return</c> 之后的 <c>throw</c> 是不可达代码（CS0162）。
+    /// </remarks>
+    private static void AppendGuardedEnumReturn(
+        List<string> lines,
+        StronglyTypedIdInfo idInfo,
+        string create,
+        string pattern,
+        string variableName,
+        string indent)
+    {
+        lines.Add(indent + $"if ({pattern})");
+        lines.Add(indent + "{");
+
+        if (GetEnumValidityCondition(idInfo, variableName) is { } validity)
+        {
+            lines.Add(indent + $"    if ({validity})");
+            lines.Add(indent + "    {");
+            lines.Add(indent + $"        return {create}({variableName});");
+            lines.Add(indent + "    }");
+            lines.Add(string.Empty);
+            lines.Add(indent + $"    throw new global::System.ArgumentException($\"'{{value}}' is not a valid value for {{typeof({idInfo.PrimitiveIdTypeName})}}.\", nameof(value));");
+        }
+        else
+        {
+            lines.Add(indent + $"    return {create}({variableName});");
+        }
+
+        lines.Add(indent + "}");
+        lines.Add(string.Empty);
+    }
+
+    /// <summary>
+    /// 取「枚举值是否落在已定义取值内」的条件；<c>[Flags]</c> 枚举的全部位都已定义时返回 <see langword="null"/>（无需校验）。
+    /// </summary>
+    private static string? GetEnumValidityCondition(StronglyTypedIdInfo idInfo, string variableName)
+    {
+        var primitive = idInfo.PrimitiveIdTypeName;
+
+        if (!idInfo.IsFlagsEnum)
+        {
+            return $"global::System.Enum.IsDefined(typeof({primitive}), {variableName})";
+        }
+
+        // [Flags] 的合法取值本就是位组合，IsDefined 会误杀；改为「不许出现未定义的位」。
+        return idInfo.FlagsEnumUndefinedBitsMask is { } undefinedBits
+            ? $"(unchecked((ulong){variableName}) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL"
+            : null;
     }
 
     /// <summary>

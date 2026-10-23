@@ -75,7 +75,37 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
         var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
 
         // 1.x 的 Type 是字符串字面量；2.x 的 Type 是 Microsoft.OpenApi.JsonSchemaType 枚举。
-        var typeExpression = useOpenApiV2
+        var typeExpression = GetTypeExpression(type, useOpenApiV2);
+
+        var primitiveSchema = format is null
+            ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
+            : $$"""new {{schemaTypeName}} { Type = {{typeExpression}}, Format = "{{format}}" }""";
+
+        if (!idInfo.IsObjectJsonShape)
+        {
+            return primitiveSchema;
+        }
+
+        // JsonShape.Object 的线上报文是 {"value": <基元>}，schema 必须照着写，否则生成的客户端按裸基元收发。
+        // 2.x 的 Properties 值是 IOpenApiSchema（接口），不能用 Dictionary<string, OpenApiSchema> 顶替 —— 泛型不变。
+        var propertyValueType = useOpenApiV2
+            ? "global::Microsoft.OpenApi.IOpenApiSchema"
+            : schemaTypeName;
+
+        var objectTypeExpression = useOpenApiV2
+            ? "global::Microsoft.OpenApi.JsonSchemaType.Object"
+            : "\"object\"";
+
+        return $"new {schemaTypeName} {{ Type = {objectTypeExpression}, "
+            + $"Properties = new global::System.Collections.Generic.Dictionary<string, {propertyValueType}> {{ [\"value\"] = {primitiveSchema} }}, "
+            + "Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } }";
+    }
+
+    /// <summary>
+    /// 取 OpenAPI <c>schema.Type</c> 的表达式。
+    /// </summary>
+    private static string GetTypeExpression(string type, bool useOpenApiV2)
+        => useOpenApiV2
             ? type switch
             {
                 PrimitiveIdSchemaMap.String => "global::Microsoft.OpenApi.JsonSchemaType.String",
@@ -84,9 +114,4 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                 _ => "global::Microsoft.OpenApi.JsonSchemaType.String",
             }
             : "\"" + type + "\"";
-
-        return format is null
-            ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
-            : $$"""new {{schemaTypeName}} { Type = {{typeExpression}}, Format = "{{format}}" }""";
-    }
 }

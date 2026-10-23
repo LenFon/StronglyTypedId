@@ -209,8 +209,16 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
         }
         else
         {
-            lines.Add(_nestedIndent + $"return {idInfo.FullyQualifiedName}.Create(");
-            lines.Add(_nestedIndent + $"    {FormatterResolverExtensions}.GetFormatterWithVerify<{idInfo.PrimitiveIdTypeName}>(options.Resolver).Deserialize(ref reader, options));");
+            // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
+            // 它会穿透 MessagePackSerializer —— 而格式化器的契约要求失败一律抛 MessagePackSerializationException。
+            lines.Add(_nestedIndent + $"var value = {FormatterResolverExtensions}.GetFormatterWithVerify<{idInfo.PrimitiveIdTypeName}>(options.Resolver).Deserialize(ref reader, options);");
+            lines.Add(string.Empty);
+            lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id))");
+            lines.Add(_nestedIndent + "{");
+            lines.Add(_nestedIndent + "    return id;");
+            lines.Add(_nestedIndent + "}");
+            lines.Add(string.Empty);
+            lines.Add(_nestedIndent + $"throw new global::MessagePack.MessagePackSerializationException(\"Cannot convert the MessagePack value to a {idInfo.Name}.\");");
         }
 
         lines.Add(_statementIndent + "}");

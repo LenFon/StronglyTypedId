@@ -1,20 +1,18 @@
 ﻿namespace Len.StronglyTypedId;
 
 /// <summary>
-/// 一次遍历算出的强类型 Id 发现结果，同时给出「含嵌套」与「排除嵌套」两份视图。
+/// 一次遍历算出的强类型 Id 发现结果，供集成生成器取用。
 /// </summary>
+/// <remarks>
+/// 核心生成器不走这里：它按 <c>[StronglyTypedId]</c> 逐个触发，拿到的是单个 <see cref="StronglyTypedIdInfo"/>，
+/// 因此不需要「含嵌套」的视图。
+/// </remarks>
 internal readonly record struct DiscoveredIds
 {
-    private DiscoveredIds(ImmutableArray<StronglyTypedIdInfo> all, ImmutableArray<StronglyTypedIdInfo> external)
+    private DiscoveredIds(ImmutableArray<StronglyTypedIdInfo> external)
     {
-        All = all;
         External = external;
     }
-
-    /// <summary>
-    /// 含声明在泛型包含类型内部的全部强类型 Id，供核心生成器使用。
-    /// </summary>
-    public ImmutableArray<StronglyTypedIdInfo> All { get; }
 
     /// <summary>
     /// 排除声明在泛型包含类型内部的子集，供集成生成器使用。
@@ -28,14 +26,11 @@ internal readonly record struct DiscoveredIds
         => [.. External.Where(idInfo => idInfo.Supports(integration))];
 
     /// <summary>
-    /// 合并「引用程序集中已实现 <c>IStronglyTypedId</c> 的类型」与「本次编译声明的强类型 Id」并去重，一次算出两份视图。
+    /// 合并「引用程序集中已实现 <c>IStronglyTypedId</c> 的类型」与「本次编译声明的强类型 Id」并去重，再排除嵌套在泛型容器里的。
     /// </summary>
     public static DiscoveredIds Create(
         ImmutableArray<StronglyTypedIdInfo> declaredInfos,
         ImmutableArray<ModuleInfo> modules)
-    {
-        var all = StronglyTypedIdDiscovery.Discover(declaredInfos, modules).ToImmutableArray();
-
-        return new DiscoveredIds(all, [.. all.Where(static idInfo => !idInfo.IsInGenericContainer)]);
-    }
+        => new([.. StronglyTypedIdDiscovery.Discover(declaredInfos, modules)
+            .Where(static idInfo => !idInfo.IsInGenericContainer)]);
 }

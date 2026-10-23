@@ -21,12 +21,16 @@ internal static class GeneratedCode
     internal static readonly string Version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
 
     /// <summary>
-    /// 把 <paramref name="code"/> 的换行符统一为模板自身使用的风格。
+    /// 把 <paramref name="code"/> 的换行符统一为 CRLF（模板源码自身的风格）。
     /// </summary>
+    /// <remarks>
+    /// 输入里没有 <c>'\r'</c> 时说明全是 LF，此时保持原样：模板来自 CRLF 源文件，这条分支实际不可达，
+    /// 保留它只是为了让「纯 LF 输入」不被意外改写。
+    /// </remarks>
     public static string NormalizeLineEndings(string code)
         => code.IndexOf('\r') >= 0
             ? code.Replace("\r\n", "\n").Replace("\n", "\r\n")
-            : code.Replace("\r\n", "\n");
+            : code;
 
     /// <summary>
     /// 各生成器产出的源文件统一文件头：<c>// &lt;auto-generated /&gt;</c> 注释、命名空间声明与 <c>#nullable

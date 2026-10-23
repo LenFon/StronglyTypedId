@@ -23,8 +23,8 @@ internal sealed record ModuleIdentity
     /// </summary>
     public ModuleInfo ResolveAssembly(Compilation compilation)
         => MetadataReference is CompilationReference compilationReference
-            ? new ModuleInfo(Name, Version, MetadataReference, compilationReference.Compilation.Assembly)
-            : new ModuleInfo(Name, Version, MetadataReference, compilation.GetAssemblyOrModuleSymbol(MetadataReference) as IAssemblySymbol);
+            ? new ModuleInfo(Name, Version, compilationReference.Compilation.Assembly)
+            : new ModuleInfo(Name, Version, compilation.GetAssemblyOrModuleSymbol(MetadataReference) as IAssemblySymbol);
 
     /// <summary>
     /// 按「程序集名 + 完整版本号」判定模块等价性，与 <see cref="ModuleInfo.Comparer"/> 同一口径。

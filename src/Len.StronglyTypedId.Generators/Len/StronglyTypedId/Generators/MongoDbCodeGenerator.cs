@@ -93,6 +93,13 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                     /// per process, before the first document is serialized. Registration is idempotent: an already
                     /// registered serializer is left untouched.
                     /// <para>
+                    /// "Left untouched" includes a serializer someone else registered for the same id type: the driver's
+                    /// <c>TryRegisterSerializer</c> reports <see langword="false"/> and keeps the existing one, so a
+                    /// conflicting registration silently wins. This is deliberate — overwriting would break the
+                    /// idempotency above — but it means a serializer registered elsewhere takes precedence over the
+                    /// generated one for that id.
+                    /// </para>
+                    /// <para>
                     /// Guid-backed ids also need a Guid representation: since driver 3.0 there is no global default, and
                     /// serializing a Guid without one throws. Register a <c>GuidSerializer</c> with the representation your
                     /// existing data uses before serializing.
@@ -199,8 +206,16 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
         }
         else
         {
-            lines.Add(_nestedIndent + $"return {idInfo.FullyQualifiedName}.Create(");
-            lines.Add(_nestedIndent + $"    global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<{idInfo.PrimitiveIdTypeName}>().Deserialize(context, args));");
+            // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
+            // 它会穿透 BsonSerializer —— 而 BSON 序列化器的契约要求失败一律抛 BsonSerializationException。
+            lines.Add(_nestedIndent + $"var value = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<{idInfo.PrimitiveIdTypeName}>().Deserialize(context, args);");
+            lines.Add(string.Empty);
+            lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id))");
+            lines.Add(_nestedIndent + "{");
+            lines.Add(_nestedIndent + "    return id;");
+            lines.Add(_nestedIndent + "}");
+            lines.Add(string.Empty);
+            lines.Add(_nestedIndent + $"throw new global::MongoDB.Bson.BsonSerializationException(\"Cannot convert the BSON value to a {idInfo.Name}.\");");
         }
 
         lines.Add(_statementIndent + "}");

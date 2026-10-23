@@ -26,7 +26,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
             {
                 var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
 
-                return $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(type, useOpenApiV2)}, {GetFormatLiteral(format)}),";
+                return $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(type, useOpenApiV2)}, {GetFormatLiteral(format)}, {(idInfo.IsObjectJsonShape ? "true" : "false")}),";
             })
             .ToArray();
 
@@ -44,6 +44,16 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
             ? "global::Microsoft.OpenApi.JsonSchemaType"
             : "string";
 
+        // JsonShape.Object 的线上报文是 {"value": <基元>}。框架按 JsonTypeInfo 构建的 schema 认不出自定义转换器，
+        // 只会留下空 schema，故这里显式写入对象形态；2.x 的 Properties 值是 IOpenApiSchema 接口（泛型不变）。
+        var objectTypeLiteral = useOpenApiV2
+            ? "global::Microsoft.OpenApi.JsonSchemaType.Object"
+            : "\"object\"";
+
+        var propertyValueType = useOpenApiV2
+            ? "global::Microsoft.OpenApi.IOpenApiSchema"
+            : schemaTypeName;
+
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
             {
@@ -52,7 +62,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreOpenApiCodeGenerator), version)}}
                 class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer
                 {
-                    private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, ({{schemaTypeValueType}} Type, string? Format)> _schemas = new()
+                    private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, ({{schemaTypeValueType}} Type, string? Format, bool IsObject)> _schemas = new()
                     {
             {{string.Join("\n", schemaEntries)}}
                     };
@@ -73,8 +83,22 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                         if ((parameterType is not null && _schemas.TryGetValue(parameterType, out var entry))
                             || (jsonType is not null && _schemas.TryGetValue(jsonType, out entry)))
                         {
-                            schema.Type = entry.Type;
-                            schema.Format = entry.Format;
+                            if (entry.IsObject)
+                            {
+                                // 对象形态：{"value": <基元>}，value 必填。
+                                schema.Type = {{objectTypeLiteral}};
+                                schema.Format = null;
+                                schema.Properties = new global::System.Collections.Generic.Dictionary<string, {{propertyValueType}}>
+                                {
+                                    ["value"] = new {{schemaTypeName}} { Type = entry.Type, Format = entry.Format },
+                                };
+                                schema.Required = new global::System.Collections.Generic.HashSet<string> { "value" };
+                            }
+                            else
+                            {
+                                schema.Type = entry.Type;
+                                schema.Format = entry.Format;
+                            }
                         }
 
                         return global::System.Threading.Tasks.Task.CompletedTask;

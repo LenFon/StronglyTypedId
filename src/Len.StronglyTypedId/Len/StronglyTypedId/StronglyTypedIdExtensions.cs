@@ -1,5 +1,5 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace Len.StronglyTypedId;
 
@@ -9,9 +9,13 @@ namespace Len.StronglyTypedId;
 public static class StronglyTypedIdExtensions
 {
     // 类型 → 基元类型（null 表示「不是强类型 Id」）。这三个入口常落在模型绑定、EF 转换器、
-    // DI 注册这类热路径上，每次判定都要 GetInterfaces() + LINQ，而对同一个 Type 结果恒定。
-    // Type 本身被运行时根住，字典不会阻止卸载，故直接以 Type 为键。
-    private static readonly ConcurrentDictionary<Type, Type?> _primitiveIdTypes = new();
+    // DI 注册这类热路径上，每次判定都要遍历 GetInterfaces()，而对同一个 Type 结果恒定。
+    //
+    // 键必须弱引用：Type 持有 Assembly，Assembly 持有 AssemblyLoadContext。用普通字典时，
+    // 插件热重载 / 测试宿主反复加载程序集，每加载一次就永久钉住一个可回收 ALC 及其全部类型。
+    // ConditionalWeakTable 是 ephemeron —— 值只在键可达时可达，键被回收后整条记录随之消失。
+    // 值用 StrongBox 是为了能把「不是 Id」这个 null 结果也缓存下来。
+    private static readonly ConditionalWeakTable<Type, StrongBox<Type?>> _primitiveIdTypes = [];
 
     /// <summary>
     /// Gets the primitive type wrapped by the specified strongly typed id.
@@ -40,14 +44,16 @@ public static class StronglyTypedIdExtensions
     {
         ArgumentNullException.ThrowIfNull(type);
 
-        // 手写 TryGetValue / TryAdd 而不是 GetOrAdd：后者的工厂委托无法携带
-        // DynamicallyAccessedMembers 标注，裁剪分析器会报 IL2091。并发下两边算出的值相同，谁先写入都一样。
-        if (!_primitiveIdTypes.TryGetValue(type, out primitiveIdType))
+        // 手写 TryGetValue / GetValue 而不是单个 GetValue(key, ResolvePrimitiveIdType)：后者的回调委托
+        // 无法携带 DynamicallyAccessedMembers 标注，裁剪分析器会报 IL2091。这里的回调只装箱已算好的结果，
+        // 不碰类型成员；并发下两边算出的值相同，谁先写入都一样。
+        if (!_primitiveIdTypes.TryGetValue(type, out var boxed))
         {
-            primitiveIdType = ResolvePrimitiveIdType(type);
-            _primitiveIdTypes.TryAdd(type, primitiveIdType);
+            var resolved = ResolvePrimitiveIdType(type);
+            boxed = _primitiveIdTypes.GetValue(type, _ => new StrongBox<Type?>(resolved));
         }
 
+        primitiveIdType = boxed.Value;
         return primitiveIdType is not null;
     }
 
@@ -67,11 +73,30 @@ public static class StronglyTypedIdExtensions
             return null;
         }
 
-        var stronglyTypedIdInterface = candidate.GetInterfaces()
-            .FirstOrDefault(interfaceType => interfaceType.IsGenericType
-                && interfaceType.GetGenericTypeDefinition() == typeof(IStronglyTypedId<,>));
+        // 一个类型理论上可以同时实现多个 IStronglyTypedId<,>（例如手写类型或跨版本继承）。
+        // 此时应选 TSelf 恰好等于该类型的那个接口 —— 那才是「它自己」的 Id 契约；
+        // 直接取 FirstOrDefault 会让结果取决于接口枚举顺序，同一类型在不同运行时可给出不同基元。
+        Type? fallback = null;
 
-        // IStronglyTypedId<TSelf, TPrimitiveId> 的第二个类型实参即底层基元类型。
-        return stronglyTypedIdInterface?.GetGenericArguments()[1];
+        foreach (var interfaceType in candidate.GetInterfaces())
+        {
+            if (!interfaceType.IsGenericType
+                || interfaceType.GetGenericTypeDefinition() != typeof(IStronglyTypedId<,>))
+            {
+                continue;
+            }
+
+            var arguments = interfaceType.GetGenericArguments();
+
+            if (arguments[0] == candidate)
+            {
+                // IStronglyTypedId<TSelf, TPrimitiveId> 的第二个类型实参即底层基元类型。
+                return arguments[1];
+            }
+
+            fallback ??= arguments[1];
+        }
+
+        return fallback;
     }
 }

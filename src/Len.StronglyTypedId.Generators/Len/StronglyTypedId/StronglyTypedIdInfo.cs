@@ -125,10 +125,12 @@ internal readonly record struct StronglyTypedIdInfo
         "System.TimeOnly");
 
     /// <summary>
-    /// 二进制序列化（MessagePack / BSON）没有可靠原生表示的基元。
+    /// 二进制序列化（MessagePack / BSON）走规范文本形的基元。
     /// </summary>
     /// <remarks>
-    /// MessagePack 2.5.302 缺 <c>Int128</c> / <c>UInt128</c> 的格式化器，MongoDB.Bson 3.2.1 还缺 <c>BigInteger</c>；三者统一改走规范文本形，产物更容易核对。
+    /// 两个集成走文本形的理由已经不同：BSON 3.x 至今没有 <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 的
+    /// 序列化器（写出来是空文档、读回 0，静默丢数据），那边仍然必需；MessagePack 3.x 已能原生编码三者，
+    /// 本库继续用文本形只是为了与 2.x 时代的载荷保持可读。改掉会变更线上格式，故不随依赖升级而调整。
     /// </remarks>
     private static readonly ImmutableHashSet<string> _binaryTextPrimitives = ImmutableHashSet.Create(
         StringComparer.Ordinal,
@@ -180,6 +182,9 @@ internal readonly record struct StronglyTypedIdInfo
         IsEnum = primitiveIdType.TypeKind == TypeKind.Enum;
         IsFlagsEnum = IsEnum && HasFlagsAttribute(primitiveIdType);
         FlagsEnumUndefinedBitsMask = IsFlagsEnum ? GetFlagsEnumUndefinedBitsMask(primitiveIdType) : null;
+        EnumUnderlyingTypeName = IsEnum && primitiveIdType is INamedTypeSymbol { EnumUnderlyingType: { } enumUnderlying }
+            ? enumUnderlying.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            : null;
         // 枚举继承的 IFormattable / ISpanFormattable 已被标记 [Obsolete]：透出会 CS0618，不透出又会 CS0535。
         IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
         IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName) && !IsEnum;
@@ -195,9 +200,9 @@ internal readonly record struct StronglyTypedIdInfo
         // Newtonsoft.Json 的 JsonWriter.WriteValue 不认识这几个类型，会抛 JsonWriterException；
         // 读侧同理。它们的转换器因此也改走规范文本形。
         IsNewtonsoftTextPrimitive = IsNewtonsoftTextPrimitiveCore(primitiveIdType);
-        // MessagePack / BSON 同理：缺原生表示时改走规范文本形（见 _binaryTextPrimitives）。
+        // MessagePack / BSON 同理：走文本形的基元见 _binaryTextPrimitives。
         IsBinaryTextPrimitive = _binaryTextPrimitives.Contains(primitiveIdType.ToDisplayString());
-        // 属性只查一次：下面五项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做五遍。
+        // 属性只查一次：下面九项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做九遍。
         var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
         ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaultValidatorName;
         NormalizerName = AttributeReader.GetString(attribute, NormalizerArgumentName) ?? defaultNormalizerName;
@@ -353,6 +358,16 @@ internal readonly record struct StronglyTypedIdInfo
     /// 全部位都已定义时（典型是 <c>All = -1</c>）为 <see langword="null"/>，调用方据此跳过校验。
     /// </remarks>
     public ulong? FlagsEnumUndefinedBitsMask { get; }
+
+    /// <summary>
+    /// 基元枚举的底层整型类型名（含 <c>global::</c> 前缀）；非枚举基元为 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 驱动可能把枚举列返回成 <c>long</c> / <c>double</c> 等与底层类型不同的 CLR 类型。还原时必须先按这个
+    /// 类型做范围检查再交给 <c>Enum.ToObject</c> —— 后者对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c>
+    /// 枚举会变成 <c>44</c>，甚至恰好命中某个已定义成员），对浮点数则静默截断。
+    /// </remarks>
+    public string? EnumUnderlyingTypeName { get; }
 
     /// <summary>
     /// 基元类型是否实现 <c>System.IFormattable</c>。
@@ -516,24 +531,82 @@ internal readonly record struct StronglyTypedIdInfo
             IntegrationsArgumentName));
 
     /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 的默认验证器方法名；未声明时为 <see langword="null"/>。
+    /// </summary>
+    public static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
+        => AttributeReader.GetString(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            ValidatorArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Normalizer = …)]</c> 的默认归一化方法名；未声明时为 <see langword="null"/>。
+    /// </summary>
+    public static string? GetAssemblyDefaultNormalizer(IAssemblySymbol assembly)
+        => AttributeReader.GetString(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            NormalizerArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(…))]</c> 的默认异常类型符号；未声明时为 <see langword="null"/>。
+    /// </summary>
+    public static ITypeSymbol? GetAssemblyDefaultExceptionTypeSymbol(IAssemblySymbol assembly)
+        => AttributeReader.GetType(
+            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
+            ExceptionTypeArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(…))]</c> 的默认异常类型显示名；未声明时为 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 生成器需要的是可直接写进产物的文本，分析器需要的是符号（要校验它是不是异常类型），故两个入口并存。
+    /// </remarks>
+    public static string? GetAssemblyDefaultExceptionType(IAssemblySymbol assembly)
+        => GetAssemblyDefaultExceptionTypeSymbol(assembly)?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    /// <summary>
     /// 解析强类型 Id 所包装的基元类型符号。
     /// </summary>
+    /// <remarks>
+    /// 一个类型可以同时实现多个 <c>IStronglyTypedId&lt;,&gt;</c>（手写类型或跨版本继承）。此时必须选
+    /// <c>TSelf</c> 恰好等于该类型的那个接口 —— 那才是「它自己」的契约。直接取 <c>FirstOrDefault</c>
+    /// 会让结果取决于接口枚举顺序，与运行时的 <c>StronglyTypedIdExtensions.ResolvePrimitiveIdType</c>
+    /// 给出不同答案（模型绑定器与 EF 转换器按后者选转换器）。
+    /// </remarks>
     private static ITypeSymbol GetPrimitiveIdType(ITypeSymbol type)
     {
         if (type is INamedTypeSymbol namedType)
         {
-            var stronglyTypedIdInterface = namedType.Interfaces.FirstOrDefault(IsStronglyTypedIdInterface);
+            ITypeSymbol? fallback = null;
 
-            if (stronglyTypedIdInterface is not null)
+            foreach (var candidate in namedType.Interfaces)
             {
-                return stronglyTypedIdInterface.TypeArguments[1];
+                if (!IsStronglyTypedIdInterface(candidate))
+                {
+                    continue;
+                }
+
+                if (SymbolEqualityComparer.Default.Equals(candidate.TypeArguments[0], namedType))
+                {
+                    return candidate.TypeArguments[1];
+                }
+
+                fallback ??= candidate.TypeArguments[1];
             }
 
-            var constructor = namedType.Constructors.FirstOrDefault(candidate => candidate.Parameters.Length == 1);
-
-            if (constructor is not null)
+            if (fallback is not null)
             {
-                return constructor.Parameters[0].Type;
+                return fallback;
+            }
+
+            // 构造回退：同样要跳过参数类型等于自身的那个 —— 没有主构造函数的 record 会把合成的拷贝构造
+            // 排在 Constructors 首位，取 FirstOrDefault 会绑到 record 自身，得到一个「基元是自己」的假象。
+            foreach (var constructor in namedType.InstanceConstructors)
+            {
+                if (constructor.Parameters is [var parameter]
+                    && !SymbolEqualityComparer.Default.Equals(parameter.Type, namedType))
+                {
+                    return parameter.Type;
+                }
             }
         }
 
@@ -588,10 +661,29 @@ internal readonly record struct StronglyTypedIdInfo
     /// <summary>
     /// 判断该 Id 是否带有（或本次生成即将产出）指定的内嵌转换器类型。
     /// </summary>
+    /// <remarks>
+    /// 两种情况：
+    /// <list type="bullet">
+    /// <item>引用程序集里的 Id —— 接口已实现，转换器也已生成，直接查嵌套类型是否存在；</item>
+    /// <item>本次编译声明的 Id —— 生成器还没跑，接口尚未实现，此时按「没实现接口 ⇒ 是声明类型 ⇒ 会生成」推断。</item>
+    /// </list>
+    /// 两个分支拆开写是为了让第二种情况的「推断」性质显式可见，而不是藏在一个布尔表达式里。
+    /// </remarks>
     private static bool WillHaveNestedType(ITypeSymbol type, string nestedTypeName)
         => type is INamedTypeSymbol namedType
-            && (namedType.GetTypeMembers(nestedTypeName).Length > 0
-                || !namedType.Interfaces.Any(IsStronglyTypedIdInterface));
+            && (AlreadyHasNestedType(namedType, nestedTypeName) || IsDeclaredInThisCompilation(namedType));
+
+    /// <summary>
+    /// 引用程序集里的 Id 已经生成过转换器：直接查嵌套类型是否存在。
+    /// </summary>
+    private static bool AlreadyHasNestedType(INamedTypeSymbol type, string nestedTypeName)
+        => type.GetTypeMembers(nestedTypeName).Length > 0;
+
+    /// <summary>
+    /// 本次编译声明的 Id 尚未实现 <c>IStronglyTypedId&lt;,&gt;</c>（生成器还没跑），因此转换器一定会被生成。
+    /// </summary>
+    private static bool IsDeclaredInThisCompilation(INamedTypeSymbol type)
+        => !type.Interfaces.Any(IsStronglyTypedIdInterface);
 
     /// <summary>
     /// 把基元类型的显示名归一化为不含命名空间限定的短名。

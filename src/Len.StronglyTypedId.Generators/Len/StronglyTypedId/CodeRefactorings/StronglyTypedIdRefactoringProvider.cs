@@ -23,13 +23,20 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return;
         }
 
-        if (HasStronglyTypedIdAttribute(record))
+        var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
+
+        if (semanticModel is null)
         {
-            await RegisterInlineRefactoringAsync(context, record).ConfigureAwait(false);
             return;
         }
 
-        if (await IsConvertibleAsync(context, record).ConfigureAwait(false))
+        if (HasStronglyTypedIdAttribute(record, semanticModel))
+        {
+            await RegisterInlineRefactoringAsync(context, record, semanticModel).ConfigureAwait(false);
+            return;
+        }
+
+        if (IsConvertible(record, semanticModel))
         {
             context.RegisterRefactoring(CodeAction.Create(
                 "Convert to strongly typed id",
@@ -64,17 +71,67 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 判断 record 是否已经是强类型 Id（已标 <c>[StronglyTypedId]</c>）。
     /// </summary>
-    private static bool HasStronglyTypedIdAttribute(RecordDeclarationSyntax record)
+    private static bool HasStronglyTypedIdAttribute(RecordDeclarationSyntax record, SemanticModel? semanticModel)
         => record.AttributeLists
             .SelectMany(list => list.Attributes)
-            .Any(attribute => IsStronglyTypedIdAttributeName(attribute.Name));
+            .Any(attribute => IsStronglyTypedIdAttribute(attribute, semanticModel));
+
+    /// <summary>
+    /// 判断单条特性是否是本库的 <c>[StronglyTypedId]</c>：先按名字筛，再按语义确认。
+    /// </summary>
+    /// <remarks>
+    /// 只看名字不够：第三方库里同样叫 <c>StronglyTypedIdAttribute</c> 的特性，只要被 <c>using</c> 进来并以
+    /// <c>[StronglyTypedId]</c> 的短名书写，语法上与自家的一模一样，Inline 重构会把它物理删掉且不给任何提示。
+    /// 语义绑定能分辨两者，故名字命中后再确认一次。
+    /// <para>
+    /// 只有「明确绑定到了别的特性类型」才否决。绑定不出特性时一律沿用语法判定：声明位于
+    /// <c>namespace Len.StronglyTypedId.Tests</c> 这类命名空间下时，<c>[StronglyTypedId]</c> 会先解析到父命名空间
+    /// <c>Len.StronglyTypedId</c>，<c>GetSymbolInfo</c> 给出的是一个 Namespace 候选而非特性符号。若此时否决，
+    /// Inline 重构在本库自己的测试工程里都会失效。
+    /// </para>
+    /// </remarks>
+    private static bool IsStronglyTypedIdAttribute(AttributeSyntax attribute, SemanticModel? semanticModel)
+    {
+        if (!IsStronglyTypedIdAttributeName(attribute.Name))
+        {
+            return false;
+        }
+
+        if (semanticModel is null)
+        {
+            return true;
+        }
+
+        var info = semanticModel.GetSymbolInfo(attribute);
+
+        if (info.Symbol is IMethodSymbol { ContainingType: { } attributeType })
+        {
+            return IsStronglyTypedIdAttributeType(attributeType);
+        }
+
+        // 候选里只要出现特性符号，就说明名字确实解析到了某个特性 —— 全是第三方的话必须否决。
+        var attributeCandidates = info.CandidateSymbols
+            .OfType<IMethodSymbol>()
+            .Where(static candidate => candidate.ContainingType is not null)
+            .ToList();
+
+        return attributeCandidates.Count == 0
+            || attributeCandidates.Any(static candidate => IsStronglyTypedIdAttributeType(candidate.ContainingType!));
+    }
+
+    /// <summary>
+    /// 判断某个类型是否就是 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
+    /// </summary>
+    private static bool IsStronglyTypedIdAttributeType(INamedTypeSymbol type)
+        => type.Name == "StronglyTypedIdAttribute"
+            && type.ContainingNamespace.ToDisplayString() == NamespaceName;
 
     /// <summary>
     /// 判断特性名是否**精确**指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
     /// </summary>
     /// <remarks>
-    /// 只认这几种确定写法，不做任意后缀匹配 —— 否则 Inline 重构会把第三方的同名特性物理删掉，且没有任何提示。
-    /// 刻意不查语义模型：特性名被同名命名空间遮蔽时 <c>GetSymbolInfo</c> 返回 <see langword="null"/>，判定会整体失效。
+    /// 只认这几种确定写法，不做任意后缀匹配 —— 否则 <c>[Acme.StronglyTypedId]</c> 这类限定名也会被当成自家的。
+    /// 短名写法仍需语义确认，见 <see cref="IsStronglyTypedIdAttribute"/>。
     /// </remarks>
     private static bool IsStronglyTypedIdAttributeName(NameSyntax name)
         => name.ToString() is AttributeName
@@ -87,7 +144,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 判断该 record 是否「加上特性、partial 与 using 后就是一个合法的强类型 Id」。
     /// </summary>
-    private static async Task<bool> IsConvertibleAsync(CodeRefactoringContext context, RecordDeclarationSyntax record)
+    private static bool IsConvertible(RecordDeclarationSyntax record, SemanticModel semanticModel)
     {
         if (record.ParameterList is not { Parameters: [var parameter] }
             || parameter.Identifier.ValueText != ValueParameterName)
@@ -100,14 +157,12 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return false;
         }
 
-        var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
-
-        if (semanticModel is null || parameter.Type is null)
+        if (parameter.Type is null)
         {
             return false;
         }
 
-        var parameterType = semanticModel.GetTypeInfo(parameter.Type, context.CancellationToken).Type;
+        var parameterType = semanticModel.GetTypeInfo(parameter.Type).Type;
 
         return parameterType is not null && SupportedPrimitiveTypes.IsSupported(parameterType);
     }
@@ -149,20 +204,23 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 反向重构：摘掉 <c>[StronglyTypedId]</c> 与 <c>partial</c>，必要时一并摘掉 using。
     /// </summary>
-    private static async Task RegisterInlineRefactoringAsync(CodeRefactoringContext context, RecordDeclarationSyntax record)
+    private static Task RegisterInlineRefactoringAsync(
+        CodeRefactoringContext context,
+        RecordDeclarationSyntax record,
+        SemanticModel semanticModel)
     {
-        var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
-
-        if (semanticModel?.GetDeclaredSymbol(record, context.CancellationToken) is not INamedTypeSymbol symbol
+        if (semanticModel.GetDeclaredSymbol(record, context.CancellationToken) is not INamedTypeSymbol symbol
             || symbol.DeclaringSyntaxReferences.Length != 1)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         context.RegisterRefactoring(CodeAction.Create(
             "Inline strongly typed id",
-            cancellationToken => InlineToPrimitiveAsync(context.Document, record, cancellationToken),
+            cancellationToken => InlineToPrimitiveAsync(context.Document, record, semanticModel, cancellationToken),
             equivalenceKey: "InlineStronglyTypedId"));
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -171,6 +229,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     private static async Task<Document> InlineToPrimitiveAsync(
         Document document,
         RecordDeclarationSyntax record,
+        SemanticModel semanticModel,
         CancellationToken cancellationToken)
     {
         var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -183,10 +242,10 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
         // 「还有没有别的 Id」必须在替换**之前**判断：替换后的树里当前 record 已经没有特性了。
         var hasOtherIds = root.DescendantNodes()
             .OfType<RecordDeclarationSyntax>()
-            .Any(other => !ReferenceEquals(other, record) && HasStronglyTypedIdAttribute(other));
+            .Any(other => !ReferenceEquals(other, record) && HasStronglyTypedIdAttribute(other, semanticModel));
 
         var updated = record
-            .WithAttributeLists(RemoveStronglyTypedIdAttributes(record.AttributeLists))
+            .WithAttributeLists(RemoveStronglyTypedIdAttributes(record.AttributeLists, semanticModel))
             .WithModifiers(SyntaxFactory.TokenList(
                 record.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
 
@@ -204,14 +263,16 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 从特性列表中摘掉全部 <c>[StronglyTypedId]</c>；某条特性列表被摘空时连同方括号一起移除。
     /// </summary>
-    private static SyntaxList<AttributeListSyntax> RemoveStronglyTypedIdAttributes(SyntaxList<AttributeListSyntax> attributeLists)
+    private static SyntaxList<AttributeListSyntax> RemoveStronglyTypedIdAttributes(
+        SyntaxList<AttributeListSyntax> attributeLists,
+        SemanticModel semanticModel)
     {
         var result = new List<AttributeListSyntax>();
 
         foreach (var list in attributeLists)
         {
             var kept = list.Attributes
-                .Where(attribute => !IsStronglyTypedIdAttributeName(attribute.Name))
+                .Where(attribute => !IsStronglyTypedIdAttribute(attribute, semanticModel))
                 .ToArray();
 
             if (kept.Length == 0)

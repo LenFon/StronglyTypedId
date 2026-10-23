@@ -538,12 +538,26 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         => idInfo.TypeKindSuffix is null ? $"{idInfo.Name}? other" : $"{idInfo.Name} other";
 
     /// <summary>
+    /// 取两个基元值之间的比较表达式。
+    /// </summary>
+    /// <remarks>
+    /// <c>string</c> 基元必须走序数比较。<c>string.CompareTo(string)</c> 是区域性敏感的（内部用当前线程的区域设置），
+    /// 会把 <c>"a\u00ADb"</c> 与 <c>"ab"</c> 判为相等、让 <c>"I"</c> 与 <c>"i"</c> 的顺序随区域翻转；而 record 合成的
+    /// <c>Equals</c> 与全部序列化入口都是序数的。两者不一致时，<c>SortedSet</c> / <c>SortedDictionary</c> 会把两个
+    /// 不相等的 Id 当成同一个键，静默丢掉元素。
+    /// </remarks>
+    private static string GetComparisonExpression(StronglyTypedIdInfo idInfo, string left, string right)
+        => idInfo.IsStringPrimitive
+            ? $"global::System.String.CompareOrdinal({left}, {right})"
+            : $"{left}.CompareTo({right})";
+
+    /// <summary>
     /// 取 <c>CompareTo</c> 的表达式体。
     /// </summary>
     private static string GetCompareToBody(StronglyTypedIdInfo idInfo)
         => idInfo.TypeKindSuffix is null
-            ? "other is null ? 1 : Value.CompareTo(other.Value)"
-            : "Value.CompareTo(other.Value)";
+            ? $"other is null ? 1 : {GetComparisonExpression(idInfo, "Value", "other.Value")}"
+            : GetComparisonExpression(idInfo, "Value", "other.Value");
 
     /// <summary>
     /// 取一个比较运算符的完整声明行。
@@ -556,7 +570,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         var parameterType = idInfo.TypeKindSuffix is null ? $"{idInfo.Name}?" : idInfo.Name;
         var body = idInfo.TypeKindSuffix is null
             ? $"CompareValues(left, right) {comparison}"
-            : $"left.Value.CompareTo(right.Value) {comparison}";
+            : $"{GetComparisonExpression(idInfo, "left.Value", "right.Value")} {comparison}";
 
         return $"public static bool operator {@operator}({parameterType} left, {parameterType} right) => {body};";
     }
@@ -762,8 +776,12 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     }
 
     /// <summary>
-    /// 追加 <c>Deconstruct</c>：让用户以 <c>(var value) = id;</c> 解构出基元值。
+    /// 追加 <c>Deconstruct</c>：让用户以 <c>id.Deconstruct(out var value);</c> 解构出基元值。
     /// </summary>
+    /// <remarks>
+    /// 单元素的解构声明 <c>var (value) = id;</c> 不是合法 C#（CS8129：解构声明至少需要两个元素），
+    /// 因此只能直接调用 <c>Deconstruct</c>。
+    /// </remarks>
     private static void AppendDeconstructMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
         AppendMember(

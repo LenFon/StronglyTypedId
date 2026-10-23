@@ -15,11 +15,10 @@ internal sealed record ModuleInfo
     /// </summary>
     private const string RuntimeAssemblyName = "Len.StronglyTypedId";
 
-    public ModuleInfo(string name, Version version, MetadataReference metadataReference, IAssemblySymbol? assemblySymbol)
+    public ModuleInfo(string name, Version version, IAssemblySymbol? assemblySymbol)
     {
         Name = name;
         Version = version;
-        MetadataReference = metadataReference;
         Assembly = assemblySymbol;
         MayDeclareIds = CanDeclareIds(assemblySymbol);
     }
@@ -27,8 +26,6 @@ internal sealed record ModuleInfo
     public string Name { get; }
 
     public Version Version { get; }
-
-    public MetadataReference MetadataReference { get; }
 
     public IAssemblySymbol? Assembly { get; }
 
@@ -95,7 +92,7 @@ internal sealed record ModuleInfo
                 || assembly.Modules.Any(module => module.ReferencedAssemblies.Any(identity => identity.Name == RuntimeAssemblyName)));
 
     /// <summary>
-    /// 按「程序集名 + 完整版本号」判定模块等价性，忽略 <see cref="MetadataReference"/>、 <see cref="Assembly"/> 等实例差异。
+    /// 按「程序集名 + 完整版本号」判定模块等价性，忽略 <see cref="Assembly"/> 等实例差异。
     /// </summary>
     internal sealed class Comparer : IEqualityComparer<ModuleInfo>
     {

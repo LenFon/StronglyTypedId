@@ -472,22 +472,27 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
     private static StronglyTypedIdInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken _)
     {
-        if (context is not
-            {
-                TargetSymbol: INamedTypeSymbol
-                {
-                    Constructors: [{ Parameters: [{ Type: var ctorArgType, NullableAnnotation: not NullableAnnotation.Annotated }] }, ..]
-                } symbol
-            })
+        if (context.TargetSymbol is not INamedTypeSymbol symbol)
         {
             return null;
         }
 
-        var defaultValidator = GetAssemblyDefaultValidator(context.SemanticModel.Compilation.Assembly);
-        var defaultNormalizer = GetAssemblyDefaultNormalizer(context.SemanticModel.Compilation.Assembly);
-        var defaultExceptionType = GetAssemblyDefaultExceptionType(context.SemanticModel.Compilation.Assembly);
-        var defaultIntegrations = StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(context.SemanticModel.Compilation.Assembly);
-        var defaultRedact = StronglyTypedIdInfo.GetAssemblyDefaultRedactValidationMessage(context.SemanticModel.Compilation.Assembly);
+        // 不能用 Constructors[0]：没有主构造函数的 record 会把合成的拷贝构造排在首位，于是参数类型
+        // 绑到 record 自身，IsSupported 返回 false，生成器静默不产出任何代码。改为遍历实例构造、
+        // 跳过参数类型等于自身的那个 —— 与分析器 GetSingleParameterType 同一套判据。
+        var ctorArgType = GetSingleParameterType(symbol);
+
+        if (ctorArgType is null)
+        {
+            return null;
+        }
+
+        var assembly = context.SemanticModel.Compilation.Assembly;
+        var defaultValidator = StronglyTypedIdInfo.GetAssemblyDefaultValidator(assembly);
+        var defaultNormalizer = StronglyTypedIdInfo.GetAssemblyDefaultNormalizer(assembly);
+        var defaultExceptionType = StronglyTypedIdInfo.GetAssemblyDefaultExceptionType(assembly);
+        var defaultIntegrations = StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(assembly);
+        var defaultRedact = StronglyTypedIdInfo.GetAssemblyDefaultRedactValidationMessage(assembly);
 
         return SupportedPrimitiveTypes.IsSupported(ctorArgType)
             ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType, defaultIntegrations, defaultRedact)
@@ -495,27 +500,25 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 指定的默认验证器方法名。
+    /// 取强类型 Id 的基元类型，即唯一一个「单参数、且参数类型不是自身」的实例构造函数所带的参数类型。
     /// </summary>
-    private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
-        => AttributeReader.GetString(
-            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
-            StronglyTypedIdInfo.ValidatorArgumentName);
+    /// <remarks>
+    /// 跳过参数类型等于自身的构造，是为了滤掉 record 合成的拷贝构造；它也顺带覆盖了「用户手写的
+    /// 单参数构造排在主构造之前」这种声明顺序。可空引用类型（<c>string?</c>）返回 <see langword="null"/>：
+    /// 基元本身不能是可空的，这一点由分析器的 <c>ParameterCannotBeNullable</c> 报错。
+    /// </remarks>
+    private static ITypeSymbol? GetSingleParameterType(INamedTypeSymbol type)
+    {
+        foreach (var constructor in type.InstanceConstructors)
+        {
+            if (constructor.Parameters is [var parameter]
+                && parameter.NullableAnnotation != NullableAnnotation.Annotated
+                && !SymbolEqualityComparer.Default.Equals(parameter.Type, type))
+            {
+                return parameter.Type;
+            }
+        }
 
-    /// <summary>
-    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Normalizer = …)]</c> 指定的默认归一化方法名。
-    /// </summary>
-    private static string? GetAssemblyDefaultNormalizer(IAssemblySymbol assembly)
-        => AttributeReader.GetString(
-            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
-            StronglyTypedIdInfo.NormalizerArgumentName);
-
-    /// <summary>
-    /// 读取 <c>[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(…))]</c> 指定的默认异常类型显示名。
-    /// </summary>
-    private static string? GetAssemblyDefaultExceptionType(IAssemblySymbol assembly)
-        => AttributeReader.GetType(
-                AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
-                StronglyTypedIdInfo.ExceptionTypeArgumentName)
-            ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return null;
+    }
 }

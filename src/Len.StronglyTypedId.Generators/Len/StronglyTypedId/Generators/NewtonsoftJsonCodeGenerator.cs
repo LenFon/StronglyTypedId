@@ -92,7 +92,9 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
 
             builder.Append("            serializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(reader) switch").Append('\n');
             builder.Append("            {").Append('\n');
-            builder.Append("                { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
+            // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
+            // 它会穿透 JsonConvert.DeserializeObject —— 而 Newtonsoft 的转换器契约要求失败一律抛 JsonSerializationException。
+            builder.Append("                { } value when ").Append(idInfo.Name).Append(".TryCreate(value, out var id) => id,").Append('\n');
             builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
             builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };");
@@ -114,7 +116,12 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         builder.Append('\n');
         builder.Append("            var json = global::Newtonsoft.Json.Linq.JObject.Load(reader);").Append('\n');
         builder.Append('\n');
-        builder.Append("            if (!json.TryGetValue(\"value\", out var valueToken))").Append('\n');
+        // 属性名按大小写不敏感匹配：Newtonsoft 对普通 POCO 就是这么做的（`{"Value":…}` 与 `{"value":…}`
+        // 都能填进 Value 属性），而 JObject.TryGetValue 是序数比较、只认小写。生成的转换器若比它所在的
+        // 序列化器更严，同一个载荷会在 Id 这一层突然失败。精确匹配优先，与 POCO 的解析顺序一致。
+        builder.Append("            var valueToken = json.GetValue(\"value\", global::System.StringComparison.OrdinalIgnoreCase);").Append('\n');
+        builder.Append('\n');
+        builder.Append("            if (valueToken is null)").Append('\n');
         builder.Append("            {").Append('\n');
         builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append('\n');
         builder.Append("            }").Append('\n');
@@ -135,7 +142,8 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
 
         builder.Append("            return valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>() switch").Append('\n');
         builder.Append("            {").Append('\n');
-        builder.Append("                { } value => ").Append(idInfo.Name).Append(".Create(value),").Append('\n');
+        // 同上：TryCreate 让验证失败落在下面的 JsonSerializationException 分支，而不是穿透 ArgumentException。
+        builder.Append("                { } value when ").Append(idInfo.Name).Append(".TryCreate(value, out var id) => id,").Append('\n');
         builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
         builder.Append("            };").Append('\n');
         builder.Append("        }");

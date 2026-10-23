@@ -143,12 +143,49 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     private static string GetDeserializeExpression(StronglyTypedIdInfo idInfo)
         => idInfo.IsStringPrimitive
             ? "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!"
+            : $"global::System.Text.Json.JsonSerializer.Deserialize<{idInfo.PrimitiveIdTypeName}>(ref reader, options)";
+
+    /// <summary>
+    /// 追加「读出基元值并交给 <c>TryCreate</c>」的语句，结果放在局部变量 <c>value</c> 中。
+    /// </summary>
+    /// <remarks>
+    /// 必须走 <c>TryCreate</c>：<c>Create</c> 在验证器拒绝时抛 <see cref="ArgumentException"/>（或 <c>ExceptionType</c>
+    /// 指定的类型），它会穿透 <c>JsonSerializer.Deserialize</c> —— 而 STJ 的转换器契约要求失败一律抛 <c>JsonException</c>。
+    /// </remarks>
+    /// <param name="builder">产物构建器。</param>
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <param name="indent">每行前缀的绝对缩进。</param>
+    private static void AppendReadValueStatements(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent)
+    {
+        if (idInfo.IsBigIntegerPrimitive)
+        {
             // BigInteger 没有内置转换器，按值读会落到「按属性反序列化」而得到 default，故改读规范文本。
-            : idInfo.IsBigIntegerPrimitive
-                ? "global::System.Numerics.BigInteger.Parse(" +
-                    "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!, " +
-                    "global::System.Globalization.CultureInfo.InvariantCulture)"
-                : $"global::System.Text.Json.JsonSerializer.Deserialize<{idInfo.PrimitiveIdTypeName}>(ref reader, options)";
+            // 用 TryParse 而非 Parse：文本不是合法数字时 Parse 抛的 FormatException 同样会穿透转换器。
+            builder.Append(indent).Append("var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
+            builder.Append(indent).Append("if (text is null || !global::System.Numerics.BigInteger.TryParse(text, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var value))").Append('\n');
+            builder.Append(indent).Append("{").Append('\n');
+            builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+            builder.Append(indent).Append("}").Append('\n');
+
+            return;
+        }
+
+        builder.Append(indent).Append("var value = ").Append(GetDeserializeExpression(idInfo)).Append(';').Append('\n');
+    }
+
+    /// <summary>
+    /// 追加「把 <c>value</c> 转成 Id」的语句，验证失败抛 <c>JsonException</c>。
+    /// </summary>
+    /// <param name="builder">产物构建器。</param>
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <param name="indent">每行前缀的绝对缩进。</param>
+    /// <param name="assignmentPrefix">赋值目标前缀：<c>return </c> 或 <c>result = </c>。</param>
+    private static void AppendCreateFromValue(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string assignmentPrefix)
+    {
+        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.Name).Append(".TryCreate(value, out var id)").Append('\n');
+        builder.Append(indent).Append("    ? id").Append('\n');
+        builder.Append(indent).Append("    : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+    }
 
     /// <summary>
     /// 取 <c>Read</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
@@ -182,7 +219,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                 return builder.ToString();
             }
 
-            builder.Append("            return ").Append(idInfo.Name).Append(".Create(").Append(GetDeserializeExpression(idInfo)).Append(");").Append('\n');
+            AppendReadValueStatements(builder, idInfo, "            ");
+            builder.Append('\n');
+            AppendCreateFromValue(builder, idInfo, "            ", "return ");
             builder.Append("        }");
 
             return builder.ToString();
@@ -233,7 +272,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("                        throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
             builder.Append("                    }").Append('\n');
             builder.Append('\n');
-            builder.Append("                    result = ").Append(idInfo.Name).Append(".Create(").Append(GetDeserializeExpression(idInfo)).Append(");").Append('\n');
+            AppendReadValueStatements(builder, idInfo, "                    ");
+            builder.Append('\n');
+            AppendCreateFromValue(builder, idInfo, "                    ", "result = ");
         }
 
         builder.Append("                }").Append('\n');

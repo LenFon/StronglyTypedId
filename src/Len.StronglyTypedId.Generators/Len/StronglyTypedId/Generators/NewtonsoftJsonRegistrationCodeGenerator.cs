@@ -25,7 +25,12 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         }
 
         var registrations = stronglyTypedIds
-            .Select(idInfo => $"            settings.Converters.Add(new {idInfo.FullyQualifiedName}.NewtonsoftJsonConverter());");
+            .Select(idInfo => $$"""
+                            if (registered.Add(typeof({{idInfo.FullyQualifiedName}}.NewtonsoftJsonConverter)))
+                            {
+                                settings.Converters.Add(new {{idInfo.FullyQualifiedName}}.NewtonsoftJsonConverter());
+                            }
+                """);
 
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
@@ -33,11 +38,21 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 /// <summary>
                 /// Employ strongly typed IDs in Newtonsoft.Json.
                 /// </summary>
+                /// <remarks>Idempotent: a converter that is already registered is left alone, so calling this
+                /// from several modules — or twice from the same one — does not grow the converter list.</remarks>
                 /// <param name="settings"><see cref="global::Newtonsoft.Json.JsonSerializerSettings"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonRegistrationCodeGenerator), version)}}
                 public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)
                 {
+                    // 先收集已注册的转换器类型再逐个比对：重复调用时列表不增长。
+                    var registered = new global::System.Collections.Generic.HashSet<global::System.Type>();
+
+                    foreach (var converter in settings.Converters)
+                    {
+                        registered.Add(converter.GetType());
+                    }
+
             {{string.Join("\n", registrations)}}
                 }
             }

@@ -176,8 +176,8 @@ internal static class ConsumerScenario
     {
         try
         {
-            // 立刻物化：GetModules 对项目引用分支返回的是惰性查询，异常会逃出 try 之外。
-            return [.. reference.GetModules(compilation)];
+            // 立刻物化：项目引用分支返回的是惰性查询，异常会逃出 try 之外。
+            return [.. reference.GetModuleIdentities().Select(identity => identity.ResolveAssembly(compilation))];
         }
         catch (BadImageFormatException)
         {

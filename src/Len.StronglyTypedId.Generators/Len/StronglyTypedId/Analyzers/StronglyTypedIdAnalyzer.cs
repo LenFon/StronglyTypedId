@@ -639,6 +639,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         (IntegrationFlags.Swagger, "Swashbuckle.AspNetCore.SwaggerGen", "Swagger"),
         (IntegrationFlags.AspNetCoreOpenApi, "Microsoft.AspNetCore.OpenApi", "AspNetCoreOpenApi"),
         (IntegrationFlags.AspNetCoreMvc, "Microsoft.AspNetCore.Mvc", "AspNetCoreMvc"),
+        (IntegrationFlags.MessagePack, "MessagePack", "MessagePack"),
+        (IntegrationFlags.MongoDb, "MongoDB.Bson", "MongoDb"),
     ];
 
     /// <summary>
@@ -810,9 +812,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 的默认验证器方法名；未声明时为 <see langword="null"/>。
     /// </summary>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
-        => AttributeReader.GetString(
-            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
-            StronglyTypedIdInfo.ValidatorArgumentName);
+        => StronglyTypedIdInfo.GetAssemblyDefaultValidator(assembly);
 
     /// <summary>
     /// 读取 <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
@@ -826,15 +826,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 取生效的归一化方法名：优先逐类型 <c>Normalizer</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.Normalizer</c>。
     /// </summary>
     private static string? GetEffectiveNormalizerName(INamedTypeSymbol type, IAssemblySymbol assembly)
-        => GetNormalizerName(type) ?? GetAssemblyDefaultNormalizer(assembly);
-
-    /// <summary>
-    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Normalizer = …)]</c> 的默认归一化方法名；未声明时为 <see langword="null"/>。
-    /// </summary>
-    private static string? GetAssemblyDefaultNormalizer(IAssemblySymbol assembly)
-        => AttributeReader.GetString(
-            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
-            StronglyTypedIdInfo.NormalizerArgumentName);
+        => GetNormalizerName(type) ?? StronglyTypedIdInfo.GetAssemblyDefaultNormalizer(assembly);
 
     /// <summary>
     /// 读取 <c>[StronglyTypedId]</c> 上 <c>ExceptionType</c> 命名实参的类型；未指定时为 <see langword="null"/>。
@@ -848,15 +840,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 取生效的异常类型：优先逐类型 <c>ExceptionType</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.ExceptionType</c>。
     /// </summary>
     private static ITypeSymbol? GetEffectiveExceptionType(INamedTypeSymbol type, IAssemblySymbol assembly)
-        => GetExceptionType(type) ?? GetAssemblyDefaultExceptionType(assembly);
-
-    /// <summary>
-    /// 读取 <c>[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(…))]</c> 的默认异常类型；未声明时为 <see langword="null"/>。
-    /// </summary>
-    private static ITypeSymbol? GetAssemblyDefaultExceptionType(IAssemblySymbol assembly)
-        => AttributeReader.GetType(
-            AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName),
-            StronglyTypedIdInfo.ExceptionTypeArgumentName);
+        => GetExceptionType(type) ?? StronglyTypedIdInfo.GetAssemblyDefaultExceptionTypeSymbol(assembly);
 
     /// <summary>
     /// 判断类型是否由 <c>[StronglyTypedId]</c> 标记。

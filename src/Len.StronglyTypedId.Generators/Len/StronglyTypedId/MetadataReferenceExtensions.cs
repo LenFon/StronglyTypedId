@@ -48,10 +48,4 @@ internal static class MetadataReferenceExtensions
 
         return [];
     }
-
-    /// <summary>
-    /// 枚举引用所代表的全部模块，并解析出各自的程序集符号。
-    /// </summary>
-    public static IEnumerable<ModuleInfo> GetModules(this MetadataReference metadataReference, Compilation compilation)
-        => metadataReference.GetModuleIdentities().Select(identity => identity.ResolveAssembly(compilation));
 }
