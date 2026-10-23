@@ -61,6 +61,12 @@ carries the same inventory without the file names, as a one-glance list.
   parameter and both operands are nullable and `null` sorts lowest: `CompareTo(null)` returns `1` and
   `null < id` is `true`. The operators delegate to a private `CompareValues` helper, so a `null` operand
   never dereferences `Value`.
+  A `string`-backed id compares **ordinally** (`string.CompareOrdinal`), not with
+  `string.CompareTo(string)`: the latter is culture-sensitive, so it disagrees with the record's
+  `Equals` — `"a\u00ADb"` and `"ab"` compare equal yet are not equal — and the ordering of `"I"` and
+  `"i"` flips between cultures. Because `SortedSet<T>` and `SortedDictionary<TKey, TValue>` use
+  `CompareTo` to detect duplicates, a culture-sensitive comparison silently drops elements there. Ordinal
+  comparison keeps ordering consistent with equality and with the invariant text the serializers write.
 - `ToString()` returning the invariant-culture text of the wrapped value (not the record's
   `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
   `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and

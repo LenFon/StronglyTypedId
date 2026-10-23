@@ -71,7 +71,7 @@ public partial record struct ResourceUri(string Value)
 `type: string`，没有 `format`。请求 / 响应体与 DTO 属性不受影响；MVC 控制器参数也没问题：它以 Id 类型到达
 `ApiExplorer`，所以 `int` 支撑的 Id 在 `/api/products/{id}` 上是 `type: integer, format: int32`
 （`samples/Len.StronglyTypedId.Sample3`，Swashbuckle 10）。Minimal API 这个缺口实测于 `net8.0` +
-Swashbuckle 6.5.0（`samples/Len.StronglyTypedId.Sample4`）。
+Swashbuckle 6.9.0（`samples/Len.StronglyTypedId.Sample4`）。
 
 内置的 [ASP.NET Core OpenAPI](integrations.md#aspnetcore-openapi) 集成没有这个缺口：它的转换器看的是框架
 为该参数建好的 schema，所以 `/orders/{id}` 在那里是 `type: string, format: uuid`。

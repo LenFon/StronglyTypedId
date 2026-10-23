@@ -148,6 +148,43 @@ change set rather than reproducing every commit.
 
 ### Fixed
 
+- `IsStronglyTypedId` / `GetPrimitiveIdType` / `TryGetPrimitiveIdType` no longer keep collectible
+  `AssemblyLoadContext`s alive. Their result cache was keyed by `Type` in a static dictionary, and a `Type`
+  roots its `Assembly`, which roots its load context — so every plugin load, hot reload or test host that
+  reloads assemblies pinned one context and all of its types for the life of the process. The cache now
+  uses `ConditionalWeakTable`, whose entries disappear together with their key. Nothing changes for
+  ordinary application code; only hosts that unload assemblies notice.
+- When a type implements more than one `IStronglyTypedId<TSelf, TPrimitiveId>`, the primitive is now taken
+  from the interface whose `TSelf` is that type itself. Previously the first match won, so the reported
+  primitive depended on `Type.GetInterfaces()` enumeration order — the same type could yield a different
+  primitive across runtimes, and the model binder and EF converters pick their converter from that answer.
+- OpenAPI documents now describe an id declared with `JsonShape = JsonShape.Object` as the object it
+  actually serializes to — `{ "value": <primitive> }` with `value` required — instead of as a bare
+  primitive. Both integrations were affected: Swashbuckle's `MapType` emitted `type: string, format: uuid`
+  for such an id, and the ASP.NET Core OpenAPI transformer rewrote the framework's schema to the same bare
+  primitive. A client generated from either document sent and accepted a plain string while the server
+  read and wrote an object, so every call involving that id failed. The nested `value` property keeps the
+  normal primitive mapping, including the `Prefix` rule.
+- A `string`-backed id now compares ordinally, so ordering agrees with equality. `CompareTo` and the
+  `<`, `>`, `<=`, `>=` operators used `string.CompareTo(string)`, which is culture-sensitive: it treats
+  `"a\u00ADb"` and `"ab"` as equal even though `Equals` says they differ, and it orders `"I"` and `"i"`
+  differently under `en-US` and `tr-TR`. `SortedSet<T>` and `SortedDictionary<TKey, TValue>` use
+  `CompareTo` to detect duplicate keys, so two distinct ids collapsed into one entry — silent data loss
+  with no exception and no log line. The generated comparison now uses `string.CompareOrdinal`, which
+  matches the record's `Equals` and the invariant text every serializer writes. Ids backed by other
+  primitives are unaffected: their `CompareTo` is already strongly typed and ordinal where it matters.
+- A value rejected by a `Validator` now surfaces as the serializer's own exception during
+  deserialization instead of escaping as `ArgumentException`. The generated converters called
+  `Id.Create(...)`, whose `ArgumentException` (or the configured `ExceptionType`) passed straight
+  through `JsonSerializer.Deserialize` / `JsonConvert.DeserializeObject` / `MessagePackSerializer` /
+  `BsonSerializer` — none of which wrap converter exceptions. A caller following the documented
+  contract, `catch (JsonException)`, therefore missed the rejection entirely. The converters now call
+  `TryCreate` and throw `JsonException` / `JsonSerializationException` /
+  `MessagePackSerializationException` / `BsonSerializationException` themselves, matching what the
+  dictionary-key path already did. EF Core's `ValueConverter` still calls `Create`: materializing an
+  entity from a database row is a data-integrity boundary where `ArgumentException` is the more precise
+  report. A `BigInteger`-backed id read a non-numeric payload through `BigInteger.Parse`, so its
+  `FormatException` leaked the same way; it now uses `TryParse` and reports `JsonException`.
 - A JSON token of the wrong type now raises the serializer's own exception instead of
   `InvalidOperationException`. The generated converters threw `InvalidOperationException` from the
   `switch` arm that handles an unexpected token — a `string`-backed id read from a number, or
@@ -265,6 +302,36 @@ change set rather than reproducing every commit.
   `record OrderId(Guid Value, string Name)` lost `Name` without a word. The fix still has to drop them —
   the diagnostic demands exactly one parameter — but the title now says so and names the replacement:
   "Replace with a single-parameter primary constructor (Guid Value); other parameters are removed".
+- `STIA0019` was never reported for the `MessagePack` and `MongoDb` integrations. The analyzer's
+  flag-to-assembly table listed only seven of the nine flags, so
+  `[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.MessagePack)]` in a project that does not
+  reference `MessagePack` generated nothing and said nothing — even though the generator gates both
+  integrations on their assemblies and the documentation promises the diagnostic instead of silence.
+  Both rows are now present, and a structural test asserts that the table covers every bit of
+  `StronglyTypedIdIntegrations.All`, so a future integration cannot repeat the omission.
+- The "Inline strongly typed id" refactoring no longer deletes an unrelated attribute that happens to be
+  named `StronglyTypedId`. It decided by name alone, so `[Acme.StronglyTypedId]` — or a short
+  `[StronglyTypedId]` imported from another namespace — was stripped from the declaration along with the
+  real one, silently removing whatever the other library used it for. The attribute is now resolved
+  semantically and only removed when it binds to `Len.StronglyTypedId.StronglyTypedIdAttribute`; a name
+  that resolves to no attribute at all (shadowed by a namespace of the same name) still counts, so the
+  refactoring keeps working in that case.
+- `StronglyTypedIds.ApplyTo(MvcOptions)` is now idempotent. It inserted a fresh
+  `StronglyTypedIdModelBinderProvider` on every call, so startup code that registered it from several
+  modules — or a configuration callback that ran twice — left duplicate providers in
+  `ModelBinderProviders`, each rebuilding the binder on every request. It now returns early when the
+  provider is already present.
+- The Dapper type handler now parses enum text case-insensitively and rejects values that name no
+  member. `Enum.Parse` was case-sensitive, so a driver returning `ACTIVE` for a column stored as `Active`
+  threw even though the value was valid; `Enum.TryParse` in its place accepts `"999"` and `"1,2"`, which
+  produce an id matching no member. Non-`[Flags]` enums are now checked with `Enum.IsDefined`, and
+  `[Flags]` enums against the undefined-bits mask, matching `Id.TryParse` and the JSON dictionary-key
+  path. A rejected text throws `ArgumentException`, the same exception `Create` raises.
+- `RegisterBsonSerializers` now documents what happens when a serializer for the same id type is already
+  registered: the driver's `TryRegisterSerializer` returns `false` and keeps the existing one, so the
+  conflicting registration silently wins. The behaviour is unchanged — overwriting would break the
+  documented idempotency — but the generated XML remark and the integration guide now say so instead of
+  leaving it to be discovered.
 
 ## [1.3.0] - 2026-10-07
 

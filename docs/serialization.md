@@ -84,6 +84,30 @@ as JSON `null`, and reading that `null` back yields `null` — but only for a `r
 id cannot represent `null`, so both converters reject the token instead of silently producing `default`
 (`JsonException` / `JsonSerializationException`).
 
+## Validation failures
+
+A `Validator` rejects values that parse but violate a domain rule. Both converters honour it on read, and
+they report the rejection through their own exception type rather than letting the `ArgumentException`
+from `Create` escape:
+
+| Serializer | Exception on a rejected value |
+| --- | --- |
+| `System.Text.Json` | `JsonException` |
+| `Newtonsoft.Json` | `JsonSerializationException` |
+
+That matters because both libraries document their converter contract in terms of that exception: a caller
+that wraps deserialization in `catch (JsonException)` sees a malformed payload and a domain violation the
+same way, and neither leaks an `ArgumentException` the caller has no reason to expect. The generated code
+gets there by calling `TryCreate` and throwing the framework exception itself — the same approach the
+dictionary-key path already used.
+
+`BigInteger`-backed ids read their payload as text, so a payload that is not a number is reported the same
+way — as `JsonException`, not as the `FormatException` that `BigInteger.Parse` would raise.
+
+EF Core's `ValueConverter` deliberately keeps calling `Create`: materializing an entity from a database row
+is a data-integrity boundary, where `ArgumentException` describes the problem more precisely than an
+ORM-specific wrapper would.
+
 ## JSON shape
 
 By default an id is **shape-compatible with its primitive**: `OrderId` backed by `Guid` serializes to the
@@ -103,9 +127,14 @@ The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to the
 dictionary keys are always the primitive text, because a JSON object cannot be a key. `JsonShape.Object`
 reads and writes a single `value` property; a payload that is not an object, or an object without
 `value`, throws (`JsonException` / `JsonSerializationException`), and any other property is skipped.
-Under `System.Text.Json` the property name is matched case-insensitively when
-`options.PropertyNameCaseInsensitive` is set. Because the primitive form is the default, existing
-payloads are unaffected unless you ask for the object form.
+
+The property name is matched case-insensitively on both sides, which is what each serializer already does
+for an ordinary object: `{"value":…}`, `{"Value":…}` and `{"VALUE":…}` all read the same. Under
+`System.Text.Json` that follows `options.PropertyNameCaseInsensitive` — turn it off and only the exact
+lowercase `value` is accepted. Under `Newtonsoft.Json` it is unconditional, because Newtonsoft's own
+POCO binding is case-insensitive and a converter that were stricter would reject payloads the rest of the
+document accepts. Because the primitive form is the default, existing payloads are unaffected unless you ask
+for the object form.
 
 ## Text prefix
 
@@ -175,5 +204,11 @@ settings.AddStronglyTypedId();              // adds every id's converter to sett
 
 Each entry point is generated only when the corresponding serializer is referenced, and only when the
 compilation declares at least one id.
+
+Both are idempotent: a converter that is already in the list is left alone, so calling either one from
+several modules — or twice from the same one — does not grow the list. Converters you added yourself stay
+where they are. Under `System.Text.Json` this also means a second call after the options have been used is a
+no-op rather than an `InvalidOperationException`; `JsonSerializerOptions` freezes on first use, and the
+entry point never touches the collection when everything is already registered.
 
 [<- Back to the index](index.md) · [中文](zh-CN/serialization.md)

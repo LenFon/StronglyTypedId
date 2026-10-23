@@ -46,4 +46,9 @@ if (typeof(OrderId).IsStronglyTypedId())
 永远不会被判定为强类型 Id。可空 Id（`OrderId?`）按其底层 Id 判定，`typeof(OrderId?)` 得到的基元
 类型与 `typeof(OrderId)` 相同 —— 与 MVC 模型绑定器和 EF Core 转换器的口径一致。
 
+判定结果按 `Type` 缓存，且缓存对键持弱引用。因此加载进可回收 `AssemblyLoadContext` 的类型（插件、
+热重载、会重复加载程序集的测试宿主）不会因此失去可回收性：一旦插件不再被其它地方引用，该上下文
+及其类型会和对应的缓存记录一起被回收。若一个类型同时实现多份 `IStronglyTypedId<TSelf, TPrimitiveId>`，
+以 `TSelf` 等于该类型自身的那份为准，报告的基元类型不会随接口枚举顺序变化。
+
 [<- 返回目录](index.md) · [English](../runtime.md)

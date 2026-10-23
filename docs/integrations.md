@@ -118,11 +118,29 @@ the floating-point primitives are JSON numbers, an enum is its underlying number
 `integer` with no `format`. An id with a `Prefix` is always `string` with no `format`, because its
 canonical text form is text.
 
+One limitation of any compile-time mapping: an `enum`-backed id is documented as `integer` because that is
+what `System.Text.Json` writes by default. If you register a `JsonStringEnumConverter` globally, the
+generated converter delegates to `JsonSerializer` and the actual payload becomes the member name, while the
+document still says `integer`. The schema is emitted at compile time and cannot observe runtime
+`JsonSerializerOptions`; prefer the default numeric form, or declare the id's primitive as `string`.
+
+An id declared with `JsonShape = JsonShape.Object` is mapped to an object schema instead, because that is
+what goes over the wire: `{ "value": <primitive> }`, with `value` marked required. The nested `value`
+property follows the same primitive mapping as the table above (including the `Prefix` rule):
+
+```json
+{
+  "type": "object",
+  "properties": { "value": { "type": "string", "format": "uuid" } },
+  "required": ["value"]
+}
+```
+
 `MapType<T>` registers the schema for the id **type**, not for one endpoint, so there is nothing
 per-endpoint to configure. Wherever the framework hands `ApiExplorer` the id type — a property on a DTO, a
 response body, a model nested inside another, an MVC controller parameter — the same mapping applies.
 
-One measured caveat, from `samples/Len.StronglyTypedId.Sample4` (`net8.0`, Swashbuckle 6.5.0): a
+One measured caveat, from `samples/Len.StronglyTypedId.Sample4` (`net8.0`, Swashbuckle 6.9.0): a
 **Minimal API** route parameter is described by `ApiExplorer` as
 `string` — the framework sees an `IParsable` type and reports it as text — so `MapType` never gets a chance
 to apply, and that parameter's schema is a bare `type: string` with no `format`. Request and response
@@ -160,11 +178,26 @@ without per-call configuration.
 Drivers rarely hand back the primitive's own CLR type — SQLite returns `long` for an enum column, `string`
 for `char` / `Guid` and `double` for `decimal`. The generated `Parse` therefore converts the incoming value
 to the primitive before calling `Create` (`System.Convert` for the numeric and date/time primitives,
-`Enum.ToObject` / `Enum.Parse` for enums, and the primitive's `IParsable` entry point for `Guid`,
+`Enum.TryParse` for enums, and the primitive's `IParsable` entry point for `Guid`,
 `DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Int128`, `UInt128`, `Half` and `BigInteger`). Values
 that already arrive as the primitive take a direct path, and `NULL` — either `DBNull` or a bare `null` —
 maps to `default`. An enum column may come back as its member name or as the underlying number; both shapes
 are accepted.
+
+Enum text is matched case-insensitively, because drivers disagree on casing (Oracle returns uppercase,
+PostgreSQL returns the stored spelling) while `Enum.Parse` is case-sensitive. It is also checked against the
+enum's defined members: `Enum.TryParse` accepts `"999"` and `"1,2"`, which would produce an id matching no
+member — a `switch` on it falls through and serialization writes a stray value. Non-`[Flags]` enums must
+name a defined member; `[Flags]` enums accept any combination of defined bits, mirroring `Id.TryParse`. Text
+that fails either check throws `ArgumentException`, the same exception `Create` raises for a rejected value.
+
+The same check applies to the numeric path, and it has to happen before `Enum.ToObject`: that method neither
+range-checks nor rejects fractions. A `300L` handed to a `byte`-backed enum silently becomes `44` — possibly
+an existing member — and `1.5d` silently truncates to `0`. The generated handler therefore converts the value
+to the enum's underlying type first (an out-of-range value throws `OverflowException`, which is turned into
+`ArgumentException`), rejects anything with a fractional part, and only then validates the result against the
+defined members. So `999L`, `300L`, `1.5d` and `uint.MaxValue` are all rejected exactly like their textual
+counterparts, and a value that arrives already typed as the enum is validated too rather than waved through.
 
 > Registration is global, not per connection. `ApplyTo(IDbConnection)` is still generated for source
 > compatibility, but it ignores its argument and forwards to `ApplyTo()`. Calling either one more than once
@@ -200,10 +233,15 @@ to a type declared in the current compilation, so an id that comes from a refere
 different namespaces are disambiguated the same way as Dapper's handlers.
 
 The payload is the wrapped primitive value, not the canonical text form: a text prefix decorates the text
-form only, and a binary format has no text to decorate. Three primitives have no MessagePack formatter at
-all — `BigInteger`, `Int128` and `UInt128` — so those ids fall back to the invariant-culture text form (a
-MessagePack string) and are read back through `TryParse`. For them the prefix *does* travel in the payload,
-because it is part of the text.
+form only, and a binary format has no text to decorate. Three primitives are the exception — `BigInteger`,
+`Int128` and `UInt128` — and their ids are written as the invariant-culture text form (a MessagePack string)
+and read back through `TryParse`. For them the prefix *does* travel in the payload, because it is part of the
+text.
+
+That exception is a deliberate choice, not a limitation of the current MessagePack release: 3.x encodes all
+three natively, and this library still uses the text form so that payloads written by 2.x-era versions stay
+readable. Switching them to native encoding would silently change the wire format for existing data, so it is
+not done.
 
 For every other primitive the bytes are exactly what the primitive itself serialises to, so an id field is
 indistinguishable from a bare primitive field in an existing payload — swapping one for the other needs no
@@ -211,7 +249,9 @@ re-encoding.
 
 A `null` reference-type id is written as `nil` and read back as `null`; a value-type id that receives `nil`
 throws `MessagePackSerializationException` rather than silently becoming `default`, so a missing field cannot
-be mistaken for a legitimate `Guid.Empty`.
+be mistaken for a legitimate `Guid.Empty`. A value rejected by the id's `Validator` is reported the same way:
+the formatter calls `TryCreate` and throws `MessagePackSerializationException` itself, so the
+`ArgumentException` from `Create` never reaches the caller.
 
 <a id="mongodb"></a>
 
@@ -240,6 +280,11 @@ await collection.InsertOneAsync(new Order { Id = OrderId.Create(Guid.NewGuid()) 
 `BsonSerializer` keeps serializers in a process-wide registry, so registration is global rather than
 per-collection, and calling it twice is harmless — an already registered serializer is left untouched.
 
+"Untouched" also covers a serializer registered by someone else for the same id type: the driver's
+`TryRegisterSerializer` reports `false` and keeps the existing one, so a conflicting registration silently
+wins over the generated serializer. That is deliberate — overwriting would break the idempotency above — but
+it means an id type whose serializer was registered elsewhere is serialized by that one, not by ours.
+
 Each id's serializer is named `{TypeName}BsonSerializer` and lives in the generated `StronglyTypedIds` class.
 `[BsonSerializer]` would have been the shorter route, but it can only be applied to a type declared in the
 current compilation, which would leave ids from a referenced library without a serializer.
@@ -247,7 +292,9 @@ current compilation, which would leave ids from a referenced library without a s
 The payload is the wrapped primitive value. `BigInteger`, `Int128` and `UInt128` have no BSON serializer, so
 those ids are stored as a BSON string holding the invariant-culture text form (prefix included) and read back
 through `TryParse`. A `null` reference-type id is stored as BSON `null`; a value-type id that meets BSON
-`null` throws `BsonSerializationException`.
+`null` throws `BsonSerializationException`. A value rejected by the id's `Validator` is reported the same
+way: the serializer calls `TryCreate` and throws `BsonSerializationException` itself, so the
+`ArgumentException` from `Create` never reaches the caller.
 
 For every other primitive the stored BSON value is the primitive's own, so existing documents stay readable
 and an id field is indistinguishable from a bare primitive field. Because the serializer is registered by
@@ -291,7 +338,10 @@ public class OrdersController : ControllerBase
 > every id already has, so there is no per-request reflection beyond a one-time type check at registration.
 
 The provider is inserted at the front of `ModelBinderProviders`, so it wins over the framework's own
-providers. Nullable ids are covered too: `[FromQuery] OrderId?` has CLR type `Nullable<OrderId>`, which
+providers. `ApplyTo(MvcOptions)` is idempotent: if a `StronglyTypedIdModelBinderProvider` is already in the
+list it returns without inserting another, so startup code that registers it from several modules — or a
+configuration callback that runs twice — does not grow the provider list or rebuild the binder on every
+request. Nullable ids are covered too: `[FromQuery] OrderId?` has CLR type `Nullable<OrderId>`, which
 implements no interfaces at all, so the provider unwraps it before the interface check. Without that step the
 parameter would fall to MVC's `TryParseModelBinder`, which parses with the **current culture** — the same
 payload would then bind differently for a nullable and a non-nullable parameter on the same route.
@@ -362,14 +412,17 @@ builder.Services.AddOpenApi(options =>
 ```
 
 Each id is mapped to the schema of its underlying primitive, with the same `format` values as in the
-[Swashbuckle](#swashbuckle) section.
+[Swashbuckle](#swashbuckle) section. An id declared with `JsonShape = JsonShape.Object` is rewritten to an
+object schema with a single required `value` property, matching the `{ "value": ... }` payload — the
+framework builds an empty schema for it, because it cannot see through the custom converter.
 
 The mechanism differs from Swashbuckle's: this one is an `IOpenApiSchemaTransformer` added through
 `AddSchemaTransformer`, so it rewrites only `type` and `format` on a schema the framework has already built
 and leaves everything else — description, `nullable`, `required`, examples — as it was. Because the framework
 keeps that schema as a named component, an id in a body shows up as `$ref: '#/components/schemas/OrderId'`
 rather than as an inline object. Swashbuckle's `MapType` instead replaces the schema for the type outright,
-with an inline one that carries only `type` and `format`.
+with an inline one that carries only `type` and `format`. The exception is `JsonShape.Object`, where both
+integrations write the object shape, since the framework has no schema to preserve.
 
 The two also differ in where they reach. Measured with `samples/Len.StronglyTypedId.Sample2` (`net10.0`,
 `Microsoft.AspNetCore.OpenApi` 10.0.13), route and query parameters do get `type: string, format: uuid`.

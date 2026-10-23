@@ -76,6 +76,26 @@ Newtonsoft.Json 的字典键走的是 `TypeConverter` / `ToString()`，并不经
 Id 无法表示 `null`，因此两种转换器都会拒绝该 token，而不是悄悄产出 `default`（`JsonException` /
 `JsonSerializationException`）。
 
+## 验证失败的异常契约
+
+`Validator` 拒绝的是「能解析但违反领域规则」的值。两种转换器在读入时都会执行它，并用各自的异常类型
+报告拒绝，而不是让 `Create` 的 `ArgumentException` 穿透出来：
+
+| 序列化器 | 值被拒绝时抛出的异常 |
+| --- | --- |
+| `System.Text.Json` | `JsonException` |
+| `Newtonsoft.Json` | `JsonSerializationException` |
+
+这一点很重要，因为两个库的转换器契约都是以该异常表述的：用 `catch (JsonException)` 包住反序列化的
+调用方，会把「载荷格式不对」和「领域规则不满足」当作同一类失败处理；也不会收到一个它无从预期的
+`ArgumentException`。生成代码为此改走 `TryCreate` 并自行抛出框架异常——字典键那条路径本来就是这么做的。
+
+以 `BigInteger` 为基元的 Id 按文本读入载荷，因此「载荷不是数字」也按同一方式报告——抛 `JsonException`，
+而不是 `BigInteger.Parse` 原本会抛的 `FormatException`。
+
+EF Core 的 `ValueConverter` 有意保留 `Create`：从数据库行物化实体属于数据完整性边界，那里用
+`ArgumentException` 比套一层 ORM 专属异常更能说明问题。
+
 ## JSON 形态
 
 默认情况下，Id 与其基元**形态兼容**：以 `Guid` 为基元的 `OrderId` 序列化结果与裸 `Guid` 完全相同，
@@ -92,9 +112,13 @@ public partial record struct OrderId(Guid Value);
 
 该设置对 `System.Text.Json` 与 `Newtonsoft.Json` 同时生效，且只作用于 Id 自身的值——字典键永远是基元
 文本，因为 JSON 的对象键不可能是对象。`JsonShape.Object` 读写单个 `value` 属性；载荷不是对象、或对象
-缺少 `value` 时会抛异常（`JsonException` / `JsonSerializationException`），其余属性一律跳过。在
-`System.Text.Json` 下，若设置了 `options.PropertyNameCaseInsensitive`，属性名匹配不区分大小写。由于
-基元形态是默认值，除非你主动选择对象形态，既有载荷不受影响。
+缺少 `value` 时会抛异常（`JsonException` / `JsonSerializationException`），其余属性一律跳过。
+
+两侧的属性名匹配都不区分大小写，这与它们各自处理普通对象时的行为一致：`{"value":…}`、`{"Value":…}`、
+`{"VALUE":…}` 读到的是同一个值。`System.Text.Json` 下这跟随 `options.PropertyNameCaseInsensitive`——
+关掉它就只接受精确的小写 `value`。`Newtonsoft.Json` 下则是无条件的，因为 Newtonsoft 自己的 POCO 绑定
+本就大小写不敏感，转换器若更严就会拒绝文档其余部分都能接受的载荷。由于基元形态是默认值，除非你主动选择
+对象形态，既有载荷不受影响。
 
 ## 文本前缀
 
@@ -156,5 +180,10 @@ settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 s
 ```
 
 每个入口只在引用了对应序列化器、且编译中至少声明了一个 Id 时才生成。
+
+两者都是幂等的：已经在列表里的转换器会被跳过，因此从多个模块各注册一次、或同一处调用两次，都不会让列表
+增长；你自己添加的转换器保持原位。在 `System.Text.Json` 下这也意味着 options 被使用过之后再调一次是空操作，
+而不是抛 `InvalidOperationException`——`JsonSerializerOptions` 一经使用即冻结，而入口在全部已注册时根本不触碰
+集合。
 
 [<- 返回目录](index.md) · [English](../serialization.md)

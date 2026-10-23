@@ -79,7 +79,7 @@ id ends up as a bare `type: string` with no `format` in the Swagger document. Bo
 unaffected, and an MVC controller parameter is fine: it reaches `ApiExplorer` as the id type, so
 `/api/products/{id}` comes out as `type: integer, format: int32` for an `int`-backed id
 (`samples/Len.StronglyTypedId.Sample3`, Swashbuckle 10). The Minimal API gap was measured on `net8.0` with
-Swashbuckle 6.5.0 (`samples/Len.StronglyTypedId.Sample4`).
+Swashbuckle 6.9.0 (`samples/Len.StronglyTypedId.Sample4`).
 
 The built-in [ASP.NET Core OpenAPI](integrations.md#aspnetcore-openapi) integration does not have this gap:
 its transformer inspects the schema the framework built for the parameter, which is why `/orders/{id}` comes

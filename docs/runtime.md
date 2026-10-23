@@ -49,4 +49,10 @@ Interfaces, abstract types, enums and arrays are never reported as strongly type
 (`OrderId?`) is judged by its underlying id type, so `typeof(OrderId?)` reports the same primitive as
 `typeof(OrderId)` — the same answer the MVC model binder and the EF Core converters give.
 
+Results are cached per `Type`, and the cache holds its keys weakly. Types loaded into a collectible
+`AssemblyLoadContext` (plugins, hot reload, test hosts that reload assemblies) therefore stay collectible:
+once nothing else references the plugin, the context and its types are reclaimed together with their cache
+entries. If a type implements several `IStronglyTypedId<TSelf, TPrimitiveId>` interfaces, the one whose
+`TSelf` is that type itself wins, so the reported primitive never depends on interface enumeration order.
+
 [<- Back to the index](index.md) · [中文](zh-CN/runtime.md)

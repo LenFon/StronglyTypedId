@@ -21,7 +21,8 @@ title: 常见问题
 
 答：可以。每个 Id 都实现了 `IComparable<TSelf>` 与 `<`、`>`、`<=`、`>=`（比较的都是被包装的值），
 因此 `OrderBy`、`SortedSet<T>` 与区间判断都无需自定义比较器。引用类型 Id 把 `null` 视为最小、
-排在最前，与 `Comparer<T>.Default` 的约定一致。
+排在最前，与 `Comparer<T>.Default` 的约定一致。以 `string` 为基元的 Id 按序数比较，排序因此与
+`Equals` 一致，也不会随机器区域设置改变——见[生成代码](generated-code.md)。
 
 **问：`ToString()` 输出什么？**
 

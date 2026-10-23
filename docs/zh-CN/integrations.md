@@ -108,11 +108,27 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 因此只给裸 `integer` 而不带 `format`。带 `Prefix` 的 Id 一律是 `string` 且不带 `format`，因为它的规范
 文本形就是文本。
 
+任何编译期映射都有一处限制：枚举基元的 Id 记为 `integer`，因为 `System.Text.Json` 默认就写数字。若你
+全局注册了 `JsonStringEnumConverter`，生成的转换器会委托 `JsonSerializer`，实际报文变成成员名，而文档
+仍写着 `integer`。schema 在编译期发射，看不到运行期的 `JsonSerializerOptions`；请沿用默认的数字形态，
+或把该 Id 的基元声明为 `string`。
+
+声明为 `JsonShape = JsonShape.Object` 的 Id 则映射为对象 schema，因为线上报文就是这个形状：
+`{ "value": <基元> }`，`value` 标为必填。内层的 `value` 属性沿用上表的基元映射（含 `Prefix` 规则）：
+
+```json
+{
+  "type": "object",
+  "properties": { "value": { "type": "string", "format": "uuid" } },
+  "required": ["value"]
+}
+```
+
 `MapType<T>` 注册的是 Id **类型**的 schema，而不是某个端点的 schema，因此没有逐端点要配的东西。只要框架
 把 Id 类型交给 `ApiExplorer`——DTO 上的属性、响应体、嵌套在另一个模型里的字段、MVC 控制器参数——用的都是
 同一份映射。
 
-有一处实测出来的例外，来自 `samples/Len.StronglyTypedId.Sample4`（`net8.0` + Swashbuckle 6.5.0）：
+有一处实测出来的例外，来自 `samples/Len.StronglyTypedId.Sample4`（`net8.0` + Swashbuckle 6.9.0）：
 **Minimal API** 的路由参数被 `ApiExplorer` 描述成 `string`——
 框架认得出这是 `IParsable` 类型，于是按文本上报——`MapType` 因此没有机会生效，该参数的 schema 是裸的
 `type: string`，不带 `format`。请求 / 响应体与 DTO 属性不受影响；MVC 控制器参数也照常映射，它以 Id 类型
@@ -143,10 +159,22 @@ connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Cr
 
 驱动很少原样返回基元的 CLR 类型——SQLite 对枚举列返回 `long`、对 `char` / `Guid` 列返回 `string`、对
 `decimal` 列返回 `double`。因此生成的 `Parse` 会先把入参转换成基元再调用 `Create`（数值与日期时间基元走
-`System.Convert`，枚举走 `Enum.ToObject` / `Enum.Parse`，`Guid`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、
+`System.Convert`，枚举走 `Enum.TryParse`，`Guid`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、
 `TimeOnly`、`Int128`、`UInt128`、`Half`、`BigInteger` 走各自的 `IParsable` 文本入口）。已经是基元的值走
 直通分支；`NULL`——`DBNull` 或裸 `null`——映射为 `default`。枚举列可能以成员名文本返回，也可能以底层数字
 返回，两种形态都接受。
+
+枚举文本按不区分大小写匹配，因为各驱动的大小写习惯不一致（Oracle 返回大写，PostgreSQL 返回存储时的拼写），
+而 `Enum.Parse` 区分大小写。文本还会对照枚举的已定义成员校验：`Enum.TryParse` 会接受 `"999"` 和 `"1,2"`，
+由此得到的 Id 不对应任何成员——对它做 `switch` 会落空，序列化也会写出野值。非 `[Flags]` 枚举必须命中已定义
+成员；`[Flags]` 枚举接受任意已定义位的组合，与 `Id.TryParse` 保持一致。两项校验任一失败都会抛出
+`ArgumentException`，与 `Create` 拒绝取值时抛出的异常相同。
+
+数值路径同样要校验，而且必须发生在 `Enum.ToObject` 之前：该方法既不检查范围也不拒绝小数。`300L` 交给
+`byte` 底层枚举会静默变成 `44`——甚至可能恰好是某个已定义成员——`1.5d` 则会静默截断成 `0`。因此生成的
+处理器先把取值转换成枚举的底层类型（超范围会抛 `OverflowException`，再转成 `ArgumentException`），拒绝一切
+带小数部分的取值，最后才对照已定义成员校验。于是 `999L`、`300L`、`1.5d`、`uint.MaxValue` 与它们的文本形式
+一样被拒绝；已经是枚举类型的取值也要校验，而不是直接放行。
 
 > 注册是全局的，不是按连接的。`ApplyTo(IDbConnection)` 仍会生成以保持源码兼容，但它忽略实参并转发到
 > `ApplyTo()`。两者重复调用都无害：Dapper 对同一类型是替换而非追加，注册表不会膨胀。
@@ -177,16 +205,20 @@ var id    = MessagePackSerializer.Deserialize<OrderId>(bytes, options);
 自己名下。这是有意的：`[MessagePackFormatter]` 只能加在本次编译声明的类型上，于是「库作者声明 Id、应用
 引用使用」这条最常见的路径根本拿不到格式化器。不同命名空间下的同名 Id 按与 Dapper 处理器相同的方式消歧。
 
-载荷是包裹的基元值本身，不是规范文本形：文本前缀只是文本形的装饰，二进制格式里没有文本可装饰。有三种基元
-根本没有 MessagePack 格式化器——`BigInteger`、`Int128`、`UInt128`——这些 Id 退回不变文化的文本形
-（MessagePack string），读回时经 `TryParse`。对它们来说前缀**确实**会进载荷，因为前缀属于文本。
+载荷是包裹的基元值本身，不是规范文本形：文本前缀只是文本形的装饰，二进制格式里没有文本可装饰。有三种基元是
+例外——`BigInteger`、`Int128`、`UInt128`——它们的 Id 写成不变文化的文本形（MessagePack string），读回时经
+`TryParse`。对它们来说前缀**确实**会进载荷，因为前缀属于文本。
+
+这个例外是刻意的选择，而不是当前 MessagePack 版本的限制：3.x 已能原生编码这三种基元，本库仍使用文本形，是为了
+让 2.x 时代写出的载荷保持可读。改成原生编码会静默改变既有数据的线上格式，因此不做。
 
 对其余基元，字节就是该基元自身序列化的结果，因此 Id 字段与裸基元字段在既有载荷里无法区分——把其中一个
 换成另一个不需要重新编码。
 
 引用类型 Id 的 `null` 写成 `nil`、读回为 `null`；值类型 Id 收到 `nil` 会抛
 `MessagePackSerializationException`，而不是悄悄落成 `default`——这样「字段缺失」就不会被误认成合法的
-`Guid.Empty`。
+`Guid.Empty`。被 Id 的 `Validator` 拒绝的值同样如此：格式化器走 `TryCreate` 并自行抛出
+`MessagePackSerializationException`，`Create` 的 `ArgumentException` 不会传到调用方。
 
 <a id="mongodb"></a>
 
@@ -213,12 +245,17 @@ await collection.InsertOneAsync(new Order { Id = OrderId.Create(Guid.NewGuid()) 
 `BsonSerializer` 把序列化器放在进程级注册表里，所以注册是全局的、不是按集合的；重复调用也无害——
 已注册过的序列化器不会被覆盖。
 
+「不被覆盖」也包括别人为同一个 Id 类型注册的序列化器：驱动的 `TryRegisterSerializer` 返回 `false` 并保留
+既有的那个，因此冲突的注册会静默压过生成的序列化器。这是有意的——强行覆盖会破坏上面的幂等性——但意味着
+序列化器已在别处注册过的 Id 类型将由那一个负责序列化，而不是我们生成的。
+
 每个 Id 的序列化器名为 `{类型名}BsonSerializer`，放在生成的 `StronglyTypedIds` 类里。`[BsonSerializer]`
 本来是更短的路子，但它只能加在本次编译声明的类型上，那样引用程序集里的 Id 就没有序列化器了。
 
 载荷是包裹的基元值本身。`BigInteger`、`Int128`、`UInt128` 没有 BSON 序列化器，这些 Id 存成承载不变文化
 文本形（含前缀）的 BSON string，读回时经 `TryParse`。引用类型 Id 的 `null` 存成 BSON `null`；值类型 Id
-遇到 BSON `null` 会抛 `BsonSerializationException`。
+遇到 BSON `null` 会抛 `BsonSerializationException`。被 Id 的 `Validator` 拒绝的值同样如此：序列化器走
+`TryCreate` 并自行抛出 `BsonSerializationException`，`Create` 的 `ArgumentException` 不会传到调用方。
 
 对其余基元，存下去的 BSON 值就是基元自身的值，因此既有文档继续可读，Id 字段与裸基元字段无法区分。由于
 序列化器按类型注册，LINQ 过滤器与投影（`Builders<Order>.Filter.Eq(x => x.Id, id)`）也会经它序列化——
@@ -258,7 +295,9 @@ public class OrdersController : ControllerBase
 > 绑定器只对实现了 `IStronglyTypedId<TSelf, TPrimitiveId>` 的类型接管；其余类型回退到 MVC 默认绑定链路。
 > 绑定本身复用每个 Id 已有的 `IParsable<TSelf>` 成员，因此除注册时的一次性类型判定外没有逐请求反射开销。
 
-该提供者被插到 `ModelBinderProviders` 的最前面，因此优先于框架自带的提供者。可空 Id 同样覆盖：
+该提供者被插到 `ModelBinderProviders` 的最前面，因此优先于框架自带的提供者。`ApplyTo(MvcOptions)` 是幂等的：
+列表里已有 `StronglyTypedIdModelBinderProvider` 时直接返回，不再插入第二个，因此启动代码从多个模块各注册一次、
+或配置回调被执行两次，都不会让提供者列表增长、也不会让绑定器在每个请求上重建。可空 Id 同样覆盖：
 `[FromQuery] OrderId?` 的 CLR 类型是 `Nullable<OrderId>`，它不实现任何接口，所以提供者先拆壳再做接口判定。
 少了这一步，该参数会落到 MVC 的 `TryParseModelBinder`，而它按**当前区域**解析——同一条路由上的可空与
 非可空参数对同一份载荷就会绑出不同的值。
@@ -324,12 +363,15 @@ builder.Services.AddOpenApi(options =>
 ```
 
 映射把每个 Id 解析为其底层基元类型的 schema，`format` 取值与 [Swashbuckle](#swashbuckle) 一节相同。
+声明为 `JsonShape = JsonShape.Object` 的 Id 会被改写成带单个必填 `value` 属性的对象 schema，与
+`{ "value": ... }` 报文一致——框架看不穿自定义转换器，给它建的是一份空 schema。
 
 机制与 Swashbuckle 不同：这里是一个经 `AddSchemaTransformer` 挂上的 `IOpenApiSchemaTransformer`，只改写
 框架已经建好的 schema 上的 `type` 与 `format`，其余内容——描述、`nullable`、`required`、示例——原样保留。
 又因为框架把这份 schema 保留为具名组件，请求体里的 Id 呈现为 `$ref: '#/components/schemas/OrderId'`，
 而不是内联对象。Swashbuckle 的 `MapType` 则是整份替换该类型的 schema，换上去的是一份只带 `type` 与
-`format` 的内联 schema。
+`format` 的内联 schema。`JsonShape.Object` 是例外：两个集成都直接写入对象形态，因为框架那里本来就没有
+可保留的 schema。
 
 两者的覆盖面也不同。用 `samples/Len.StronglyTypedId.Sample2`（`net10.0` +
 `Microsoft.AspNetCore.OpenApi` 10.0.13）实测：路由参数与查询参数都拿到了 `type: string, format: uuid`。

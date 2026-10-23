@@ -23,7 +23,9 @@ over the wrapped `Value`. Serializing a dictionary keyed by an id is supported a
 
 A: Yes. Every id implements `IComparable<TSelf>` plus `<`, `>`, `<=` and `>=` over the wrapped value, so
 `OrderBy`, `SortedSet<T>` and range checks work without a custom comparer. Reference-type ids treat
-`null` as the smallest value, matching `Comparer<T>.Default`.
+`null` as the smallest value, matching `Comparer<T>.Default`. A `string`-backed id compares ordinally,
+so its ordering agrees with `Equals` and does not shift with the machine's culture — see
+[generated code](generated-code.md).
 
 **Q: What does `ToString()` print?**
 

@@ -115,6 +115,36 @@
 
 ### 修复
 
+- `IsStronglyTypedId` / `GetPrimitiveIdType` / `TryGetPrimitiveIdType` 不再阻止可回收
+  `AssemblyLoadContext` 卸载。它们的结果缓存原先是以 `Type` 为键的静态字典，而 `Type` 持有
+  `Assembly`、`Assembly` 持有加载上下文 —— 于是每次插件加载、热重载或重复加载程序集的测试宿主，
+  都会把该上下文及其全部类型钉在进程生命周期内。缓存现在改用 `ConditionalWeakTable`，记录随键
+  一起消失。普通应用代码无感知，只有会卸载程序集的宿主才看得出差别。
+- 当一个类型实现多份 `IStronglyTypedId<TSelf, TPrimitiveId>` 时，现在取 `TSelf` 等于该类型自身的
+  那份接口来确定基元类型。此前取第一个匹配项，报告的基元类型因此取决于 `Type.GetInterfaces()` 的
+  枚举顺序 —— 同一类型在不同运行时可能给出不同基元，而模型绑定器与 EF 转换器正是据此选择转换器。
+- OpenAPI 文档现在把声明为 `JsonShape = JsonShape.Object` 的 Id 描述成它实际序列化成的对象 ——
+  `{ "value": <基元> }`，`value` 必填 —— 而不是裸基元。两个集成都受影响：Swashbuckle 的 `MapType`
+  为这类 Id 发出的是 `type: string, format: uuid`，ASP.NET Core OpenAPI 的转换器同样把框架的 schema
+  改写成裸基元。按这两种文档生成的客户端会按纯字符串收发，而服务端读写的是对象，凡涉及该 Id 的调用
+  都会失败。内层 `value` 属性沿用常规的基元映射，包括 `Prefix` 规则。
+- 以 `string` 为基元的 Id 现在按序数比较，排序因此与相等性一致。`CompareTo` 与 `<`、`>`、`<=`、`>=`
+  原先走 `string.CompareTo(string)`，那是区域性敏感的：它把 `"a\u00ADb"` 与 `"ab"` 判为相等，尽管
+  `Equals` 认为两者不同；`"I"` 与 `"i"` 的顺序在 `en-US` 与 `tr-TR` 下还会反过来。`SortedSet<T>` 与
+  `SortedDictionary<TKey, TValue>` 正是靠 `CompareTo` 判重的，于是两个不同的 Id 会塌成一个条目 ——
+  静默的数据丢失，不抛异常也不打日志。生成的比较现在改用 `string.CompareOrdinal`，与 record 合成的
+  `Equals` 以及各序列化器写出的不变文化文本保持一致。其它基元的 Id 不受影响：它们的 `CompareTo`
+  本就是强类型的，在需要序数语义的地方已经是序数比较。
+- 被 `Validator` 拒绝的值在反序列化时现在抛序列化库自己的异常，而不是让 `ArgumentException` 穿透。
+  生成的转换器原先调用 `Id.Create(...)`，其 `ArgumentException`（或配置的 `ExceptionType`）会直接穿过
+  `JsonSerializer.Deserialize` / `JsonConvert.DeserializeObject` / `MessagePackSerializer` /
+  `BsonSerializer` —— 这四个库都不会包装转换器抛出的异常。按文档契约 `catch (JsonException)` 的调用方
+  因此完全漏掉这条拒绝路径。转换器现在改走 `TryCreate` 并自行抛出 `JsonException` /
+  `JsonSerializationException` / `MessagePackSerializationException` / `BsonSerializationException`，
+  与字典键那条路径此前的做法一致。EF Core 的 `ValueConverter` 仍调用 `Create`：从数据库行物化实体属于
+  数据完整性边界，那里 `ArgumentException` 是更准确的报告。以 `BigInteger` 为基元的 Id 原先经
+  `BigInteger.Parse` 读入非数字载荷，`FormatException` 同样会泄漏；现在改用 `TryParse` 并报告
+  `JsonException`。
 - JSON 令牌类型不符时现在抛序列化库自己的异常，而不是 `InvalidOperationException`。生成的转换器在处理
   意外令牌的 `switch` 分支里抛 `InvalidOperationException` —— 例如从数字读 `string` 基元的 Id，或
   （Newtonsoft.Json）把 `null` 交给值类型 Id —— 而同文件里所有结构性错误抛的都是 `JsonException` /
@@ -204,6 +234,28 @@
   换成 `(Guid Value)`，于是 `record OrderId(Guid Value, string Name)` 里的 `Name` 无声消失。
   参数确实必须删（诊断要求恰好一个参数），但现在标题把这件事说清楚并写明替换结果：
   「改为单参数主构造函数 (Guid Value)，其余参数将被移除」。
+- `MessagePack` 与 `MongoDb` 两个集成从不报 `STIA0019`。分析器的「标志 → 程序集」对照表只登记了
+  九个标志中的七个，于是在未引用 `MessagePack` 的项目里写
+  `[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.MessagePack)]` 既不生成代码也不报警 ——
+  尽管生成器对这两个集成都做了程序集门控，文档也承诺会报诊断而不是静默失效。两行现已补齐，
+  并新增一条结构性测试断言对照表覆盖 `StronglyTypedIdIntegrations.All` 的每一位，
+  将来新增集成不会再重演同一处遗漏。
+- 「内联强类型 Id」重构不再删除恰好同名的无关特性。它此前只按名字判断，于是 `[Acme.StronglyTypedId]`
+  ——或从别的命名空间引入的短名 `[StronglyTypedId]`——会和真正的那个一起被剥掉，静默抹掉另一个库
+  用它表达的信息。现在特性经语义解析，只有绑定到 `Len.StronglyTypedId.StronglyTypedIdAttribute` 时
+  才删除；名字根本没解析到任何特性（被同名命名空间遮蔽）时仍按强类型 Id 处理，那种场景下重构照常可用。
+- `StronglyTypedIds.ApplyTo(MvcOptions)` 现在是幂等的。它此前每次调用都插入一个新的
+  `StronglyTypedIdModelBinderProvider`，于是启动代码从多个模块各注册一次、或配置回调被执行两次，
+  都会在 `ModelBinderProviders` 里留下重复的提供者，每个都在每次请求上重建绑定器。现在检测到已存在
+  就直接返回。
+- Dapper 类型处理器现在按不区分大小写解析枚举文本，并拒绝不对应任何成员的取值。`Enum.Parse` 区分
+  大小写，驱动对存为 `Active` 的列返回 `ACTIVE` 时即便取值合法也会抛异常；换成 `Enum.TryParse` 又会
+  接受 `"999"` 与 `"1,2"`，得到不匹配任何成员的 Id。非 `[Flags]` 枚举现用 `Enum.IsDefined` 校验，
+  `[Flags]` 枚举用未定义位掩码校验，与 `Id.TryParse` 及 JSON 字典键路径一致。被拒的文本抛
+  `ArgumentException`，与 `Create` 抛出的异常相同。
+- `RegisterBsonSerializers` 现在写明「同一 Id 类型的序列化器已被注册」时的行为：驱动的
+  `TryRegisterSerializer` 返回 `false` 并保留既有的那个，冲突的注册会静默胜出。行为本身未变——
+  强行覆盖会破坏文档承诺的幂等性——但生成的 XML 注释与集成文档现在把它讲明，而不是留给使用者自己撞见。
 
 ## [1.3.0] - 2026-10-07
 

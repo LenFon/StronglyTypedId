@@ -57,6 +57,11 @@ title: 生成产物
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。`record` 引用类型 Id 的形参与两个操作数
   都可为 `null`，且 `null` 最小：`CompareTo(null)` 返回 `1`，`null < id` 为 `true`。运算符委托给私有的
   `CompareValues` 辅助方法，因此 `null` 操作数不会去解引用 `Value`。
+  以 `string` 为基元的 Id 按**序数**比较（`string.CompareOrdinal`），而不是 `string.CompareTo(string)`：
+  后者区域性敏感，与 record 合成的 `Equals` 不一致——`"a\u00ADb"` 与 `"ab"` 比较结果为相等却并不相等，
+  `"I"` 与 `"i"` 的顺序还会随区域翻转。`SortedSet<T>` 与 `SortedDictionary<TKey, TValue>` 正是靠
+  `CompareTo` 判重的，区域性比较会在那里静默丢掉元素。序数比较让排序与相等性、以及与序列化写出的
+  不变文化文本保持一致。
 - 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
   与序列化写出的文本一致，`Parse(id.ToString())` 可往返；需要按特定文化
   格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。

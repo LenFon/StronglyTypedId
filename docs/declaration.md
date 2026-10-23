@@ -158,10 +158,26 @@ TenantId.Unspecified.Value;                     // -1
 TenantId.Unspecified == TenantId.Create(-1);    // true
 ```
 
-The value is the **primitive** value in its invariant text form — the same text `Parse` accepts, but
-**without** the `Prefix`, because a prefix decorates the canonical text form while an instance carries a
-primitive value. It is checked at compile time and translated into a literal (or a constructor call), so
-nothing is parsed at run time.
+The value is the **primitive** value in its invariant text form, **without** the `Prefix`, because a prefix
+decorates the canonical text form while an instance carries a primitive value. It is checked at compile time
+and translated into a literal (or a constructor call), so nothing is parsed at run time.
+
+Most primitives accept exactly what their own `Parse` accepts, so `[StronglyTypedIdInstance("X", " 1 ")]` is
+fine for an `int`. A few are deliberately stricter, because their `Parse` is loose enough to make the
+declaration ambiguous — `"2020-1-1"` and `"2020-01-01"` are the same day, and accepting both would let the
+same instance be written two ways:
+
+| Primitive | Accepted form | Rejected although `Parse` accepts it |
+|---|---|---|
+| `Int128`, `UInt128`, `BigInteger` | optional sign, then digits only | surrounding whitespace (`" 1 "`) |
+| `DateOnly` | exactly `yyyy-MM-dd` | `"2020-1-1"`, `"2020/01/01"` |
+| `TimeOnly` | `HH:mm`, `HH:mm:ss`, or `HH:mm:ss.f`–`fffffff` | `"1:02"` (single-digit hour) |
+| `Half` | anything `float` accepts, below the 65520 overflow midpoint | `"65520"` (rounds to infinity), `"1,000"` |
+| `float`, `double` | exponents, `NaN`, `Infinity`; no thousands separators | `"1,000"` |
+
+Everything else follows its primitive: `char` takes exactly one character, `decimal` accepts thousands
+separators, `Guid` / `DateTime` / `DateTimeOffset` / `TimeSpan` take their usual flexible forms, and an enum
+takes a member name, a numeric value, or a comma-separated combination of members.
 
 Every instance is built through `Create`, and that is what makes the guarantee hold: an instance is never
 a privileged value, so it goes through the same `Normalizer` and `Validator` as any other value, and
