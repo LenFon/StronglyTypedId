@@ -146,6 +146,49 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
+    /// 枚举的三条读取路径（直通 / 文本 / 数值）必须共用同一套「已定义」校验。
+    /// </summary>
+    /// <remarks>
+    /// 数值路径曾完全绕过校验：<c>Enum.ToObject</c> 对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c> 枚举会变成
+    /// <c>44</c>，甚至恰好命中某个已定义成员），对浮点数静默截断（<c>1.5d</c> 变成 <c>0</c>）。于是同一个非法取值
+    /// 会因驱动返回的 CLR 类型不同而被接受或拒绝 —— 文本 <c>"999"</c> 被拒，数值 <c>999L</c> 却造出一个不对应任何
+    /// 成员的 Id。本用例逐条锁定三条路径的拒绝行为。
+    /// </remarks>
+    [Fact]
+    public void Dapper_Parse_RejectsUndefinedEnumValues_OnEveryPath()
+    {
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+
+        var status = GetDapperHandler<SampleStatusId>();
+
+        // 合法取值：三条路径都必须通过。
+        status.Parse(SampleStatus.Suspended).Should().Be(SampleStatusId.Create(SampleStatus.Suspended), "直通路径");
+        status.Parse(1L).Should().Be(SampleStatusId.Create(SampleStatus.Suspended), "数值路径（SQLite 的 INTEGER 列）");
+        status.Parse(1.0d).Should().Be(SampleStatusId.Create(SampleStatus.Suspended), "数值路径（REAL 列）");
+        status.Parse("Suspended").Should().Be(SampleStatusId.Create(SampleStatus.Suspended), "文本路径");
+        status.Parse("suspended").Should().Be(SampleStatusId.Create(SampleStatus.Suspended), "文本路径忽略大小写");
+
+        // 未定义取值：三条路径都必须拒绝。
+        status.Invoking(handler => handler.Parse(999L)).Should().Throw<ArgumentException>("数值路径不得放行未定义取值");
+        status.Invoking(handler => handler.Parse(300L)).Should().Throw<ArgumentException>("数值路径不得放行未定义取值");
+        status.Invoking(handler => handler.Parse(999.0d)).Should().Throw<ArgumentException>("数值路径不得放行未定义取值");
+        status.Invoking(handler => handler.Parse("999")).Should().Throw<ArgumentException>("文本路径不得放行未定义取值");
+
+        // 带小数部分的取值一律拒绝：Enum.ToObject 会静默截断（1.5d → 0，即 Active）。
+        status.Invoking(handler => handler.Parse(1.5d)).Should().Throw<ArgumentException>("小数必须被拒绝，不能截断成某个成员");
+
+        // 超出底层类型范围的取值一律拒绝：Enum.ToObject 会静默绕回（uint.MaxValue → -1）。
+        status.Invoking(handler => handler.Parse(uint.MaxValue)).Should().Throw<ArgumentException>("溢出必须被拒绝，不能绕回");
+
+        // [Flags] 枚举：位组合合法，未定义的位非法。
+        var access = GetDapperHandler<SampleAccessId>();
+        access.Parse(3L).Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write), "已定义位的组合合法");
+        access.Parse("Read, Write").Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write), "文本形式的位组合合法");
+        access.Invoking(handler => handler.Parse(4L)).Should().Throw<ArgumentException>("未定义的位必须被拒绝");
+        access.Invoking(handler => handler.Parse(999L)).Should().Throw<ArgumentException>("未定义的位必须被拒绝");
+    }
+
+    /// <summary>
     /// 真实 SQLite 往返：写入侧把基元交给驱动，读取侧由驱动返回 long / string / double，
     /// 再由生成的 <c>Parse</c> 转换回基元。这条端到端路径此前 4/4 抛 <see cref="InvalidCastException"/>，
     /// 而当时的集成用例只用 string 基元，缺陷因此长期未被发现。
@@ -275,6 +318,31 @@ public class IntegrationRuntimeTests
         schema.Format.Should().BeNull("文本形带前缀，不再是合法 uuid，不能标 format");
     }
 
+    /// <summary>
+    /// <c>JsonShape.Object</c> 的线上报文是 <c>{"value":"&lt;guid&gt;"}</c>，schema 必须写成对象形态并标 <c>value</c> 必填；
+    /// 否则生成的客户端会按裸字符串收发，与服务端实际报文不符。
+    /// </summary>
+    [Fact]
+    public void Swagger_ApplyTo_MapsObjectShapeIdToObjectSchema()
+    {
+        var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+
+        options.SchemaGeneratorOptions.CustomTypeMappings.Should().ContainKey(typeof(ObjectShapeIntegrationGuidId));
+
+        var schema = options.SchemaGeneratorOptions.CustomTypeMappings[typeof(ObjectShapeIntegrationGuidId)]();
+
+        schema.Type.Should().Be("object");
+        schema.Format.Should().BeNull("对象形态没有 format");
+
+        schema.Properties.Should().ContainKey("value");
+        schema.Properties["value"].Type.Should().Be("string");
+        schema.Properties["value"].Format.Should().Be("uuid", "value 属性仍是基元 Guid");
+
+        schema.Required.Should().Contain("value", "对象形态只有一个必填属性");
+    }
+
     #endregion
 
     #region 内置 OpenApi：门控判据已核实（≥9 正确，8.0 包引用下产物必须不生成）
@@ -356,6 +424,28 @@ public class IntegrationRuntimeTests
         };
         constraint.Match(null, null, "IntegrationGuidId", invalidValues, Microsoft.AspNetCore.Routing.RouteDirection.IncomingRequest)
             .Should().BeFalse("非法文本必须被路由约束拒绝");
+    }
+
+    /// <summary>
+    /// <c>ApplyTo(MvcOptions)</c> 必须幂等：启动代码里重复调用（多个模块各自注册、或配置被复用）时，
+    /// 每次 <c>Insert</c> 一个新实例会让 provider 列表无限增长，绑定器也被反复重建。
+    /// </summary>
+    [Fact]
+    public void Mvc_ApplyTo_Should_BeIdempotent()
+    {
+        var mvcOptions = new Microsoft.AspNetCore.Mvc.MvcOptions();
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+        var afterFirst = mvcOptions.ModelBinderProviders.Count;
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+
+        mvcOptions.ModelBinderProviders.Count.Should().Be(afterFirst,
+            "重复调用 ApplyTo 不能再叠加 provider");
+        mvcOptions.ModelBinderProviders
+            .Count(p => p.GetType().Name == "StronglyTypedIdModelBinderProvider")
+            .Should().Be(1, "生成的 provider 至多存在一个");
     }
 
     /// <summary>
@@ -671,6 +761,104 @@ public class IntegrationRuntimeTests
         json.Should().Be($"\"ord_{id.Value:D}\"");
 
         System.Text.Json.JsonSerializer.Deserialize<PrefixedIntegrationGuidId>(json, options).Should().Be(id);
+    }
+
+    /// <summary>
+    /// 两个 JSON 注册入口都必须幂等：重复调用不能让转换器列表增长。
+    /// </summary>
+    /// <remarks>
+    /// 启动代码里「每个模块各自注册一次」是常见写法，而 <c>Converters</c> 是普通列表，无条件 <c>Add</c> 会让
+    /// 列表成倍增长，每次序列化都要多走几十个不命中的 <c>CanConvert</c>。同库的 MVC 与 BSON 注册都做了幂等，
+    /// 这两个入口此前没有。
+    /// </remarks>
+    [Fact]
+    public void JsonRegistrations_AreIdempotent()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions();
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        var afterFirst = options.Converters.Count;
+        afterFirst.Should().BeGreaterThan(0, "前置条件：必须真的注册了转换器");
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.Converters.Count.Should().Be(afterFirst, "重复调用 ApplyTo 不得让转换器列表增长");
+
+        var settings = new Newtonsoft.Json.JsonSerializerSettings();
+        settings.AddStronglyTypedId();
+        var njAfterFirst = settings.Converters.Count;
+        njAfterFirst.Should().BeGreaterThan(0, "前置条件：必须真的注册了转换器");
+
+        settings.AddStronglyTypedId();
+        settings.AddStronglyTypedId();
+        settings.Converters.Count.Should().Be(njAfterFirst, "重复调用 AddStronglyTypedId 不得让转换器列表增长");
+    }
+
+    /// <summary>
+    /// 注册入口不得破坏调用方已有的转换器，也不得在 <c>JsonSerializerOptions</c> 冻结后再触碰集合。
+    /// </summary>
+    /// <remarks>
+    /// <c>JsonSerializerOptions</c> 一经使用即冻结，此时再 <c>Add</c> 会抛 <c>InvalidOperationException</c>。
+    /// 幂等实现必须在「已注册」时直接跳过，而不是先清空或重建列表。
+    /// </remarks>
+    [Fact]
+    public void SystemTextJsonApplyTo_PreservesUserConverters_AndSurvivesFrozenOptions()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions();
+        var userConverter = new System.Text.Json.Serialization.JsonStringEnumConverter();
+        options.Converters.Add(userConverter);
+
+        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.Converters[0].Should().BeSameAs(userConverter, "用户自己的转换器必须保持在原位");
+
+        // 触发冻结：此后 options 只读。
+        _ = System.Text.Json.JsonSerializer.Serialize(1, options);
+        var frozenCount = options.Converters.Count;
+
+        // 冻结后重复注册不得抛异常 —— 全部转换器都已注册，实现应当直接跳过。
+        var act = () => Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        act.Should().NotThrow("已注册时不应触碰已冻结的集合");
+        options.Converters.Count.Should().Be(frozenCount);
+    }
+
+    /// <summary>
+    /// <c>JsonShape.Object</c> 下 Newtonsoft 的属性名匹配必须大小写不敏感，与它自己对普通 POCO 的行为一致。
+    /// </summary>
+    /// <remarks>
+    /// <c>JObject.TryGetValue</c> 是序数比较，只认小写 <c>"value"</c>。而 Newtonsoft 反序列化普通 POCO 时
+    /// <c>{"Value":…}</c>、<c>{"VALUE":…}</c> 都能填进 <c>Value</c> 属性 —— 生成的转换器若比它所在的序列化器
+    /// 更严，同一个载荷会在 Id 这一层突然失败。对象形态本就是为「对接既有客户端契约」才启用的，恰恰最容易
+    /// 遇到大小写不一致。
+    /// </remarks>
+    [Fact]
+    public void Newtonsoft_ObjectShape_MatchesPropertyNameCaseInsensitively()
+    {
+        var guid = Guid.NewGuid();
+        var id = ObjectShapeIntegrationGuidId.Create(guid);
+
+        // 写出的属性名是小写 value。
+        Newtonsoft.Json.JsonConvert.SerializeObject(id).Should().Be($"{{\"value\":\"{guid:D}\"}}");
+
+        // 读入时各种大小写都必须接受。
+        foreach (var propertyName in new[] { "value", "Value", "VALUE", "vAlUe" })
+        {
+            var json = $"{{\"{propertyName}\":\"{guid:D}\"}}";
+
+            Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeIntegrationGuidId>(json)
+                .Should().Be(id, $"属性名 '{propertyName}' 必须被接受");
+        }
+
+        // 其他属性照常跳过。
+        Newtonsoft.Json.JsonConvert
+            .DeserializeObject<ObjectShapeIntegrationGuidId>($"{{\"a\":1,\"Value\":\"{guid:D}\",\"b\":2}}")
+            .Should().Be(id);
+
+        // 缺失 value 仍然是错误，不能被「大小写不敏感」顺带放宽。
+        var missing = () => Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeIntegrationGuidId>("{\"other\":1}");
+        missing.Should().Throw<Newtonsoft.Json.JsonSerializationException>("缺少 value 属性必须报错");
+
+        // 值为 JSON null 同样是错误：Id 是值类型，null 不能落成 default。
+        var nullValue = () => Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeIntegrationGuidId>("{\"value\":null}");
+        nullValue.Should().Throw<Newtonsoft.Json.JsonSerializationException>("value 为 null 必须报错");
     }
 
     #endregion

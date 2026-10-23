@@ -165,7 +165,7 @@ public class NewtonsoftJsonCodeGeneratorTests
         var code = generated["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
 
         code.Should().Contain("serializer.Deserialize<global::System.Guid?>(reader) switch")
-            .And.Contain("{ } value => OrderId.Create(value),")
+            .And.Contain("{ } value when OrderId.TryCreate(value, out var id) => id,")
             .And.Contain("null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,");
     }
 
@@ -223,7 +223,9 @@ public class NewtonsoftJsonCodeGeneratorTests
         code.Should()
             .Contain("if (reader.TokenType != global::Newtonsoft.Json.JsonToken.StartObject)")
             .And.Contain("var json = global::Newtonsoft.Json.Linq.JObject.Load(reader);")
-            .And.Contain("if (!json.TryGetValue(\"value\", out var valueToken))")
+            // 属性名大小写不敏感：Newtonsoft 对普通 POCO 就是这么匹配的，转换器不能比它更严。
+            .And.Contain("var valueToken = json.GetValue(\"value\", global::System.StringComparison.OrdinalIgnoreCase);")
+            .And.Contain("if (valueToken is null)")
             .And.Contain("writer.WriteStartObject();")
             .And.Contain("writer.WritePropertyName(\"value\");")
             .And.Contain("writer.WriteEndObject();");

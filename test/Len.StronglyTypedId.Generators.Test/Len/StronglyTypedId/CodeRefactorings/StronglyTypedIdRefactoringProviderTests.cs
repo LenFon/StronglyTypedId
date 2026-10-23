@@ -570,5 +570,66 @@ public class StronglyTypedIdRefactoringProviderTests
         result.Should().NotContain("[StronglyTypedId]");
     }
 
+    /// <summary>
+    /// 第三方同名特性以**短名**书写时也不能被当成自家的。
+    /// </summary>
+    /// <remarks>
+    /// 这是上一用例的加强版：<c>[Acme.StronglyTypedIdAttribute]</c> 至少还带着限定前缀，纯语法匹配就能放过；
+    /// 而 <c>using Acme;</c> 之后的 <c>[StronglyTypedId]</c> 在语法上与自家写法逐字符相同，只有语义绑定能分辨。
+    /// 判错的后果是用户点一下 Inline，别人的特性就被物理删掉了。
+    /// </remarks>
+    [Fact]
+    public async Task Refactoring_ShouldNotTreatShortNamedForeignAttributeAsStronglyTypedId()
+    {
+        var code = """
+            using System;
+            using Acme;
+
+            namespace Acme
+            {
+                [AttributeUsage(AttributeTargets.All)]
+                public sealed class StronglyTypedIdAttribute : Attribute
+                {
+                }
+            }
+
+            namespace MyApp
+            {
+                [StronglyTypedId]
+                public partial record OrderId(Guid Value);
+            }
+            """;
+
+        var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title).ToList();
+
+        titles.Should().NotContain("Inline strongly typed id",
+            "短名绑定到的是 Acme 的特性，Inline 会把别人的特性删掉");
+        titles.Should().Contain("Convert to strongly typed id");
+    }
+
+    /// <summary>
+    /// 声明位于 <c>namespace Len.StronglyTypedId.Tests</c> 下时，<c>[StronglyTypedId]</c> 会先解析到父命名空间
+    /// <c>Len.StronglyTypedId</c>，语义绑定给出的是 Namespace 候选而非特性符号。此时必须沿用语法判定，
+    /// 否则 Inline 在本库自己的测试工程里都会失效。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_ShouldStillOfferInline_WhenAttributeNameIsShadowedByNamespace()
+    {
+        var code = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title).ToList();
+
+        titles.Should().Contain("Inline strongly typed id",
+            "父命名空间遮蔽了特性名，但这仍然是自家的 [StronglyTypedId]");
+    }
+
     #endregion
 }

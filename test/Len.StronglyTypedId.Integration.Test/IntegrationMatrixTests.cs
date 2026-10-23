@@ -107,6 +107,53 @@ public class IntegrationMatrixTests
     }
 
     /// <summary>
+    /// 枚举列的文本路径必须与 <c>Id.TryParse</c> 同一套收紧规则：忽略大小写，且拒绝未定义的取值。
+    /// </summary>
+    /// <remarks>
+    /// 驱动返回成员名文本时大小写约定各不相同（Oracle 默认大写、PostgreSQL 原样返回），
+    /// 而 <c>Enum.Parse</c> 区分大小写；同时它对 <c>"999"</c>、<c>"1,2"</c> 一律返回 true，
+    /// 放行会造出一个不对应任何成员的 Id —— 后续 <c>switch</c> 落空、序列化写出野值。
+    /// </remarks>
+    [Fact]
+    public void Dapper_Handler_Should_ParseEnumText_CaseInsensitively_AndRejectUndefined()
+    {
+        var (_, _, handler) = DapperHandlers().Single(h => h.IdType == typeof(SampleStatusId));
+        var parse = handler.GetType().GetMethod("Parse", BindingFlags.Public | BindingFlags.Instance)!;
+
+        parse.Invoke(handler, ["Active"]).Should().Be(SampleStatusId.Create(SampleStatus.Active));
+        parse.Invoke(handler, ["active"]).Should().Be(SampleStatusId.Create(SampleStatus.Active),
+            "驱动返回的成员名大小写不应影响解析");
+        parse.Invoke(handler, ["SUSPENDED"]).Should().Be(SampleStatusId.Create(SampleStatus.Suspended));
+
+        foreach (var undefined in new[] { "999", "1,2", "NotAMember" })
+        {
+            var act = () => parse.Invoke(handler, [undefined]);
+
+            act.Should().Throw<System.Reflection.TargetInvocationException>()
+                .WithInnerException<ArgumentException>($"{undefined} 不对应任何成员，必须拒绝");
+        }
+    }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举的文本路径：位组合合法，含未定义位的取值必须拒绝。
+    /// </summary>
+    [Fact]
+    public void Dapper_Handler_Should_ParseFlagsEnumText_ByUndefinedBits()
+    {
+        var (_, _, handler) = DapperHandlers().Single(h => h.IdType == typeof(SampleAccessId));
+        var parse = handler.GetType().GetMethod("Parse", BindingFlags.Public | BindingFlags.Instance)!;
+
+        parse.Invoke(handler, ["Read, Write"]).Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write),
+            "位组合本身就是合法取值，IsDefined 会误杀，故只校验未定义位");
+        parse.Invoke(handler, ["read, write"]).Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write));
+
+        var act = () => parse.Invoke(handler, ["999"]);
+
+        act.Should().Throw<System.Reflection.TargetInvocationException>()
+            .WithInnerException<ArgumentException>("999 含未定义的位，必须拒绝");
+    }
+
+    /// <summary>
     /// 本编译里生成的全部 Dapper 处理器：<c>StronglyTypedIds</c> 下继承 <c>SqlMapper.TypeHandler&lt;T&gt;</c> 的嵌套类。
     /// </summary>
     private static IEnumerable<(Type IdType, Type PrimitiveType, object Handler)> DapperHandlers()

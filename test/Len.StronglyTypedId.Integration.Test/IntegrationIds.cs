@@ -15,6 +15,13 @@ public partial record struct PrefixedIntegrationGuidId(Guid Value);
 [StronglyTypedId]
 public partial record IntegrationReferenceId(Guid Value);
 
+// 验证器拒绝时，二进制反序列化必须抛框架自己的序列化异常，而不是让 Create 的 ArgumentException 穿透。
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct ValidatedIntegrationGuidId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
 // 泛型容器里的 Id：转换器类照常生成，但 [JsonConverter] 特性无法引用含类型参数的转换器（CS0416），
 // 且集成注册入口会跳过它（开放泛型不能作类型实参）。JSON 支持因此只能按闭合类型手动注册。
 public partial class IntegrationBox<T>
@@ -22,3 +29,8 @@ public partial class IntegrationBox<T>
     [StronglyTypedId]
     public partial record struct BoxedGuidId(Guid Value);
 }
+
+// 对象 JSON 形：线上报文是 {"value":"<guid>"}。OpenAPI 若仍按裸基元发 schema，
+// 生成的客户端会按字符串收发，与服务端实际报文不符。
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeIntegrationGuidId(Guid Value);

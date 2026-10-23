@@ -423,6 +423,111 @@ public class SwaggerCodeGeneratorTests
 
     #endregion
 
+    #region JsonShape.Object：线上报文是 {"value": <基元>}，schema 必须照写
+
+    /// <summary>
+    /// <c>JsonShape.Object</c> 的 JSON 形是 <c>{"value":"..."}</c>；若仍按裸基元发 schema，生成的客户端会按字符串收发，
+    /// 与服务端实际报文不符。
+    /// </summary>
+    [Fact]
+    public void Swagger_V1_Should_GenerateObjectSchema_WhenJsonShapeIsObject()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record OrderId(Guid Value);
+            """;
+
+        GetSwaggerGeneratedCode(code, Swagger6Reference)
+            .Should().Contain(
+                """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "object", Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.Models.OpenApiSchema> { ["value"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" } }, Required = new global::System.Collections.Generic.HashSet<string> { "value" } });""");
+    }
+
+    /// <summary>
+    /// 对象形态下 <c>value</c> 属性的 schema 仍按基元映射（含前缀时的纯 string 规则）。
+    /// </summary>
+    [Fact]
+    public void Swagger_V1_Should_UsePrimitiveSchemaForValueProperty_WhenIdHasPrefix()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Prefix = "ord_", JsonShape = JsonShape.Object)]
+            public partial record OrderId(int Value);
+            """;
+
+        GetSwaggerGeneratedCode(code, Swagger6Reference)
+            .Should().Contain(
+                """["value"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string" }""");
+    }
+
+    /// <summary>
+    /// 2.x 的 <c>Properties</c> 值是 <c>IOpenApiSchema</c> 接口，泛型不变，不能用 <c>Dictionary&lt;string, OpenApiSchema&gt;</c> 顶替。
+    /// </summary>
+    [Fact]
+    public void Swagger_V2_Should_GenerateObjectSchema_WhenJsonShapeIsObject()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record OrderId(Guid Value);
+            """;
+
+        GetSwaggerGeneratedCode(
+                code,
+                Swagger6Reference,
+                SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"))
+            .Should().Contain(
+                "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.Object, Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.IOpenApiSchema> { [\"value\"] = new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" } }, Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } });");
+    }
+
+    /// <summary>
+    /// 对象形态的产物同样必须能在消费者里编译（<c>Properties</c> / <c>Required</c> 的赋值目标类型由真实包决定）。
+    /// </summary>
+    [Fact]
+    public void Swagger_ObjectShape_Should_Compile_AgainstRealOpenApiPackage()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var compilation = CreateCompilation(code, Swagger6Reference, OpenApiReference);
+
+        var result = CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGenerators(compilation)
+            .GetRunResult();
+
+        result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        var swaggerSource = result.Results[0].GeneratedSources
+            .First(source => source.HintName == "StronglyTypedIds.Swagger.g.cs");
+
+        using var stream = new MemoryStream();
+        var emit = compilation
+            .AddSyntaxTrees(CSharpSyntaxTree.ParseText(swaggerSource.SourceText.ToString(), path: swaggerSource.HintName))
+            .Emit(stream);
+
+        var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
+    }
+
+    #endregion
+
     #region 产物格式
 
     /// <summary>

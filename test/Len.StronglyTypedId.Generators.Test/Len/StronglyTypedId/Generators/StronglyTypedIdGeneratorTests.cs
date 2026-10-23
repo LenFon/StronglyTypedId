@@ -370,7 +370,11 @@ public class StronglyTypedIdGeneratorTests
                             throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.");
                         }
 
-                        return OrderId.Create(global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options));
+                        var value = global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options);
+
+                        return OrderId.TryCreate(value, out var id)
+                            ? id
+                            : throw new global::System.Text.Json.JsonException($"Cannot convert the JSON value to a OrderId.");
                     }
 
                     /// <inheritdoc/>
@@ -457,7 +461,7 @@ public class StronglyTypedIdGeneratorTests
                         global::Newtonsoft.Json.JsonSerializer serializer) =>
                         serializer.Deserialize<global::System.Guid?>(reader) switch
                         {
-                            { } value => OrderId.Create(value),
+                            { } value when OrderId.TryCreate(value, out var id) => id,
                             null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,
                             _ => throw new global::Newtonsoft.Json.JsonSerializationException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.")
                         };
@@ -688,6 +692,59 @@ public class StronglyTypedIdGeneratorTests
         // 生成代码使用 PrimitiveIdTypeName：特型基元（int/decimal）渲染为短名，BCL 类型（DateTime）带 global::System. 前缀。
         // 用「基元名 + " value)"」做前缀无关匹配，两种形态都能命中。
         actualCodes.Should().Contain(c => c!.Contains($"{primitive} value)"));
+    }
+
+    /// <summary>
+    /// <c>string</c> 基元的比较必须走序数比较：<c>string.CompareTo(string)</c> 是区域性敏感的，
+    /// 与 record 合成的 <c>Equals</c> 及全部序列化入口不一致，会让 <c>SortedSet</c> 把两个不相等的 Id 当成同一个键。
+    /// </summary>
+    [Theory]
+    [InlineData("record")]
+    [InlineData("record struct")]
+    public void Generator_Should_CompareStringsOrdinal(string record)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial {{record}} OrderId(string Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("global::System.String.CompareOrdinal(Value, other.Value)")
+            .And.NotContain("Value.CompareTo(other.Value)");
+
+        // 值类型 Id 的运算符直接比基元；引用类型走 CompareValues，最终仍落到 CompareTo。
+        if (record == "record struct")
+        {
+            generated.Should().Contain("global::System.String.CompareOrdinal(left.Value, right.Value) < 0");
+        }
+    }
+
+    /// <summary>
+    /// 非 <c>string</c> 基元保持基元自身的强类型 <c>CompareTo</c>，不被序数分支波及。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_KeepPrimitiveCompareTo_ForNonStringPrimitive()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should()
+            .Contain("Value.CompareTo(other.Value)")
+            .And.NotContain("CompareOrdinal");
     }
 
     /// <summary>
@@ -1938,6 +1995,49 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 值位置的读入同样必须走 <c>TryCreate</c>：<c>Create</c> 的 <c>ArgumentException</c> 会穿透
+    /// <c>JsonSerializer.Deserialize</c>，而 STJ 的转换器契约要求失败一律抛 <c>JsonException</c>。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_TryCreate_WhenReadingValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("var value = global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options);")
+            .And.Contain("return OrderId.TryCreate(value, out var id)")
+            .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a OrderId.\");")
+            .And.NotContain("OrderId.Create(");
+    }
+
+    /// <summary>
+    /// <c>BigInteger</c> 的文本解析也必须用 <c>TryParse</c>：<c>Parse</c> 的 <see cref="FormatException"/>
+    /// 同样会穿透转换器。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_TryParseBigInteger_WhenReadingValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("System.Numerics.BigInteger"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("global::System.Numerics.BigInteger.TryParse(text, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var value)")
+            .And.NotContain("global::System.Numerics.BigInteger.Parse(");
+    }
+
+    /// <summary>
+    /// Newtonsoft 侧同一契约：验证失败抛 <c>JsonSerializationException</c>，而不是 <c>ArgumentException</c>。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJson_Should_TryCreate_WhenReadingValue()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
+
+        converter.Should()
+            .Contain("{ } value when OrderId.TryCreate(value, out var id) => id,")
+            .And.NotContain("OrderId.Create(");
+    }
+
+    /// <summary>
     /// D1：token 类型不符时必须抛 <c>JsonException</c>。抛 <c>InvalidOperationException</c> 会让按契约
     /// <c>catch (JsonException)</c> 的调用方漏掉这条路径，且拿不到 JSON path。
     /// </summary>
@@ -1980,7 +2080,9 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("options.PropertyNameCaseInsensitive && global::System.String.Equals(reader.GetString(), \"value\", global::System.StringComparison.OrdinalIgnoreCase)")
             .And.Contain("writer.WriteStartObject();")
             .And.Contain("writer.WritePropertyName(\"value\");")
-            .And.Contain("writer.WriteEndObject();");
+            .And.Contain("writer.WriteEndObject();")
+            // 对象形态的读入分支同样走 TryCreate，验证失败抛 JsonException 而不是穿透 ArgumentException。
+            .And.Contain("result = OrderId.TryCreate(value, out var id)");
     }
 
     /// <summary>
@@ -2049,7 +2151,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 每个强类型 Id 都应生成单参数 <c>Deconstruct</c>，让用户以 <c>(var value) = id;</c> 解构出基元值。
+    /// 每个强类型 Id 都应生成单参数 <c>Deconstruct</c>，让用户以 <c>id.Deconstruct(out var value);</c> 解构出基元值。
     /// </summary>
     [Theory]
     [InlineData("Guid", "global::System.Guid")]

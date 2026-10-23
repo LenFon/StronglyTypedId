@@ -184,6 +184,43 @@ public class BinarySerializationTests
         }
     }
 
+    /// <summary>
+    /// 验证器拒绝时，MessagePack 反序列化必须抛 <see cref="MessagePackSerializationException"/>。
+    /// </summary>
+    /// <remarks>
+    /// 只断言外层类型不够：<c>MessagePackSerializer</c> 本来就会把格式化器抛出的任意异常包一层，
+    /// 所以即使格式化器直接调 <c>Create</c>，外层也仍是这个类型。真正的差别在内层 ——
+    /// 格式化器自己判定失败时内层是它抛的 <see cref="MessagePackSerializationException"/>，
+    /// 而直接调 <c>Create</c> 时内层是 <see cref="ArgumentException"/>。
+    /// </remarks>
+    [Fact]
+    public void MessagePack_Should_ThrowSerializationException_WhenValidatorRejects()
+    {
+        var bytes = MessagePackSerializer.Serialize(
+            Guid.Empty, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        Action deserialize = () => MessagePackSerializer.Deserialize<ValidatedIntegrationGuidId>(
+            bytes, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        deserialize.Should().Throw<MessagePackSerializationException>()
+            .Which.InnerException.Should().NotBeOfType<ArgumentException>(
+                "验证失败应由格式化器自己判定并抛错，而不是让 Create 的 ArgumentException 被上层包装");
+    }
+
+    /// <summary>
+    /// 同上：BSON 的序列化器契约要求失败一律抛 <see cref="BsonSerializationException"/>。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_ThrowSerializationException_WhenValidatorRejects()
+    {
+        // 用 Guid 自己的序列化器产出载荷，保证 BSON 表示形式（subtype / 字节序）与生成代码读到的完全一致。
+        var payload = WriteDocument(typeof(Guid), Guid.Empty)["v"];
+
+        Action deserialize = () => ReadValue(typeof(ValidatedIntegrationGuidId), payload);
+
+        deserialize.Should().Throw<BsonSerializationException>();
+    }
+
     [Fact]
     public void MessagePack_ApplyTo_Should_FallBackToOriginalResolver()
     {

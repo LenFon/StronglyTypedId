@@ -402,4 +402,36 @@ public class SerializationAndDeserializationTests
     }
 
     #endregion
+
+    #region 验证失败的异常契约
+
+    /// <summary>
+    /// 对象形态的读入分支与基元形态是两段生成代码：验证器拒绝时同样必须抛框架异常，
+    /// 不能让 <c>Create</c> 的 <see cref="ArgumentException"/> 穿透转换器。
+    /// </summary>
+    [Fact]
+    public void ObjectShape_Should_ThrowFrameworkExceptions_WhenValidatorRejects()
+    {
+        var json = $$"""{"value":"{{Guid.Empty}}"}""";
+
+        var systemTextJson = () => System.Text.Json.JsonSerializer.Deserialize<ObjectShapeValidatedGuidId>(json);
+        var newtonsoft = () => Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeValidatedGuidId>(json);
+
+        systemTextJson.Should().Throw<System.Text.Json.JsonException>();
+        newtonsoft.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
+    }
+
+    /// <summary>
+    /// <c>BigInteger</c> 的读入路径先按文本解析再交给 <c>TryCreate</c>：文本不是合法数字时
+    /// <c>BigInteger.Parse</c> 的 <see cref="FormatException"/> 同样会穿透转换器，故必须一并收敛到 <c>JsonException</c>。
+    /// </summary>
+    [Fact]
+    public void BigInteger_Should_ThrowJsonException_WhenTextIsNotANumber()
+    {
+        var act = () => System.Text.Json.JsonSerializer.Deserialize<BigIntegerId>("\"not-a-number\"");
+
+        act.Should().Throw<System.Text.Json.JsonException>();
+    }
+
+    #endregion
 }

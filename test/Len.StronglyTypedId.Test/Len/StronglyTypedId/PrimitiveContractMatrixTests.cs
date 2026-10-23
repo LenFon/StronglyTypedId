@@ -77,10 +77,16 @@ public class PrimitiveContractMatrixTests
         var other = testCase.CreateOther();
         testCase.Equal(id, other).Should().BeFalse($"{label}：不同基元值的 Id 必须不相等");
 
-        // 6. 比较与基元比较同向。
+        // 6. 比较与基元比较同向。string 基元例外：生成代码按序数比较，而 IComparable.CompareTo 是
+        //    区域性敏感的 —— 拿它当期望值会复刻被修复的行为，永远测不出偏差。
         testCase.Compare(id, id).Should().Be(0, $"{label}：自比较必须为 0");
+
+        var expectedSign = testCase.PrimitiveType == typeof(string)
+            ? Math.Sign(string.CompareOrdinal((string)testCase.Value, (string)testCase.OtherValue))
+            : Math.Sign(((IComparable)testCase.Value).CompareTo(testCase.OtherValue));
+
         Math.Sign(testCase.Compare(id, other))
-            .Should().Be(Math.Sign(((IComparable)testCase.Value).CompareTo(testCase.OtherValue)), $"{label}：比较方向必须与基元一致");
+            .Should().Be(expectedSign, $"{label}：比较方向必须与基元一致");
 
         // 7. System.Text.Json 往返。
         var stjJson = testCase.SerializeStj(id);
@@ -132,7 +138,9 @@ public class PrimitiveContractMatrixTests
                 Guid.Parse("3f2c1b4e-0000-4000-8000-000000000002"),
                 "3f2c1b4e-0000-4000-8000-000000000001",
                 "not-a-guid"),
-            Case<StringId, string>("string", "abc", "abd", "abc", garbage: null),
+            // 取值刻意选软连字符对：区域性比较会把 "a\u00ADb" 与 "ab" 判为相等（符号 0），
+            // 序数比较给出正号。这样第 6 步的期望值能真正区分两种实现。
+            Case<StringId, string>("string", "a\u00ADb", "ab", "a\u00ADb", garbage: null),
             Case<CharId, char>("char", 'A', 'B', "A", "AB"),
             Case<ByteId, byte>("byte", 42, 43, "42", "256"),
             Case<SByteId, sbyte>("sbyte", -42, -41, "-42", "128"),

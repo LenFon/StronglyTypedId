@@ -190,10 +190,18 @@ public class CodeGeneratorModuleGateTests
             MixedPrimitiveIdSource,
             SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"));
 
-        // 枚举：底层整数走 Enum.ToObject，成员名文本走 Enum.Parse。
+        // 枚举：三条路径（直通 / 文本 / 数值）共用同一套 IsDefined 校验。
         generated["Len.StronglyTypedId.StatusId.Dapper.g.cs"]
-            .Should().Contain("if (value is string enumText)")
-            .And.Contain("return global::Len.StronglyTypedId.StatusId.Create((global::Len.StronglyTypedId.OrderStatus)global::System.Enum.ToObject(typeof(global::Len.StronglyTypedId.OrderStatus), value!));");
+            .Should().Contain("if (value is global::Len.StronglyTypedId.OrderStatus primitiveValue)")
+            .And.Contain("if (value is string enumText)")
+            .And.Contain("global::System.Enum.TryParse<global::Len.StronglyTypedId.OrderStatus>(enumText, ignoreCase: true, out var enumValue)")
+            .And.Contain("&& global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.OrderStatus), enumValue)")
+            .And.Contain("return global::Len.StronglyTypedId.StatusId.Create(enumValue);")
+            // 数值路径：先拒绝小数、再按底层类型做范围检查，最后才 Enum.ToObject + IsDefined。
+            .And.Contain("if (numeric == global::System.Decimal.Truncate(numeric))")
+            .And.Contain("global::System.Convert.ChangeType(numeric, typeof(int), global::System.Globalization.CultureInfo.InvariantCulture)")
+            .And.Contain("global::System.Enum.ToObject(typeof(global::Len.StronglyTypedId.OrderStatus), underlyingValue)")
+            .And.Contain("if (global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.OrderStatus), enumValue))");
 
         // char：TEXT 列返回 string，IConvertible.ToChar 正好按「长度恰为 1」判定。
         generated["Len.StronglyTypedId.LetterId.Dapper.g.cs"]
@@ -357,8 +365,8 @@ public class CodeGeneratorModuleGateTests
 
         generated["Len.StronglyTypedId.OrderId.MessagePack.g.cs"]
             .Should().Contain("global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::System.Guid>(options.Resolver).Serialize(ref writer, value.Value, options);")
-            .And.Contain("return global::Len.StronglyTypedId.OrderId.Create(")
-            .And.Contain("    global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::System.Guid>(options.Resolver).Deserialize(ref reader, options));")
+            .And.Contain("var value = global::MessagePack.FormatterResolverExtensions.GetFormatterWithVerify<global::System.Guid>(options.Resolver).Deserialize(ref reader, options);")
+            .And.Contain("if (global::Len.StronglyTypedId.OrderId.TryCreate(value, out var id))")
             .And.NotContain("writer.Write(value.ToString());");
     }
 
@@ -504,8 +512,8 @@ public class CodeGeneratorModuleGateTests
         generated["Len.StronglyTypedId.OrderId.MongoDb.g.cs"]
             .Should().Contain("global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<global::System.Guid>()")
             .And.Contain("    .Serialize(context, args, value.Value);")
-            .And.Contain("return global::Len.StronglyTypedId.OrderId.Create(")
-            .And.Contain("    global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<global::System.Guid>().Deserialize(context, args));")
+            .And.Contain("var value = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<global::System.Guid>().Deserialize(context, args);")
+            .And.Contain("if (global::Len.StronglyTypedId.OrderId.TryCreate(value, out var id))")
             .And.NotContain("context.Writer.WriteString(value.ToString());");
     }
 
@@ -642,7 +650,7 @@ public class CodeGeneratorModuleGateTests
         generated["StronglyTypedIds.AspNetCoreOpenApi.g.cs"]
             .Should().Contain("class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer")
             .And.Contain("public static void ApplyTo(global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options)")
-            .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\"),");
+            .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
     }
 
     #endregion
@@ -705,6 +713,7 @@ public class CodeGeneratorModuleGateTests
         generated["StronglyTypedIds.SystemTextJson.g.cs"]
             .Should().Contain("internal static partial class StronglyTypedIds")
             .And.Contain("public static void ApplyTo(global::System.Text.Json.JsonSerializerOptions options)")
+            .And.Contain("if (registered.Add(typeof(global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter)))")
             .And.Contain("options.Converters.Add(new global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter());");
     }
 
@@ -724,6 +733,7 @@ public class CodeGeneratorModuleGateTests
         generated["StronglyTypedIds.NewtonsoftJson.g.cs"]
             .Should().Contain("internal static partial class StronglyTypedIds")
             .And.Contain("public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)")
+            .And.Contain("if (registered.Add(typeof(global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter)))")
             .And.Contain("settings.Converters.Add(new global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter());");
     }
 
@@ -788,6 +798,51 @@ public class CodeGeneratorModuleGateTests
 
     #endregion
 
+    #region 基元类型解析：多契约与构造顺序
+
+    /// <summary>
+    /// 一个类型同时实现多份 <c>IStronglyTypedId&lt;,&gt;</c> 时，必须选 <c>TSelf</c> 等于自身的那个接口。
+    /// </summary>
+    /// <remarks>
+    /// 运行时侧 <c>StronglyTypedIdExtensions.ResolvePrimitiveIdType</c> 就是这么选的（并有
+    /// <c>MultiContractId</c> 用例守着）。生成器若取 <c>FirstOrDefault</c>，结果会取决于接口枚举顺序，
+    /// 与模型绑定器 / EF 转换器选中的基元不一致 —— 同一个类型两套答案。
+    /// </remarks>
+    [Fact]
+    public void PrimitiveResolution_Should_PreferOwnContract_WhenTypeImplementsSeveral()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("Dapper", "2.1.0.0"),
+            CreateReferencedAssembly("MultiContract", MultiContractIdSource));
+
+        // 自身契约是 Guid；外来契约是 int。选错会让 Dapper 处理器按 int 生成。
+        generated.Should().ContainKey("MultiContract.MultiContractId.Dapper.g.cs");
+        generated["MultiContract.MultiContractId.Dapper.g.cs"]
+            .Should().Contain("if (value is global::System.Guid primitiveValue)")
+            .And.NotContain("if (value is int primitiveValue)");
+    }
+
+    /// <summary>
+    /// 没有主构造函数、只有手写构造的 record：合成的拷贝构造会排在 <c>Constructors[0]</c>，
+    /// 按 <c>Constructors[0].Parameters[0]</c> 取基元会绑到 record 自身，导致静默不生成。
+    /// </summary>
+    /// <remarks>
+    /// 这种写法同时会被分析器判为 <c>STIA0005</c>（必须有单参数主构造函数），所以用户不会真的卡住；
+    /// 但生成器不该依赖「主构造恰好排第一」这个实现细节。
+    /// </remarks>
+    [Fact]
+    public void PrimitiveResolution_Should_SkipCopyConstructor_WhenNoPrimaryConstructor()
+    {
+        var generated = RunGenerator(HandWrittenConstructorIdSource);
+
+        generated.Should().ContainKey("Len.StronglyTypedId.HandCtorId.g.cs");
+        generated["Len.StronglyTypedId.HandCtorId.g.cs"]
+            .Should().Contain("public static HandCtorId Create(global::System.Guid value)");
+    }
+
+    #endregion
+
     #region 辅助
 
     private const string IdSource = """
@@ -797,6 +852,52 @@ public class CodeGeneratorModuleGateTests
 
         [StronglyTypedId]
         public partial record struct OrderId(Guid Value);
+        """;
+
+    /// <summary>
+    /// 手写的多契约类型：同时实现 <c>IStronglyTypedId&lt;ForeignId, int&gt;</c> 与
+    /// <c>IStronglyTypedId&lt;MultiContractId, Guid&gt;</c>。自身契约是 Guid，外来契约是 int。
+    /// </summary>
+    /// <remarks>
+    /// 刻意把外来契约写在前面，让「取第一个」与「取自身契约」得到不同答案。
+    /// </remarks>
+    private const string MultiContractIdSource = """
+        namespace MultiContract;
+
+        public readonly record struct ForeignId(int Value);
+
+        public readonly struct MultiContractId
+            : global::Len.StronglyTypedId.IStronglyTypedId<ForeignId, int>,
+              global::Len.StronglyTypedId.IStronglyTypedId<MultiContractId, global::System.Guid>
+        {
+            public MultiContractId(global::System.Guid value) => Value = value;
+
+            public global::System.Guid Value { get; }
+
+            int global::Len.StronglyTypedId.IStronglyTypedId<ForeignId, int>.Value => 0;
+
+            public static MultiContractId Create(global::System.Guid value) => new(value);
+
+            static ForeignId global::Len.StronglyTypedId.IStronglyTypedId<ForeignId, int>.Create(int value)
+                => new(value);
+        }
+        """;
+
+    /// <summary>
+    /// 没有主构造函数、只有手写构造的 record：合成的拷贝构造会排在 <c>Constructors[0]</c>。
+    /// </summary>
+    private const string HandWrittenConstructorIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
+        public partial record HandCtorId
+        {
+            public HandCtorId(Guid value) => Value = value;
+
+            public Guid Value { get; }
+        }
         """;
 
     /// <summary>
@@ -932,7 +1033,6 @@ public class CodeGeneratorModuleGateTests
     /// </summary>
     private const string ReferencedIdWithoutConvertersSource = """
         namespace Already.Generated;
-
         public readonly record struct LegacyOrderId(global::System.Guid Value)
             : global::Len.StronglyTypedId.IStronglyTypedId<LegacyOrderId, global::System.Guid>
         {

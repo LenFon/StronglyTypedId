@@ -12,11 +12,21 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// <see cref="MetadataReferenceExtensions.GetModules"/> 的单元测试：覆盖两个实际可达分支（CompilationReference 与
-/// PortableExecutableReference/AssemblyMetadata）以及 PE 引用未登记进编译时 Assembly 为 null 的路径。
+/// <see cref="MetadataReferenceExtensions.GetModuleIdentities"/> 与 <see cref="ModuleIdentity.ResolveAssembly"/> 的单元测试：
+/// 覆盖两个实际可达分支（CompilationReference 与 PortableExecutableReference/AssemblyMetadata）以及 PE 引用未登记进编译时
+/// Assembly 为 null 的路径。
 /// </summary>
+/// <remarks>
+/// 生产代码里这两步是分开调用的（生成器先收集身份、再解析符号，以便增量缓存），组合起来的便捷方法只存在于测试与基准中。
+/// </remarks>
 public class MetadataReferenceExtensionsTests
 {
+    /// <summary>
+    /// 组合生产代码的两步：先枚举模块身份，再逐个解析程序集符号。
+    /// </summary>
+    private static IEnumerable<ModuleInfo> GetModules(MetadataReference reference, Compilation compilation)
+        => reference.GetModuleIdentities().Select(identity => identity.ResolveAssembly(compilation));
+
     #region 分支一：CompilationReference
 
     [Fact]
@@ -30,14 +40,13 @@ public class MetadataReferenceExtensionsTests
 
         var compilationReference = referencedCompilation.ToMetadataReference();
 
-        var modules = compilationReference.GetModules(referencedCompilation);
+        var modules = GetModules(compilationReference, referencedCompilation);
 
         modules.Should().ContainSingle();
         var module = modules.Single();
         // 源编译产物模块名带 .dll 后缀，与 Assembly.Name（无后缀）不同。
         module.Name.Should().Be(referencedCompilation.Assembly.Name + ".dll");
         module.Version.Should().Be(referencedCompilation.Assembly.Identity.Version);
-        module.MetadataReference.Should().BeSameAs(compilationReference);
         module.Assembly.Should().BeSameAs(referencedCompilation.Assembly);
     }
 
@@ -57,13 +66,12 @@ public class MetadataReferenceExtensionsTests
             GetReferences().Add(peRef),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var modules = peRef.GetModules(consumerCompilation);
+        var modules = GetModules(peRef, consumerCompilation);
 
         modules.Should().ContainSingle();
         var module = modules.Single();
         module.Name.Should().Be(Path.GetFileName(path));
         module.Version.Should().Be(AssemblyName.GetAssemblyName(path).Version);
-        module.MetadataReference.Should().BeSameAs(peRef);
         module.Assembly.Should().NotBeNull();
         module.Assembly!.Name.Should().Be(AssemblyName.GetAssemblyName(path).Name);
     }
@@ -81,7 +89,7 @@ public class MetadataReferenceExtensionsTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var expectedAssembly = consumerCompilation.GetAssemblyOrModuleSymbol(peRef) as IAssemblySymbol;
-        var modules = peRef.GetModules(consumerCompilation);
+        var modules = GetModules(peRef, consumerCompilation);
 
         modules.Single().Assembly.Should().BeSameAs(expectedAssembly);
     }
@@ -99,7 +107,7 @@ public class MetadataReferenceExtensionsTests
             GetReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var modules = peRef.GetModules(consumerCompilation);
+        var modules = GetModules(peRef, consumerCompilation);
 
         modules.Should().ContainSingle();
         modules.Single().Assembly.Should().BeNull();
@@ -140,7 +148,7 @@ public class MetadataReferenceExtensionsTests
                 GetReferences().Add(netmoduleRef),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-            var modules = netmoduleRef.GetModules(consumerCompilation);
+            var modules = GetModules(netmoduleRef, consumerCompilation);
 
             modules.Should().BeEmpty();
         }
@@ -164,7 +172,7 @@ public class MetadataReferenceExtensionsTests
         var reference = new StubbedPortableExecutableReference(
             () => ModuleMetadata.CreateFromFile(typeof(StronglyTypedIdAttribute).Assembly.Location));
 
-        reference.GetModules(CreateConsumerCompilation()).Should().BeEmpty();
+        GetModules(reference, CreateConsumerCompilation()).Should().BeEmpty();
     }
 
     /// <summary>
@@ -176,7 +184,7 @@ public class MetadataReferenceExtensionsTests
         var netmoduleMetadata = ModuleMetadata.CreateFromImage(EmitNetmoduleImage());
         var reference = new StubbedPortableExecutableReference(() => AssemblyMetadata.Create(netmoduleMetadata));
 
-        reference.GetModules(CreateConsumerCompilation()).Should().BeEmpty();
+        GetModules(reference, CreateConsumerCompilation()).Should().BeEmpty();
     }
 
     #endregion

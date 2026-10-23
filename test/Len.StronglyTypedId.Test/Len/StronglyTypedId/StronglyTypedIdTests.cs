@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Numerics;
+using System.Reflection;
 using FluentAssertions;
 
 namespace Len.StronglyTypedId;
@@ -145,6 +146,25 @@ public class StronglyTypedIdTests
         usage.AllowMultiple.Should().BeFalse();
         usage.Inherited.Should().BeFalse();
     }
+
+    /// <summary>
+    /// 一个类型同时实现多份 <c>IStronglyTypedId&lt;,&gt;</c> 时，必须选 <c>TSelf</c> 等于自身的那个接口。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Type.GetInterfaces"/> 的返回顺序不作保证，直接取 <c>FirstOrDefault</c> 会让同一类型在不同
+    /// 运行时（甚至同一次运行的不同时刻）给出不同的基元类型 —— 模型绑定器与 EF 转换器据此选转换器，
+    /// 结果就成了不确定的。这里让「外来契约」排在前面也无所谓：选中自身契约是规则，不是运气。
+    /// </remarks>
+    [Fact]
+    public void GetPrimitiveIdType_Should_PreferOwnContract_WhenTypeImplementsSeveral()
+    {
+        typeof(MultiContractId).GetInterfaces()
+            .Count(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStronglyTypedId<,>))
+            .Should().BeGreaterThan(1, "前置条件：该类型必须真的实现多份契约，否则这条用例测不到选择规则");
+
+        typeof(MultiContractId).GetPrimitiveIdType().Should().Be<Guid>(
+            "自身契约是 IStronglyTypedId<MultiContractId, Guid>，不能因为接口枚举顺序而选中外来契约的 int");
+    }
 }
 
 /// <summary>
@@ -154,3 +174,89 @@ public class StronglyTypedIdTests
 /// 刻意从真实的生成类型派生，而不是手写一份接口实现 —— 这样「接口齐全但类型抽象」才是唯一让它被判否的原因。
 /// </remarks>
 public abstract record AbstractGuidId(Guid Value) : GuidIdV2(Value);
+
+/// <summary>
+/// 同时实现两份 <c>IStronglyTypedId&lt;,&gt;</c> 的类型：自身契约是 <c>Guid</c>，另带一份指向
+/// <see cref="ForeignId"/> 的 <c>int</c> 契约。用来锁定「优先选 TSelf 等于自身」的选择规则。
+/// </summary>
+/// <remarks>
+/// 第二份契约的 <c>TSelf</c> 故意不是本类型 —— 这正是 CA2260 要警告的写法，也正是本用例要覆盖的场景。
+/// </remarks>
+#pragma warning disable CA2260
+public readonly struct MultiContractId(Guid value)
+    : IStronglyTypedId<ForeignId, int>, IStronglyTypedId<MultiContractId, Guid>
+{
+    public Guid Value { get; } = value;
+
+    int IStronglyTypedId<ForeignId, int>.Value => 0;
+
+    public static MultiContractId Create(Guid value) => new(value);
+
+    static ForeignId IStronglyTypedId<ForeignId, int>.Create(int value) => ForeignId.Create(value);
+
+    // 第二份契约继承的 IParsable<ForeignId> / IEqualityOperators<ForeignId, ForeignId, bool> 与自身的
+    // 同名成员签名冲突（返回类型不同），只能显式实现。它们不参与本用例的判定，保持最小实现即可。
+    static ForeignId IParsable<ForeignId>.Parse(string s, IFormatProvider? provider) => ForeignId.Parse(s, provider);
+
+    static bool IParsable<ForeignId>.TryParse(string? s, IFormatProvider? provider, out ForeignId result)
+        => ForeignId.TryParse(s, provider, out result);
+
+    static bool IEqualityOperators<ForeignId, ForeignId, bool>.operator ==(ForeignId left, ForeignId right) => left == right;
+
+    static bool IEqualityOperators<ForeignId, ForeignId, bool>.operator !=(ForeignId left, ForeignId right) => left != right;
+
+    public static MultiContractId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out MultiContractId result)
+    {
+        if (Guid.TryParse(s, out var parsed))
+        {
+            result = new(parsed);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public static bool operator ==(MultiContractId left, MultiContractId right) => left.Value == right.Value;
+
+    public static bool operator !=(MultiContractId left, MultiContractId right) => left.Value != right.Value;
+
+    public override bool Equals(object? obj) => obj is MultiContractId other && Value == other.Value;
+
+    public override int GetHashCode() => Value.GetHashCode();
+}
+#pragma warning restore CA2260
+
+/// <summary>
+/// <see cref="MultiContractId"/> 那份外来契约的 <c>TSelf</c>，只为让第二份接口闭合而存在。
+/// </summary>
+public readonly struct ForeignId(int value) : IStronglyTypedId<ForeignId, int>
+{
+    public int Value { get; } = value;
+
+    public static ForeignId Create(int value) => new(value);
+
+    public static ForeignId Parse(string s, IFormatProvider? provider) => new(int.Parse(s, provider));
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out ForeignId result)
+    {
+        if (int.TryParse(s, out var parsed))
+        {
+            result = new(parsed);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public static bool operator ==(ForeignId left, ForeignId right) => left.Value == right.Value;
+
+    public static bool operator !=(ForeignId left, ForeignId right) => left.Value != right.Value;
+
+    public override bool Equals(object? obj) => obj is ForeignId other && Value == other.Value;
+
+    public override int GetHashCode() => Value.GetHashCode();
+}

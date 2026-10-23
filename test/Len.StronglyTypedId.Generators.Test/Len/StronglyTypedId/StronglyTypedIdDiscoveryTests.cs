@@ -182,7 +182,10 @@ public class StronglyTypedIdDiscoveryTests
             GetReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        return compilation.ToMetadataReference().GetModules(compilation).Single();
+        return compilation.ToMetadataReference()
+            .GetModuleIdentities()
+            .Select(identity => identity.ResolveAssembly(compilation))
+            .Single();
     }
 
     private static ImmutableArray<MetadataReference> GetReferences()

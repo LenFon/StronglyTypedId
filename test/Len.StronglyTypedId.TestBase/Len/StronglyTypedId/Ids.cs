@@ -187,6 +187,13 @@ public partial record struct ObjectShapeGuidId(Guid Value);
 [StronglyTypedId(JsonShape = JsonShape.Object)]
 public partial record struct ObjectShapeStringId(string Value);
 
+// 对象形态 + 验证器：对象形态的读入分支与基元形态是两段生成代码，验证失败的异常契约必须两边一致。
+[StronglyTypedId(JsonShape = JsonShape.Object, Validator = nameof(Validate))]
+public partial record struct ObjectShapeValidatedGuidId(Guid Value)
+{
+    private static bool Validate(Guid value) => value != Guid.Empty;
+}
+
 // 嵌套类型的 Id：包含类型必须声明为 partial，生成代码要补的成员只能逐层嵌回容器里。
 // 三种容器各取一个：record 与 class 的 TypeKind 同为 Class，只能靠 IsRecord 区分；struct 容器用来验证不会加上非法的 sealed。
 public partial class OrderAggregate

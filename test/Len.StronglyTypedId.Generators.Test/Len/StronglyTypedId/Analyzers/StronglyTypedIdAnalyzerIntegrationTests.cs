@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
 using System.Globalization;
+using System.Reflection;
 
 namespace Len.StronglyTypedId.Analyzers;
 
@@ -77,6 +78,66 @@ public class StronglyTypedIdAnalyzerIntegrationTests
             public partial record struct OrderId(Guid Value);
             """";
         await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// MessagePack 集成同样受门控：没引用 <c>MessagePack</c> 时不产出格式化器，必须报 STIA0019。
+    /// </summary>
+    /// <remarks>
+    /// 这条用例锁的是一个曾经漏掉的集成：对照表原先只登记了七个，MessagePack 与 MongoDb 虽在
+    /// <c>Integrations = All</c> 里却无人校验，请求它们时既不生成代码也不报警，与文档承诺相反。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenMessagePackIsNotReferenced()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.MessagePack)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.IntegrationUnavailable)
+            .WithArguments("OrderId", "MessagePack", "MessagePack")
+            .WithSpan(5, 18, 5, 72);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// MongoDB 集成同理：没引用 <c>MongoDB.Bson</c> 时序列化器不会生成，必须报 STIA0019。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenMongoDbIsNotReferenced()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.MongoDb)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.IntegrationUnavailable)
+            .WithArguments("OrderId", "MongoDb", "MongoDB.Bson")
+            .WithSpan(5, 18, 5, 68);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 对照表必须覆盖 <see cref="IntegrationFlags.All"/> 的每一位：漏登记的集成会静默失效，
+    /// 而逐条行为用例只能守住当时写下的那几个，新增集成时仍会重演同一个缺口。
+    /// </summary>
+    [Fact]
+    public void IntegrationRequirements_Should_CoverEveryFlagInAll()
+    {
+        var requirements = (IEnumerable<(int Flag, string AssemblyName, string DisplayName)>)typeof(StronglyTypedIdAnalyzer)
+            .GetField("_integrationRequirements", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!;
+
+        var covered = requirements.Aggregate(0, (mask, requirement) => mask | requirement.Flag);
+
+        covered.Should().Be(IntegrationFlags.All);
     }
 
     /// <summary>

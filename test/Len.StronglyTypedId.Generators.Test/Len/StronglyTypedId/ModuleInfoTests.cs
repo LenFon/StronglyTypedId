@@ -179,11 +179,10 @@ public class ModuleInfoTests
     }
 
     /// <summary>
-    /// 忽略 <see cref="ModuleInfo.MetadataReference"/> 与 <see cref="ModuleInfo.Assembly"/>
-    /// 的实例差异：同一程序集可能以不同引用形态出现，但去重时它们是同一个模块。
+    /// 忽略 <see cref="ModuleInfo.Assembly"/> 的实例差异：同一程序集可能以不同引用形态出现，但去重时它们是同一个模块。
     /// </summary>
     [Fact]
-    public void Comparer_Should_IgnoreMetadataReferenceAndAssemblyIdentity()
+    public void Comparer_Should_IgnoreAssemblyIdentity()
     {
         var comparer = new ModuleInfo.Comparer();
 
@@ -191,7 +190,6 @@ public class ModuleInfoTests
         var withAnotherReference = new ModuleInfo(
             "Newtonsoft.Json.dll",
             new Version(13, 0, 3, 0),
-            AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
             null);
 
         comparer.Equals(withDefaultReference, withAnotherReference).Should().BeTrue();
@@ -201,12 +199,12 @@ public class ModuleInfoTests
 
     #region 辅助
 
-    // 模块描述符本身不读取 MetadataReference 的内容，仅用于承载实例，取任一真实引用即可。
+    // 运行时程序集的引用：ResolveModule 用它构造「能看见 IStronglyTypedId<,>」的编译。
     private static readonly MetadataReference _reference
         = AssemblyReferenceCache.FromAssembly(typeof(StronglyTypedIdAttribute).Assembly);
 
     private static ModuleInfo CreateModule(string name, string version)
-        => new(name, Version.Parse(version), _reference, null);
+        => new(name, Version.Parse(version), null);
 
     /// <summary>
     /// 按生产路径造一个模块：源码程序集（<see cref="CompilationReference"/>）经

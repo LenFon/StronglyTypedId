@@ -174,8 +174,8 @@ public class AspNetCoreOpenApiCodeGeneratorTests
         generated.Should().NotBeEmpty();
 
         var entry = format is null
-            ? $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", null),"""
-            : $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", "{{format}}"),""";
+            ? $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", null, false),"""
+            : $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", "{{format}}", false),""";
 
         generated.Should().Contain(entry);
     }
@@ -198,7 +198,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
             """;
 
         GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference)
-            .Should().Contain("""[typeof(global::Len.StronglyTypedId.StatusId)] = ("integer", null),""");
+            .Should().Contain("""[typeof(global::Len.StronglyTypedId.StatusId)] = ("integer", null, false),""");
     }
 
     [Fact]
@@ -218,8 +218,8 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\"),");
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (\"integer\", \"int32\"),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (\"integer\", \"int32\", false),");
     }
 
     #endregion
@@ -243,7 +243,81 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", null),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", null, false),");
+    }
+
+    #endregion
+
+    #region JsonShape.Object：schema 必须是 {"value": <基元>} 的对象形态
+
+    /// <summary>
+    /// <c>JsonShape.Object</c> 的线上报文是 <c>{"value":"..."}</c>。框架按 <c>JsonTypeInfo</c> 构建的 schema 认不出自定义转换器，
+    /// 只会留下空 schema，故转换器必须显式改写为对象形态并把 <c>value</c> 标为必填。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_Should_MarkEntryAsObject_WhenJsonShapeIsObject()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
+
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", true),");
+        generated.Should().Contain("if (entry.IsObject)");
+        generated.Should().Contain("schema.Type = \"object\";");
+        generated.Should().Contain("[\"value\"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = entry.Type, Format = entry.Format },");
+        generated.Should().Contain("schema.Required = new global::System.Collections.Generic.HashSet<string> { \"value\" };");
+    }
+
+    /// <summary>
+    /// 非对象形态仍走原来的就地改写分支，不能被对象分支吞掉。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_Should_KeepPrimitiveBranch_WhenJsonShapeIsPrimitive()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
+
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
+        generated.Should().Contain("schema.Type = entry.Type;");
+        generated.Should().Contain("schema.Format = entry.Format;");
+    }
+
+    /// <summary>
+    /// 2.x 的 <c>Properties</c> 值是 <c>IOpenApiSchema</c> 接口，泛型不变，不能用 <c>Dictionary&lt;string, OpenApiSchema&gt;</c> 顶替。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_V2_Should_GenerateObjectSchema_WhenJsonShapeIsObject()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference, OpenApi2Reference);
+
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\", true),");
+        generated.Should().Contain("schema.Type = global::Microsoft.OpenApi.JsonSchemaType.Object;");
+        generated.Should().Contain("Dictionary<string, global::Microsoft.OpenApi.IOpenApiSchema>");
+        generated.Should().NotContain("Microsoft.OpenApi.Models");
     }
 
     #endregion
@@ -277,9 +351,9 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference, OpenApi2Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\"),");
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (global::Microsoft.OpenApi.JsonSchemaType.Integer, \"int32\"),");
-        generated.Should().Contain("(global::Microsoft.OpenApi.JsonSchemaType Type, string? Format)");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\", false),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (global::Microsoft.OpenApi.JsonSchemaType.Integer, \"int32\", false),");
+        generated.Should().Contain("(global::Microsoft.OpenApi.JsonSchemaType Type, string? Format, bool IsObject)");
         generated.Should().Contain("global::Microsoft.OpenApi.OpenApiSchema schema,");
         generated.Should().NotContain("Microsoft.OpenApi.Models");
     }

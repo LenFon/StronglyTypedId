@@ -59,6 +59,68 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
+    /// <c>string</c> 基元的比较必须与 <c>Equals</c> 一致，两者都按序数判定。区域性比较会把软连字符
+    /// 当作可忽略字符，令两个不相等的 Id 比较结果为 0；<see cref="SortedSet{T}"/> 正是靠
+    /// <c>CompareTo</c> 判重的，于是静默丢掉元素。
+    /// </summary>
+    [Fact]
+    public void StringId_Should_CompareOrdinally_SoOrderedSetsKeepDistinctValues()
+    {
+        var withSoftHyphen = StringId.Create("a\u00ADb");
+        var plain = StringId.Create("ab");
+
+        withSoftHyphen.Equals(plain).Should().BeFalse();
+
+        // 「比较为 0」与「相等」必须同时成立或不成立 —— 这就是有序集合判重的依据。
+        (withSoftHyphen.CompareTo(plain) == 0).Should().Be(withSoftHyphen.Equals(plain));
+
+        var set = new SortedSet<StringId> { withSoftHyphen, plain };
+
+        set.Should().HaveCount(2, "两个不相等的 Id 不能被有序集合合并成一个");
+    }
+
+    /// <summary>
+    /// 引用类型 Id 的比较运算符走 <c>CompareValues</c>，最终仍落到 <c>CompareTo</c>，序数语义必须一致。
+    /// </summary>
+    [Fact]
+    public void StringIdReferenceType_Should_CompareOrdinally()
+    {
+        var withSoftHyphen = StringIdV2.Create("a\u00ADb");
+        var plain = StringIdV2.Create("ab");
+
+        (withSoftHyphen.CompareTo(plain) == 0).Should().Be(withSoftHyphen.Equals(plain));
+        (withSoftHyphen < plain).Should().Be(string.CompareOrdinal("a\u00ADb", "ab") < 0);
+        (withSoftHyphen > plain).Should().Be(string.CompareOrdinal("a\u00ADb", "ab") > 0);
+    }
+
+    /// <summary>
+    /// 排序方向不得随 <see cref="CultureInfo.CurrentCulture"/> 翻转：土耳其语下 <c>"I"</c> 与 <c>"i"</c>
+    /// 的大小关系与 en-US 相反，区域性比较会让同一份数据在不同机器上排出不同顺序。
+    /// </summary>
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("tr-TR")]
+    public void StringId_Ordering_Should_NotDependOnCurrentCulture(string cultureName)
+    {
+        var upper = StringId.Create("I");
+        var lower = StringId.Create("i");
+        var expected = Math.Sign(string.CompareOrdinal("I", "i"));
+
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo(cultureName);
+
+            Math.Sign(upper.CompareTo(lower))
+                .Should().Be(expected, $"{cultureName} 下排序方向必须与序数比较一致");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    /// <summary>
     /// <c>IComparable&lt;TSelf&gt;</c> 的形参在引用类型上是可空的，空值按约定排在有序序列末尾。
     /// </summary>
     [Fact]
@@ -369,6 +431,7 @@ public class StronglyTypedIdCapabilityTests
 
     /// <summary>
     /// 生成代码把 JSON 与 Entity Framework Core 的构造入口一并收敛到 <c>Create</c>，校验因此也覆盖反序列化路径。
+    /// 反序列化失败必须抛各框架自己的异常类型，而不是让 <c>Create</c> 的 <see cref="ArgumentException"/> 穿透。
     /// </summary>
     [Fact]
     public void Validator_Should_BeAppliedByJsonDeserialization()
@@ -376,8 +439,8 @@ public class StronglyTypedIdCapabilityTests
         var systemTextJson = () => System.Text.Json.JsonSerializer.Deserialize<NonEmptyGuidId>($"\"{Guid.Empty}\"");
         var newtonsoft = () => Newtonsoft.Json.JsonConvert.DeserializeObject<NonEmptyGuidId>($"\"{Guid.Empty}\"");
 
-        systemTextJson.Should().Throw<ArgumentException>();
-        newtonsoft.Should().Throw<ArgumentException>();
+        systemTextJson.Should().Throw<System.Text.Json.JsonException>();
+        newtonsoft.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
 
         System.Text.Json.JsonSerializer.Deserialize<NonEmptyGuidId>($"\"{_lowGuid}\"").Value.Should().Be(_lowGuid);
         Newtonsoft.Json.JsonConvert.DeserializeObject<NonEmptyGuidId>($"\"{_lowGuid}\"")!.Value.Should().Be(_lowGuid);
