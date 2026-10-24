@@ -72,7 +72,11 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return false;
         }
 
-        if (!modifiers.Any(SyntaxKind.PartialKeyword) || modifiers.Any(SyntaxKind.AbstractKeyword))
+        // file 修饰符也要挡：容器循环只查了外层类型，record 自身是 file 局部类型时生成器放行就会产出
+        // 跨文件的冲突 partial 声明（CS0535）。分析器对同一写法报 STIA0025，保证「报错的那条」就是「不生成的那条」。
+        if (!modifiers.Any(SyntaxKind.PartialKeyword)
+            || modifiers.Any(SyntaxKind.AbstractKeyword)
+            || modifiers.Any(SyntaxKind.FileKeyword))
         {
             return false;
         }

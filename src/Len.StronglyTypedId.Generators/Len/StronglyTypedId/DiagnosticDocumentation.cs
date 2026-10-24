@@ -39,7 +39,8 @@ internal static class DiagnosticDocumentation
         // 命名实例：改名要同时改掉所有引用点，改值要重新挑一个业务上有意义的取值，两者都没有机械修法。
         new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, DocText.Empty),
-        new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, DocText.Empty));
+        new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, DocText.Empty),
+        new DiagnosticDocEntry(Descriptors.TypeCannotBeFileLocalId, new DocText("Remove the `file` modifier", "去掉 `file` 修饰符")));
 
     /// <summary>
     /// 单条诊断的文档条目。

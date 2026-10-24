@@ -52,6 +52,8 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
+        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
+        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
@@ -204,7 +206,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             $"global::System.Enum.TryParse<{primitive}>(enumText, ignoreCase: true, out var enumValue)",
         };
 
-        if (GetEnumValidityCondition(idInfo, "enumValue") is { } textValidity)
+        if (idInfo.GetEnumValidityCondition("enumValue") is { } textValidity)
         {
             textConditions.Add(textValidity);
         }
@@ -235,7 +237,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         lines.Add(_parseNestedIndent + $"        var enumValue = ({primitive})global::System.Enum.ToObject(typeof({primitive}), underlyingValue);");
         lines.Add(string.Empty);
 
-        if (GetEnumValidityCondition(idInfo, "enumValue") is { } numericValidity)
+        if (idInfo.GetEnumValidityCondition("enumValue") is { } numericValidity)
         {
             lines.Add(_parseNestedIndent + $"        if ({numericValidity})");
             lines.Add(_parseNestedIndent + "        {");
@@ -278,7 +280,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         lines.Add(indent + $"if ({pattern})");
         lines.Add(indent + "{");
 
-        if (GetEnumValidityCondition(idInfo, variableName) is { } validity)
+        if (idInfo.GetEnumValidityCondition(variableName) is { } validity)
         {
             lines.Add(indent + $"    if ({validity})");
             lines.Add(indent + "    {");
@@ -294,24 +296,6 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
 
         lines.Add(indent + "}");
         lines.Add(string.Empty);
-    }
-
-    /// <summary>
-    /// 取「枚举值是否落在已定义取值内」的条件；<c>[Flags]</c> 枚举的全部位都已定义时返回 <see langword="null"/>（无需校验）。
-    /// </summary>
-    private static string? GetEnumValidityCondition(StronglyTypedIdInfo idInfo, string variableName)
-    {
-        var primitive = idInfo.PrimitiveIdTypeName;
-
-        if (!idInfo.IsFlagsEnum)
-        {
-            return $"global::System.Enum.IsDefined(typeof({primitive}), {variableName})";
-        }
-
-        // [Flags] 的合法取值本就是位组合，IsDefined 会误杀；改为「不许出现未定义的位」。
-        return idInfo.FlagsEnumUndefinedBitsMask is { } undefinedBits
-            ? $"(unchecked((ulong){variableName}) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL"
-            : null;
     }
 
     /// <summary>
@@ -382,5 +366,5 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     private static string GetHandlerName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
             ? $"{idInfo.HintName.Replace('.', '_')}TypeHandler"
-            : $"{idInfo.Name}TypeHandler";
+            : $"{idInfo.EscapedName}TypeHandler";
 }

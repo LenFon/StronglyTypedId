@@ -66,13 +66,13 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         // 而不是 ArgumentException：后者是「调用方传了不该传的东西」，前者才是「文本格式不对」。
         // 注意 FormatException 没有带 paramName 的构造函数，故只传消息。
         var declaration = $$"""
-                {{GetTypeAttributes(idInfo)}}{{idInfo.ReadOnlyRecordModifier}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}} :
-                    global::Len.StronglyTypedId.IStronglyTypedId<{{idInfo.Name}}, {{idInfo.PrimitiveIdTypeName}}>,
-                    global::System.IParsable<{{idInfo.Name}}>,
-                    global::System.ISpanParsable<{{idInfo.Name}}>,
-                    global::System.IComparable<{{idInfo.Name}}>,
-                    global::System.Numerics.IEqualityOperators<{{idInfo.Name}}, {{idInfo.Name}}, bool>,
-                    global::System.Numerics.IComparisonOperators<{{idInfo.Name}}, {{idInfo.Name}}, bool>{{GetOptionalInterfaces(idInfo)}}
+                {{GetTypeAttributes(idInfo)}}{{idInfo.ReadOnlyRecordModifier}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.EscapedName}} :
+                    global::Len.StronglyTypedId.IStronglyTypedId<{{idInfo.EscapedName}}, {{idInfo.PrimitiveIdTypeName}}>,
+                    global::System.IParsable<{{idInfo.EscapedName}}>,
+                    global::System.ISpanParsable<{{idInfo.EscapedName}}>,
+                    global::System.IComparable<{{idInfo.EscapedName}}>,
+                    global::System.Numerics.IEqualityOperators<{{idInfo.EscapedName}}, {{idInfo.EscapedName}}, bool>,
+                    global::System.Numerics.IComparisonOperators<{{idInfo.EscapedName}}, {{idInfo.EscapedName}}, bool>{{GetOptionalInterfaces(idInfo)}}
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -82,7 +82,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
-                    public static {{idInfo.Name}} Parse(string value, global::System.IFormatProvider? provider)
+                    public static {{idInfo.EscapedName}} Parse(string value, global::System.IFormatProvider? provider)
                     {
                         if (!TryParse(value, provider, out var id))
                         {
@@ -98,7 +98,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     public static bool TryParse(
                         [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value,
                         global::System.IFormatProvider? provider,
-                        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.Name}} result)
+                        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.EscapedName}} result)
                     {
                 {{GetTryParseHead(idInfo, GetTryParseCondition(idInfo, isSpan: false), PrefixTextKind.String)}}
                 {{GetTryParseSuccessBlock(idInfo, isSpan: false)}}
@@ -110,7 +110,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
-                    public static {{idInfo.Name}} Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                    public static {{idInfo.EscapedName}} Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
                     {
                         if (!TryParse(value, provider, out var id))
                         {
@@ -126,7 +126,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                     public static bool TryParse(
                         global::System.ReadOnlySpan<char> value,
                         global::System.IFormatProvider? provider,
-                        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.Name}} result)
+                        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.EscapedName}} result)
                     {
                 {{GetTryParseHead(idInfo, GetTryParseCondition(idInfo, isSpan: true), PrefixTextKind.Span)}}
                 {{GetTryParseSuccessBlock(idInfo, isSpan: true)}}
@@ -182,7 +182,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         if (idInfo.IsFormattable)
         {
             // 用 IFormattableStronglyTypedId<TSelf> 取代裸 IFormattable：能力不变，且泛型代码可按接口约束。
-            interfaces.Add($"global::Len.StronglyTypedId.IFormattableStronglyTypedId<{idInfo.Name}>");
+            interfaces.Add($"global::Len.StronglyTypedId.IFormattableStronglyTypedId<{idInfo.EscapedName}>");
         }
 
         if (idInfo.IsSpanFormattable)
@@ -192,7 +192,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsUtf8SpanParsable)
         {
-            interfaces.Add($"global::System.IUtf8SpanParsable<{idInfo.Name}>");
+            interfaces.Add($"global::System.IUtf8SpanParsable<{idInfo.EscapedName}>");
         }
 
         if (idInfo.IsUtf8SpanFormattable)
@@ -249,7 +249,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             // 必须用 FullyQualifiedName（含包含类型链，如 global::Ns.Outer.Inner）而不是
             // FullyQualifiedNamespace（只有命名空间）：嵌套 Id 的转换器挂在 Id 自己名下，
             // 用命名空间拼会指向不存在的 global::Ns.Inner.InnerTypeConverter → CS0246。
-            builder.Append($"[global::System.ComponentModel.TypeConverter(typeof({idInfo.FullyQualifiedName}.{idInfo.Name}TypeConverter))]").Append('\n');
+            builder.Append($"[global::System.ComponentModel.TypeConverter(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}TypeConverter))]").Append('\n');
         }
 
         return builder.ToString();
@@ -267,12 +267,12 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         builder.Append("    /// </summary>").Append('\n');
         builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
         builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append('\n');
-        builder.Append($"    public sealed class {idInfo.Name}TypeConverter : global::System.ComponentModel.TypeConverter").Append('\n');
+        builder.Append($"    public sealed class {idInfo.EscapedName}TypeConverter : global::System.ComponentModel.TypeConverter").Append('\n');
         builder.Append("    {").Append('\n');
         builder.Append("        public override bool CanConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Type sourceType) => sourceType == typeof(string);").Append('\n');
         builder.Append('\n');
         builder.Append($"        public override object? ConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object value) =>").Append('\n');
-        builder.Append($"            value is string text ? {idInfo.Name}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
+        builder.Append($"            value is string text ? {idInfo.EscapedName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
         builder.Append('\n');
         builder.Append("        public override object? ConvertTo(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object? value, global::System.Type? destinationType) =>").Append('\n');
         builder.Append("            destinationType == typeof(string) ? value?.ToString() : throw new global::System.NotSupportedException($\"Cannot convert to {destinationType}.\");").Append('\n');
@@ -287,7 +287,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </remarks>
     private static string GetCreateMember(StronglyTypedIdInfo idInfo)
     {
-        var signature = $"public static {idInfo.Name} Create({idInfo.PrimitiveIdTypeName} value)";
+        var signature = $"public static {idInfo.EscapedName} Create({idInfo.PrimitiveIdTypeName} value)";
 
         if (idInfo.NormalizerName is null)
         {
@@ -311,7 +311,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         }
 
         lines.Add(string.Empty);
-        lines.Add($"    return new {idInfo.Name}(value);");
+        lines.Add($"    return new {idInfo.EscapedName}(value);");
         lines.Add("}");
 
         return string.Join("\n", lines.Select(line => line.Length == 0 ? string.Empty : _memberBodyIndent + line));
@@ -322,8 +322,8 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </summary>
     private static string GetCreateExpression(StronglyTypedIdInfo idInfo)
         => idInfo.ValidatorName is null
-            ? $" new {idInfo.Name}(value)"
-            : $" {idInfo.ValidatorName}(value) ? new {idInfo.Name}(value) : {GetValidationFailureThrow(idInfo)}";
+            ? $" new {idInfo.EscapedName}(value)"
+            : $" {idInfo.ValidatorName}(value) ? new {idInfo.EscapedName}(value) : {GetValidationFailureThrow(idInfo)}";
 
     /// <summary>
     /// 取「验证失败」的 <c>throw</c> 表达式：未配置 <c>ExceptionType</c> 时产物与加入该能力之前逐字符一致，
@@ -334,6 +334,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         // 被拒绝的原文会随异常消息进入日志、APM 与错误上报；对 string 基元的 Id 来说那就是用户输入。
         // RedactValidationMessage 打开后只报「不是合法的 X」，不再内插原文。
         var message = idInfo.RedactsValidationMessage
+            // 消息是运行时文本不是代码：这里用 Name，关键字名的 Id 报出来才是 "not a valid class" 而非 "not a valid @class"。
             ? $"\"The value is not a valid {idInfo.Name}.\""
             : $"$\"The value '{{value}}' is not a valid {idInfo.Name}.\"";
 
@@ -381,7 +382,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             }
         }
 
-        lines.Add($"    result = new {idInfo.Name}({value});");
+        lines.Add($"    result = new {idInfo.EscapedName}({value});");
         lines.Add("    return true;");
         lines.Add("}");
 
@@ -535,7 +536,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 取 <c>CompareTo</c> 的形参。
     /// </summary>
     private static string GetCompareToParameter(StronglyTypedIdInfo idInfo)
-        => idInfo.TypeKindSuffix is null ? $"{idInfo.Name}? other" : $"{idInfo.Name} other";
+        => idInfo.TypeKindSuffix is null ? $"{idInfo.EscapedName}? other" : $"{idInfo.EscapedName} other";
 
     /// <summary>
     /// 取两个基元值之间的比较表达式。
@@ -567,7 +568,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </remarks>
     private static string GetComparisonOperator(StronglyTypedIdInfo idInfo, string @operator, string comparison)
     {
-        var parameterType = idInfo.TypeKindSuffix is null ? $"{idInfo.Name}?" : idInfo.Name;
+        var parameterType = idInfo.TypeKindSuffix is null ? $"{idInfo.EscapedName}?" : idInfo.EscapedName;
         var body = idInfo.TypeKindSuffix is null
             ? $"CompareValues(left, right) {comparison}"
             : $"{GetComparisonExpression(idInfo, "left.Value", "right.Value")} {comparison}";
@@ -587,7 +588,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         // 该片段经插值洞注入，洞本身写在模板的去缩进基准列上，故各行必须自带产物中的绝对缩进：
         // 成员声明与同级成员一样是 4 空格，表达式体的续行再多一层。
-        var signature = $"private static int CompareValues({idInfo.Name}? left, {idInfo.Name}? right)";
+        var signature = $"private static int CompareValues({idInfo.EscapedName}? left, {idInfo.EscapedName}? right)";
 
         var builder = new StringBuilder();
 
@@ -748,7 +749,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </summary>
     private static void AppendTryCreateMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
-        var signature = $"public static bool TryCreate({idInfo.PrimitiveIdTypeName} value, {MaybeNullOutAttribute}{idInfo.Name} result)";
+        var signature = $"public static bool TryCreate({idInfo.PrimitiveIdTypeName} value, {MaybeNullOutAttribute}{idInfo.EscapedName} result)";
 
         var lines = new List<string> { "{" };
 
@@ -768,7 +769,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             lines.Add(string.Empty);
         }
 
-        lines.Add($"    result = new {idInfo.Name}(value);");
+        lines.Add($"    result = new {idInfo.EscapedName}(value);");
         lines.Add("    return true;");
         lines.Add("}");
 
@@ -812,7 +813,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             builder,
             version,
             ["<inheritdoc/>"],
-            $"public static {idInfo.Name} Parse(global::System.ReadOnlySpan<byte> utf8Text, global::System.IFormatProvider? provider)",
+            $"public static {idInfo.EscapedName} Parse(global::System.ReadOnlySpan<byte> utf8Text, global::System.IFormatProvider? provider)",
             "{",
             "    if (!TryParse(utf8Text, provider, out var id))",
             "    {",
@@ -827,7 +828,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             "public static bool TryParse(",
             "    global::System.ReadOnlySpan<byte> utf8Text,",
             "    global::System.IFormatProvider? provider,",
-            $"    {MaybeNullOutAttribute}{idInfo.Name} result)",
+            $"    {MaybeNullOutAttribute}{idInfo.EscapedName} result)",
             "{",
         };
 
@@ -860,7 +861,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             }
         }
 
-        declarationLines.Add($"        result = new {idInfo.Name}({(idInfo.NormalizerName is null ? "val" : NormalizedLocal)});");
+        declarationLines.Add($"        result = new {idInfo.EscapedName}({(idInfo.NormalizerName is null ? "val" : NormalizedLocal)});");
         declarationLines.Add("        return true;");
         declarationLines.Add("    }");
         declarationLines.Add(string.Empty);

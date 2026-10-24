@@ -13,6 +13,9 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     private static readonly LocalizedString _primaryConstructorFixTitle
         = new("TypeMustHaveSingleParameterPrimaryConstructorFixTitle");
 
+    private static readonly LocalizedString _fileLocalFixTitle
+        = new("TypeCannotBeFileLocalFixTitle");
+
     public override ImmutableArray<string> FixableDiagnosticIds { get; } =
         ImmutableArray.Create(
             Descriptors.TypeMustBePartialId,
@@ -30,7 +33,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.NormalizerReferenceInvalidId,
             Descriptors.ExceptionTypeInvalidId,
             Descriptors.InvalidPrefixId,
-            Descriptors.ValidatorCanBeBypassedId);
+            Descriptors.ValidatorCanBeBypassedId,
+            Descriptors.TypeCannotBeFileLocalId);
 
     public override FixAllProvider? GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
 
@@ -68,6 +72,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.ExceptionTypeInvalidId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.InvalidPrefixId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.ValidatorCanBeBypassedId => NarrowVisibilityToInternalAsync(context, diagnostic, token),
+                                Descriptors.TypeCannotBeFileLocalId => RemoveFileKeywordAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -79,11 +84,15 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// <summary>
     /// 取修复标题。默认沿用诊断标题；STIA0005 例外——它的修复是把参数表整体换成 <c>(Guid Value)</c>，
     /// 原有参数会被丢弃，标题必须把这一点说出来，否则用户会以为只是「补一个参数」。
+    /// STIA0025 例外——诊断标题说的是「不能是文件本地类型」，照搬会变成一句读不通的修复项。
     /// </summary>
     private static string GetFixTitle(string diagnosticId, DiagnosticDescriptor descriptor)
-        => diagnosticId == Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId
-            ? _primaryConstructorFixTitle.ToString()
-            : descriptor.Title.ToString();
+        => diagnosticId switch
+        {
+            Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => _primaryConstructorFixTitle.ToString(),
+            Descriptors.TypeCannotBeFileLocalId => _fileLocalFixTitle.ToString(),
+            _ => descriptor.Title.ToString(),
+        };
 
     /// <summary>
     /// 判断该诊断的靶子是否真的适用对应修复。
@@ -145,6 +154,12 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 FindNode<TypeDeclarationSyntax>(root, diagnostic) is { } bypassCandidate
                     && bypassCandidate.Modifiers.Any(SyntaxKind.PublicKeyword),
 
+            // 只摘本段声明上的 file：类型其余 partial 段若也带 file，修复后分析器会对那些段再报一次，
+            // 逐段应用即可全部摘除；一次性跨文件改动不是单个 CodeFix 该做的事。
+            Descriptors.TypeCannotBeFileLocalId =>
+                FindNode<RecordDeclarationSyntax>(root, diagnostic) is { } fileLocalCandidate
+                    && fileLocalCandidate.Modifiers.Any(SyntaxKind.FileKeyword),
+
             // 只有「带实参的构造」能机械改写成 Create(...)。default / default(T) 与无参的对象初始化器
             // 一律不给修复：前者改成 Create(default) 会把编译期提示换成运行时异常，后者没有可搬运的实参
             // （`new Xxx()` 的 ArgumentList 不是 null 而是空表，只判 null 会产出缺参数的 `Xxx.Create()`）。
@@ -161,6 +176,13 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     private static Task<Document> RemoveAbstractKeywordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceRecordDeclarationAsync(context, diagnostic, token,
             static declaration => declaration.WithoutModifiers(SyntaxKind.AbstractKeyword));
+
+    /// <summary>
+    /// 摘掉强类型 Id 自身声明上的 <c>file</c> 修饰符，使其可被生成器在另一个文件里重开（STIA0025）。
+    /// </summary>
+    private static Task<Document> RemoveFileKeywordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+        => ReplaceRecordDeclarationAsync(context, diagnostic, token,
+            static declaration => declaration.WithoutModifiers(SyntaxKind.FileKeyword));
 
     private static Task<Document> RemoveGenericAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceRecordDeclarationAsync(context, diagnostic, token, RemoveTypeParametersAndConstraints);

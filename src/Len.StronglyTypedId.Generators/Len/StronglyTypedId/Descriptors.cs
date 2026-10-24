@@ -37,6 +37,7 @@ internal static class Descriptors
     public const string InstanceNameNotPascalCaseId = "STIA0022";
     public const string AmbiguousPrefixId = "STIA0023";
     public const string UnknownIntegrationId = "STIA0024";
+    public const string TypeCannotBeFileLocalId = "STIA0025";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -305,6 +306,22 @@ internal static class Descriptors
             WellKnownDiagnosticTags.CompilationEnd);
 
     /// <summary>
+    /// 强类型 Id 自身被声明为 <c>file</c> 本地类型。
+    /// </summary>
+    /// <remarks>
+    /// 生成器要在另一个文件里重开它的 partial 声明，而 file 局部类型的各段必须都带 <c>file</c> 且仅在本文件可见，
+    /// 跨文件重开在语法上就不成立。放行的后果是凭空造出第二个同名类型，报 CS0535 且不带任何 STIA 诊断，
+    /// 用户既看不出错在生成代码，也看不出 Id 不能是 file 局部类型。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor TypeCannotBeFileLocal
+        = new(TypeCannotBeFileLocalId,
+            new LocalizedString("TypeCannotBeFileLocalTitle"),
+            new LocalizedString("TypeCannotBeFileLocalMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -333,6 +350,7 @@ internal static class Descriptors
         InvalidInstanceName,
         InvalidInstanceValue,
         InstanceNameNotPascalCase,
+        TypeCannotBeFileLocal,
     ];
 
     /// <summary>

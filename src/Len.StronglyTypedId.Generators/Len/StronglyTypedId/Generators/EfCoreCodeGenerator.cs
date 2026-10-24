@@ -32,6 +32,8 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 
         // 同名 Id 会生成进同一个 StronglyTypedIds 类并撞 CS0102；仅在确实重名时才用「命名空间_类型名」消歧，
         // 以免改动无冲突场景下既有的转换器类名。
+        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
+        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
@@ -63,7 +65,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                         }
 
                         /// <summary>
-                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core via conventions. Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
+                        /// Apply the {{idInfo.EscapedName}} converter to the Entity Framework Core via conventions. Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
                         /// </summary>
                         /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -72,7 +74,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                             configurationBuilder.Properties<{{idInfo.FullyQualifiedName}}>().HaveConversion(typeof({{converterName}}));
 
                         /// <summary>
-                        /// Apply the {{idInfo.Name}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>). Only entity types already added to the model are scanned, so call it at the end of <c>OnModelCreating</c>.
+                        /// Apply the {{idInfo.EscapedName}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>). Only entity types already added to the model are scanned, so call it at the end of <c>OnModelCreating</c>.
                         /// </summary>
                         /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -134,5 +136,5 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
     private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
             ? $"{idInfo.HintName.Replace('.', '_')}Converter"
-            : $"{idInfo.Name}Converter";
+            : $"{idInfo.EscapedName}Converter";
 }

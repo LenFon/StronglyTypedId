@@ -49,3 +49,6 @@ InvalidInstanceValueTitle = Named instance value is not valid for the primitive 
 InvalidInstanceValueMessage = The value '{0}' is not a valid '{1}' for the named instance '{2}'.
 InstanceNameNotPascalCaseTitle = Named instance name should be PascalCase
 InstanceNameNotPascalCaseMessage = The named instance '{0}' is not in PascalCase. Consider renaming it to '{1}'.
+TypeCannotBeFileLocalTitle = Strongly typed id cannot be a file-local type
+TypeCannotBeFileLocalMessage = The type '{0}' is declared as a file-local type, but the source generator must reopen its partial declaration in another file, which a file-local type cannot allow. Remove the 'file' modifier.
+TypeCannotBeFileLocalFixTitle = Remove the 'file' modifier

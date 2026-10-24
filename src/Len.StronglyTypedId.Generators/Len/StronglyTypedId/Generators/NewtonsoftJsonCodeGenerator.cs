@@ -31,20 +31,20 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             : "[global::Newtonsoft.Json.JsonConverter(typeof(NewtonsoftJsonConverter))]\n";
 
         var declaration = $$"""
-                {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
+                {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.EscapedName}}
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonCodeGenerator), version)}}
-                    public class NewtonsoftJsonConverter : global::Newtonsoft.Json.JsonConverter<{{idInfo.Name}}?>
+                    public class NewtonsoftJsonConverter : global::Newtonsoft.Json.JsonConverter<{{idInfo.EscapedName}}?>
                     {
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonCodeGenerator), version)}}
-                        public override {{idInfo.Name}}? ReadJson(
+                        public override {{idInfo.EscapedName}}? ReadJson(
                             global::Newtonsoft.Json.JsonReader reader,
                             global::System.Type objectType,
-                            {{idInfo.Name}}? existingValue,
+                            {{idInfo.EscapedName}}? existingValue,
                             bool hasExistingValue,
                             global::Newtonsoft.Json.JsonSerializer serializer){{GetReadTail(idInfo)}}
                 
@@ -53,7 +53,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonCodeGenerator), version)}}
                         public override void WriteJson(
                             global::Newtonsoft.Json.JsonWriter writer,
-                            {{idInfo.Name}}? value,
+                            {{idInfo.EscapedName}}? value,
                             global::Newtonsoft.Json.JsonSerializer serializer){{GetWriteTail(idInfo)}}
                     }
                 }
@@ -82,7 +82,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                 // Newtonsoft 不认识 Int128 / UInt128 / Half / DateOnly / TimeOnly，也只能按文本读。
                 builder.Append("            serializer.Deserialize<string>(reader) switch").Append('\n');
                 builder.Append("            {").Append('\n');
-                builder.Append("                { } text when ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
+                builder.Append("                { } text when ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
                 builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
                 builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
                 builder.Append("            };");
@@ -94,7 +94,9 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("            {").Append('\n');
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
             // 它会穿透 JsonConvert.DeserializeObject —— 而 Newtonsoft 的转换器契约要求失败一律抛 JsonSerializationException。
-            builder.Append("                { } value when ").Append(idInfo.Name).Append(".TryCreate(value, out var id) => id,").Append('\n');
+            // 枚举在此追加已定义性校验：TryCreate 不含它，而 Newtonsoft 对未定义数值（999）照常读出，
+            // 不补就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条路径都已收紧，这里对齐）。
+            AppendTryCreateArm(builder, idInfo, "                ");
             builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
             builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };");
@@ -132,7 +134,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             // 同上：有前缀或基元本身不被 Newtonsoft 认识时，值都以规范文本形存放。
             builder.Append("            return valueToken.ToObject<string>() switch").Append('\n');
             builder.Append("            {").Append('\n');
-            builder.Append("                { } text when ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
+            builder.Append("                { } text when ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
             builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };").Append('\n');
             builder.Append("        }");
@@ -143,12 +145,30 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("            return valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>() switch").Append('\n');
         builder.Append("            {").Append('\n');
         // 同上：TryCreate 让验证失败落在下面的 JsonSerializationException 分支，而不是穿透 ArgumentException。
-        builder.Append("                { } value when ").Append(idInfo.Name).Append(".TryCreate(value, out var id) => id,").Append('\n');
+        // 枚举在此追加已定义性校验：TryCreate 不含它，而 Newtonsoft 对未定义数值（999）照常读出，
+        // 不补就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条路径都已收紧，这里对齐）。
+        AppendTryCreateArm(builder, idInfo, "                ");
         builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
         builder.Append("            };").Append('\n');
         builder.Append("        }");
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// 追加 switch 的 <c>{ } value when Id.TryCreate(value, out var id) => id,</c> 臂；枚举基元附带
+    /// 已定义性校验（见 <see cref="StronglyTypedIdInfo.GetEnumValidityCondition"/>）。
+    /// </summary>
+    private static void AppendTryCreateArm(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent)
+    {
+        builder.Append(indent).Append("{ } value when ").Append(idInfo.EscapedName).Append(".TryCreate(value, out var id)");
+
+        if (idInfo.GetEnumValidityCondition("value") is { } validity)
+        {
+            builder.Append(" && ").Append(validity);
+        }
+
+        builder.Append(" => id,").Append('\n');
     }
 
     /// <summary>

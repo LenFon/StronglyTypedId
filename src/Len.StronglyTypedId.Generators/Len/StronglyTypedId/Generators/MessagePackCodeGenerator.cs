@@ -58,6 +58,8 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
+        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
+        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
         var ambiguousNames = stronglyTypedIds
             .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
@@ -213,7 +215,12 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
             // 它会穿透 MessagePackSerializer —— 而格式化器的契约要求失败一律抛 MessagePackSerializationException。
             lines.Add(_nestedIndent + $"var value = {FormatterResolverExtensions}.GetFormatterWithVerify<{idInfo.PrimitiveIdTypeName}>(options.Resolver).Deserialize(ref reader, options);");
             lines.Add(string.Empty);
-            lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id))");
+
+            // 枚举基元在此追加已定义性校验：TryCreate 只跑用户配的 Validator，而 MessagePack 对未定义数值
+            // （999）照常读出 —— 不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
+            // STJ、Newtonsoft 路径都已收紧，这里对齐）。
+            var enumValidity = idInfo.GetEnumValidityCondition("value");
+            lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id){(enumValidity is null ? string.Empty : $" && {enumValidity}")})");
             lines.Add(_nestedIndent + "{");
             lines.Add(_nestedIndent + "    return id;");
             lines.Add(_nestedIndent + "}");
@@ -232,5 +239,5 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
     private static string GetFormatterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
         => requiresNamespaceQualifier
             ? $"{idInfo.HintName.Replace('.', '_')}MessagePackFormatter"
-            : $"{idInfo.Name}MessagePackFormatter";
+            : $"{idInfo.EscapedName}MessagePackFormatter";
 }

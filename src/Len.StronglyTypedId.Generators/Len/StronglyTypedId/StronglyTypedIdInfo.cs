@@ -251,6 +251,29 @@ internal readonly record struct StronglyTypedIdInfo
     public string Name { get; }
 
     /// <summary>
+    /// 强类型 Id 的类型名，不含命名空间；C# 保留关键字已加 <c>@</c> 前缀转义，可直接写进生成的源码。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Name"/> 取自 <see cref="ISymbol.Name"/>，而它对 <c>class</c>、<c>return</c>、<c>int</c>
+    /// 这类保留关键字不加转义。把它原样写进类型声明位，编译器会把名字吃成关键字：
+    /// <c>partial record struct class :</c> 的类型名变成空串，进而爆出 CS0260 / CS1520 / CS0101 /
+    /// CS9348 等一串错误，成员整体掉出类型落进全局命名空间。
+    /// <para>
+    /// 上下文关键字（<c>var</c> / <c>record</c> / <c>nameof</c> 等）也一并转义：它们单独出现时是合法
+    /// 标识符，但本生成器自己就会在产物里写出 <c>out var id</c> 这类局部变量声明，Id 叫 <c>var</c>
+    /// 时那个 <c>var</c> 会被当成隐式类型声明而不是类型名。加 <c>@</c> 对任何关键字都是合法且不改变
+    /// 语义的。因此普通名字下 <see cref="EscapedName"/> 与 <see cref="Name"/> 逐字节相同，
+    /// 既有生成代码与快照测试不受影响。
+    /// </para>
+    /// <para>
+    /// 拼装生成源码时一律用本属性，不要用 <see cref="Name"/>。唯一的例外是名字要作为「非代码文本」
+    /// 使用的场合——例如 ASP.NET Core 路由约束的令牌（<c>options.ConstraintMap["OrderId"]</c>），
+    /// 那里比较的是路由模板里的字面量，加 <c>@</c> 会改变语义。
+    /// </para>
+    /// </remarks>
+    public string EscapedName => EscapeIdentifier(Name);
+
+    /// <summary>
     /// 强类型 Id 的全限定名，含 <c>global::</c> 前缀。
     /// </summary>
     public string FullyQualifiedName { get; }
@@ -271,7 +294,7 @@ internal readonly record struct StronglyTypedIdInfo
     public int NestingDepth { get; }
 
     /// <summary>
-    /// 可作为生成源 hint 名的类型显示名：剔除尖括号、逗号与空格。
+    /// 可作为生成源 hint 名的类型显示名：只保留 Unicode 字母、数字与 <c>_</c> <c>.</c>。
     /// </summary>
     public string HintName { get; }
 
@@ -502,11 +525,14 @@ internal readonly record struct StronglyTypedIdInfo
             // 块经插值洞注入模板，洞写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
             builder.Append('\n').Append('\n');
             builder.Append("    /// <summary>").Append('\n');
-            builder.Append("    /// Gets the <c>").Append(instance.Name).Append("</c> instance of <c>").Append(type.Name).Append("</c>.").Append('\n');
+            builder.Append("    /// Gets the <c>").Append(instance.Name).Append("</c> instance of <c>").Append(EscapeIdentifier(type.Name)).Append("</c>.").Append('\n');
             builder.Append("    /// </summary>").Append('\n');
             builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
             builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append('\n');
-            builder.Append("    public static readonly ").Append(type.Name).Append(' ').Append(instance.Name).Append(" = Create(").Append(instance.Expression).Append(");");
+            // 字段类型是 Id 自身、字段名是实例名，两者都要转义：Id 叫 class 或实例叫 class 时，
+            // 原样写出 "public static readonly class Empty" / "public static readonly OrderId class" 都是语法错误。
+            // 实例名转义只在落盘这一刻做，IsReservedName 的撞名判定仍用原始名，两者判据一致。
+            builder.Append("    public static readonly ").Append(EscapeIdentifier(type.Name)).Append(' ').Append(EscapeIdentifier(instance.Name)).Append(" = Create(").Append(instance.Expression).Append(");");
         }
 
         return builder.ToString();
@@ -651,11 +677,13 @@ internal readonly record struct StronglyTypedIdInfo
         };
 
         // 必须复现类型参数表（否则 CS0693），但约束子句只需在任一 partial 上声明一次，故省略 where。
+        // 类型参数名同样要转义：形参叫 class 时原样写出 "<class>" 就是语法错误。
         var typeParameterList = type.TypeParameters.Length > 0
-            ? "<" + string.Join(", ", type.TypeParameters.Select(parameter => parameter.Name)) + ">"
+            ? "<" + string.Join(", ", type.TypeParameters.Select(parameter => EscapeIdentifier(parameter.Name))) + ">"
             : string.Empty;
 
-        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {type.Name}{typeParameterList}";
+        // 包含类型名同样要转义：容器叫 return 时原样写出 "internal partial class return" 就是语法错误。
+        return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {EscapeIdentifier(type.Name)}{typeParameterList}";
     }
 
     /// <summary>
@@ -696,18 +724,65 @@ internal readonly record struct StronglyTypedIdInfo
     }
 
     /// <summary>
-    /// 把类型显示名净化成合法的 hint 名：剔除尖括号、逗号与空格。
+    /// 把标识符转成可安全写入 C# 源码的形式：C# 关键字（保留关键字与上下文关键字）加 <c>@</c> 前缀，其余原样返回。
     /// </summary>
     /// <remarks>
+    /// 判据走 Roslyn 自己的关键字表而非自己维护一份：表会漏，且将来新增关键字时不会有人想起回来改这里。
+    /// <see cref="SyntaxFacts.GetKeywordKind"/> 查保留关键字、<see cref="SyntaxFacts.GetContextualKeywordKind"/>
+    /// 查上下文关键字，两者都返回 <see cref="SyntaxKind.None"/> 表示不是关键字。
+    /// <para>
+    /// 为什么上下文关键字也要转义：它们单独出现时确实是合法标识符，但本生成器自己就会在产物里写出
+    /// <c>out var id</c> / <c>out var val</c> 这类局部变量声明。Id 若叫 <c>var</c>，
+    /// <c>out var result</c> 里的 <c>var</c> 会被当成隐式类型声明而不是类型名，
+    /// 进而 CS1503 / CS8508 一串错误。加 <c>@</c> 对任何关键字都是合法且不改变语义的，故一律转义。
+    /// </para>
+    /// <para>
+    /// <see cref="IsKeywordMissingFromRoslynTables"/> 是补丁：C# 规范把这些词列为上下文关键字
+    /// （词法结构 §6.4.5 的 contextual_keyword 规则），但 Roslyn 的 <see cref="SyntaxFacts"/>
+    /// 两张表都不收录它们。其中 <c>value</c> 有实证危害——生成器在 STJ 读取路径里写出
+    /// <c>var value = ...Deserialize&lt;Guid&gt;(...); return value.TryCreate(...)</c>，
+    /// 局部变量 <c>value</c> 会遮蔽同名类型，CS1061「Guid 不包含 TryCreate」。
+    /// 其余几个（<c>nint</c> / <c>nuint</c> / <c>dynamic</c> 等）在当前发射模式下尚无实测危害，
+    /// 但同属规范上下文关键字，一并转义：不依赖「恰好没有冲突位置」这种运气。
+    /// 列表按 Roslyn 5.9.0 实测得出；将来 Roslyn 若收录其中某个词，这里只是变得冗余，无害。
+    /// </para>
+    /// </remarks>
+    internal static string EscapeIdentifier(string name)
+        => SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None
+            || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None
+            || IsKeywordMissingFromRoslynTables(name)
+                ? "@" + name
+                : name;
+
+    /// <summary>
+    /// C# 规范列为上下文关键字、但 Roslyn 5.9 的 <see cref="SyntaxFacts"/> 两张关键字表均不收录的词。
+    /// </summary>
+    /// <remarks>
+    /// 清单来自规范的 contextual_keyword 规则（词法结构 §6.4.5），逐词对照
+    /// <see cref="SyntaxFacts.GetKeywordKind"/> / <see cref="SyntaxFacts.GetContextualKeywordKind"/>
+    /// 实测得出。将来 Roslyn 若收录其中某个词，这里只是变得冗余，无害。
+    /// </remarks>
+    private static bool IsKeywordMissingFromRoslynTables(string name)
+        => name is "Cdecl" or "Stdcall" or "Thiscall"  // 函数指针调用约定
+            or "dynamic" or "nint" or "nuint"          // 预定义类型一类的伪关键字
+            or "value" or "notnull";                   // 访问器 / 泛型约束位置的上下文化标识符
+
+    /// <summary>
+    /// 把类型显示名净化成合法的 hint 名：只保留 Unicode 字母、数字与 <c>_</c> <c>.</c>，其余一律剔除。
+    /// </summary>
+    /// <remarks>
+    /// 白名单而非黑名单：<see cref="FullName"/> 来自 <c>ToDisplayString()</c>，除了尖括号、逗号、
+    /// 空格，还会因为关键字转义而带上 <c>@</c>（<c>@int.@return</c>），泛型包含类型的类型参数甚至
+    /// 可能带来 <c>[]</c>。Roslyn 的 <c>AddSource</c> 会把其中的 <c>@</c> 判为非法字符并抛
+    /// <see cref="ArgumentException"/>，表现为 STIA0012「生成器失败」且本类型全部输出被丢弃。
+    /// 黑名单只能逐个补字符，白名单一次覆盖全部非法字符。
+    /// <para>
     /// 剔除会让不同全名塌陷到同一 hint 名，撞名时 <c>AddSource</c> 抛异常并降级成 STIA0012；故只要确实剔掉了字符，就追加原始全名的稳定哈希。
+    /// </para>
     /// </remarks>
     private static string SanitizeHintName(string fullName)
     {
-        var sanitized = fullName
-            .Replace("<", string.Empty)
-            .Replace(">", string.Empty)
-            .Replace(",", string.Empty)
-            .Replace(" ", string.Empty);
+        var sanitized = string.Concat(fullName.Where(static c => char.IsLetterOrDigit(c) || c is '_' or '.'));
 
         // 净化只会删字符，长度不变即代表一个字符都没动，此时保持 hint 名原样。
         return sanitized.Length == fullName.Length
@@ -814,6 +889,40 @@ internal readonly record struct StronglyTypedIdInfo
             SpecialType.System_Int64 or SpecialType.System_UInt64 => 64,
             _ => 0,
         };
+
+    /// <summary>
+    /// 取「枚举值是否落在已定义取值内」的条件表达式；非枚举基元、或无需校验时返回 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="variableName"/> 是产物里持有该枚举值的局部变量名，条件按它渲染。
+    /// 判据与 <c>TryParse</c> 的枚举分支同源：普通枚举查 <see cref="Enum.IsDefined"/>，
+    /// <c>[Flags]</c> 枚举查「不许出现未定义的位」（全部位都已定义时为 <see langword="null"/>，调用方直接跳过）。
+    /// <para>
+    /// 存在的意义是让每条「文本/数值 → Id」的入口都做同一道校验：<c>TryCreate</c> 只跑用户配的
+    /// Validator，而 <c>Enum.TryParse</c> 与各 JSON 读取路径对未定义数值一律放行 —— 不补这一道，
+    /// <c>999</c> 会变成一个不对应任何成员的 Id，后续 switch 落空、序列化写出野值。
+    /// 用非泛型重载：泛型 <c>Enum.IsDefined&lt;T&gt;(T)</c> 是 .NET 5+ 才有的，生成代码要照顾老 TFM 的消费者。
+    /// </para>
+    /// </remarks>
+    internal string? GetEnumValidityCondition(string variableName)
+    {
+        if (!IsEnum)
+        {
+            return null;
+        }
+
+        if (!IsFlagsEnum)
+        {
+            return $"global::System.Enum.IsDefined(typeof({PrimitiveIdTypeName}), {variableName})";
+        }
+
+        // [Flags] 的合法取值本就是位组合，IsDefined 会误杀，改用「不许出现未定义的位」：
+        // 掩码在编译期由全部成员的常量算出，运行期只剩一次按位与。
+        // 必须显式 unchecked：调用方若开了 CheckForOverflowUnderflow，负数枚举值转 ulong 会抛 OverflowException。
+        return FlagsEnumUndefinedBitsMask is { } undefinedBits
+            ? $"(unchecked((ulong){variableName}) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL"
+            : null;
+    }
 
     /// <summary>
     /// 把枚举成员的常量值按位展开成 <see cref="ulong"/>（负数按补码展开，随后由宽度掩码裁掉高位）。

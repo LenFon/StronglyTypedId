@@ -24,6 +24,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
         }
 
         // 每个 Id 注册为路由约束，模板里写 {id:OrderId} 即可校验分段格式。同名 Id 按字典覆盖，属边缘冲突。
+        // 键用 Name 而非 EscapedName：路由约束令牌是路由模板里的字面量，不是 C# 代码 ——
+        // 写成 "@class" 会让用户必须在路由里写 {id:@class}，与约束语义相反。加 @ 只有写在
+        // 类型声明位才有意义（见 StronglyTypedIdInfo.EscapedName）。
         var constraintRegistrations = stronglyTypedIds
             .Select(idInfo => $$"""        options.ConstraintMap["{{idInfo.Name}}"] = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdRouteConstraint<{{idInfo.FullyQualifiedName}}>);""");
 

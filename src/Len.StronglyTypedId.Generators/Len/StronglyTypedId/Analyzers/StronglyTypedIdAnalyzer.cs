@@ -81,6 +81,17 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        // file 局部类型只查容器不够：record 自身带 file 时生成器同样无法在别的文件里重开它。
+        // 不拦的后果是产出一条不带 file 的冲突 partial 声明 —— 编译器报 CS0535 且不带任何 STIA 诊断，
+        // 用户既看不出错在生成代码，也看不出 Id 不能是 file 局部类型；严重时整个编译单元的分析器诊断还会被 csc 一并丢弃。
+        var fileLocal = records.FirstOrDefault(record => record.Modifiers.Any(SyntaxKind.FileKeyword));
+
+        if (fileLocal is not null)
+        {
+            Report(context, Descriptors.TypeCannotBeFileLocal, fileLocal.GetLocation(), type.Name);
+            return;
+        }
+
         var generic = records.FirstOrDefault(record => record.TypeParameterList is not null);
 
         if (generic is not null)

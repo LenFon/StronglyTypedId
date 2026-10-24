@@ -39,19 +39,19 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             : "[global::System.Text.Json.Serialization.JsonConverter(typeof(SystemTextJsonConverter))]\n";
 
         var declaration = $$"""
-                {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.Name}}
+                {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.EscapedName}}
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)}}
-                    public class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<{{idInfo.Name}}>
+                    public class SystemTextJsonConverter : global::System.Text.Json.Serialization.JsonConverter<{{idInfo.EscapedName}}>
                     {
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)}}
                         [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "{{AotSuppressionJustification}}")]
                         [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotSuppressionJustification}}")]
-                        public override {{idInfo.Name}} Read(
+                        public override {{idInfo.EscapedName}} Read(
                             ref global::System.Text.Json.Utf8JsonReader reader, 
                             global::System.Type typeToConvert, 
                             global::System.Text.Json.JsonSerializerOptions options){{GetReadTail(idInfo)}}
@@ -63,7 +63,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                         [global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050", Justification = "{{AotSuppressionJustification}}")]
                         public override void Write(
                             global::System.Text.Json.Utf8JsonWriter writer, 
-                            {{idInfo.Name}} value, 
+                            {{idInfo.EscapedName}} value, 
                             global::System.Text.Json.JsonSerializerOptions options){{GetWriteTail(idInfo)}}
                 
                         /// <inheritdoc/>
@@ -71,7 +71,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)}}
                         public override void WriteAsPropertyName(
                             global::System.Text.Json.Utf8JsonWriter writer,
-                            {{idInfo.Name}} value,
+                            {{idInfo.EscapedName}} value,
                             global::System.Text.Json.JsonSerializerOptions options)
                         {
                             if (value is { Value: var primitiveId })
@@ -176,13 +176,25 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 追加「把 <c>value</c> 转成 Id」的语句，验证失败抛 <c>JsonException</c>。
     /// </summary>
+    /// <remarks>
+    /// 枚举基元在此追加已定义性校验：<c>TryCreate</c> 只跑用户配的 Validator，而 STJ 对未定义数值
+    /// （<c>999</c>）照常读出 —— 不补这一道就会反序列化出不对应任何成员的 Id（<c>TryParse</c> 与
+    /// Dapper 三条路径都已收紧，这里对齐）。
+    /// </remarks>
     /// <param name="builder">产物构建器。</param>
     /// <param name="idInfo">当前 Id 的描述信息。</param>
     /// <param name="indent">每行前缀的绝对缩进。</param>
     /// <param name="assignmentPrefix">赋值目标前缀：<c>return </c> 或 <c>result = </c>。</param>
     private static void AppendCreateFromValue(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string assignmentPrefix)
     {
-        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.Name).Append(".TryCreate(value, out var id)").Append('\n');
+        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.EscapedName).Append(".TryCreate(value, out var id)");
+
+        if (idInfo.GetEnumValidityCondition("value") is { } validity)
+        {
+            builder.Append(" && ").Append(validity);
+        }
+
+        builder.Append('\n');
         builder.Append(indent).Append("    ? id").Append('\n');
         builder.Append(indent).Append("    : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
     }
@@ -211,7 +223,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                 // 有前缀时文本形是字符串，读回一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
                 builder.Append("            var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
                 builder.Append('\n');
-                builder.Append("            return text is not null && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
+                builder.Append("            return text is not null && ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
                 builder.Append("                ? id").Append('\n');
                 builder.Append("                : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
                 builder.Append("        }");
@@ -234,7 +246,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a 'value' property was expected.\");").Append('\n');
         builder.Append("            }").Append('\n');
         builder.Append('\n');
-        builder.Append("            ").Append(idInfo.Name).Append("? result = null;").Append('\n');
+        builder.Append("            ").Append(idInfo.EscapedName).Append("? result = null;").Append('\n');
         builder.Append('\n');
         builder.Append("            while (reader.Read())").Append('\n');
         builder.Append("            {").Append('\n');
@@ -260,7 +272,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         {
             builder.Append("                    var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
             builder.Append('\n');
-            builder.Append("                    result = text is not null && ").Append(idInfo.Name).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
+            builder.Append("                    result = text is not null && ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
             builder.Append("                        ? id").Append('\n');
             builder.Append("                        : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
         }
@@ -343,7 +355,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("        /// <inheritdoc/>").Append('\n');
         builder.Append("        ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
         builder.Append("        ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonCodeGenerator), version)).Append('\n');
-        builder.Append($"        public override {idInfo.Name} ReadAsPropertyName(").Append('\n');
+        builder.Append($"        public override {idInfo.EscapedName} ReadAsPropertyName(").Append('\n');
         builder.Append("            ref global::System.Text.Json.Utf8JsonReader reader,").Append('\n');
         builder.Append("            global::System.Type typeToConvert,").Append('\n');
         builder.Append("            global::System.Text.Json.JsonSerializerOptions options)").Append('\n');
@@ -367,7 +379,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                 builder.Append($"                && (unchecked((ulong)val) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL").Append('\n');
             }
 
-            builder.Append($"                && {idInfo.Name}.TryCreate(val, out var id))").Append('\n');
+            builder.Append($"                && {idInfo.EscapedName}.TryCreate(val, out var id))").Append('\n');
             builder.Append("            {").Append('\n');
             builder.Append("                return id;").Append('\n');
             builder.Append("            }").Append('\n').Append('\n');
@@ -378,7 +390,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
             // 它会穿透 JsonSerializer.Deserialize —— 而 STJ 的转换器契约要求失败一律抛 JsonException。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
-            builder.Append($"            return propertyName is not null && {idInfo.Name}.TryCreate(propertyName, out var id)").Append('\n');
+            builder.Append($"            return propertyName is not null && {idInfo.EscapedName}.TryCreate(propertyName, out var id)").Append('\n');
             builder.Append("                ? id").Append('\n');
             builder.Append($"                : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{{propertyName}}' to a {idInfo.Name}.\");").Append('\n');
         }
@@ -386,7 +398,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         {
             // 有前缀时键文本也带前缀，故一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
-            builder.Append($"            if ({idInfo.Name}.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))").Append('\n');
+            builder.Append($"            if ({idInfo.EscapedName}.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))").Append('\n');
             builder.Append("            {").Append('\n');
             builder.Append("                return id;").Append('\n');
             builder.Append("            }").Append('\n').Append('\n');

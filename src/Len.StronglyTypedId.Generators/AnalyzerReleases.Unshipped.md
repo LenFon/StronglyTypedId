@@ -15,6 +15,7 @@ STIA0021 | StronglyTypedIdAnalyzer | Error | Reported when a [StronglyTypedIdIns
 STIA0022 | StronglyTypedIdAnalyzer | Info | Reported when a [StronglyTypedIdInstance] name is not in PascalCase.
 STIA0023 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(Prefix = ...)] can also begin the text form of the id's primitive type, so unprefixed text is silently stripped and read as a different value.
 STIA0024 | StronglyTypedIdAnalyzer | Warning | Reported when [StronglyTypedId(Integrations = ...)] (or the assembly-level default) sets bits that no integration uses; those bits are ignored and generate nothing.
+STIA0025 | StronglyTypedIdAnalyzer | Error | Reported when the id itself is declared as a file-local type: the generator must reopen its partial declaration in another file, which a file-local type cannot allow.
 
 ### Changed Rules
 
