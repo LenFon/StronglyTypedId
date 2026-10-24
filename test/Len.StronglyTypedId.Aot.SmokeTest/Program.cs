@@ -223,6 +223,15 @@ public static class Program
         // ApplyTo 把本工程全部 Id 的格式化器聚合成一个显式解析器（无反射），正好覆盖 AOT 场景。
         var options = StronglyTypedIds.ApplyTo(MessagePackSerializerOptions.Standard);
 
+        // AOT 前提自检：枚举基元必须命中 ApplyTo 显式注册的零反射格式化器。MessagePack 在 AOT 下的
+        // StandardResolver 链里没有任何枚举 resolver（DynamicEnumResolver 走 IL Emit，被排除），
+        // 一旦这里拿到的不是 GenericEnumFormatter，AOT 二进制上就会抛「formatter not found」。
+        var enumFormatter = options.Resolver.GetFormatter<AotStatus>();
+        Expect(
+            failures,
+            enumFormatter is global::MessagePack.Formatters.GenericEnumFormatter<AotStatus>,
+            $"MessagePack enum formatter should be the registered GenericEnumFormatter (actual: {enumFormatter?.GetType().Name ?? "null"})");
+
         // int 基元往返。
         var product = AotProductId.Create(159);
         var productBytes = MessagePackSerializer.Serialize(product, options);
@@ -254,8 +263,24 @@ public static class Program
 
     private static void BsonValue(List<string> failures)
     {
-        // 进程级注册表里注册本工程全部 Id 的序列化器（同样无反射）。
+        // 进程级注册表里注册本工程全部 Id 的序列化器与各自基元（int / 枚举）的序列化器（均无反射；
+        // BSON 的 PrimitiveSerializationProvider 靠反射创建基元序列化器，AOT 下必须由生成产物预注册）。
         StronglyTypedIds.RegisterBsonSerializers();
+
+        // AOT 前提自检：基元序列化器必须来自生成产物的预注册。BSON 的 PrimitiveSerializationProvider
+        // 靠 Activator 反射创建它们，AOT 下未被静态引用的构造器被裁剪后会抛 MissingMethodException；
+        // 预注册命中缓存，这条反射路径根本不会被走到。
+        var intSerializer = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<int>();
+        Expect(
+            failures,
+            intSerializer is global::MongoDB.Bson.Serialization.Serializers.Int32Serializer,
+            $"BSON int serializer should be the pre-registered Int32Serializer (actual: {intSerializer.GetType().Name})");
+
+        var enumSerializer = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<AotStatus>();
+        Expect(
+            failures,
+            enumSerializer is global::MongoDB.Bson.Serialization.Serializers.EnumSerializer<AotStatus>,
+            $"BSON enum serializer should be the pre-registered EnumSerializer (actual: {enumSerializer.GetType().Name})");
 
         // int 基元往返。
         var product = AotProductId.Create(753);

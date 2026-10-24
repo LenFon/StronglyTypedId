@@ -353,6 +353,36 @@ public class CodeGeneratorModuleGateTests
     }
 
     /// <summary>
+    /// 枚举基元必须由 <c>ApplyTo</c> 显式注册零反射格式化器：MessagePack 在 AOT（AvoidDynamicCode）下的
+    /// StandardResolver 链不含任何枚举 resolver，不注册则枚举 Id 的值通道在 Native AOT 下直接抛
+    /// 「formatter not found」（CI aot job 实证）。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_RegisterEnumFormatter_ForEnumPrimitive()
+    {
+        var generated = RunGenerator(
+            MixedPrimitiveIdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["StronglyTypedIds.MessagePack.g.cs"]
+            .Should().Contain("new global::MessagePack.Formatters.GenericEnumFormatter<global::Len.StronglyTypedId.OrderStatus>(),");
+    }
+
+    /// <summary>
+    /// 没有枚举基元时不得出现枚举格式化器（枚举项按基元类型去重，只写一份）。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_NotRegisterEnumFormatter_WhenNoEnumPrimitive()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MessagePack", "2.5.0.0"));
+
+        generated["StronglyTypedIds.MessagePack.g.cs"]
+            .Should().NotContain("new global::MessagePack.Formatters.GenericEnumFormatter");
+    }
+
+    /// <summary>
     /// 二进制载荷必须是基元本身（<c>value.Value</c>），不能是规范文本形：文本前缀只是文本形的装饰，
     /// 一旦混进二进制，「改前缀」就会让已落盘的数据读不回来。
     /// </summary>
@@ -497,6 +527,42 @@ public class CodeGeneratorModuleGateTests
         generated["StronglyTypedIds.MongoDb.g.cs"]
             .Should().Contain("public static void RegisterBsonSerializers()")
             .And.Contain("global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(new OrderIdBsonSerializer());");
+    }
+
+    /// <summary>
+    /// 基元序列化器必须由 <c>RegisterBsonSerializers</c> 以默认配置显式预注册：BSON 的
+    /// <c>PrimitiveSerializationProvider</c> 靠反射创建 <c>Int32Serializer</c> / <c>EnumSerializer&lt;T&gt;</c> 等实例，
+    /// Native AOT 下未被静态引用的构造器被裁剪，创建直接抛 MissingMethodException（CI aot job 实证）。
+    /// 文本形基元不走 <c>LookupSerializer</c>，不参与注册；Guid 因「3.0 起无全局默认表示」刻意排除。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_RegisterPrimitiveSerializers_ForBinaryPrimitives()
+    {
+        var generated = RunGenerator(
+            MixedPrimitiveIdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["StronglyTypedIds.MongoDb.g.cs"]
+            .Should().Contain("global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(typeof(global::Len.StronglyTypedId.OrderStatus), new global::MongoDB.Bson.Serialization.Serializers.EnumSerializer<global::Len.StronglyTypedId.OrderStatus>());")
+            .And.Contain("TryRegisterSerializer(typeof(char), new global::MongoDB.Bson.Serialization.Serializers.CharSerializer());")
+            .And.Contain("TryRegisterSerializer(typeof(decimal), new global::MongoDB.Bson.Serialization.Serializers.DecimalSerializer());")
+            .And.Contain("TryRegisterSerializer(typeof(string), new global::MongoDB.Bson.Serialization.Serializers.StringSerializer());")
+            // Guid 由应用自选表示，生成产物不得替它注册（remarks 里的文字说明不算注册语句）。
+            .And.NotContain("TryRegisterSerializer(typeof(global::System.Guid)");
+    }
+
+    /// <summary>
+    /// 没有可预注册的基元（仅 Guid / 文本形）时，注册入口不得出现基元注册语句。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_NotRegisterPrimitiveSerializers_WhenNothingToRegister()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["StronglyTypedIds.MongoDb.g.cs"]
+            .Should().NotContain("TryRegisterSerializer(typeof(");
     }
 
     /// <summary>

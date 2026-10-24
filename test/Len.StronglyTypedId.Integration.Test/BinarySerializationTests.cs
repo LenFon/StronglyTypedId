@@ -252,6 +252,34 @@ public class BinarySerializationTests
         deserialize.Should().Throw<BsonSerializationException>();
     }
 
+    /// <summary>
+    /// 枚举基元的线格式不得因实现方式变化而改变：MessagePack 的枚举格式化器在 AOT 下换成零反射的
+    /// <c>GenericEnumFormatter</c>（原动态 resolver 走 IL Emit，AOT 下不可用），两者写出的必须仍是
+    /// 同一个底层数值载荷 —— 否则已落盘的数据读不回来。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_KeepEnumPayloadIdenticalToBareEnum()
+    {
+        var idPayload = MessagePackSerializer.Serialize(
+            SampleStatusId.Create(SampleStatus.Suspended), _messagePackOptions, TestContext.Current.CancellationToken);
+        var barePayload = MessagePackSerializer.Serialize(
+            SampleStatus.Suspended, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        idPayload.ToArray().Should().Equal(barePayload.ToArray());
+    }
+
+    /// <summary>
+    /// 同上，BSON 侧：枚举 Id 存出的值必须与裸枚举完全一致（都是底层整数）。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_KeepEnumPayloadIdenticalToBareEnum()
+    {
+        var idValue = WriteDocument(typeof(SampleStatusId), SampleStatusId.Create(SampleStatus.Suspended))["v"];
+        var bareValue = WriteDocument(typeof(SampleStatus), SampleStatus.Suspended)["v"];
+
+        idValue.Should().Be(bareValue);
+    }
+
     [Fact]
     public void MessagePack_ApplyTo_Should_FallBackToOriginalResolver()
     {

@@ -215,6 +215,14 @@
   合成的拷贝构造函数。
 - 内嵌本地化资源缺失时，不再从诊断消息的渲染路径上抛异常。加载器返回空表、文案回退成资源键，
   打包失误只会让措辞退化，而不会让分析器崩溃。
+- MessagePack 与 MongoDB BSON 集成在 Native AOT 下现在对全部基元可用，而不只是 Id 包装层。AOT 冒烟
+  测试首次在 CI 跑通时暴露了两个缺口：MessagePack 在 AOT（禁用动态代码）下的 resolver 链里根本没有
+  枚举 resolver（走 IL Emit 的 `DynamicEnumResolver` 被排除），枚举基元的 Id 连序列化都过不去；BSON 的
+  `PrimitiveSerializationProvider` 经 `Activator` 反射创建 `Int32Serializer`、`EnumSerializer<T>` 等实例，
+  构造器被裁剪后在 AOT 下直接抛 `MissingMethodException`。现在 `ApplyTo` 会为每个去重后的枚举基元追加
+  `GenericEnumFormatter<TEnum>`（与动态 resolver 写同样的底层数值载荷，线格式不变）；
+  `RegisterBsonSerializers` 会为全部二进制路径基元预注册默认配置的序列化器 —— `Guid` 仍被排除：
+  driver 3.0 起它没有全局默认表示，应用必须自选。
 - 引用类型 Id（`partial record`）的比较运算符在左操作数为 `null` 时不再抛 `NullReferenceException`。
   此前无条件解引用 `left.Value`，而同类型的 `CompareTo` 早已把 `null` 当作最小值；现在运算符共用这一
   约定，`null < id` 为 `true`、`null >= id` 为 `false`。值类型 Id 不变。

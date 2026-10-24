@@ -232,6 +232,13 @@ to a type declared in the current compilation, so an id that comes from a refere
 "library declares the id, application uses it" case — could never get one. Ids with the same short name in
 different namespaces are disambiguated the same way as Dapper's handlers.
 
+`ApplyTo` also registers a formatter for each distinct **enum** primitive the ids wrap. MessagePack's
+AOT-safe resolver chain contains no enum resolver at all — the IL-emitting `DynamicEnumResolver` is
+excluded when dynamic code is unavailable — so without that entry an enum-backed id cannot be serialized
+under Native AOT. The registered `GenericEnumFormatter<TEnum>` writes the same underlying numeric payload
+as the dynamic resolver, so the wire format is unchanged. Non-enum primitives are served by MessagePack's
+built-in resolver, which is already reflection-free. See [Native AOT and trimming](aot.md).
+
 The payload is the wrapped primitive value, not the canonical text form: a text prefix decorates the text
 form only, and a binary format has no text to decorate. Three primitives are the exception — `BigInteger`,
 `Int128` and `UInt128` — and their ids are written as the invariant-culture text form (a MessagePack string)
@@ -288,6 +295,14 @@ it means an id type whose serializer was registered elsewhere is serialized by t
 Each id's serializer is named `{TypeName}BsonSerializer` and lives in the generated `StronglyTypedIds` class.
 `[BsonSerializer]` would have been the shorter route, but it can only be applied to a type declared in the
 current compilation, which would leave ids from a referenced library without a serializer.
+
+`RegisterBsonSerializers` also pre-registers a default-configured serializer for every primitive the ids
+wrap — `int`, `char`, `decimal`, `string`, enums, and so on. BSON's `PrimitiveSerializationProvider` would
+otherwise create those via `Activator`, which throws `MissingMethodException` under Native AOT once the
+constructors are trimmed. The pre-registered instances match the provider-created defaults, so nothing
+changes for a JIT application. `Guid` stays excluded: since driver 3.0 it has no global default
+representation, and the app must register the one its data uses, as in the snippet above. See
+[Native AOT and trimming](aot.md).
 
 The payload is the wrapped primitive value. `BigInteger`, `Int128` and `UInt128` have no BSON serializer, so
 those ids are stored as a BSON string holding the invariant-culture text form (prefix included) and read back

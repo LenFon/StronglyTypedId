@@ -45,6 +45,26 @@ needs `[JsonSerializable(typeof(OrderId))]` like any other root type. When an id
 registered type it needs no entry of its own: the generated `[JsonConverter]` is picked up from the
 attribute.
 
+## MessagePack and MongoDB.Bson under AOT
+
+The generated integration artifacts are reflection-free themselves, and the registration entry points
+also cover the **primitive** the ids wrap:
+
+- **MessagePack** — `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` adds a
+  `GenericEnumFormatter<TEnum>` for each distinct enum primitive. MessagePack's AOT-safe resolver chain
+  (`StandardResolver` when dynamic code is unavailable) contains no enum resolver at all — the
+  IL-emitting `DynamicEnumResolver` is excluded — so without this entry an enum-backed id cannot be
+  serialized. Non-enum primitives (`int`, `Guid`, …) are served by the built-in resolver, which is
+  reflection-free. The formatter writes the same underlying numeric payload as the dynamic resolver, so
+  the wire format is unchanged.
+- **MongoDB.Bson** — `StronglyTypedIds.RegisterBsonSerializers()` pre-registers default-configured
+  serializers for every binary-path primitive (`int`, `char`, `decimal`, `string`, enums, …). BSON's
+  `PrimitiveSerializationProvider` would otherwise create `Int32Serializer`, `EnumSerializer<T>` and
+  friends via `Activator`, which throws `MissingMethodException` under AOT once the constructors are
+  trimmed. The registered instances match the provider-created defaults, so behavior is unchanged.
+  **`Guid` is the exception**: since driver 3.0 there is no global default representation, so an app
+  must register its own `GuidSerializer` with the representation its data uses.
+
 ## How this is verified
 
 `test/Len.StronglyTypedId.Aot.SmokeTest` is a real `PublishAot` executable, published and run by the
@@ -57,6 +77,8 @@ attribute.
 | Formatting | `TryFormat` to `Span<char>` and `Span<byte>`, plus interpolated `ToString()` |
 | Prefix | prefixed `ToString`, round-trip, and the lenient bare-value read |
 | JSON | converter `Write` / `Read` round-trip, and `WriteAsPropertyName` / `ReadAsPropertyName` |
+| MessagePack | value round-trips over `int` and `enum` primitives, plus rejection of an undefined enum value |
+| MongoDB.Bson | value round-trips over `int` and `enum` primitives, plus rejection of an undefined enum value |
 
 The project sets `TrimmerSingleWarn` to `false` so trim and AOT warnings are listed individually instead
 of collapsing into a single `IL2104`, and it must compile with **zero** warnings: analyzer-clean plus

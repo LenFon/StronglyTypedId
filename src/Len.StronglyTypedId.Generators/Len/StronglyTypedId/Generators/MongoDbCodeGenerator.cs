@@ -84,6 +84,25 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
             registrations.Append($"\n{_registrationIndent}global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(new {serializerName}());");
         }
 
+        // 基元序列化器也必须由本入口显式注册：BSON 的 PrimitiveSerializationProvider 靠 Activator 反射创建
+        // Int32Serializer / EnumSerializer<T> 等实例，Native AOT 下未被静态引用的构造器会被裁剪，创建直接抛
+        // MissingMethodException（"No suitable constructor found"，CI aot job 实证）。这里预注册默认配置的实例：
+        // 序列化器的 Equals 按类型（及表示）比较，与 provider 已缓存的默认实例相等，TryRegisterSerializer 只会
+        // 报 false 而不会抛冲突；与 Id 本身的注册语义一致。
+        // Guid 不在此列：3.0 起没有全局默认表示，消费者必须自选表示后自行注册（见下方 remarks）。
+        var primitiveRegistrations = stronglyTypedIds
+            .Where(idInfo => !idInfo.IsBinaryTextPrimitive)
+            .GroupBy(idInfo => idInfo.PrimitiveIdTypeName, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Select(GetPrimitiveSerializerRegistration)
+            .Where(registration => registration is not null)
+            .ToList();
+
+        foreach (var primitiveRegistration in primitiveRegistrations)
+        {
+            registrations.Append($"\n{_registrationIndent}{primitiveRegistration}");
+        }
+
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
                 {
@@ -102,7 +121,14 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                     /// generated one for that id.
                     /// </para>
                     /// <para>
-                    /// Guid-backed ids also need a Guid representation: since driver 3.0 there is no global default, and
+                    /// Primitive-backed ids also get their underlying primitive serializers registered here with the
+                    /// default configuration (int, enums, and so on). Without this, BSON's
+                    /// <c>PrimitiveSerializationProvider</c> would create them via reflection, which throws under
+                    /// Native AOT where non-referenced constructors are trimmed. The registered instances match the
+                    /// provider-created defaults, so existing behavior is unchanged.
+                    /// </para>
+                    /// <para>
+                    /// Guid-backed ids are the exception: since driver 3.0 there is no global default, and
                     /// serializing a Guid without one throws. Register a <c>GuidSerializer</c> with the representation your
                     /// existing data uses before serializing.
                     /// </para>
@@ -228,6 +254,50 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
         lines.Add(_statementIndent + "}");
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// 取基元类型的 <c>TryRegisterSerializer</c> 注册语句；返回 <c>null</c> 表示该基元不需要（或无法）预注册。
+    /// </summary>
+    /// <remarks>
+    /// 注册的实例一律用无参构造（与 <c>PrimitiveSerializationProvider</c> 反射创建的默认实例配置相同），
+    /// 保证非 AOT 下与已缓存的默认实例 <c>Equals</c> 相等而不抛冲突。
+    /// </remarks>
+    private static string? GetPrimitiveSerializerRegistration(StronglyTypedIdInfo idInfo)
+    {
+        var primitiveTypeName = idInfo.PrimitiveIdTypeName;
+
+        var serializerExpression = idInfo.IsEnum
+            ? $"new global::MongoDB.Bson.Serialization.Serializers.EnumSerializer<{primitiveTypeName}>()"
+            : primitiveTypeName switch
+            {
+                // 特型基元按 FullyQualifiedFormat 渲染成关键字短名；非特型 BCL 类型才带 global:: 前缀。
+                "bool" => "new global::MongoDB.Bson.Serialization.Serializers.BooleanSerializer()",
+                "byte" => "new global::MongoDB.Bson.Serialization.Serializers.ByteSerializer()",
+                "sbyte" => "new global::MongoDB.Bson.Serialization.Serializers.SByteSerializer()",
+                "short" => "new global::MongoDB.Bson.Serialization.Serializers.Int16Serializer()",
+                "ushort" => "new global::MongoDB.Bson.Serialization.Serializers.UInt16Serializer()",
+                "int" => "new global::MongoDB.Bson.Serialization.Serializers.Int32Serializer()",
+                "uint" => "new global::MongoDB.Bson.Serialization.Serializers.UInt32Serializer()",
+                "long" => "new global::MongoDB.Bson.Serialization.Serializers.Int64Serializer()",
+                "ulong" => "new global::MongoDB.Bson.Serialization.Serializers.UInt64Serializer()",
+                "float" => "new global::MongoDB.Bson.Serialization.Serializers.SingleSerializer()",
+                "double" => "new global::MongoDB.Bson.Serialization.Serializers.DoubleSerializer()",
+                "decimal" => "new global::MongoDB.Bson.Serialization.Serializers.DecimalSerializer()",
+                "char" => "new global::MongoDB.Bson.Serialization.Serializers.CharSerializer()",
+                "string" => "new global::MongoDB.Bson.Serialization.Serializers.StringSerializer()",
+                "global::System.DateTime" => "new global::MongoDB.Bson.Serialization.Serializers.DateTimeSerializer()",
+                "global::System.DateTimeOffset" => "new global::MongoDB.Bson.Serialization.Serializers.DateTimeOffsetSerializer()",
+                "global::System.TimeSpan" => "new global::MongoDB.Bson.Serialization.Serializers.TimeSpanSerializer()",
+                "global::System.DateOnly" => "new global::MongoDB.Bson.Serialization.Serializers.DateOnlySerializer()",
+                "global::System.TimeOnly" => "new global::MongoDB.Bson.Serialization.Serializers.TimeOnlySerializer()",
+                "global::System.Half" => "new global::MongoDB.Bson.Serialization.Serializers.HalfSerializer()",
+                _ => null,
+            };
+
+        return serializerExpression is null
+            ? null
+            : $"global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(typeof({primitiveTypeName}), {serializerExpression});";
     }
 
     /// <summary>

@@ -205,6 +205,12 @@ var id    = MessagePackSerializer.Deserialize<OrderId>(bytes, options);
 自己名下。这是有意的：`[MessagePackFormatter]` 只能加在本次编译声明的类型上，于是「库作者声明 Id、应用
 引用使用」这条最常见的路径根本拿不到格式化器。不同命名空间下的同名 Id 按与 Dapper 处理器相同的方式消歧。
 
+`ApplyTo` 还会为 Id 包裹的每个**枚举**基元注册格式化器。MessagePack 在 AOT（禁用动态代码）下的解析器链
+里没有任何枚举 resolver——走 IL Emit 的 `DynamicEnumResolver` 被排除——不补这一项，枚举基元的 Id 在
+Native AOT 下连序列化都过不去。注册的 `GenericEnumFormatter<TEnum>` 与动态 resolver 写同样的底层数值载荷，
+线格式不变。非枚举基元由 MessagePack 的内置 resolver 提供，本身就零反射。详见
+[原生 AOT 与裁剪](aot.md)。
+
 载荷是包裹的基元值本身，不是规范文本形：文本前缀只是文本形的装饰，二进制格式里没有文本可装饰。有三种基元是
 例外——`BigInteger`、`Int128`、`UInt128`——它们的 Id 写成不变文化的文本形（MessagePack string），读回时经
 `TryParse`。对它们来说前缀**确实**会进载荷，因为前缀属于文本。
@@ -251,6 +257,12 @@ await collection.InsertOneAsync(new Order { Id = OrderId.Create(Guid.NewGuid()) 
 
 每个 Id 的序列化器名为 `{类型名}BsonSerializer`，放在生成的 `StronglyTypedIds` 类里。`[BsonSerializer]`
 本来是更短的路子，但它只能加在本次编译声明的类型上，那样引用程序集里的 Id 就没有序列化器了。
+
+`RegisterBsonSerializers` 还会为 Id 包裹的每个基元预注册默认配置的序列化器——`int`、`char`、`decimal`、
+`string`、枚举等等。否则 BSON 的 `PrimitiveSerializationProvider` 会经 `Activator` 反射创建它们，构造器被
+裁剪后在 Native AOT 下直接抛 `MissingMethodException`。预注册的实例与 provider 创建的默认实例配置一致，
+JIT 应用的行为因此不变。`Guid` 仍被排除：driver 3.0 起它没有全局默认表示，应用必须按既有数据自行注册，
+如上例所示。详见[原生 AOT 与裁剪](aot.md)。
 
 载荷是包裹的基元值本身。`BigInteger`、`Int128`、`UInt128` 没有 BSON 序列化器，这些 Id 存成承载不变文化
 文本形（含前缀）的 BSON string，读回时经 `TryParse`。引用类型 Id 的 `null` 存成 BSON `null`；值类型 Id

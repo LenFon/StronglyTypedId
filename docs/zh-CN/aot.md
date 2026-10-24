@@ -42,6 +42,22 @@ var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Defa
 需要 `[JsonSerializable(typeof(OrderId))]`。当 Id 作为某个已登记类型的成员出现时，它不必单独列出：
 生成的 `[JsonConverter]` 会从这个特性上被取到。
 
+## MessagePack 与 MongoDB.Bson 在 AOT 下
+
+生成的集成产物本身零反射，注册入口还会把 Id 包裹的**基元**一并覆盖：
+
+- **MessagePack** —— `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` 会为每个去重后的枚举
+  基元追加 `GenericEnumFormatter<TEnum>`。MessagePack 在 AOT（禁用动态代码）下的 resolver 链里没有
+  任何枚举 resolver —— 走 IL Emit 的 `DynamicEnumResolver` 被排除在外 —— 不补这一项，枚举基元的 Id
+  连序列化都过不去。非枚举基元（`int`、`Guid` 等）由内置 resolver 提供，本身零反射。该格式化器与
+  动态 resolver 写同样的底层数值载荷，线格式不变。
+- **MongoDB.Bson** —— `StronglyTypedIds.RegisterBsonSerializers()` 会为全部二进制路径基元（`int`、
+  `char`、`decimal`、`string`、枚举等）预注册默认配置的序列化器。否则 BSON 的
+  `PrimitiveSerializationProvider` 会经 `Activator` 反射创建 `Int32Serializer`、`EnumSerializer<T>`
+  等实例，构造器被裁剪后在 AOT 下直接抛 `MissingMethodException`。注册的实例与 provider 创建的默认
+  实例配置一致，行为不变。**`Guid` 是例外**：driver 3.0 起没有全局默认表示，应用必须按既有数据
+  自行注册相应表示的 `GuidSerializer`。
+
 ## 这件事是怎么验证的
 
 `test/Len.StronglyTypedId.Aot.SmokeTest` 是一个真实的 `PublishAot` 可执行工程，由 CI 的 `aot` job 发布并
@@ -54,6 +70,8 @@ var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Defa
 | 格式化 | `TryFormat` 写入 `Span<char>` 与 `Span<byte>`，以及插值形式的 `ToString()` |
 | 前缀 | 带前缀的 `ToString`、往返解析，以及宽松的裸值读取 |
 | JSON | 转换器的 `Write` / `Read` 往返，以及 `WriteAsPropertyName` / `ReadAsPropertyName` |
+| MessagePack | `int` 与 `enum` 基元的值往返，以及拒绝未定义枚举值 |
+| MongoDB.Bson | `int` 与 `enum` 基元的值往返，以及拒绝未定义枚举值 |
 
 该工程把 `TrimmerSingleWarn` 设为 `false`，让裁剪与 AOT 警告逐条列出而不是折叠成一条 `IL2104`，并且要求
 **零警告**编译：分析器干净 + 运行时干净，才算「AOT 可用」。

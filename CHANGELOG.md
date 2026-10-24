@@ -277,6 +277,16 @@ change set rather than reproducing every commit.
   every `STIA` diagnostic for that type. It now scans the instance constructors for the single-parameter
   one, skipping the compiler-synthesised copy constructor.
 - A missing embedded localization resource no longer throws from the descriptor message-rendering path.
+- MessagePack and MongoDB BSON integrations now work under Native AOT for every primitive, not just the
+  id wrapper. Two gaps surfaced when the AOT smoke test first ran in CI: MessagePack's AOT-safe resolver
+  chain contains no enum resolver at all (the IL-emitting `DynamicEnumResolver` is excluded when dynamic
+  code is unavailable), so an enum-backed id could not even be serialized; and BSON's
+  `PrimitiveSerializationProvider` creates `Int32Serializer`, `EnumSerializer<T>` and friends via
+  `Activator`, which throws `MissingMethodException` under AOT once the constructors are trimmed.
+  `ApplyTo` now adds a `GenericEnumFormatter<TEnum>` for each distinct enum primitive (same underlying
+  numeric payload as the dynamic resolver, so the wire format is unchanged), and `RegisterBsonSerializers`
+  pre-registers default-configured serializers for every binary-path primitive — `Guid` stays excluded,
+  because since driver 3.0 it has no global default and the app must choose the representation.
   The loader returns an empty table and the text falls back to the resource key, so a packaging mistake
   degrades the wording instead of crashing the analyzer.
 - The comparison operators on a reference-type id (`partial record`) no longer throw

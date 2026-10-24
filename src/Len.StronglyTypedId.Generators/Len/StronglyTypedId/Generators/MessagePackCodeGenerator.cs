@@ -94,6 +94,21 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
             registrations.Append($"\n{_registrationIndent}new {formatterName}(),");
         }
 
+        // 枚举基元的格式化器也必须由本入口显式提供：MessagePack 在 AOT（AvoidDynamicCode）下的
+        // StandardResolver 链不含任何枚举 resolver —— DynamicEnumResolver 走 IL Emit 被排除，又没有
+        // 零反射的枚举 resolver，GetFormatter<TEnum> 返回 null 会让 Id 的值通道抛 formatter not found。
+        // GenericEnumFormatter<T> 用 Unsafe.As 转换底层类型，零反射、AOT 安全，且载荷（底层类型的数值）
+        // 与 DynamicEnumResolver 完全一致，非 AOT 下替换它不改变线格式。
+        var enumPrimitiveTypes = stronglyTypedIds
+            .Where(idInfo => idInfo.IsEnum)
+            .GroupBy(idInfo => idInfo.PrimitiveIdTypeName, StringComparer.Ordinal)
+            .Select(group => group.Key);
+
+        foreach (var enumPrimitiveType in enumPrimitiveTypes)
+        {
+            registrations.Append($"\n{_registrationIndent}new global::MessagePack.Formatters.GenericEnumFormatter<{enumPrimitiveType}>(),");
+        }
+
         // 装配入口固定落在 Len.StronglyTypedId 命名空间（与 System.Text.Json / Dapper 的注册入口一致）：
         // Id 可以分散在任意命名空间，注册入口只该有一个。
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -110,6 +125,13 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
                     /// <remarks>
                     /// <see cref="global::MessagePack.MessagePackSerializerOptions"/> is immutable, so the returned instance
                     /// must be used instead of the argument.
+                    /// <para>
+                    /// Enum-backed ids also get an explicit enum formatter here: MessagePack's AOT-safe resolver chain
+                    /// contains no enum resolver at all (the IL-emitting <c>DynamicEnumResolver</c> is excluded when
+                    /// dynamic code is unavailable), so without this entry an enum-backed id cannot be serialized at all
+                    /// under Native AOT. The generated <c>GenericEnumFormatter&lt;T&gt;</c> instance writes the same
+                    /// underlying numeric payload as the dynamic resolver, so the wire format is unchanged.
+                    /// </para>
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MessagePackCodeGenerator), version)}}
