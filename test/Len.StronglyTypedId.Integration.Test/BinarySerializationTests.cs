@@ -221,6 +221,37 @@ public class BinarySerializationTests
         deserialize.Should().Throw<BsonSerializationException>();
     }
 
+    /// <summary>
+    /// 枚举 Id 的二进制反序列化必须经 <see cref="global::System.Enum.IsDefined"/> 收紧，否则 999 会变成
+    /// 不对应任何成员的 Id（与 STJ / Newtonsoft / Dapper 已对齐的语义一致）。修复前此处会静默接受
+    /// <c>(SampleStatus)999</c>。
+    /// </summary>
+    [Fact]
+    public void MessagePack_Should_RejectUndefinedEnumValue()
+    {
+        var payload = MessagePackSerializer.Serialize<SampleStatus>(
+            (SampleStatus)999, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        Action deserialize = () => MessagePackSerializer.Deserialize<SampleStatusId>(
+            payload, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        deserialize.Should().Throw<MessagePackSerializationException>(
+            "枚举基元在二进制入口必须经 Enum.IsDefined 收紧，未定义数值不得反序列化成功");
+    }
+
+    /// <summary>
+    /// 同上：BSON 的序列化器契约要求失败一律抛 <see cref="BsonSerializationException"/>。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_RejectUndefinedEnumValue()
+    {
+        var payload = WriteDocument(typeof(SampleStatus), (SampleStatus)999)["v"];
+
+        Action deserialize = () => ReadValue(typeof(SampleStatusId), payload);
+
+        deserialize.Should().Throw<BsonSerializationException>();
+    }
+
     [Fact]
     public void MessagePack_ApplyTo_Should_FallBackToOriginalResolver()
     {

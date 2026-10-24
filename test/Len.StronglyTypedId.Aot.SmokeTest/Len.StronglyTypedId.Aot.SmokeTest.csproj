@@ -19,6 +19,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<!--
+		  二进制序列化集成包：使 MessagePackCodeGenerator / MongoDbCodeGenerator 在本工程编译里被门控触发，
+		  生成 StronglyTypedIds.ApplyTo / RegisterBsonSerializers 与各自的格式化器 / 序列化器，从而在
+		  Native AOT 下实证这些产物（含本次补的枚举基元已定义性校验分支）零反射、可运行。
+		-->
+		<PackageReference Include="MessagePack" />
+		<PackageReference Include="MongoDB.Bson" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 	</ItemGroup>

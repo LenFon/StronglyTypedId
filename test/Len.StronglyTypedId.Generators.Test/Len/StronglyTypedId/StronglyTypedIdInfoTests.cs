@@ -606,6 +606,218 @@ public class StronglyTypedIdInfoTests
 
     #endregion
 
+    #region 关键字转义：Name 不加 @，EscapedName 加
+
+    /// <summary>
+    /// 缺陷回归：<see cref="StronglyTypedIdInfo.Name"/> 取自 <see cref="ISymbol.Name"/>，而它对 C# 关键字
+    /// 不加 <c>@</c> 转义。原样写进类型声明位时，编译器会把名字吃成关键字——<c>partial record struct class :</c>
+    /// 的类型名变成空串，成员整体掉出类型落进全局命名空间，爆出 CS0260 / CS1520 / CS0101 / CS9348 一串错误。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StronglyTypedIdInfo.EscapedName"/> 才是能直接写进生成源码的那一个。
+    /// </remarks>
+    [Theory]
+    [InlineData("class")]
+    [InlineData("return")]
+    [InlineData("int")]
+    [InlineData("string")]
+    [InlineData("object")]
+    [InlineData("public")]
+    [InlineData("namespace")]
+    [InlineData("base")]
+    [InlineData("new")]
+    [InlineData("event")]
+    [InlineData("delegate")]
+    [InlineData("operator")]
+    public void Info_Should_EscapeReservedKeyword_InEscapedName(string keyword)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            public partial record struct @{{keyword}}(int Value);
+            """,
+            // 元数据名不含 @：转义只是源码书写形式，标识符本身仍是 keyword。
+            $"Referenced.{keyword}");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        // Name 保持原样：诊断消息与「是否重名」判定用它，那里不该出现 @。
+        info.Name.Should().Be(keyword);
+        info.EscapedName.Should().Be("@" + keyword);
+    }
+
+    /// <summary>
+    /// 上下文关键字同样要转义：它们单独出现时是合法标识符，但生成器自己就会在产物里写出
+    /// <c>out var id</c> 这类局部变量声明，Id 叫 <c>var</c> 时那个 <c>var</c> 会被当成隐式类型声明。
+    /// </summary>
+    /// <remarks>
+    /// 不含 <c>file</c> 与 <c>required</c>：编译器本身禁止用它们作类型名（CS9056 / CS9029），
+    /// 那不是生成器能兜住的问题。
+    /// <para>
+    /// 后八个（<c>Cdecl</c> / <c>dynamic</c> / <c>nint</c> / <c>notnull</c> / <c>nuint</c> /
+    /// <c>Stdcall</c> / <c>Thiscall</c> / <c>value</c>）是规范列为上下文关键字、但 Roslyn
+    /// <see cref="Microsoft.CodeAnalysis.CSharp.SyntaxFacts"/> 两张表都不收录的词，靠
+    /// <see cref="StronglyTypedIdInfo"/> 内的补丁清单兜住。其中 <c>value</c> 有实证危害：
+    /// 生成器在 STJ 读取路径里写 <c>var value = ...</c> 局部变量，会遮蔽同名类型。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("var")]
+    [InlineData("dynamic")]
+    [InlineData("nameof")]
+    [InlineData("record")]
+    [InlineData("yield")]
+    [InlineData("from")]
+    [InlineData("where")]
+    [InlineData("select")]
+    [InlineData("value")]
+    [InlineData("with")]
+    [InlineData("and")]
+    [InlineData("not")]
+    [InlineData("when")]
+    [InlineData("partial")]
+    [InlineData("global")]
+    [InlineData("async")]
+    [InlineData("await")]
+    [InlineData("nint")]
+    [InlineData("nuint")]
+    [InlineData("get")]
+    [InlineData("set")]
+    [InlineData("init")]
+    [InlineData("Cdecl")]
+    [InlineData("Stdcall")]
+    [InlineData("Thiscall")]
+    [InlineData("notnull")]
+    public void Info_Should_EscapeContextualKeyword_InEscapedName(string keyword)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            public partial record struct @{{keyword}}(int Value);
+            """,
+            $"Referenced.{keyword}");
+
+        new StronglyTypedIdInfo(type).EscapedName.Should().Be("@" + keyword);
+    }
+
+    /// <summary>
+    /// 普通名字必须一个字符都不动：<see cref="StronglyTypedIdInfo.EscapedName"/> 与
+    /// <see cref="StronglyTypedIdInfo.Name"/> 逐字节相同，既有生成代码与快照测试才不受影响。
+    /// </summary>
+    [Theory]
+    [InlineData("OrderId")]
+    [InlineData("Customer_ID")]
+    [InlineData("ÜnïcødéId")]
+    public void Info_Should_LeaveEscapedNameUntouched_ForNonKeyword(string name)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            public partial record struct {{name}}(int Value);
+            """,
+            $"Referenced.{name}");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.Name.Should().Be(name);
+        info.EscapedName.Should().Be(name);
+    }
+
+    /// <summary>
+    /// 包含类型名同样要走转义：容器叫 <c>return</c> 时，重开声明写出
+    /// <c>internal partial class return</c> 就是语法错误。
+    /// </summary>
+    [Fact]
+    public void Info_Should_EscapeKeywordNamedContainingType()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class @return
+            {
+                public partial record struct OrderId(int Value);
+            }
+            """,
+            "Referenced.return+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations.Should().Be("public partial class @return");
+    }
+
+    /// <summary>
+    /// 泛型容器的类型参数表必须复现（否则 CS0693），参数名是关键字时也要转义。
+    /// </summary>
+    [Fact]
+    public void Info_Should_EscapeKeywordNamedTypeParameter_InContainingType()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Container<@class>
+            {
+                public partial record struct OrderId(int Value);
+            }
+            """,
+            // 泛型元数据名带 arity 后缀：Container<T> 是 Container`1。
+            "Referenced.Container`1+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations.Should().Be("public partial class Container<@class>");
+    }
+
+    /// <summary>
+    /// hint 名绝不能含 <c>@</c>：Roslyn 的 <c>AddSource</c> 会把它判为非法字符并抛
+    /// <see cref="ArgumentException"/>，表现为 STIA0012「生成器失败」且该类型全部输出被丢弃。
+    /// </summary>
+    [Fact]
+    public void Info_Should_ProduceHintNameWithoutAtSign_ForKeywordNamedType()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace @int;
+
+            public partial record struct @return(int Value);
+            """,
+            "int.return");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        // FullName 来自 ToDisplayString()，关键字标识符带 @，这正是 hint 名被污染的来源。
+        info.FullName.Should().Be("@int.@return");
+        info.HintName.Should().NotContain("@");
+        info.HintName.Should().MatchRegex("^[0-9A-Za-z_.]+$");
+    }
+
+    /// <summary>
+    /// 泛型容器里的 Id：类型参数会让 <c>FullName</c> 带上尖括号与逗号，净化后同样不能残留非法字符。
+    /// </summary>
+    [Fact]
+    public void Info_Should_ProduceHintNameWithoutInvalidChars_ForGenericContainer()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public partial class Container<T, U>
+            {
+                public partial record struct OrderId(int Value);
+            }
+            """,
+            // 泛型元数据名带 arity 后缀：Container<T, U> 是 Container`2。
+            "Referenced.Container`2+OrderId");
+
+        var info = new StronglyTypedIdInfo(type);
+
+        info.FullName.Should().Be("Referenced.Container<T, U>.OrderId");
+        info.HintName.Should().NotContainAny("<", ">", ",", " ", "@");
+        info.HintName.Should().MatchRegex("^[0-9A-Za-z_.]+$");
+    }
+
+    #endregion
+
     #region 辅助
 
     /// <summary>

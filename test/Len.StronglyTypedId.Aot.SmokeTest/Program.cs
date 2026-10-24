@@ -2,6 +2,10 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using MessagePack;
+using MongoDB.Bson;
+using MongoDB.Bson.IO;
+using MongoDB.Bson.Serialization;
 
 namespace Len.StronglyTypedId.Aot.SmokeTest;
 
@@ -17,6 +21,30 @@ public partial record struct AotOrderId(Guid Value)
 
 [StronglyTypedId(Prefix = "ord_")]
 public partial record struct AotPrefixedId(Guid Value);
+
+// 枚举基元：二进制反序列化入口（MessagePack / BSON）必须经 Enum.IsDefined 收紧，本形态专门压这条分支。
+public enum AotStatus
+{
+    Active = 1,
+    Inactive = 2,
+}
+
+[StronglyTypedId]
+public partial record struct AotStatusId(AotStatus Value);
+
+// ExceptionType：Create 拒绝时抛「指定类型」而非 ArgumentException，生成器走编译期 new（无反射），需在 AOT 下实证。
+public sealed class AotDomainException : Exception
+{
+    public AotDomainException(string message) : base(message)
+    {
+    }
+}
+
+[StronglyTypedId(Validator = nameof(IsPositive), ExceptionType = typeof(AotDomainException))]
+public partial record struct AotAmountId(int Value)
+{
+    private static bool IsPositive(int value) => value > 0;
+}
 
 /// <summary>
 /// Native AOT / 裁剪环境下的端到端冒烟。
@@ -34,11 +62,14 @@ public static class Program
         var failures = new List<string>();
 
         Check(failures, "Create / TryCreate", CreateAndTryCreate);
+        Check(failures, "ExceptionType throw", ExceptionTypeThrow);
         Check(failures, "ToString / Parse / TryParse", ParseRoundTrip);
         Check(failures, "TryFormat (UTF-16 / UTF-8)", SpanFormatting);
         Check(failures, "Prefix (lenient)", PrefixLenient);
         Check(failures, "System.Text.Json value", JsonValue);
         Check(failures, "System.Text.Json property name", JsonPropertyName);
+        Check(failures, "MessagePack value + enum", MessagePackValue);
+        Check(failures, "MongoDB.Bson value + enum", BsonValue);
 
         if (failures.Count == 0)
         {
@@ -67,6 +98,29 @@ public static class Program
 
         var valid = AotOrderId.Create(Guid.NewGuid());
         Expect(failures, valid.Value != Guid.Empty, "AotOrderId.Create(valid)");
+    }
+
+    private static void ExceptionTypeThrow(List<string> failures)
+    {
+        // 验证器拒绝时抛 ExceptionType 指定的类型；该类型由生成器以编译期 new 抛出，AOT 下无反射。
+        Expect(failures, !AotAmountId.TryCreate(-1, out _), "AotAmountId.TryCreate(-1) == false");
+
+        try
+        {
+            AotAmountId.Create(-1);
+            failures.Add("AotAmountId.Create(-1) should throw AotDomainException");
+        }
+        catch (AotDomainException)
+        {
+            // 预期。
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"AotAmountId.Create(-1) threw {ex.GetType().Name}, expected AotDomainException");
+        }
+
+        var ok = AotAmountId.Create(10);
+        Expect(failures, ok.Value == 10, "AotAmountId.Create(10)");
     }
 
     private static void ParseRoundTrip(List<string> failures)
@@ -162,6 +216,95 @@ public static class Program
         reader.Read();
         var key = converter.ReadAsPropertyName(ref reader, typeof(AotProductId), _options);
         Expect(failures, key == id, "STJ ReadAsPropertyName round-trip");
+    }
+
+    private static void MessagePackValue(List<string> failures)
+    {
+        // ApplyTo 把本工程全部 Id 的格式化器聚合成一个显式解析器（无反射），正好覆盖 AOT 场景。
+        var options = StronglyTypedIds.ApplyTo(MessagePackSerializerOptions.Standard);
+
+        // int 基元往返。
+        var product = AotProductId.Create(159);
+        var productBytes = MessagePackSerializer.Serialize(product, options);
+        var productBack = MessagePackSerializer.Deserialize<AotProductId>(productBytes, options);
+        Expect(failures, productBack == product, "MessagePack round-trip (int)");
+
+        // 枚举基元：合法值往返。
+        var status = AotStatusId.Create(AotStatus.Active);
+        var statusBytes = MessagePackSerializer.Serialize(status, options);
+        var statusBack = MessagePackSerializer.Deserialize<AotStatusId>(statusBytes, options);
+        Expect(failures, statusBack == status, "MessagePack round-trip (enum)");
+
+        // 枚举基元：未定义数值（999）经二进制入口必须被拒（TryCreate + Enum.IsDefined 分支）。
+        var badBytes = MessagePackSerializer.Serialize((AotStatus)999, options);
+        try
+        {
+            MessagePackSerializer.Deserialize<AotStatusId>(badBytes, options);
+            failures.Add("MessagePack should reject undefined enum value (999)");
+        }
+        catch (MessagePackSerializationException)
+        {
+            // 预期。
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"MessagePack undefined enum threw {ex.GetType().Name}, expected MessagePackSerializationException");
+        }
+    }
+
+    private static void BsonValue(List<string> failures)
+    {
+        // 进程级注册表里注册本工程全部 Id 的序列化器（同样无反射）。
+        StronglyTypedIds.RegisterBsonSerializers();
+
+        // int 基元往返。
+        var product = AotProductId.Create(753);
+        var productBack = ReadBson<AotProductId>(WriteBson(product));
+        Expect(failures, productBack == product, "Bson round-trip (int)");
+
+        // 枚举基元：合法值往返。
+        var status = AotStatusId.Create(AotStatus.Inactive);
+        var statusBack = ReadBson<AotStatusId>(WriteBson(status));
+        Expect(failures, statusBack == status, "Bson round-trip (enum)");
+
+        // 枚举基元：未定义数值（999）经二进制入口必须被拒。
+        var badDoc = new BsonDocument { { "v", 999 } };
+        try
+        {
+            ReadBson<AotStatusId>(badDoc);
+            failures.Add("Bson should reject undefined enum value (999)");
+        }
+        catch (BsonSerializationException)
+        {
+            // 预期。
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"Bson undefined enum threw {ex.GetType().Name}, expected BsonSerializationException");
+        }
+    }
+
+    // BSON 根必须是文档，裸标量写不进 BsonDocumentWriter，故统一包一层 "v" 字段（与集成测试同构）。
+    private static BsonDocument WriteBson<T>(T value)
+    {
+        var document = new BsonDocument();
+        using (var writer = new BsonDocumentWriter(document))
+        {
+            writer.WriteStartDocument();
+            writer.WriteName("v");
+            BsonSerializer.Serialize(writer, typeof(T), value!);
+            writer.WriteEndDocument();
+        }
+
+        return document;
+    }
+
+    private static T ReadBson<T>(BsonDocument document)
+    {
+        using var reader = new BsonDocumentReader(document);
+        reader.ReadStartDocument();
+        reader.ReadName();
+        return BsonSerializer.Deserialize<T>(reader);
     }
 
     private static void Check(List<string> failures, string name, Action<List<string>> check)

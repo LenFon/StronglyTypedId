@@ -263,6 +263,52 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
+    /// 缺陷回归：枚举 Id 的 JSON <b>值</b>路径曾绕过枚举已定义性校验。两个转换器的读入都走
+    /// <c>TryCreate</c>，而它只跑用户配的 Validator —— <c>999</c> 会原样造出一个不对应任何成员的 Id，
+    /// 后续 switch 落空、序列化写出野值。TryParse 与 Dapper 三条路径早已收紧（见
+    /// <see cref="EnumPrimitiveTests"/> 与集成矩阵），这里把 JSON 入口对齐。
+    /// </summary>
+    /// <remarks>
+    /// 序列化形钉住数字：枚举在两种序列化器下都按数值写出，这是与 STJ 对原生枚举一致的既有行为。
+    /// </remarks>
+    [Fact]
+    public void EnumId_Should_RejectUndefinedValue_OnJsonValuePath()
+    {
+        System.Text.Json.JsonSerializer.Serialize(SampleStatusId.Create(SampleStatus.Suspended)).Should().Be("1");
+        Newtonsoft.Json.JsonConvert.SerializeObject(SampleStatusId.Create(SampleStatus.Suspended)).Should().Be("1");
+
+        // 已定义取值照常往返。
+        System.Text.Json.JsonSerializer.Deserialize<SampleStatusId>("1").Should().Be(SampleStatusId.Create(SampleStatus.Suspended));
+        Newtonsoft.Json.JsonConvert.DeserializeObject<SampleStatusId>("1").Should().Be(SampleStatusId.Create(SampleStatus.Suspended));
+
+        // 未定义数值必须抛各自的框架异常（转换器契约：STJ 抛 JsonException，Newtonsoft 抛 JsonSerializationException），
+        // 而不是静默产出一个 (SampleStatus)999。
+        Action stj = () => System.Text.Json.JsonSerializer.Deserialize<SampleStatusId>("999");
+        Action newtonsoft = () => Newtonsoft.Json.JsonConvert.DeserializeObject<SampleStatusId>("999");
+
+        stj.Should().Throw<System.Text.Json.JsonException>();
+        newtonsoft.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
+    }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举的值路径同理：位组合（<c>3</c> = Read | Write）放行，含未定义位的 <c>999</c> 拒绝。
+    /// </summary>
+    [Fact]
+    public void FlagsEnumId_Should_RejectUndefinedBits_OnJsonValuePath()
+    {
+        System.Text.Json.JsonSerializer.Deserialize<SampleAccessId>("3")
+            .Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write));
+        Newtonsoft.Json.JsonConvert.DeserializeObject<SampleAccessId>("3")
+            .Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write));
+
+        Action stj = () => System.Text.Json.JsonSerializer.Deserialize<SampleAccessId>("999");
+        Action newtonsoft = () => Newtonsoft.Json.JsonConvert.DeserializeObject<SampleAccessId>("999");
+
+        stj.Should().Throw<System.Text.Json.JsonException>();
+        newtonsoft.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
+    }
+
+    /// <summary>
     /// 带前缀的枚举 Id 不应用 <c>DictionaryKeyPolicy</c>：键文本含用户定义的前缀，policy 会把前缀一起改写，
     /// 读回时前缀匹配必然失败。用 SnakeCaseLower 才能看出差异（CamelCase 对 <c>pri_VeryHigh</c> 无变化）。
     /// </summary>

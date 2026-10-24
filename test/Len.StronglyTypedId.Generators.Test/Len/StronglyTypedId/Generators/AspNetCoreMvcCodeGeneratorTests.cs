@@ -45,8 +45,8 @@ public class AspNetCoreMvcCodeGeneratorTests
             .Distinct()
             .Where(a => !a.IsDynamic)
             .Where(ShouldReferenceAssembly)
-            .Select(AssemblyReferenceCache.FromAssembly)
-            .Cast<MetadataReference>()
+            .Select(AssemblyReferenceCache.TryResolveReference)
+            .OfType<MetadataReference>()
             .Concat(extraReferences)
             .ToArray();
 

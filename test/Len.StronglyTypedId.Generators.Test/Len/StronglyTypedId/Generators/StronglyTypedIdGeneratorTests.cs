@@ -2,11 +2,16 @@
 // 统一在此文件禁用该测试框架分析器警告。
 #pragma warning disable xUnit1051
 using FluentAssertions;
+using Len.StronglyTypedId.Analyzers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Testing;
+using Newtonsoft.Json;
 using System.Buffers;
+using System.Collections.Immutable;
 using System.Reflection;
+using System.Text.Json;
 
 namespace Len.StronglyTypedId.Generators;
 
@@ -126,6 +131,143 @@ public class StronglyTypedIdGeneratorTests
             }
             """);
     }
+
+    #region 关键字命名：未转义的 Name 会让产物完全不可编译
+
+    /// <summary>
+    /// 缺陷回归：Id 自身的名字是 C# 保留关键字时，生成器曾把未转义的 <see cref="ISymbol.Name"/> 写进
+    /// 类型声明位与全部类型引用位。<c>partial record struct class :</c> 的类型名被编译器吃成空串，
+    /// 成员整体掉出类型落进全局命名空间，爆出 CS0260 / CS1520 / CS0101 / CS9348 一串错误。
+    /// </summary>
+    /// <remarks>
+    /// 同时锁 hint 名：含 <c>@</c> 会让 <c>AddSource</c> 抛 <see cref="ArgumentException"/>，
+    /// 表现为 STIA0012「生成器失败」且该类型全部输出被丢弃——用户只会看到一条与真实意图无关的报错。
+    /// </remarks>
+    [Theory]
+    [InlineData("class")]
+    [InlineData("return")]
+    [InlineData("int")]
+    [InlineData("string")]
+    [InlineData("object")]
+    [InlineData("namespace")]
+    [InlineData("event")]
+    public void Generator_Should_EscapeKeywordNamedId_AndProduceCompilableCode(string keyword)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct @{{keyword}}(Guid Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated.Keys.Should().OnlyContain(key => !key.Contains('@'),
+            "hint 名含 @ 会被 Roslyn 判为非法字符，整条生成链以 STIA0012 告终");
+
+        var all = string.Join("\n", generated.Values);
+
+        all.Should().Contain($"partial record struct @{keyword} :");
+        all.Should().Contain($"IStronglyTypedId<@{keyword}, global::System.Guid>");
+        all.Should().Contain($"public static @{keyword} Create(global::System.Guid value) => new @{keyword}(value);");
+        all.Should().Contain($"public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out @{keyword} result)");
+
+        // 未转义形式一个都不许出现：只要漏一处，产物就不可编译。
+        all.Should().NotContain($"partial record struct {keyword} :");
+        all.Should().NotContain($"IStronglyTypedId<{keyword},");
+        all.Should().NotContain($"new {keyword}(value)");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 包含类型名是保留关键字时，重开它的 partial 声明同样必须转义（<c>internal partial class return</c> 是语法错误）。
+    /// </summary>
+    [Theory]
+    [InlineData("return")]
+    [InlineData("class")]
+    public void Generator_Should_EscapeKeywordNamedContainingType(string keyword)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class @{{keyword}}
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated.Keys.Should().OnlyContain(key => !key.Contains('@'));
+
+        // 带冒号才唯一：STJ / Newtonsoft 转换器文件也声明 "partial record struct OrderId"，
+        // 但核心产物的声明后面跟着接口列表（"OrderId :"），转换器的是 "OrderId\n{"。
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should().Contain($"public partial class @{keyword}");
+        core.Should().NotContain($"public partial class {keyword}\n");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 命名实例的字段名与字段类型都可能撞上关键字：<c>public static readonly class Empty</c> 与
+    /// <c>public static readonly OrderId class</c> 都是语法错误。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_EscapeKeywordNamedInstance()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("class", "7")]
+            public partial record struct OrderId(int Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+        var core = generated.Values.Single(text => text.Contains("public static readonly"));
+
+        // 整型实例值带显式转换：(int)(7) 而非 7 —— 字面量默认推断成 int，
+        // 对 byte / short 等更窄基元会无法隐式转换，故统一加壳。
+        core.Should().Contain("public static readonly OrderId @class = Create((int)(7));");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 跑生成器并把产物并入原编译后整体 <c>Emit</c>：生成代码只要有一处不可编译，这里就失败。
+    /// </summary>
+    private static void GeneratedCode_Should_Compile(string sourceCode)
+    {
+        var compilation = CreateDefaultCompilation(sourceCode);
+
+        // out 参数才是并入生成产物后的编译；返回值是运行结果，没有 Compilation 成员。
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
+
+        generatorDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        using var peStream = new MemoryStream();
+        var emitResult = outputCompilation.Emit(peStream);
+
+        emitResult.Success.Should().BeTrue(
+            "生成代码必须能独立编译通过；失败诊断：\n" +
+            string.Join("\n", emitResult.Diagnostics
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => d.ToString())));
+    }
+
+    #endregion
 
     private static List<string> GetExpectedCodes(string record = "record")
     {
@@ -549,6 +691,66 @@ public class StronglyTypedIdGeneratorTests
         GetGeneratedCode(code).Should().BeEmpty();
     }
 
+    /// <summary>
+    /// 缺陷回归：Id 自身是 file 本地类型时，生成器曾放行并产出一条不带 <c>file</c> 的 partial 声明，
+    /// 与用户的声明构成两个同名类型 → CS0535，且该编译单元内其余 STIA 诊断被 csc 一并丢弃。
+    /// 分析器对同一写法报 STIA0025，两边判据必须一致。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenIdItselfIsFileLocal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            file partial record struct OrderId(Guid Value);
+            """";
+
+        GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 缺陷回归（连带效应）：那条冲突声明是声明级错误，csc 会因此丢弃整个编译单元的全部分析器诊断
+    /// —— 实测同单元内无关 Id 的 STIA0006 / STIA0007 / STIA0009 全部静默消失（构建日志与 binlog 中
+    /// 均无 AD0001，是编译器既有行为，但触发它的是本库的产物）。生成器现在直接跳过 file 局部 Id，
+    /// 编译不再有声明级错误，同单元其他 Id 的诊断必须照常上报。
+    /// </summary>
+    [Fact]
+    public async Task Generator_Should_KeepOtherDiagnosticsAlive_WhenIdIsFileLocal()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            file partial record struct FileLocalId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct BrokenId(Guid? Value);
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
+
+        // 前提：生成器不报错、合并产物后的编译也没有声明级错误 —— 任一成立都会让下面的分析器诊断被 csc 吞掉。
+        generatorDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+        outputCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        var analyzerDiagnostics = await outputCompilation
+            .WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new StronglyTypedIdAnalyzer()))
+            .GetAnalyzerDiagnosticsAsync();
+
+        // file 局部 Id 报 STIA0025；同单元里 BrokenId 的参数可空，这条在缺陷存在时会随 CS0535 一起消失。
+        analyzerDiagnostics.Should().Contain(d => d.Id == Descriptors.TypeCannotBeFileLocalId);
+        analyzerDiagnostics.Should().Contain(d => d.Id == Descriptors.ParameterCannotBeNullableId);
+    }
+
     [Fact]
     public void Generator_Should_ReturnEmpty_WhenArgumentsIsNullable()
     {
@@ -885,15 +1087,18 @@ public class StronglyTypedIdGeneratorTests
         // ShouldReferenceAssembly 只过滤来自 AppDomain 的程序集（防止 TestBase / EF Core / Swagger 等
         // 程序集因被其它测试加载而污染发现结果）。通过 extraAssemblyTypes 显式注入的程序集不在此列，
         // 必须原样保留，否则 EF Core / Swagger 生成器将检测不到对应模块而不生成代码。
+        // 空 Location 必须一并滤掉：Assembly.Load(byte[]) 加载的程序集（行为级测试自己产出的那份）
+        // IsDynamic 为 false 但 Location 为空，Roslyn 打开它时抛 ArgumentException。与
+        // StronglyTypedIdInfoTests.GetReferences 的过滤保持一致。
         var references = AppDomain.CurrentDomain
             .GetAssemblies()
             .Union(assemblies)
             .Distinct()
-            .Where(assembly => !assembly.IsDynamic)
+            .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
             .Where(ShouldReferenceAssembly)
-            .Union(extraAssemblyTypes.Select(type => type.Assembly).Where(assembly => !assembly.IsDynamic))
-            .Select(AssemblyReferenceCache.FromAssembly)
-            .Cast<MetadataReference>()
+            .Union(extraAssemblyTypes.Select(type => type.Assembly).Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location)))
+            .Select(AssemblyReferenceCache.TryResolveReference)
+            .OfType<MetadataReference>()
             .Concat(extraReferences);
 
         return CSharpCompilation.Create(
@@ -976,6 +1181,34 @@ public class StronglyTypedIdGeneratorTests
     private static bool ShouldReferenceAssembly(Assembly assembly)
         => assembly.GetName().Name is not
             ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi" or "Microsoft.AspNetCore.Mvc" or "Microsoft.AspNetCore.Mvc.Core" or "Microsoft.AspNetCore.Mvc.Abstractions" or "Microsoft.AspNetCore.OpenApi" or "Microsoft.AspNetCore.Routing");
+
+    /// <summary>
+    /// 跑生成器、把产物并入原编译后整体产出为可加载程序集，返回其中 <paramref name="typeName"/> 对应的类型。
+    /// </summary>
+    /// <remarks>
+    /// 用于「真跑一次生成代码」的行为级断言：文本断言只能证明条件写进了产物，加载后调用才能证明它在运行期真的拦住了目标输入。
+    /// </remarks>
+    private static Type EmitAndLoad(string sourceCode, string typeName)
+    {
+        var compilation = CreateDefaultCompilation(sourceCode);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
+
+        generatorDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        using var peStream = new MemoryStream();
+        var emitResult = outputCompilation.Emit(peStream);
+
+        emitResult.Success.Should().BeTrue(
+            "生成代码必须能独立编译通过；失败诊断：\n" +
+            string.Join("\n", emitResult.Diagnostics
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => d.ToString())));
+
+        return Assembly.Load(peStream.ToArray()).GetType(typeName)!;
+    }
 
     #region EF Core 生成器（EfCoreCodeGenerator）
 
@@ -2035,6 +2268,147 @@ public class StronglyTypedIdGeneratorTests
         converter.Should()
             .Contain("{ } value when OrderId.TryCreate(value, out var id) => id,")
             .And.NotContain("OrderId.Create(");
+    }
+
+    /// <summary>
+    /// 缺陷回归：枚举 Id 的 JSON 反序列化曾接受未定义值 —— 值位置的读入只走 <c>TryCreate</c>，
+    /// 而它只执行用户配置的 Validator，不含枚举已定义性校验。实测修复前
+    /// <c>Deserialize&lt;StatusId&gt;("999")</c> 成功得到 <c>(Status)999</c>，与 <c>TryParse("999")</c>
+    /// 返回 false 自相矛盾（Dapper 三条路径与 <c>ReadAsPropertyName</c> 也都拒绝）。现在 Read 路径附带
+    /// <c>Enum.IsDefined</c>，与其余入口对齐。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_CheckEnumDefinedness_WhenReadingValue()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Unknown, Active }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        var converter = GetGeneratedCodeByHint(source)["Len.StronglyTypedId.StatusId.SystemTextJson.g.cs"];
+
+        converter.Should().Contain("return StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value)");
+    }
+
+    /// <summary>
+    /// 同上（Newtonsoft 侧）：switch 臂附带 <c>Enum.IsDefined</c>。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJson_Should_CheckEnumDefinedness_WhenReadingValue()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Unknown, Active }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        var converter = GetGeneratedCodeByHint(source)["Len.StronglyTypedId.StatusId.NewtonsoftJson.g.cs"];
+
+        converter.Should().Contain("{ } value when StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value) => id,");
+    }
+
+    /// <summary>
+    /// 对象 JSON 形态的读入分支同样走 <c>TryCreate</c>，枚举校验不能只落在基元形态上。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_CheckEnumDefinedness_WhenReadingValueAsObjectShape()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Unknown, Active }
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        var converter = GetGeneratedCodeByHint(source)["Len.StronglyTypedId.StatusId.SystemTextJson.g.cs"];
+
+        converter.Should().Contain("result = StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value)");
+    }
+
+    /// <summary>
+    /// 缺陷回归（行为级）：把生成产物编译成可加载程序集后真跑一次反序列化。修复前
+    /// <c>JsonSerializer.Deserialize&lt;StatusId&gt;("999")</c> 会成功得到 <c>(Status)999</c>，
+    /// 文本断言只能证明条件写进了产物，这里证明它在运行期真的拦住了未定义值。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_RejectUndefinedEnumValue_AtRuntime()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Unknown, Active }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        var idType = EmitAndLoad(source, "Len.StronglyTypedId.StatusId");
+
+        // Deserialize<TValue>(string json, JsonSerializerOptions? options = null)：options 有默认值，
+        // 但反射里仍是实参，故按「首参 string、次参 JsonSerializerOptions」精确匹配，并显式传 null。
+        var deserialize = typeof(System.Text.Json.JsonSerializer).GetMethods()
+            .Single(method => method.Name == "Deserialize"
+                && method.IsGenericMethodDefinition
+                && method.GetParameters() is [{ ParameterType: var json } first, { ParameterType: var options }]
+                && json == typeof(string)
+                && options == typeof(System.Text.Json.JsonSerializerOptions))
+            .MakeGenericMethod(idType);
+
+        var act = () => deserialize.Invoke(null, ["999", null]);
+
+        act.Should().Throw<TargetInvocationException>().WithInnerException<System.Text.Json.JsonException>();
+    }
+
+    /// <summary>
+    /// 缺陷回归（行为级，Newtonsoft 侧）：<c>JsonConvert.DeserializeObject&lt;StatusId&gt;("999")</c>
+    /// 必须抛 <see cref="JsonSerializationException"/>，与 <c>TryParse</c> 的拒绝行为一致。
+    /// </summary>
+    [Fact]
+    public void NewtonsoftJson_Should_RejectUndefinedEnumValue_AtRuntime()
+    {
+        var source = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Unknown, Active }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+            """;
+
+        var idType = EmitAndLoad(source, "Len.StronglyTypedId.StatusId");
+
+        // DeserializeObject<T>(string value, params JsonConverter[] converters)：params 形参在反射里
+        // 就是普通数组参数，传 null 即「无附加转换器」。
+        var deserialize = typeof(JsonConvert).GetMethods()
+            .Single(method => method.Name == "DeserializeObject"
+                && method.IsGenericMethodDefinition
+                && method.GetParameters() is [{ ParameterType: var value } first, { ParameterType: var converters }]
+                && value == typeof(string)
+                && converters == typeof(JsonConverter[]))
+            .MakeGenericMethod(idType);
+
+        var act = () => deserialize.Invoke(null, ["999", null]);
+
+        act.Should().Throw<TargetInvocationException>().WithInnerException<JsonSerializationException>();
     }
 
     /// <summary>

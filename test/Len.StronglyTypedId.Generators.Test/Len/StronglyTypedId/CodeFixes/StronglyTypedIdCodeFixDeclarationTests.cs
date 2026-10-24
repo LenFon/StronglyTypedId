@@ -55,6 +55,34 @@ public class StronglyTypedIdCodeFixDeclarationTests
     }
 
     [Fact]
+    public async Task CodeFix_Should_ReturnDiagnostic_WhenIdItselfIsFileLocal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            file partial record struct OrderId(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeFileLocal)
+            .WithSpan(5, 1, 6, 48).WithArguments("OrderId");
+
+        // 摘掉 file 后类型回到普通 partial record：生成器终于能在自己的文件里重开它。
+        var fixedCode = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            partial record struct OrderId(Guid Value);
+            """;
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    [Fact]
     public async Task CodeFix_Should_ReturnDiagnostic_WhenParameterNameCannotBeValue()
     {
         var code = """"

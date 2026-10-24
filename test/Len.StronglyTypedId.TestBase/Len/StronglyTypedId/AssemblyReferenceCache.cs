@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
+using System.IO;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 
@@ -23,8 +25,86 @@ public static class AssemblyReferenceCache
         => _references.GetOrAdd(location, static path => MetadataReference.CreateFromFile(path));
 
     /// <summary>
-    /// 取得已加载程序集的引用，等价于 <see cref="FromFile(string)"/> 作用于其 <see cref="Assembly.Location"/>。
+    /// 取得已加载程序集的引用（非空契约）；无法解析时抛 <see cref="InvalidOperationException"/>。
+    /// 用于调用方明确持有可用程序集（如 <c>typeof(T).Assembly</c>）的场景。
     /// </summary>
     public static MetadataReference FromAssembly(Assembly assembly)
-        => FromFile(assembly.Location);
+        => TryResolveReference(assembly)
+            ?? throw new InvalidOperationException(
+                $"无法为程序集“{assembly.FullName}”解析元数据引用路径：Location、模块路径与名称均不可用。");
+
+    /// <summary>
+    /// 尝试取得已加载程序集的引用；无法解析（路径为空 / 身份为 «Unknown» / 文件不存在）时返回 <c>null</c>，交由调用方跳过，而非抛异常中断整批引用收集。
+    /// </summary>
+    /// <remarks>
+    /// net10.0 测试宿主下，部分从 NuGet 缓存 / <see cref="System.Runtime.Loader.AssemblyLoadContext"/> / 共享框架加载的程序集
+    /// <see cref="Assembly.Location"/> 为空串、<see cref="Assembly.GetName"/> 可能为 «Unknown»；另一些 <see cref="AppDomain"/> 内程序集（如测试宿主基础设施）身份同样反常。
+    /// 兜底链：① Location（文件存在）；② 模块完全限定名；③ 受信平台程序集（TPA）列表按模块文件名匹配（覆盖共享框架程序集）；
+    /// ④ 测试输出目录下的模块名 / «简单名».dll（覆盖已复制到输出的 NuGet 库）。任一环节文件不存在即放弃，返回 <c>null</c>。
+    /// </remarks>
+    public static MetadataReference? TryResolveReference(Assembly assembly)
+    {
+        if (!string.IsNullOrEmpty(assembly.Location) && File.Exists(assembly.Location))
+        {
+            return FromFile(assembly.Location);
+        }
+
+        var module = assembly.Modules.FirstOrDefault();
+        var moduleFileName = module?.Name;
+        if (!string.IsNullOrEmpty(moduleFileName))
+        {
+            var resolved = ResolveFromTrustedPlatformAssemblies(moduleFileName);
+            if (resolved is not null && File.Exists(resolved))
+            {
+                return FromFile(resolved);
+            }
+
+            var inBaseDirectory = Path.Combine(AppContext.BaseDirectory, moduleFileName);
+            if (File.Exists(inBaseDirectory))
+            {
+                return FromFile(inBaseDirectory);
+            }
+        }
+
+        var simpleName = assembly.GetName().Name;
+        if (!string.IsNullOrEmpty(simpleName) && simpleName != "<Unknown>")
+        {
+            var resolved = ResolveFromTrustedPlatformAssemblies(simpleName + ".dll");
+            if (resolved is not null && File.Exists(resolved))
+            {
+                return FromFile(resolved);
+            }
+
+            var inBaseDirectory = Path.Combine(AppContext.BaseDirectory, simpleName + ".dll");
+            if (File.Exists(inBaseDirectory))
+            {
+                return FromFile(inBaseDirectory);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 在 <c>TRUSTED_PLATFORM_ASSEMBLIES</c> 列表中按文件名（含或不含扩展名）匹配程序集路径。
+    /// </summary>
+    private static string? ResolveFromTrustedPlatformAssemblies(string fileName)
+    {
+        if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is not string trustedPlatformAssemblies)
+        {
+            return null;
+        }
+
+        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
+        foreach (var path in trustedPlatformAssemblies.Split(Path.PathSeparator))
+        {
+            if (string.Equals(Path.GetFileName(path), fileName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(Path.GetFileNameWithoutExtension(path), fileNameWithoutExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
 }

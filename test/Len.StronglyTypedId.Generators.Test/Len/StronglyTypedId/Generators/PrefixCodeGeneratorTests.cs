@@ -32,8 +32,8 @@ public class PrefixCodeGeneratorTests
             .Distinct()
             .Where(assembly => !assembly.IsDynamic)
             .Where(ShouldReferenceAssembly)
-            .Select(AssemblyReferenceCache.FromAssembly)
-            .Cast<MetadataReference>()
+            .Select(AssemblyReferenceCache.TryResolveReference)
+            .OfType<MetadataReference>()
             .Concat(extraReferences)
             .ToArray();
 

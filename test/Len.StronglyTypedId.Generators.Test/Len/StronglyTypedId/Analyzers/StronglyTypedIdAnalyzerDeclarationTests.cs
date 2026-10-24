@@ -447,6 +447,27 @@ public class StronglyTypedIdAnalyzerDeclarationTests
     }
 
     [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenIdItselfIsFileLocal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            file partial record struct OrderId(Guid Value);
+            """";
+
+        // record 自身带 file：容器循环只查了外层类型，漏掉它就会放行并产出跨文件的冲突 partial 声明 ——
+        // CS0535 且不带任何 STIA 诊断，严重时整个编译单元的分析器诊断还会被 csc 一并丢弃，故单独一条规则。
+        // 诊断落在整条声明上（属性段算在内，与 STIA0002 同款跨度），{0} 是 Id 自己的名字。
+        var expected = Verify.Diagnostic(Descriptors.TypeCannotBeFileLocal)
+            .WithSpan(5, 1, 6, 48).WithArguments("OrderId");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenCannotBeRecord()
     {
         var code = """"
