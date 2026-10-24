@@ -76,6 +76,11 @@ Newtonsoft.Json 的字典键走的是 `TypeConverter` / `ToString()`，并不经
 Id 无法表示 `null`，因此两种转换器都会拒绝该 token，而不是悄悄产出 `default`（`JsonException` /
 `JsonSerializationException`）。
 
+以 `enum` 为基元的 Id 在读路径上与它的文本形执行同一道校验：不对应任何成员的数字会被同样的框架异常
+拒绝，因此 `{"status": 999}` 不可能造出一个值为 `(Status)999` 的 Id。这正是 `Id.TryParse("999")` 早已
+执行的校验——Dapper 的三条路径也一样——补上它之后，唯一还放行野值的入口也关上了。`[Flags]` 枚举则改按
+未定义位掩码校验：已定义成员的任意位组合照常通过，而 `999` 不通过。
+
 ## 验证失败的异常契约
 
 `Validator` 拒绝的是「能解析但违反领域规则」的值。两种转换器在读入时都会执行它，并用各自的异常类型

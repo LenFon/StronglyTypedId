@@ -39,6 +39,14 @@ title: 常见问题
 EF Core 与用户输入都是经由 `Create` / `Parse` / `TryParse` 进入的，校验在实际用到的地方生效——
 详见[值校验](declaration.md#value-validation)。
 
+**问：为什么强类型 Id 不能是 `file` 本地类型？**
+
+答：因为生成器必须在自己的文件里重开你的 `partial` 声明，而文件本地类型的每一段都必须自带
+`file` 且只在本文件可见——另一段写在别的文件里，这一条就无法成立。因此把 Id 声明成
+`file partial record struct OrderId(...)` 会报 `STIA0025`；去掉 `file` 修饰符即可（灯泡菜单
+提供的正是这个修复）。`file` 本地的*包含类型*同理也不被支持——它由包含类型对应的规则报错，
+原因相同。
+
 想按症状排查而不是问概念？见[故障排查](troubleshooting.md#troubleshooting)。
 
 [<- 返回目录](index.md) · [English](../faq.md)

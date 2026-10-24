@@ -45,6 +45,15 @@ A: The primary constructor belongs to your declaration, and a source generator c
 it, so only the generated entry points are validated. JSON, EF Core and user input all come in through
 `Create` / `Parse` / `TryParse`, where the validator does apply — see [Value validation](declaration.md#value-validation).
 
+**Q: Why can't a strongly typed id be a `file`-local type?**
+
+A: Because the generator has to reopen your `partial` declaration in a file of its own, and every part
+of a file-local type must carry `file` itself and stay invisible outside its file — there is no way to
+write that second part from another file. Declaring an id `file partial record struct OrderId(...)`
+therefore reports `STIA0025`; remove the `file` modifier (the light bulb offers exactly that). The same
+applies to a `file`-local *containing* type — it is reported by the containing-type rule instead, for
+the same reason.
+
 Looking for a symptom rather than a question? See [Troubleshooting](troubleshooting.md#troubleshooting).
 
 [<- Back to the index](index.md) · [中文](zh-CN/faq.md)

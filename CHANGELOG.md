@@ -337,6 +337,27 @@ change set rather than reproducing every commit.
   conflicting registration silently wins. The behaviour is unchanged — overwriting would break the
   documented idempotency — but the generated XML remark and the integration guide now say so instead of
   leaving it to be discovered.
+- An id (or a containing type, a type parameter, or a named instance) whose name is a C# keyword no
+  longer breaks the build. The generator wrote `ISymbol.Name` — which does not escape keywords — into
+  type positions, so `partial record struct class :` had its name parsed as the `class` keyword, the
+  members fell out of the type into the global namespace and the file produced some eighty errors
+  (`CS0260` / `CS1520` / `CS0101` / `CS9348`); the display format also put the escaping `@` into the
+  hint name, so `AddSource` threw and the whole id was discarded as `STIA0012` — a failure message
+  unrelated to what the user actually wrote. Every type position now uses the escaped name (including
+  contextual keywords such as `var`, since the generated code itself declares `out var id`), and the
+  hint name keeps only letters, digits, `_` and `.`.
+- An id declared `file partial record struct` is now reported as `STIA0025`, with a code fix that
+  removes the `file` modifier. The generator used to reopen the partial declaration in a file of its
+  own — a second type with the same name, since every part of a file-local type must carry `file` —
+  producing `CS0535` with no STIA diagnostic to explain it. Worse, that declaration-level error made
+  csc discard every analyzer diagnostic in the compilation unit, so unrelated ids in the same file
+  silently lost their type-safety checks. The analyzer and the generator now apply the same rule.
+- The System.Text.Json and Newtonsoft.Json converters now reject enum values that name no member on
+  the *value* path, not just the dictionary-key path. `JsonSerializer.Deserialize<StatusId>("999")`
+  used to produce an id whose value is `(Status)999` — `Enum.TryParse` and the Dapper paths already
+  refused it, so the same id could be rejected as text and accepted as JSON. It now throws
+  `JsonException` / `JsonSerializationException`, and `[Flags]` enums are checked against the
+  undefined-bits mask.
 
 ## [1.3.0] - 2026-10-07
 

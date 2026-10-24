@@ -84,6 +84,12 @@ as JSON `null`, and reading that `null` back yields `null` — but only for a `r
 id cannot represent `null`, so both converters reject the token instead of silently producing `default`
 (`JsonException` / `JsonSerializationException`).
 
+An `enum`-backed id validates its value on read exactly like its text form does: a number that names no
+member is rejected with the same framework exception, so `{"status": 999}` cannot produce an id whose
+value is `(Status)999`. This is the check `Id.TryParse("999")` already applies — and that the Dapper
+paths apply — closing the one entry point that used to accept it. `[Flags]` enums are checked against the
+undefined-bits mask instead, so any combination of defined members passes while `999` does not.
+
 ## Validation failures
 
 A `Validator` rejects values that parse but violate a domain rule. Both converters honour it on read, and

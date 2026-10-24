@@ -259,6 +259,21 @@
 - `RegisterBsonSerializers` 现在写明「同一 Id 类型的序列化器已被注册」时的行为：驱动的
   `TryRegisterSerializer` 返回 `false` 并保留既有的那个，冲突的注册会静默胜出。行为本身未变——
   强行覆盖会破坏文档承诺的幂等性——但生成的 XML 注释与集成文档现在把它讲明，而不是留给使用者自己撞见。
+- 名字是 C# 关键字的 Id（或包含类型、类型参数、命名实例）不再让编译直接失败。生成器此前把不做关键字
+  转义的 `ISymbol.Name` 写进类型位：`partial record struct class :` 的类型名被编译器吃成 `class` 关键字，
+  成员整体掉出类型落进全局命名空间，一个文件爆出约八十条错误（`CS0260` / `CS1520` / `CS0101` /
+  `CS9348`）；显示格式带来的 `@` 又进了 hint 名，`AddSource` 直接抛异常，整个 Id 的全部产出以
+  `STIA0012` 丢弃——报错信息与用户实际写的东西毫无关系。现在所有类型位一律用转义后的名字（`var`
+  这类上下文关键字也转义：生成器自己就会写出 `out var id`），hint 名只保留字母、数字、`_` 与 `.`。
+- 声明为 `file partial record struct` 的 Id 现在报 `STIA0025`，并提供去掉 `file` 修饰符的代码修复。
+  生成器此前会在自己的文件里重开它的 partial 声明——文件本地类型的每一段都必须自带 `file`，那等于
+  凭空造出第二个同名类型，报 `CS0535` 且不带任何 STIA 诊断说明原因。更糟的是这条声明级错误会让
+  csc 丢弃整个编译单元的全部分析器诊断，同一文件里无关 Id 的类型安全检查随之静默消失。分析器与
+  生成器现在适用同一条判据。
+- System.Text.Json 与 Newtonsoft.Json 转换器现在在**值**路径上同样拒绝不对应任何成员的枚举取值，
+  不再只有字典键路径如此。`JsonSerializer.Deserialize<StatusId>("999")` 此前会造出一个值为
+  `(Status)999` 的 Id——`Enum.TryParse` 与 Dapper 三条路径早就拒绝它，同一个 Id 作文本进不来、作
+  JSON 却进得来。现在抛 `JsonException` / `JsonSerializationException`；`[Flags]` 枚举按未定义位掩码校验。
 
 ## [1.3.0] - 2026-10-07
 

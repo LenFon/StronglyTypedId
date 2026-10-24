@@ -48,9 +48,10 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0022 | Named instance name should be PascalCase                              | —                                                         |
 | STIA0023 | Prefix overlaps the primitive text                                    | —                                                         |
 | STIA0024 | Integration mask contains undefined bits                              | —                                                         |
+| STIA0025 | Strongly typed id cannot be a file-local type                         | Remove the `file` modifier                                |
 <!-- END GENERATED:diagnostics -->
 
-Sixteen of the twenty-five rules ship a code fix, and a few of those only when the repair is
+Seventeen of the twenty-six rules ship a code fix, and a few of those only when the repair is
 unambiguous — `STIA0003` is offered only when the id itself is generic (removing the *containing*
 type's type parameters would change your design), `STIA0005` only when the type declares no explicit
 constructor (adding a primary constructor next to an existing one would collide with `CS0111`), and

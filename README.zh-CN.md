@@ -28,7 +28,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 25 条规则里有 16 条附带代码修复，
+- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 26 条规则里有 17 条附带代码修复，
   可一键修好声明（见[诊断与代码修复](docs/zh-CN/diagnostics.md#diagnostics)）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并在基元类型自身实现 `IFormattable` / `ISpanFormattable`
