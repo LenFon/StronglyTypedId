@@ -115,6 +115,9 @@
 
 ### 修复
 
+- `STIA0016`（重复基元类型）不再退化为 O(N²)。原先每个强类型 Id 都从头重算整组分组，于是同处一个命名空间的
+  N 个 Id 各自重新扫描整个命名空间（含嵌套类型）。现在分组按命名空间缓存、在 Id 的符号操作之间共享，
+  整体复杂度从 O(N·M) 降为 O(M)。上报的诊断与「组内第一个成员上报」的规则保持不变。
 - `IsStronglyTypedId` / `GetPrimitiveIdType` / `TryGetPrimitiveIdType` 不再阻止可回收
   `AssemblyLoadContext` 卸载。它们的结果缓存原先是以 `Type` 为键的静态字典，而 `Type` 持有
   `Assembly`、`Assembly` 持有加载上下文 —— 于是每次插件加载、热重载或重复加载程序集的测试宿主，

@@ -24,7 +24,14 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         {
             var requests = new ConcurrentBag<IntegrationRequest>();
 
-            startContext.RegisterSymbolAction(context => AnalyzeNamedType(context, requests), SymbolKind.NamedType);
+            // 重复基元类型分组按命名空间缓存：同命名空间下 N 个 Id 原本各自重扫整个命名空间（含嵌套），
+            // 形成 O(N²)；缓存后整组只算一次，整体降为 O(M)。放在编译开始闭包里，保证每次编译都是独立的新鲜实例。
+            var namespacePrimitiveGroups =
+                new ConcurrentDictionary<INamespaceSymbol, (INamedTypeSymbol Member, string? Primitive)[]>(SymbolEqualityComparer.Default);
+
+            startContext.RegisterSymbolAction(
+                context => AnalyzeNamedType(context, requests, namespacePrimitiveGroups),
+                SymbolKind.NamedType);
 
             // 程序集级默认值也走同一条聚合路径：符号操作不支持 SymbolKind.Assembly（RS1003），
             // 只能在整编译回调里读。
@@ -37,7 +44,10 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
     }
 
-    private static void AnalyzeNamedType(SymbolAnalysisContext context, ConcurrentBag<IntegrationRequest> integrationRequests)
+    private static void AnalyzeNamedType(
+        SymbolAnalysisContext context,
+        ConcurrentBag<IntegrationRequest> integrationRequests,
+        ConcurrentDictionary<INamespaceSymbol, (INamedTypeSymbol Member, string? Primitive)[]> namespacePrimitiveGroups)
     {
         if (context.Symbol is not INamedTypeSymbol type || !HasStronglyTypedIdAttribute(type))
         {
@@ -189,7 +199,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         // 风格提示放在全部硬性校验之后，避免连 record 都不是的类型同时冒出改名建议。
         ValidateNameConvention(context, type, records);
-        ValidateDuplicatePrimitiveType(context, type, constructorParameterType, records);
+        ValidateDuplicatePrimitiveType(context, type, constructorParameterType, records, namespacePrimitiveGroups);
     }
 
     /// <summary>
@@ -217,7 +227,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
         ITypeSymbol primitiveType,
-        RecordDeclarationSyntax[] records)
+        RecordDeclarationSyntax[] records,
+        ConcurrentDictionary<INamespaceSymbol, (INamedTypeSymbol Member, string? Primitive)[]> namespacePrimitiveGroups)
     {
         var namespaceSymbol = type.ContainingNamespace;
 
@@ -229,16 +240,16 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 分组键必须与兄弟类型的取值方式一致，否则当前类型落不进自己的组（见 GetSingleParameterType）。
         var primitiveName = (GetSingleParameterType(type) ?? primitiveType).ToDisplayString();
 
+        // 命名空间级分组按命名空间缓存：N 个 Id 同处一个命名空间时，原本每个都重扫整个命名空间（含逐层嵌套类型），
+        // 形成 O(N²)；缓存后整组只算一次。分组按成员完整名排序，与下方「第一个成员上报」的确定性一致。
+        var members = namespacePrimitiveGroups.GetOrAdd(namespaceSymbol, ComputeNamespacePrimitiveMembers);
+
         // 范围是「命名空间下的全部类型」，含嵌套类型：`GetTypeMembers()` 只返回顶层类型，
         // 漏掉嵌套会让 `class Orders { record OrderId(Guid Value); }` 与同命名空间的
         // `CustomerId(Guid Value)` 撞车却不报警 —— 而两者的规范文本形确实无法区分。
-        var group = GetAllTypes(namespaceSymbol)
-            .Where(HasStronglyTypedIdAttribute)
-            .Select(member => (Member: member, Primitive: GetSingleParameterType(member)))
-            .Where(pair => pair.Primitive?.ToDisplayString() == primitiveName)
+        var group = members
+            .Where(pair => pair.Primitive == primitiveName)
             .Select(pair => pair.Member)
-            // 按完整名排序：嵌套类型与顶层类型可能同名，只比 Name 得不到确定的「第一个成员」。
-            .OrderBy(member => member.ToDisplayString(), StringComparer.Ordinal)
             .ToArray();
 
         // 组内第一个成员负责上报，否则同一组会被每个成员各报一次。
@@ -255,6 +266,23 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             primitiveName,
             group.Length - 1,
             namespaceSymbol.ToDisplayString());
+    }
+
+    /// <summary>
+    /// 枚举命名空间下全部带 <c>[StronglyTypedId]</c> 的强类型 Id，并附其基元类型显示名，按成员完整名排序。
+    /// 结果按命名空间缓存（见 <see cref="ValidateDuplicatePrimitiveType"/>），避免重复基元类型校验退化为 O(N²)。
+    /// </summary>
+    private static (INamedTypeSymbol Member, string? Primitive)[] ComputeNamespacePrimitiveMembers(
+        INamespaceSymbol namespaceSymbol)
+    {
+        // 按成员完整名排序：嵌套类型与顶层类型可能同名，只比 Name 得不到确定的「第一个成员」。
+        // 先落到局部变量再返回，规避 IDE0305（return 直接接 .ToArray() 会被集合表达式分析器误报）。
+        var members = GetAllTypes(namespaceSymbol)
+            .Where(HasStronglyTypedIdAttribute)
+            .Select(member => (Member: member, Primitive: GetSingleParameterType(member)?.ToDisplayString()))
+            .OrderBy(pair => pair.Member.ToDisplayString(), StringComparer.Ordinal)
+            .ToArray();
+        return members;
     }
 
     /// <summary>

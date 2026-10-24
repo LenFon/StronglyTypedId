@@ -148,6 +148,11 @@ change set rather than reproducing every commit.
 
 ### Fixed
 
+- `STIA0016` (duplicate primitive type) no longer degrades to O(N²). The namespace grouping was recomputed
+  from scratch for every strongly typed id, so N ids sharing a namespace each rescanned the whole namespace
+  (including nested types). The grouping is now cached per namespace and shared across the id's symbol
+  actions, so the work is O(M) overall instead of O(N·M). Reported diagnostics and the "first member reports"
+  rule are unchanged.
 - `IsStronglyTypedId` / `GetPrimitiveIdType` / `TryGetPrimitiveIdType` no longer keep collectible
   `AssemblyLoadContext`s alive. Their result cache was keyed by `Type` in a static dictionary, and a `Type`
   roots its `Assembly`, which roots its load context — so every plugin load, hot reload or test host that
