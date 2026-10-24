@@ -282,6 +282,21 @@ public static class Program
             enumSerializer is global::MongoDB.Bson.Serialization.Serializers.EnumSerializer<AotStatus>,
             $"BSON enum serializer should be the pre-registered EnumSerializer (actual: {enumSerializer.GetType().Name})");
 
+        // AOT 前提自检：根反序列化上下文无条件取 BsonDefaults.DynamicArraySerializer（List<object>）与
+        // DynamicDocumentSerializer（ExpandoObject），二者首次读取时去注册表查。注册表里没有它们时，
+        // provider 会靠 Activator 反射创建，AOT 下抛 MissingMethodException（CI aot job 实证）。
+        var dynamicArraySerializer = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<List<object>>();
+        Expect(
+            failures,
+            dynamicArraySerializer is global::MongoDB.Bson.Serialization.Serializers.EnumerableInterfaceImplementerSerializer<List<object>, object>,
+            $"BSON dynamic array serializer should be the pre-registered one (actual: {dynamicArraySerializer.GetType().Name})");
+
+        var dynamicDocumentSerializer = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<global::System.Dynamic.ExpandoObject>();
+        Expect(
+            failures,
+            dynamicDocumentSerializer is global::MongoDB.Bson.Serialization.Serializers.ExpandoObjectSerializer,
+            $"BSON dynamic document serializer should be the pre-registered one (actual: {dynamicDocumentSerializer.GetType().Name})");
+
         // int 基元往返。
         var product = AotProductId.Create(753);
         var productBack = ReadBson<AotProductId>(WriteBson(product));

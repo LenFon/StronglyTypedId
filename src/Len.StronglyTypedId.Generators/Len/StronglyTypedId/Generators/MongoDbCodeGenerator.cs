@@ -103,6 +103,16 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
             registrations.Append($"\n{_registrationIndent}{primitiveRegistration}");
         }
 
+        // MongoDB 的根序列化/反序列化上下文会无条件取 BsonDefaults.DynamicArraySerializer（List<object>）
+        // 与 BsonDefaults.DynamicDocumentSerializer（ExpandoObject）：这两个属性首次读取时去注册表查，
+        // provider 靠 Activator 反射创建 → Native AOT 下抛 MissingMethodException（CI aot job 实证）。
+        // 故按依赖顺序预注册这三个动态类型：object → List<object> → ExpandoObject
+        // （后者的元素序列化器取自前者，ExpandoObjectSerializer 的构造又会立刻取 List<object>）。
+        // 实例与 provider 默认创建的同类型，行为一致；已有他人注册时保留既有的。
+        registrations.Append($"\n{_registrationIndent}TryRegisterBsonSerializer(typeof(object), new global::MongoDB.Bson.Serialization.Serializers.ObjectSerializer());");
+        registrations.Append($"\n{_registrationIndent}TryRegisterBsonSerializer(typeof(global::System.Collections.Generic.List<object>), new global::MongoDB.Bson.Serialization.Serializers.EnumerableInterfaceImplementerSerializer<global::System.Collections.Generic.List<object>, object>());");
+        registrations.Append($"\n{_registrationIndent}TryRegisterBsonSerializer(typeof(global::System.Dynamic.ExpandoObject), new global::MongoDB.Bson.Serialization.Serializers.ExpandoObjectSerializer());");
+
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
                 {
@@ -132,11 +142,41 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                     /// serializing a Guid without one throws. Register a <c>GuidSerializer</c> with the representation your
                     /// existing data uses before serializing.
                     /// </para>
+                    /// <para>
+                    /// BSON's dynamic types (<c>object</c>, <c>List&lt;object&gt;</c> and <c>ExpandoObject</c>) are
+                    /// registered too, because every root serialization context takes
+                    /// <c>BsonDefaults.DynamicArraySerializer</c> and <c>BsonDefaults.DynamicDocumentSerializer</c>,
+                    /// and those look the types up in the registry — where the driver would otherwise create them
+                    /// through reflection, which throws under Native AOT. The registered instances are the same
+                    /// types the driver would have created, so behavior is unchanged.
+                    /// </para>
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MongoDbCodeGenerator), version)}}
                     public static void RegisterBsonSerializers()
                     {{{registrations}}
+                    }
+
+                    /// <summary>
+                    /// Registers a serializer, keeping an existing registration when the type already has one.
+                    /// </summary>
+                    /// <remarks>
+                    /// The driver's <c>TryRegisterSerializer</c> throws when a *different* serializer is already
+                    /// registered for the type. For these shared driver types that would break an application that
+                    /// registered its own, so the existing registration is kept instead.
+                    /// </remarks>
+                    {{GeneratedCode.CompilerGeneratedAttribute}}
+                    {{GeneratedCode.GeneratedCodeAttribute(nameof(MongoDbCodeGenerator), version)}}
+                    private static void TryRegisterBsonSerializer(global::System.Type type, global::MongoDB.Bson.Serialization.IBsonSerializer serializer)
+                    {
+                        try
+                        {
+                            global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(type, serializer);
+                        }
+                        catch (global::MongoDB.Bson.BsonSerializationException)
+                        {
+                            // 已有他人为该类型注册的序列化器：保留既有的，不覆盖。
+                        }
                     }
                 }
                 """;

@@ -552,6 +552,26 @@ public class CodeGeneratorModuleGateTests
     }
 
     /// <summary>
+    /// BSON 的根序列化上下文会无条件取 <c>BsonDefaults.DynamicArraySerializer</c>（<c>List&lt;object&gt;</c>）与
+    /// <c>BsonDefaults.DynamicDocumentSerializer</c>（<c>ExpandoObject</c>），这两个属性首次读取时去注册表查，
+    /// provider 靠反射创建 → Native AOT 下抛 MissingMethodException。故必须预注册这三个动态类型，且顺序固定
+    /// （<c>object</c> → <c>List&lt;object&gt;</c> → <c>ExpandoObject</c>：后者的元素序列化器取自前者）。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_RegisterDynamicTypes_ForRootContext()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            SyntheticAssembly.GetOrCreate("MongoDB.Bson", "3.2.0.0"));
+
+        generated["StronglyTypedIds.MongoDb.g.cs"]
+            .Should().Contain("TryRegisterBsonSerializer(typeof(object), new global::MongoDB.Bson.Serialization.Serializers.ObjectSerializer());")
+            .And.Contain("TryRegisterBsonSerializer(typeof(global::System.Collections.Generic.List<object>), new global::MongoDB.Bson.Serialization.Serializers.EnumerableInterfaceImplementerSerializer<global::System.Collections.Generic.List<object>, object>());")
+            .And.Contain("TryRegisterBsonSerializer(typeof(global::System.Dynamic.ExpandoObject), new global::MongoDB.Bson.Serialization.Serializers.ExpandoObjectSerializer());")
+            .And.Contain("private static void TryRegisterBsonSerializer(global::System.Type type, global::MongoDB.Bson.Serialization.IBsonSerializer serializer)");
+    }
+
+    /// <summary>
     /// 没有可预注册的基元（仅 Guid / 文本形）时，注册入口不得出现基元注册语句。
     /// </summary>
     [Fact]

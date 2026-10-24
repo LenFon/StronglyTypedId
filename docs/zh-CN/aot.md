@@ -55,8 +55,10 @@ var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Defa
   `char`、`decimal`、`string`、枚举等）预注册默认配置的序列化器。否则 BSON 的
   `PrimitiveSerializationProvider` 会经 `Activator` 反射创建 `Int32Serializer`、`EnumSerializer<T>`
   等实例，构造器被裁剪后在 AOT 下直接抛 `MissingMethodException`。注册的实例与 provider 创建的默认
-  实例配置一致，行为不变。**`Guid` 是例外**：driver 3.0 起没有全局默认表示，应用必须按既有数据
-  自行注册相应表示的 `GuidSerializer`。
+  实例配置一致，行为不变。它还会注册 BSON 的动态类型——`object`、`List<object>`、`ExpandoObject`——
+  因为任何根序列化上下文都会取 `BsonDefaults.DynamicArraySerializer` 与
+  `BsonDefaults.DynamicDocumentSerializer`，而它们是去注册表里查的。**`Guid` 是例外**：driver 3.0 起
+  没有全局默认表示，应用必须按既有数据自行注册相应表示的 `GuidSerializer`。
 
 ## 这件事是怎么验证的
 

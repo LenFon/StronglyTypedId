@@ -265,7 +265,7 @@ public class BinarySerializationTests
         var barePayload = MessagePackSerializer.Serialize(
             SampleStatus.Suspended, _messagePackOptions, TestContext.Current.CancellationToken);
 
-        idPayload.ToArray().Should().Equal(barePayload.ToArray());
+        idPayload.Should().Equal(barePayload);
     }
 
     /// <summary>

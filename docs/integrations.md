@@ -300,8 +300,11 @@ current compilation, which would leave ids from a referenced library without a s
 wrap — `int`, `char`, `decimal`, `string`, enums, and so on. BSON's `PrimitiveSerializationProvider` would
 otherwise create those via `Activator`, which throws `MissingMethodException` under Native AOT once the
 constructors are trimmed. The pre-registered instances match the provider-created defaults, so nothing
-changes for a JIT application. `Guid` stays excluded: since driver 3.0 it has no global default
-representation, and the app must register the one its data uses, as in the snippet above. See
+changes for a JIT application. BSON's dynamic types (`object`, `List<object>`, `ExpandoObject`) are
+registered for the same reason: every root serialization context takes
+`BsonDefaults.DynamicArraySerializer` and `BsonDefaults.DynamicDocumentSerializer`, which look those types
+up in the registry. `Guid` stays excluded: since driver 3.0 it has no global default representation, and
+the app must register the one its data uses, as in the snippet above. See
 [Native AOT and trimming](aot.md).
 
 The payload is the wrapped primitive value. `BigInteger`, `Int128` and `UInt128` have no BSON serializer, so

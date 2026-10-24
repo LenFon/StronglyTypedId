@@ -223,6 +223,11 @@
   `GenericEnumFormatter<TEnum>`（与动态 resolver 写同样的底层数值载荷，线格式不变）；
   `RegisterBsonSerializers` 会为全部二进制路径基元预注册默认配置的序列化器 —— `Guid` 仍被排除：
   driver 3.0 起它没有全局默认表示，应用必须自选。
+- MongoDB BSON 集成现在还会预注册 BSON 的动态类型（`object`、`List<object>`、`ExpandoObject`）。任何根
+  序列化上下文都会取 `BsonDefaults.DynamicArraySerializer` 与 `BsonDefaults.DynamicDocumentSerializer`，
+  而这两个属性首次读取时是去注册表里查的 —— provider 会靠反射创建它们，在 Native AOT 下直接抛
+  `MissingMethodException`。注册的实例与 driver 本会创建的同类型，行为不变；其中某个类型若已有他人
+  注册的序列化器，则保留既有的。
 - 引用类型 Id（`partial record`）的比较运算符在左操作数为 `null` 时不再抛 `NullReferenceException`。
   此前无条件解引用 `left.Value`，而同类型的 `CompareTo` 早已把 `null` 当作最小值；现在运算符共用这一
   约定，`null < id` 为 `true`、`null >= id` 为 `false`。值类型 Id 不变。

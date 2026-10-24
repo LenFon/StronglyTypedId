@@ -287,6 +287,12 @@ change set rather than reproducing every commit.
   numeric payload as the dynamic resolver, so the wire format is unchanged), and `RegisterBsonSerializers`
   pre-registers default-configured serializers for every binary-path primitive — `Guid` stays excluded,
   because since driver 3.0 it has no global default and the app must choose the representation.
+- The MongoDB BSON integration now also pre-registers BSON's dynamic types (`object`, `List<object>` and
+  `ExpandoObject`). Every root serialization context takes `BsonDefaults.DynamicArraySerializer` and
+  `BsonDefaults.DynamicDocumentSerializer`, and those properties look the types up in the registry on
+  first use — where the driver would create them through reflection, which throws
+  `MissingMethodException` under Native AOT. The registered instances are the same types the driver would
+  have created, so behavior is unchanged; an existing registration for one of them is kept.
   The loader returns an empty table and the text falls back to the resource key, so a packaging mistake
   degrades the wording instead of crashing the analyzer.
 - The comparison operators on a reference-type id (`partial record`) no longer throw

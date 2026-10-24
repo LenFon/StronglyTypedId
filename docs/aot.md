@@ -62,6 +62,9 @@ also cover the **primitive** the ids wrap:
   `PrimitiveSerializationProvider` would otherwise create `Int32Serializer`, `EnumSerializer<T>` and
   friends via `Activator`, which throws `MissingMethodException` under AOT once the constructors are
   trimmed. The registered instances match the provider-created defaults, so behavior is unchanged.
+  It also registers BSON's dynamic types — `object`, `List<object>` and `ExpandoObject` — because every
+  root serialization context takes `BsonDefaults.DynamicArraySerializer` and
+  `BsonDefaults.DynamicDocumentSerializer`, and those look the types up in the registry.
   **`Guid` is the exception**: since driver 3.0 there is no global default representation, so an app
   must register its own `GuidSerializer` with the representation its data uses.
 

@@ -261,8 +261,10 @@ await collection.InsertOneAsync(new Order { Id = OrderId.Create(Guid.NewGuid()) 
 `RegisterBsonSerializers` 还会为 Id 包裹的每个基元预注册默认配置的序列化器——`int`、`char`、`decimal`、
 `string`、枚举等等。否则 BSON 的 `PrimitiveSerializationProvider` 会经 `Activator` 反射创建它们，构造器被
 裁剪后在 Native AOT 下直接抛 `MissingMethodException`。预注册的实例与 provider 创建的默认实例配置一致，
-JIT 应用的行为因此不变。`Guid` 仍被排除：driver 3.0 起它没有全局默认表示，应用必须按既有数据自行注册，
-如上例所示。详见[原生 AOT 与裁剪](aot.md)。
+JIT 应用的行为因此不变。BSON 的动态类型（`object`、`List<object>`、`ExpandoObject`）出于同样原因注册：
+任何根序列化上下文都会取 `BsonDefaults.DynamicArraySerializer` 与
+`BsonDefaults.DynamicDocumentSerializer`，它们是去注册表里查的。`Guid` 仍被排除：driver 3.0 起它没有
+全局默认表示，应用必须按既有数据自行注册，如上例所示。详见[原生 AOT 与裁剪](aot.md)。
 
 载荷是包裹的基元值本身。`BigInteger`、`Int128`、`UInt128` 没有 BSON 序列化器，这些 Id 存成承载不变文化
 文本形（含前缀）的 BSON string，读回时经 `TryParse`。引用类型 Id 的 `null` 存成 BSON `null`；值类型 Id
