@@ -1,0 +1,3 @@
+#nullable enable
+Len.StronglyTypedId.Testing.FakerExtensions
+static Len.StronglyTypedId.Testing.FakerExtensions.WithStronglyTypedIds<T>(this Bogus.Faker<T!>! faker, Len.StronglyTypedId.Testing.AnyIdGenerator? generator = null, params System.Type![]? idTypes) -> Bogus.Faker<T!>!

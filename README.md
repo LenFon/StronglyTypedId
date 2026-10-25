@@ -29,7 +29,7 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
-- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and seventeen of
+- **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and twenty-one of
   its twenty-six rules come with a code fix that repairs the declaration for you (see [Diagnostics](docs/diagnostics.md#diagnostics)).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`

@@ -22,8 +22,8 @@ app.UseSwaggerUI();
 // WithOpenApi() 是 8.0 包里与 OpenAPI 相关的唯一 API：给操作打注解，由 Swashbuckle 读走。
 //
 // 实测（/swagger/v1/swagger.json）：请求 / 响应体里的 Id 属性拿到 type: string + format: uuid，
-// 而路径参数只有 type: string —— 8.0 的 ApiExplorer 把实现了 IParsable 的参数报成 string，
-// MapType 按类型注册，对这类参数无从下手。
+// 路径参数也一样 —— 8.0 的 ApiExplorer 把实现了 IParsable 的参数报成 string，MapType 按类型注册
+// 对这类参数无从下手，于是本库另外生成一个操作过滤器，按参数的真实类型把 schema 补回去。
 app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value))
     .WithName("GetOrder")
     .WithOpenApi();

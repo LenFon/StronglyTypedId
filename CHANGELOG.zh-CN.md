@@ -68,6 +68,12 @@
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
   OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。
+- `STIA0019`、`STIA0024`、`STIA0020`、`STIA0021` 的代码修复。`STIA0019` / `STIA0024`（请求了未引用程序集的集成，
+  或掩码位不对应任何集成）现在提供「删掉 `Integrations` 实参」的修复；`STIA0020` / `STIA0021`（名字不合法或取值
+  无法解析的 `[StronglyTypedIdInstance]`）提供「删掉整条特性」的修复。`STIA0022`（非 PascalCase 的实例名）仍不提供——
+  改名要牵动所有引用点，单文件修复无法安全完成。附带代码修复的规则由此从 26 条中的 17 条增至 21 条。
+- `STIA0015` —— Id 命名约定现在可配置。在 `.editorconfig` 里设置 `dotnet_diagnostic.STIA0015.suffix` 即可检查
+  不同的后缀词（例如 `Key`），建议名与提示消息都会使用配置的后缀。默认值仍是 `Id`。
 
 ### 变更
 

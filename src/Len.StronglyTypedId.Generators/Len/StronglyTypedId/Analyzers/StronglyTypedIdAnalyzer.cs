@@ -13,15 +13,43 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; }
         = ImmutableArray.Create(Descriptors.All);
 
+    /// <summary>
+    /// 一键静音开关在 analyzer config 里的键名。
+    /// </summary>
+    /// <remarks>
+    /// 走 MSBuild → analyzer config 这条通道：消费方在 csproj 里设
+    /// <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/StronglyTypedIdEnableAnalyzers&gt;</c>，
+    /// SDK 把它写进编译用的 analyzer config 的**全局段**（<c>build_property.*</c>）。
+    /// <para>
+    /// 属性必须由 <c>&lt;CompilerVisibleProperty Include="…" /&gt;</c> 显式放行才会出现在那一段里 ——
+    /// SDK 不会注入任意 MSBuild 属性。本库的 <c>buildTransitive/Len.StronglyTypedId.props</c> 就是替
+    /// 用户做这一步的。
+    /// </para>
+    /// </remarks>
+    private const string MutingPropertyName = "build_property.StronglyTypedIdEnableAnalyzers";
+
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
+        // 一键静音：用户明确要求关掉本分析器时，一个诊断动作都不注册。
+        // 只关诊断，不关代码生成 —— 生成器与本分析器是两个独立的组件，代码照常产出。
+        //
+        // 静音判断放在编译开始回调里，而不是 Initialize 开头：AnalysisContext 上没有 Options，
+        // 只有 CompilationStartAnalysisContext 才有（AnalyzerOptions）。因此两个语法/语义动作
+        // 一并挪进这个回调 —— CompilationStartAnalysisContext 同样提供这两个注册方法，
+        // 注册位置不影响它们的作用范围（都作用于整次编译）。
+        //
         // 集成请求（STIA0019）先攒起来，到编译结束再按「集成」聚合上报。逐类型各报一条时，
         // 「N 个 Id 都写了 Integrations = All」会炸出 7N 条同义诊断，把真正缺失的那几个包淹掉。
         context.RegisterCompilationStartAction(startContext =>
         {
+            if (IsMuted(startContext.Options))
+            {
+                return;
+            }
+
             var requests = new ConcurrentBag<IntegrationRequest>();
 
             // 重复基元类型分组按命名空间缓存：同命名空间下 N 个 Id 原本各自重扫整个命名空间（含嵌套），
@@ -36,12 +64,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             // 程序集级默认值也走同一条聚合路径：符号操作不支持 SymbolKind.Assembly（RS1003），
             // 只能在整编译回调里读。
             startContext.RegisterCompilationEndAction(context => ReportIntegrationProblems(context, requests));
+
+            startContext.RegisterSyntaxNodeAction(
+                AnalyzeObjectCreation,
+                SyntaxKind.ObjectCreationExpression,
+                SyntaxKind.ImplicitObjectCreationExpression);
+            startContext.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
         });
-        context.RegisterSyntaxNodeAction(
-            AnalyzeObjectCreation,
-            SyntaxKind.ObjectCreationExpression,
-            SyntaxKind.ImplicitObjectCreationExpression);
-        context.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
     }
 
     private static void AnalyzeNamedType(
@@ -203,21 +232,76 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 类型名不以 <c>Id</c> 结尾时给出改名建议（STIA0015）。
+    /// 类型名不以约定的后缀结尾时给出改名建议（STIA0015）。
     /// </summary>
+    /// <remarks>
+    /// 后缀默认 <c>Id</c>，可用 <c>dotnet_diagnostic.STIA0015.suffix</c> 在 <c>.editorconfig</c> 里改成任意串
+    /// （例如某些代码库约定 <c>Key</c> / <c>Id2</c>）。后缀随诊断消息一并带出，保证提示文字与判定口径一致。
+    /// </remarks>
     private static void ValidateNameConvention(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
     {
-        if (type.Name.EndsWith("Id", StringComparison.Ordinal))
+        var suffix = GetNamingSuffix(context, records[0].Identifier.GetLocation());
+
+        if (type.Name.EndsWith(suffix, StringComparison.Ordinal))
         {
             return;
         }
 
-        // 以 "ID" 收尾时替换而非追加，否则建议名会变成 "OrderIDId"。
-        var suggestion = type.Name.EndsWith("ID", StringComparison.Ordinal)
+        // 以 "ID" 收尾时替换而非追加，否则建议名会变成 "OrderIDId"；仅当后缀恰为默认的 "Id" 时才做这个特判，
+        // 自定义后缀不应触发这个针对 "Id" 的大小写归一。
+        var suggestion = suffix == "Id" && type.Name.EndsWith("ID", StringComparison.Ordinal)
             ? type.Name[..^2] + "Id"
-            : type.Name + "Id";
+            : type.Name + suffix;
 
-        Report(context, Descriptors.TypeNameShouldEndWithId, records[0].Identifier.GetLocation(), type.Name, suggestion);
+        Report(context, Descriptors.TypeNameShouldEndWithId, records[0].Identifier.GetLocation(), type.Name, suggestion, suffix);
+    }
+
+    /// <summary>
+    /// 判断用户是否要求把本分析器整体静音。
+    /// </summary>
+    /// <remarks>
+    /// 取值口径与 MSBuild 的布尔语义一致：<c>false</c> / <c>0</c> / <c>no</c> / <c>off</c> 算「否」，
+    /// 且大小写不敏感。**其它取值一律按「开启」处理**（含空串与拼错的词）——用户写错一个词就静默丢掉
+    /// 全部诊断，是最难在评审里发现的一类问题。
+    /// <para>
+    /// 读的是<b>全局</b>选项：<c>build_property.*</c> 恒在 analyzer config 的全局段里，而全局段会汇入
+    /// 每文件视图，故只查全局即可。
+    /// </para>
+    /// </remarks>
+    private static bool IsMuted(AnalyzerOptions options)
+    {
+        if (!options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue(MutingPropertyName, out var raw))
+        {
+            return false;
+        }
+
+        var value = raw.Trim();
+
+        return value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || value == "0"
+            || value.Equals("no", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("off", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 读 <c>dotnet_diagnostic.STIA0015.suffix</c>：决定了 STIA0015 判定与提示所用的后缀。
+    /// </summary>
+    /// <remarks>
+    /// 走每文件选项（<see cref="AnalyzerConfigOptionsProvider.GetOptions(SyntaxTree)"/>）而非全局选项：全局段与文件段都汇入同一份视图，
+    /// 这样无论用户在 <c>.editorconfig</c> 的全局段还是文件段写这个键都能读到。读不到或值空白时回退到默认的 <c>Id</c>。
+    /// </remarks>
+    private static string GetNamingSuffix(SymbolAnalysisContext context, Location location)
+    {
+        if (location.SourceTree is null)
+        {
+            return "Id";
+        }
+
+        var options = context.Options.AnalyzerConfigOptionsProvider.GetOptions(location.SourceTree);
+
+        return options.TryGetValue("dotnet_diagnostic.STIA0015.suffix", out var raw) && !string.IsNullOrWhiteSpace(raw)
+            ? raw.Trim()
+            : "Id";
     }
 
     /// <summary>

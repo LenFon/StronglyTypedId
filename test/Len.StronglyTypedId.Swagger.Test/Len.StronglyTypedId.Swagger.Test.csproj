@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<Import Project="..\..\test.props" />
+	<PropertyGroup>
+		<!-- 与其余测试工程同一组目标框架：生成器与运行时库的两个 TFM 都要被这条回归覆盖。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<RootNamespace />
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+		  ASP.NET Core 框架引用：提供 WebApplication / ApiExplorer / OpenApi 等类型。
+		  TestHost 让测试用内存服务器跑真实的 ASP.NET Core 管道 —— 缺口正出在框架与 Swashbuckle 的
+		  交界处，模拟宿主是测不出来的。
+		-->
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<PackageReference Include="Microsoft.AspNetCore.TestHost" />
+		<PackageReference Include="Swashbuckle.AspNetCore" />
+		<PackageReference Include="FluentAssertions" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+		  分层领域层：它的 Id 声明在**别的程序集**里，且该程序集不引用 Newtonsoft.Json ——
+		  这正是真实项目里「领域层不该被序列化基础设施绑住」的典型分层。
+		-->
+		<ProjectReference Include="..\Len.StronglyTypedId.TestBase.Layered\Len.StronglyTypedId.TestBase.Layered.csproj" />
+		<!--
+		  生成器只作为分析器参与本工程的源码生成，不进编译引用：生成器程序集带的是 Roslyn 5.9 的
+		  System.Collections.Immutable / System.Reflection.Metadata，与 net8.0 引用集里的版本冲突
+		  （实测 MSB3277）。
+		-->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+</Project>

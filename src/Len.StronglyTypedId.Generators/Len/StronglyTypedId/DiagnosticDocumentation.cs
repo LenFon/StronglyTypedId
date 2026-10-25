@@ -32,13 +32,15 @@ internal static class DiagnosticDocumentation
         // 命名类提示：正确地重命名一个类型意味着同时改掉所有引用，「这些 Id 看起来一样」也没有机械修法。
         new DiagnosticDocEntry(Descriptors.TypeNameShouldEndWithIdId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.DuplicatePrimitiveTypeId, DocText.Empty),
-        // 缺包不是代码问题：无法替用户添加包引用，只能由人决定是补包还是去掉标志。
-        new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, DocText.Empty),
-        // 越界位同理：该删哪几位取决于使用者想开哪个集成，机器不知道。
-        new DiagnosticDocEntry(Descriptors.UnknownIntegrationId, DocText.Empty),
-        // 命名实例：改名要同时改掉所有引用点，改值要重新挑一个业务上有意义的取值，两者都没有机械修法。
-        new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, DocText.Empty),
-        new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, DocText.Empty),
+        // 缺包不是代码问题：无法替用户添加包引用。但「删掉 Integrations 实参」是机器能安全做的（类型退化为不带该集成的普通 Id），
+        // 把「补包 or 去掉标志」的取舍交给人，故给修复。
+        new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
+        // 越界位同理：删掉 Integrations 实参即可去掉未定义的位，机器能安全做，故给修复。
+        new DiagnosticDocEntry(Descriptors.UnknownIntegrationId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
+        // 命名实例：名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的两条，给「删掉整条 [StronglyTypedIdInstance]」修复 ——
+        // 机器只能让诊断消失，补全业务语义留给人；PascalCase 改名会牵动所有引用点，不是单文件可安全完成的机械修复，故保持无修复。
+        new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
+        new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, DocText.Empty),
         new DiagnosticDocEntry(Descriptors.TypeCannotBeFileLocalId, new DocText("Remove the `file` modifier", "去掉 `file` 修饰符")));
 

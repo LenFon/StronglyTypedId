@@ -16,6 +16,12 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     private static readonly LocalizedString _fileLocalFixTitle
         = new("TypeCannotBeFileLocalFixTitle");
 
+    private static readonly LocalizedString _integrationsArgumentFixTitle
+        = new("IntegrationsArgumentFixTitle");
+
+    private static readonly LocalizedString _instanceAttributeFixTitle
+        = new("InstanceAttributeFixTitle");
+
     public override ImmutableArray<string> FixableDiagnosticIds { get; } =
         ImmutableArray.Create(
             Descriptors.TypeMustBePartialId,
@@ -34,7 +40,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.ExceptionTypeInvalidId,
             Descriptors.InvalidPrefixId,
             Descriptors.ValidatorCanBeBypassedId,
-            Descriptors.TypeCannotBeFileLocalId);
+            Descriptors.TypeCannotBeFileLocalId,
+            Descriptors.IntegrationUnavailableId,
+            Descriptors.UnknownIntegrationId,
+            Descriptors.InvalidInstanceNameId,
+            Descriptors.InvalidInstanceValueId);
 
     public override FixAllProvider? GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
 
@@ -73,6 +83,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.InvalidPrefixId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.ValidatorCanBeBypassedId => NarrowVisibilityToInternalAsync(context, diagnostic, token),
                                 Descriptors.TypeCannotBeFileLocalId => RemoveFileKeywordAsync(context, diagnostic, token),
+                                Descriptors.IntegrationUnavailableId => RemoveNamedArgumentAsync(context, diagnostic, token),
+                                Descriptors.UnknownIntegrationId => RemoveNamedArgumentAsync(context, diagnostic, token),
+                                Descriptors.InvalidInstanceNameId => RemoveInstanceAttributeAsync(context, diagnostic, token),
+                                Descriptors.InvalidInstanceValueId => RemoveInstanceAttributeAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -91,6 +105,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         {
             Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => _primaryConstructorFixTitle.ToString(),
             Descriptors.TypeCannotBeFileLocalId => _fileLocalFixTitle.ToString(),
+            Descriptors.IntegrationUnavailableId => _integrationsArgumentFixTitle.ToString(),
+            Descriptors.UnknownIntegrationId => _integrationsArgumentFixTitle.ToString(),
+            Descriptors.InvalidInstanceNameId => _instanceAttributeFixTitle.ToString(),
+            Descriptors.InvalidInstanceValueId => _instanceAttributeFixTitle.ToString(),
             _ => descriptor.Title.ToString(),
         };
 
@@ -145,6 +163,20 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
             Descriptors.InvalidPrefixId =>
                 FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
+
+            // 这两类「集成相关」诊断都钉在 Integrations 命名实参上；实参找不到（例如位置回退到类型声明）时不给修复。
+            Descriptors.IntegrationUnavailableId =>
+                FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
+
+            Descriptors.UnknownIntegrationId =>
+                FindNode<AttributeArgumentSyntax>(root, diagnostic) is not null,
+
+            // 命名实例诊断钉在 [StronglyTypedIdInstance] 特性本身；名字非法 / 取值无法解析只能整条删掉，找不到特性时不给修复。
+            Descriptors.InvalidInstanceNameId =>
+                FindNode<AttributeSyntax>(root, diagnostic) is not null,
+
+            Descriptors.InvalidInstanceValueId =>
+                FindNode<AttributeSyntax>(root, diagnostic) is not null,
 
             // STIA0023 刻意不给修复：唯一能机械做出的改动是「删掉 Prefix」，但那会改变规范文本形，
             // 已经按带前缀格式写出去的数据将再也读不回来。换一个安全前缀必须由人决定。
@@ -567,6 +599,38 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             : attribute.WithArgumentList(argumentList.WithArguments(argumentList.Arguments.Remove(argument)));
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(attribute, updatedAttribute));
+    }
+
+    /// <summary>
+    /// 摘掉诊断所在的那条 <c>[StronglyTypedIdInstance]</c> 特性，使 STIA0020 / STIA0021 消失。
+    /// </summary>
+    /// <remarks>
+    /// 名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的命名实例，没有任何可机械改写的目标；
+    /// 唯一安全到家的一步是整条删掉，把「重新挑一个合法名字 / 取值」留给人决定。这跟删掉
+    /// <c>Validator</c> / <c>Normalizer</c> 实参是同一类取舍：机器只能做到「让诊断消失」，不能替你补全业务语义。
+    /// 只摘诊断落点的那一条特性：类型可能同时挂着多条命名实例，其余的必须原样保留。
+    /// </remarks>
+    private static async Task<Document> RemoveInstanceAttributeAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null
+            || FindNode<AttributeSyntax>(root, diagnostic) is not { } attribute
+            || attribute.Parent is not AttributeListSyntax attributeList
+            || attributeList.Parent is not TypeDeclarationSyntax typeDeclaration)
+        {
+            return context.Document;
+        }
+
+        // 单特性列表摘掉后整段消失；多特性列表只删命中那一条，逗号与分隔 trivia 由 SeparatedSyntaxList 一并带走。
+        var updatedType = attributeList.Attributes.Count == 1
+            ? typeDeclaration.WithAttributeLists(typeDeclaration.AttributeLists.Remove(attributeList))
+            : typeDeclaration.WithAttributeLists(
+                typeDeclaration.AttributeLists.Replace(
+                    attributeList,
+                    attributeList.WithAttributes(attributeList.Attributes.Remove(attribute))));
+
+        return context.Document.WithSyntaxRoot(root.ReplaceNode(typeDeclaration, updatedType));
     }
 
     /// <summary>

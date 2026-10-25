@@ -1,5 +1,6 @@
 ﻿using System.Collections.Immutable;
 using System.Reflection.Metadata;
+using System.Text;
 using System.Reflection.PortableExecutable;
 using System.Xml.Linq;
 using FluentAssertions;
@@ -93,6 +94,53 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
             .Where(entry => entry.StartsWith("analyzers/dotnet/cs/", StringComparison.Ordinal))
             .Should().BeEquivalentTo([GeneratorsAssemblyEntry],
                 "分析器目录里只应有生成器程序集；新增文件必须在此处显式登记");
+    }
+
+    /// <summary>
+    /// 「一键静音」开关必须随包发布。
+    /// </summary>
+    /// <remarks>
+    /// 开关走 MSBuild → analyzer config 这条通道：用户在 csproj 里设
+    /// <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/StronglyTypedIdEnableAnalyzers&gt;</c>，
+    /// SDK 把它写进编译用的 analyzer config 的全局段（<c>build_property.*</c>）。
+    /// <para>
+    /// 但 SDK <b>不会</b>注入任意 MSBuild 属性 —— 要让那个属性出现在 <c>build_property.*</c> 里，
+    /// 必须由 <c>&lt;CompilerVisibleProperty Include="…" /&gt;</c> 显式放行。少了随包发布的这份 props，
+    /// 用户的属性就静默失效：开关看起来存在，实际不生效，且没有任何报错。
+    /// </para>
+    /// <para>
+    /// 放在 <c>buildTransitive</c> 而不是 <c>build</c>：前者会沿依赖链继续向下流到最终消费者
+    /// （本包是主包的传递依赖），后者只给直接引用本包的项目。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void GeneratorsPackage_Should_ShipAnalyzerMutingProps()
+    {
+        var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
+
+        entries.Should().Contain($"buildTransitive/{GeneratorsPackageId}.props",
+            "静音开关的属性放行靠 buildTransitive 里的 props；少了它，用户设的属性不会进 build_property.*");
+
+        // 文件名必须与包 ID 同名：NuGet 只自动导入 build / buildTransitive 下与包 ID 同名的
+        // .props / .targets。名字对不上时包照样「带着」这个文件，NuGet 却不会导入它 ——
+        // 开关于是静默失效：设了不报错，也不生效。
+        entries
+            .Where(entry => entry.StartsWith("buildTransitive/", StringComparison.Ordinal) && entry.EndsWith(".props", StringComparison.Ordinal))
+            .Should().AllSatisfy(entry => entry.Should().Be($"buildTransitive/{GeneratorsPackageId}.props",
+                "NuGet 只自动导入与包 ID 同名的 .props / .targets；名字对不上时开关静默失效"));
+    }
+
+    /// <summary>
+    /// props 的内容必须真的放行了那个属性名 —— 名字对不上，SDK 会照收不误，而分析器读不到。
+    /// </summary>
+    [Fact]
+    public void GeneratorsPackage_Should_ExposeAnalyzerMutingProperty()
+    {
+        var content = Encoding.UTF8.GetString(
+            PackedPackagesFixture.ReadEntryBytes(fixture.GeneratorsPackagePath, "buildTransitive/Len.StronglyTypedId.Generators.props"));
+
+        content.Should().Contain("<CompilerVisibleProperty Include=\"StronglyTypedIdEnableAnalyzers\" />",
+            "props 必须放行 StronglyTypedIdEnableAnalyzers 这个属性");
     }
 
     /// <summary>
@@ -284,4 +332,55 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
 
     private static XElement Metadata(XDocument nuspec)
         => nuspec.Root!.Elements().Single(element => element.Name.LocalName == "metadata");
+    #region 测试辅助包：依赖方向不能反
+
+    /// <summary>
+    /// Bogus 适配包必须自带 <c>Bogus</c> 与 <c>Len.StronglyTypedId.Testing</c> 两个依赖。
+    /// </summary>
+    /// <remarks>
+    /// 方向反了就是「核心测试辅助包被第三方库绑死」—— 只想用 <c>Any.Id&lt;T&gt;()</c> 的人也得装上 Bogus。
+    /// </remarks>
+    [Fact]
+    public void TestingBogusPackage_Should_DependOnBogusAndTesting()
+    {
+        var dependencies = ReadDependencyIds(fixture.TestingBogusPackagePath);
+
+        dependencies.Should().Contain("Bogus");
+        dependencies.Should().Contain("Len.StronglyTypedId.Testing");
+    }
+
+    /// <summary>
+    /// 核心测试辅助包**不能**依赖 Bogus。
+    /// </summary>
+    /// <remarks>
+    /// 这是「适配包独立、核心包干净」的分界：依赖只能从适配包指向核心包，不能反过来。
+    /// </remarks>
+    [Fact]
+    public void TestingPackage_Should_NotDependOnBogus()
+    {
+        var dependencies = ReadDependencyIds(fixture.TestingPackagePath);
+
+        dependencies.Should().NotContain("Bogus");
+    }
+
+    /// <summary>
+    /// 读出 nuspec 里声明的全部依赖 id。
+    /// </summary>
+    private static IReadOnlyList<string> ReadDependencyIds(string packagePath)
+    {
+        var nuspec = PackedPackagesFixture.ReadNuspec(packagePath);
+
+        // nuspec 带默认 XML 命名空间（http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd），
+        // 按带命名空间的名字匹配会一个都找不到 —— 只能按 LocalName 认。
+        return
+        [
+            .. nuspec.Descendants()
+                .Where(static element => element.Name.LocalName == "dependency")
+                .Select(static dependency => dependency.Attribute("id")?.Value)
+                .Where(static id => id is not null)
+                .Select(static id => id!)
+        ];
+    }
+
+    #endregion
 }

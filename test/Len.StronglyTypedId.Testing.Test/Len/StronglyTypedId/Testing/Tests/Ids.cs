@@ -1,4 +1,7 @@
-﻿using System.Numerics;
+﻿// STIA0011：测试宿主类型的属性必须先有个初值，而 Id 的初值只能是 default ——
+// 但那正是「绕过 Create 与校验」的做法，分析器会报。测试宿主不参与生产代码，这里局部关掉。
+#pragma warning disable STIA0011
+using System.Numerics;
 using Len.StronglyTypedId;
 
 namespace Len.StronglyTypedId.Testing.Tests;
@@ -139,3 +142,27 @@ public partial record struct ExplodingValidatorId(int Value)
 /// AutoFixture 用例的宿主类型：验证 Id 能作为构造参数被填充。
 /// </summary>
 public sealed record Order(GuidId Id, StringId Customer, int Quantity);
+
+/// <summary>
+/// Bogus 用例的宿主类型。
+/// </summary>
+/// <remarks>
+/// Bogus 的默认实例化器走 <c>Activator.CreateInstance&lt;T&gt;()</c>，要求目标类型有无参构造 ——
+/// 所以这里用「类 + 可写属性」而不是 record（record 只有带参构造）。
+/// </remarks>
+public sealed class BogusOrder
+{
+    public GuidId Id { get; set; } = default!;
+
+    public StringId Customer { get; set; } = default!;
+
+    public int Quantity { get; set; }
+}
+
+/// <summary>
+/// Bogus 用例的宿主类型：Id 带验证器，验证适配走的是生成的 <c>Create</c> 而不是绕开它。
+/// </summary>
+public sealed class BogusPositiveOrder
+{
+    public PositiveIntId Id { get; set; } = default!;
+}

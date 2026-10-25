@@ -1,0 +1,25 @@
+<Project>
+
+  <!--
+    「一键静音」开关的属性放行。
+
+    消费方在 csproj 里设 <StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>，
+    SDK 会把它写进编译用的 analyzer config 的全局段（build_property.StronglyTypedIdEnableAnalyzers），
+    分析器据此决定是否整体静音（一个诊断动作都不注册）。
+
+    但 SDK **不会注入任意 MSBuild 属性** —— 实测自定义属性不会出现在 build_property.* 里，
+    只有 SDK 自己内建的那二十来条（TargetFramework、RootNamespace、ProjectDir 等）。
+    要让属性出现在那一段里，必须由 <CompilerVisibleProperty Include="…" /> 显式放行；
+    这一行就是替用户做这步的，少了它，开关会静默失效：设了不报错，也不生效。
+
+    放在 buildTransitive 而不是 build：前者沿依赖链继续向下流到最终消费者
+    （本包是主包的传递依赖，主包的消费者同样要拿到这个开关），后者只给直接引用本包的项目。
+
+    放在 props 而不是 targets：CompilerVisibleProperty 是个 item，SDK 在生成 analyzer config 时
+    （GenerateMSBuildEditorConfig 任务）消费它，而 props 在项目求值早期就导入 —— item 早于消费点存在。
+  -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="StronglyTypedIdEnableAnalyzers" />
+  </ItemGroup>
+
+</Project>

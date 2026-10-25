@@ -36,6 +36,13 @@ public class SwaggerCodeGeneratorTests
             // SwaggerGenOptions.MapType<T> 所在的命名空间由 Abstractions 提供；不预置的话它未必已被
             // 加载进 AppDomain，合成编译里就会出现「使用了不存在的 using」的假阳性。
             typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly,
+            // 操作过滤器要读 ApiDescription（OperationFilterContext.ApiDescription 的类型）。
+            // 真实项目里它经 ASP.NET Core 框架引用传递进来 —— 引用 Swashbuckle 必然带上它。
+            typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly,
+            // 连带 MVC 生成器也会被触发（它的门控认 Mvc.Abstractions），故 MVC 侧的类型也得在引用集里。
+            typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly,
+            typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly,
+            typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly,
         };
 
         // 过滤会触发其它生成器 / 污染发现结果的程序集（Swashbuckle / Microsoft.OpenApi 等需显式注入，
@@ -74,9 +81,17 @@ public class SwaggerCodeGeneratorTests
         return swagger.SourceText?.ToString() ?? string.Empty;
     }
 
+    /// <summary>
+    /// 排除与 Swagger 无关、且会触发其它生成器的门控程序集。
+    /// </summary>
+    /// <remarks>
+    /// ASP.NET Core 程序集一律保留：操作过滤器要用 <c>ApiDescription</c>，而真实项目里它是经框架
+    /// 引用传递进来的 —— 引用了 Swashbuckle 就必然带上它。连带的后果是 MVC 生成器也会被触发，
+    /// 但那不影响本文件对 Swagger 产物的断言。
+    /// </remarks>
     private static bool ShouldReferenceAssembly(Assembly assembly)
         => assembly.GetName().Name is not
-            ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi" or "Microsoft.AspNetCore.Mvc" or "Microsoft.AspNetCore.Mvc.Core" or "Microsoft.AspNetCore.Mvc.Abstractions" or "Microsoft.AspNetCore.OpenApi" or "Microsoft.AspNetCore.Routing");
+            ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Microsoft.OpenApi" or "Microsoft.AspNetCore.OpenApi" or "Newtonsoft.Json");
 
     #endregion
 
@@ -186,7 +201,8 @@ public class SwaggerCodeGeneratorTests
         // 否则首个调用前面的换行也能满足它，等于什么都没锁。
         // 先把行尾归一化成 \n：产物行尾随检出（CRLF / LF）而定，而跨行断言里的「;\n」在 CRLF 产物中并不成立。
         generated.Replace("\r\n", "\n")
-            .Should().Contain(";\n        options.MapType<global::Len.StronglyTypedId.ProductId>(");
+            .Should().Contain(
+                ";\n        }\n        if (!schemaMappings.ContainsKey(typeof(global::Len.StronglyTypedId.ProductId)))");
     }
 
     /// <summary>
@@ -550,9 +566,182 @@ public class SwaggerCodeGeneratorTests
 
         GetSwaggerGeneratedCode(code, Swagger6Reference).Replace("\r\n", "\n")
             .Should().Contain(
-                "\n    {\n        options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });\n    }")
+                "\n    {\n        var schemaMappings = options.SchemaGeneratorOptions.CustomTypeMappings;\n"
+                + "\n        if (!schemaMappings.ContainsKey(typeof(global::Len.StronglyTypedId.OrderId)))\n"
+                + "        {\n"
+                + "            options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });\n"
+                + "        }")
             .And.NotContain("\t")
             .And.NotContain("    { \n");
+    }
+
+    #endregion
+
+    #region 操作过滤器：补回 Minimal API 参数的 schema
+
+    /// <summary>
+    /// Minimal API 的处理器参数到达 <c>ApiExplorer</c> 时，<c>ApiParameterDescription.Type</c> 仍是
+    /// 真实的 Id 类型，但 <c>ModelMetadata.ModelType</c> 已被框架换成 <see cref="string"/> ——
+    /// Swashbuckle 据后者生成 schema，于是声明为 Id 的路由 / 查询参数在文档里只剩裸的
+    /// <c>type: string</c>，而 <c>MapType</c> 对这类参数无从下手。
+    /// </summary>
+    /// <remarks>
+    /// 过滤器按参数的真实类型查表，把 schema 补回参数上。
+    /// </remarks>
+    private const string OperationFilterIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
+        public partial record struct OrderId(Guid Value);
+        """;
+
+    [Fact]
+    public void Swagger_Should_GenerateOperationFilter()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should().Contain(
+            "class StronglyTypedIdOperationFilter : global::Swashbuckle.AspNetCore.SwaggerGen.IOperationFilter");
+    }
+
+    /// <summary>
+    /// 查表的键必须是<b>参数的真实类型</b>：框架换掉的 <c>ModelMetadata.ModelType</c> 在这里没有用。
+    /// </summary>
+    [Fact]
+    public void SwaggerOperationFilter_Should_LookUpByParameterType()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should()
+            .Contain("_schemas.TryGetValue(parameterDescription.Type, out var factory)")
+            .And.NotContain("_schemas.TryGetValue(parameterDescription.ModelMetadata");
+    }
+
+    /// <summary>
+    /// 参数的 schema 靠名字对齐：<c>ApiParameterDescription.Name</c> 与 <c>OpenApiParameter.Name</c>。
+    /// </summary>
+    [Fact]
+    public void SwaggerOperationFilter_Should_MatchParameterByName()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should().Contain(
+            "string.Equals(parameter.Name, parameterDescription.Name, global::System.StringComparison.OrdinalIgnoreCase)");
+    }
+
+    /// <summary>
+    /// 注册必须幂等：重复调用 <c>ApplyTo</c> 不该让过滤器列表增长。
+    /// </summary>
+    [Fact]
+    public void SwaggerOperationFilter_Should_BeRegisteredIdempotently()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should()
+            .Contain("if (filter is StronglyTypedIdOperationFilter)")
+            .And.Contain("generatorOptions.OperationFilters.Add(new StronglyTypedIdOperationFilter());")
+            // 幂等检查只能「跳过注册」，不能提前返回 —— 否则第二次调用 ApplyTo 会把 MapType 一起跳过。
+            .And.NotContain("return;\n                    }\n\n                    generatorOptions");
+    }
+
+    /// <summary>
+    /// schema 表按 Id 类型登记，值与 <c>MapType</c> 用的是同一份口径（类型 / format / 是否对象形态）。
+    /// </summary>
+    /// <remarks>
+    /// 表里存的是工厂而不是现成的 schema：每个参数拿到的必须是自己的实例。
+    /// </remarks>
+    [Fact]
+    public void SwaggerOperationFilter_Should_RegisterSchemaPerIdType()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should().Contain(
+            "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" },");
+    }
+
+    /// <summary>
+    /// 对象形态（<c>JsonShape.Object</c>）的 Id 参数，线上报文是 <c>{"value": &lt;基元&gt;}</c>，
+    /// schema 必须照着写，否则生成的客户端按裸基元收发。
+    /// </summary>
+    [Fact]
+    public void SwaggerOperationFilter_Should_GenerateObjectSchema_WhenJsonShapeIsObject()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object)]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
+
+        generated.Should().Contain(
+            "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"object\", Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.Models.OpenApiSchema> { [\"value\"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" } }, Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } },");
+    }
+
+    #endregion
+
+    #region 操作过滤器的 OpenApi 1.x / 2.x 类型名分派
+
+    [Fact]
+    public void Swagger_V1_Should_UseOpenApiV1Types_InOperationFilter()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should()
+            .Contain("global::Microsoft.OpenApi.Models.OpenApiOperation")
+            .And.Contain("global::Microsoft.OpenApi.Models.OpenApiSchema")
+            .And.NotContain("global::Microsoft.OpenApi.OpenApiSchema");
+    }
+
+    [Fact]
+    public void Swagger_V2_Should_UseOpenApiV2Types_InOperationFilter()
+    {
+        var generated = GetSwaggerGeneratedCode(
+            OperationFilterIdSource,
+            Swagger6Reference,
+            SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
+
+        generated.Should()
+            .Contain("global::Microsoft.OpenApi.OpenApiOperation")
+            .And.Contain("global::Microsoft.OpenApi.OpenApiSchema")
+            .And.Contain("global::Microsoft.OpenApi.JsonSchemaType.String")
+            .And.NotContain("global::Microsoft.OpenApi.Models.OpenApiSchema");
+    }
+
+    /// <summary>
+    /// Microsoft.OpenApi 2.x 的 <c>IOpenApiParameter</c> 成员全是只读的 —— 直接给 <c>parameter.Schema</c>
+    /// 赋值编译不过（CS0200），必须落到具体的 <c>OpenApiParameter</c> 上写。
+    /// </summary>
+    [Fact]
+    public void Swagger_V2_Should_WriteSchemaOntoTheConcreteParameter()
+    {
+        var generated = GetSwaggerGeneratedCode(
+            OperationFilterIdSource,
+            Swagger6Reference,
+            SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
+
+        generated.Should()
+            .Contain("private static void ApplySchema(global::Microsoft.OpenApi.IOpenApiParameter parameter, global::Microsoft.OpenApi.IOpenApiSchema schema)")
+            .And.Contain("if (parameter is global::Microsoft.OpenApi.OpenApiParameter concreteParameter)")
+            .And.Contain("concreteParameter.Schema = schema;");
+    }
+
+    /// <summary>
+    /// 1.x 的参数列表装的是具体类，直接赋值即可。
+    /// </summary>
+    [Fact]
+    public void Swagger_V1_Should_WriteSchemaDirectly()
+    {
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
+
+        generated.Should()
+            .Contain("private static void ApplySchema(global::Microsoft.OpenApi.Models.OpenApiParameter parameter, global::Microsoft.OpenApi.Models.OpenApiSchema schema)")
+            .And.Contain("parameter.Schema = schema;");
     }
 
     #endregion

@@ -26,7 +26,7 @@ public class StronglyTypedIdAnalyzerNamingTests
             public partial record struct Order(Guid Value);
             """";
         var expected = Verify.Diagnostic(Descriptors.TypeNameShouldEndWithId)
-            .WithArguments("Order", "OrderId")
+            .WithArguments("Order", "OrderId", "Id")
             .WithSpan(6, 30, 6, 35);
         await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
     }
@@ -46,7 +46,7 @@ public class StronglyTypedIdAnalyzerNamingTests
             public partial record struct OrderID(Guid Value);
             """";
         var expected = Verify.Diagnostic(Descriptors.TypeNameShouldEndWithId)
-            .WithArguments("OrderID", "OrderId")
+            .WithArguments("OrderID", "OrderId", "Id")
             .WithSpan(6, 30, 6, 37);
         await Verify.VerifyAnalyzerWithStyleHintsAsync(code, expected);
     }
@@ -66,6 +66,53 @@ public class StronglyTypedIdAnalyzerNamingTests
             public partial record struct Id(Guid Value);
             """";
         await Verify.VerifyAnalyzerWithStyleHintsAsync(code);
+    }
+
+    /// <summary>
+    /// 后缀可由 <c>.editorconfig</c> 的 <c>dotnet_diagnostic.STIA0015.suffix</c> 改成任意串；改完后提示文字与建议名都跟随新后缀。
+    /// 这里把后缀改成 <c>Key</c>：<c>Order</c> 不再以 <c>Key</c> 结尾，建议名须为 <c>OrderKey</c>。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_RespectConfigurableSuffix_WhenSetInEditorConfig()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct Order(Guid Value);
+            """";
+        const string editorConfig = """
+            [*.cs]
+            dotnet_diagnostic.STIA0015.suffix = Key
+            """;
+        var expected = Verify.Diagnostic(Descriptors.TypeNameShouldEndWithId)
+            .WithArguments("Order", "OrderKey", "Key")
+            .WithSpan(6, 30, 6, 35);
+        await Verify.VerifyAnalyzerWithEditorConfigAsync(code, editorConfig, expected);
+    }
+
+    /// <summary>
+    /// 后缀改为 <c>Key</c> 后，以 <c>Key</c> 结尾的名字（如 <c>OrderKey</c>）应判为合规、不再报告——
+    /// 证明后缀确实改变了判定口径，而非只在提示文字里换个词。注意：<c>OrderKey</c> 在默认 <c>Id</c> 后缀下反而是不合规的。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_TreatSuffixCompliantNameAsClean_WhenSuffixConfigured()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderKey(Guid Value);
+            """";
+        const string editorConfig = """
+            [*.cs]
+            dotnet_diagnostic.STIA0015.suffix = Key
+            """;
+        await Verify.VerifyAnalyzerWithEditorConfigAsync(code, editorConfig);
     }
 
     #endregion

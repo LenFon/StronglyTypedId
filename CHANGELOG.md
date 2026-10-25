@@ -84,6 +84,15 @@ change set rather than reproducing every commit.
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
   `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).
+- Code fixes for `STIA0019`, `STIA0024`, `STIA0020` and `STIA0021`. `STIA0019` / `STIA0024` (a requested
+  integration whose assembly is missing, or a mask bit that names nothing) now offer a fix that removes
+  the `Integrations` argument; `STIA0020` / `STIA0021` (a `[StronglyTypedIdInstance]` with an unusable
+  name or an unparseable value) offer a fix that removes the whole attribute. `STIA0022` (non-PascalCase
+  instance name) still has none — renaming an instance would have to chase every reference, which a
+  single-file fix cannot do safely. This brings the rules that ship a code fix from 17 to 21 of 26.
+- `STIA0015` — the id naming convention is now configurable. Set `dotnet_diagnostic.STIA0015.suffix` in
+  `.editorconfig` to check a different trailing token (e.g. `Key`); the suggestion and the message use the
+  configured suffix. The default remains `Id`.
 
 ### Changed
 

@@ -77,6 +77,7 @@
   <Folder Name="/src/">
     <Project Path="src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj" />
     <Project Path="src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj" />
+    <Project Path="src/Len.StronglyTypedId.Testing.Bogus/Len.StronglyTypedId.Testing.Bogus.csproj" />
     <Project Path="src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj" />
     <Project Path="src/Len.StronglyTypedId/Len.StronglyTypedId.csproj" />
   </Folder>
@@ -86,6 +87,7 @@
     <Project Path="test/Len.StronglyTypedId.Integration.Test/Len.StronglyTypedId.Integration.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Packaging.Test/Len.StronglyTypedId.Packaging.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />
+    <Project Path="test/Len.StronglyTypedId.Swagger.Test/Len.StronglyTypedId.Swagger.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.TestBase/Len.StronglyTypedId.TestBase.csproj" />
     <Project Path="test/Len.StronglyTypedId.TestBase.Layered/Len.StronglyTypedId.TestBase.Layered.csproj" />
     <Project Path="test/Len.StronglyTypedId.Testing.Test/Len.StronglyTypedId.Testing.Test.csproj" />

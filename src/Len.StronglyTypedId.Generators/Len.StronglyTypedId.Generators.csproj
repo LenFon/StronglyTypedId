@@ -33,6 +33,11 @@
 		<None Include="AnalyzerReleases.Unshipped.md" Pack="true" PackagePath="\" Visible="false" />
 		<!-- 只将分析器相关程序集打入 analyzer 目录（IncludeBuildOutput=false 已阻止默认的 lib 输出） -->
 		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+		<!--
+			「一键静音」开关的属性放行。buildTransitive 里的 props 会沿依赖链流到最终消费者
+			（本包是主包的传递依赖），因此装主包的项目也能用上这个开关。
+		-->
+		<None Include="buildTransitive\Len.StronglyTypedId.Generators.props" Pack="true" PackagePath="buildTransitive\" Visible="false" />
 	</ItemGroup>
 
 </Project>

@@ -17,6 +17,8 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
 
     private const string GeneratorsProject = "src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj";
     private const string MainProject = "src/Len.StronglyTypedId/Len.StronglyTypedId.csproj";
+    private const string TestingProject = "src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj";
+    private const string TestingBogusProject = "src/Len.StronglyTypedId.Testing.Bogus/Len.StronglyTypedId.Testing.Bogus.csproj";
 
     /// <summary>
     /// 打包期间持有的跨进程锁文件名（放在输出目录里，随输入指纹一起隔离）。
@@ -43,6 +45,18 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
 
     public string SymbolsPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.{PackageVersion}.snupkg");
 
+    /// <summary>
+    /// 测试辅助包的产物路径。
+    /// </summary>
+    /// <remarks>
+    /// 这两个包尚未打开 <c>IsPackable</c>（尚未发布），打包时用 <c>-p:IsPackable=true</c> 临时打开 ——
+    /// 依赖声明的验证不能等到它们真的发布那天才做。
+    /// </remarks>
+    public string TestingPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Testing.{PackageVersion}.nupkg");
+
+    /// <inheritdoc cref="TestingPackagePath"/>
+    public string TestingBogusPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Testing.Bogus.{PackageVersion}.nupkg");
+
     public async ValueTask InitializeAsync()
     {
         RepositoryRoot = FindRepositoryRoot();
@@ -66,6 +80,8 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
 
         await PackAsync(GeneratorsProject).ConfigureAwait(false);
         await PackAsync(MainProject).ConfigureAwait(false);
+        await PackAsync(TestingProject).ConfigureAwait(false);
+        await PackAsync(TestingBogusProject).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -76,7 +92,9 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     private bool HasAllPackages()
         => File.Exists(GeneratorsPackagePath)
             && File.Exists(MainPackagePath)
-            && File.Exists(SymbolsPackagePath);
+            && File.Exists(SymbolsPackagePath)
+            && File.Exists(TestingPackagePath)
+            && File.Exists(TestingBogusPackagePath);
 
     /// <summary>
     /// 取得跨进程独占锁。拿不到就轮询等待，直到超时后把最后一次异常抛出去。
@@ -152,6 +170,8 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
             $"-p:Version={PackageVersion}",
             "-p:GeneratePackageOnBuild=false",
             "-p:EnablePackageValidation=false",
+            // 测试辅助包尚未发布（IsPackable 默认关闭），临时打开才能验证它们的依赖声明。
+            "-p:IsPackable=true",
             "--nologo",
         };
 

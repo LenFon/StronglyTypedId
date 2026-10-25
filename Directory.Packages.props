@@ -23,6 +23,8 @@
 	<ItemGroup>
 		<!-- K1：属性测试（round-trip 不变式）。选 CsCheck 而非 FsCheck：纯 C#、无 F# 运行时依赖，
 		     且生成与收缩都基于 PCG，失败时能给出可复现的 seed。 -->
+		<!-- Bogus 集成：.NET 测试数据生成的事实标准之一（bUnit 作者维护）。 -->
+		<PackageVersion Include="Bogus" Version="35.6.5" />
 		<PackageVersion Include="CsCheck" Version="4.9.1" />
 		<PackageVersion Include="Dapper" Version="2.1.89" />
 		<PackageVersion Include="FluentAssertions" Version="8.11.0" />
@@ -37,6 +39,11 @@
 		-->
 		<PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.13" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.32" />
+		<!--
+		     内存服务器：让 Swagger 回归跑真实的 ASP.NET Core 管道。缺口出在框架与 Swashbuckle 的交界处，
+		     模拟宿主测不出来。与其余 ASP.NET Core 包同走 8.0.x 补丁线。
+		-->
+		<PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.32" />
 		<!--
 		     二进制序列化集成：MessagePack 与 BSON 的格式化器/序列化器都在「引用了才有」的门控之下，集成测试工程
 		     必须真的引用它们。IsBinaryTextPrimitive 让这三种基元走规范文本形，但两边的理由已经不同：

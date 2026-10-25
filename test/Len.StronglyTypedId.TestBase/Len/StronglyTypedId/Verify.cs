@@ -49,6 +49,23 @@ public static class Verify
     }
 
     /// <summary>
+    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但额外挂一份 <c>.editorconfig</c>，且<b>不</b>解除任何
+    /// 默认被屏蔽的诊断。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="VerifyAnalyzerWithEditorConfigAsync"/> 会顺手解除 STIA0014 与两条命名风格提示的屏蔽，
+    /// 那对「验证某条规则的诊断」是对的，对「验证一条诊断都<b>不</b>报」却是干扰——解除屏蔽后多出来的
+    /// 风格提示会让期望失配。此处保持屏蔽原样，让「零诊断」这个断言真的在断言零诊断。
+    /// </remarks>
+    public static Task VerifyAnalyzerWithRawEditorConfigAsync(string source, string editorConfig, params DiagnosticResult[] expected)
+    {
+        var test = new TestAnalyzer { TestCode = source };
+        test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", SourceText.From(editorConfig)));
+        test.ExpectedDiagnostics.AddRange(expected);
+        return test.RunAsync();
+    }
+
+    /// <summary>
     /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但额外挂一份 <c>.editorconfig</c>。
     /// </summary>
     public static Task VerifyAnalyzerWithEditorConfigAsync(string source, string editorConfig, params DiagnosticResult[] expected)
@@ -56,6 +73,7 @@ public static class Verify
         var test = new TestAnalyzer { TestCode = source };
         test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", SourceText.From(editorConfig)));
         EnableOptInDiagnostics(test);
+        EnableStyleHintDiagnostics(test);
         test.ExpectedDiagnostics.AddRange(expected);
         return test.RunAsync();
     }
@@ -73,6 +91,7 @@ public static class Verify
 
         test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", SourceText.From(editorConfig)));
         EnableOptInDiagnostics(test);
+        EnableStyleHintsWhenExpected(test, [expected]);
         test.ExpectedDiagnostics.Add(expected);
         return test.RunAsync();
     }
@@ -202,6 +221,53 @@ public static class Verify
         await provider.RegisterCodeFixesAsync(context);
 
         return actions;
+    }
+
+    /// <summary>
+    /// 直接驱动 <see cref="StronglyTypedIdCodeFixProvider"/> 并应用它注册的唯一修复，返回改写后的源码文本。
+    /// </summary>
+    /// <remarks>
+    /// 绕开 <see cref="Microsoft.CodeAnalysis.Testing"/> 的 <c>CodeFixTest</c> 限制：后者拒绝为
+    /// <c>CompilationEnd</c> 诊断（STIA0019 / STIA0024 即在此类）提供修复。本方法在 AdhocWorkspace 里手工
+    /// 跑修复并套用，用来断言「改写结果」这类 <c>VerifyCodeFixAsync</c> 框架本身不支持的场景。
+    /// </remarks>
+    public static async Task<string> ApplyCodeFixAsync(
+        string source,
+        DiagnosticDescriptor descriptor,
+        Func<SyntaxNode, SyntaxNode> selectTarget)
+    {
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
+        var root = tree.GetRoot();
+        var target = selectTarget(root);
+        var location = Location.Create(tree, target.Span);
+        var diagnostic = Microsoft.CodeAnalysis.Diagnostic.Create(descriptor, location);
+
+        using var workspace = new AdhocWorkspace();
+        var projectId = ProjectId.CreateNewId();
+        var project = workspace.CurrentSolution
+            .AddProject(projectId, "TestProject", "TestProject", LanguageNames.CSharp)
+            .GetProject(projectId)!
+            .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
+            .WithParseOptions(parseOptions);
+        var document = project.AddDocument("Test.cs", root);
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            CancellationToken.None);
+
+        var provider = new StronglyTypedIdCodeFixProvider();
+        await provider.RegisterCodeFixesAsync(context);
+
+        var action = actions.Should().ContainSingle().Subject;
+        var operations = await action.GetOperationsAsync(CancellationToken.None);
+        var applied = operations.OfType<ApplyChangesOperation>().Single();
+        var updated = applied.ChangedSolution.GetDocument(document.Id)!;
+
+        return (await updated.GetTextAsync()).ToString();
     }
 
     /// <summary>

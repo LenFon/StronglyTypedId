@@ -42,16 +42,16 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0016 | Several strongly typed ids share the same primitive type              | —                                                         |
 | STIA0017 | Normalizer method must be a valid static method                       | Remove the `Normalizer` argument                          |
 | STIA0018 | Exception type must be a concrete exception with a string constructor | Remove the `ExceptionType` argument                       |
-| STIA0019 | Requested integration is not available                                | —                                                         |
-| STIA0020 | Named instance name is not usable                                     | —                                                         |
-| STIA0021 | Named instance value is not valid for the primitive type              | —                                                         |
+| STIA0019 | Requested integration is not available                                | Remove the 'Integrations' argument                        |
+| STIA0020 | Named instance name is not usable                                     | Remove the '[StronglyTypedIdInstance]' attribute          |
+| STIA0021 | Named instance value is not valid for the primitive type              | Remove the '[StronglyTypedIdInstance]' attribute          |
 | STIA0022 | Named instance name should be PascalCase                              | —                                                         |
 | STIA0023 | Prefix overlaps the primitive text                                    | —                                                         |
-| STIA0024 | Integration mask contains undefined bits                              | —                                                         |
+| STIA0024 | Integration mask contains undefined bits                              | Remove the 'Integrations' argument                        |
 | STIA0025 | Strongly typed id cannot be a file-local type                         | Remove the `file` modifier                                |
 <!-- END GENERATED:diagnostics -->
 
-Seventeen of the twenty-six rules ship a code fix, and a few of those only when the repair is
+Twenty-one of the twenty-six rules ship a code fix, and a few of those only when the repair is
 unambiguous — `STIA0003` is offered only when the id itself is generic (removing the *containing*
 type's type parameters would change your design), `STIA0005` only when the type declares no explicit
 constructor (adding a primary constructor next to an existing one would collide with `CS0111`), and
@@ -60,12 +60,14 @@ a second `partial`). `STIA0023` offers none on purpose: the only mechanical repa
 which changes the canonical text form and makes data already written with that prefix unreadable —
 picking a safe replacement is a decision only you can make. The two naming hints (`STIA0015`,
 `STIA0016`) deliberately offer none: renaming a type correctly means renaming every reference to it,
-and "these ids look alike" has no mechanical repair. The remaining nine have no fix at all: `STIA0019`
-and `STIA0024` report a mismatch between the declaration and the compilation — an integration whose
-assembly is not referenced, or a mask bit that names nothing — which you resolve by adding the package or
-correcting the flag; `STIA0022` is the same style advice as the two naming hints; and `STIA0012`,
-`STIA0020` and `STIA0021` are raised where no rewrite can guess the intent (`STIA0012` by the generator
-rather than the analyzer).
+and "these ids look alike" has no mechanical repair. `STIA0022` is the same style advice as those two —
+a PascalCase suggestion that still requires you to choose the right name. `STIA0012` is raised by the
+generator rather than the analyzer when code emission fails, and no rewrite can guess the intent.
+That leaves five rules without a code fix: `STIA0012`, `STIA0015`, `STIA0016`, `STIA0022` and
+`STIA0023`. (The integration and instance rules that previously had none — `STIA0019`, `STIA0024`,
+`STIA0020` and `STIA0021` — now offer a fix that removes the offending `Integrations` argument or the
+entire `[StronglyTypedIdInstance]` attribute; you can still resolve the root cause instead, by adding the
+missing package, correcting the mask bit, or choosing a valid instance name or value.)
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are

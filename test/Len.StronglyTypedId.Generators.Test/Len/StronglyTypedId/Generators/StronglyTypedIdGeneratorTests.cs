@@ -2872,6 +2872,12 @@ public class StronglyTypedIdGeneratorTests
             [
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
+                // ASP.NET Core 侧：Swagger 的操作过滤器要 ApiDescription（Mvc.Abstractions），而 MVC 生成器
+                // 一旦被触发就需要 Mvc.Core / Routing / Http 里的类型。真实项目经框架引用一并拿到。
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -3117,6 +3123,12 @@ public class StronglyTypedIdGeneratorTests
             [
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
+                // ASP.NET Core 侧：Swagger 的操作过滤器要 ApiDescription（Mvc.Abstractions），而 MVC 生成器
+                // 一旦被触发就需要 Mvc.Core / Routing / Http 里的类型。真实项目经框架引用一并拿到。
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
             ]);
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -3187,6 +3199,12 @@ public class StronglyTypedIdGeneratorTests
             [
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.OpenApi.Models.OpenApiSchema).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly),
+                // ASP.NET Core 侧：Swagger 的操作过滤器要 ApiDescription（Mvc.Abstractions），而 MVC 生成器
+                // 一旦被触发就需要 Mvc.Core / Routing / Http 里的类型。真实项目经框架引用一并拿到。
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
                 // EF Core 的 ValueConverter 签名里带 Expression<>，而合成编译的引用集由 AppDomain 里「已加载」的
                 // 程序集拼出（见 ShouldReferenceAssembly），单跑本用例时它可能尚未加载 —— 显式引入，让结果与运行顺序无关。
                 AssemblyReferenceCache.FromAssembly(typeof(System.Linq.Expressions.Expression).Assembly),
