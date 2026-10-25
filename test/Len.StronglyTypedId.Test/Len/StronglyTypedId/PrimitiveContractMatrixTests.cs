@@ -92,6 +92,16 @@ public class PrimitiveContractMatrixTests
         var stjJson = testCase.SerializeStj(id);
         testCase.DeserializeStj(stjJson).Should().Be(id, $"{label}：STJ 往返必须保真（{stjJson}）");
 
+        // 7.1 Id 的写出必须与 STJ 默认写出基元逐字节一致。生成的转换器改成「直写基元」而不再外包给
+        // JsonSerializer 之后，这条就是契约的锚点：任何一处直写表达式写错，输出就会与 STJ 默认分道扬镳。
+        // BigInteger 例外：STJ 没有它的内置转换器，按值写会退化成 {"IsPowerOfTwo":…,"Sign":1}（读回来是
+        // default），故本库固定写规范文本形 —— 见 BigInteger_Should_SerializeAsJsonString_ForSystemTextJson。
+        if (testCase.PrimitiveType != typeof(BigInteger))
+        {
+            testCase.SerializeStj(id)
+                .Should().Be(testCase.SerializePrimitiveStj(id), $"{label}：Id 的 STJ 写出必须与 STJ 默认写出基元逐字节一致");
+        }
+
         // 8. Newtonsoft.Json 往返。
         var newtonsoftJson = testCase.SerializeNewtonsoft(id);
         testCase.DeserializeNewtonsoft(newtonsoftJson).Should().Be(id, $"{label}：Newtonsoft 往返必须保真（{newtonsoftJson}）");
@@ -228,6 +238,7 @@ public class PrimitiveContractMatrixTests
             (left, right) => ((TId)left).CompareTo((TId)right),
             id => System.Text.Json.JsonSerializer.Serialize((TId)id),
             json => System.Text.Json.JsonSerializer.Deserialize<TId>(json),
+            id => System.Text.Json.JsonSerializer.Serialize(((TId)id).Value),
             id => JsonConvert.SerializeObject((TId)id),
             json => JsonConvert.DeserializeObject<TId>(json));
 
@@ -254,6 +265,7 @@ public class PrimitiveContractMatrixTests
         Func<object, object, int> Compare,
         Func<object, string> SerializeStj,
         Func<string, object?> DeserializeStj,
+        Func<object, string> SerializePrimitiveStj,
         Func<object, string> SerializeNewtonsoft,
         Func<string, object?> DeserializeNewtonsoft);
 }

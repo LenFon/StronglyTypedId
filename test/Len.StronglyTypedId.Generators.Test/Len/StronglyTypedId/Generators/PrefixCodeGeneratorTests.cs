@@ -211,7 +211,7 @@ public class PrefixCodeGeneratorTests
         var generated = GetGeneratedCode(PlainIdSource)["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
 
         generated.Should().NotContain("value.ToString()");
-        generated.Should().Contain("global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);");
+        generated.Should().Contain("writer.WriteStringValue(primitiveId);");
     }
 
     #endregion

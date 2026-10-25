@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- 与 TestBase 同一组目标框架，避免 net10.0 测试经此传递引用时解析到 net8.0 版运行时库。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<!-- 测试基建不参与发布。 -->
+		<IsPackable>false</IsPackable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<RootNamespace />
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+		  刻意**不引用** Newtonsoft.Json：这是「领域层不该被序列化基础设施绑住」的典型分层。
+		  后果是这个程序集里的 Id 不带内嵌的 Newtonsoft 转换器，而内嵌转换器只能生成在声明 Id 的
+		  那个程序集里（消费方补一份会撞 CS0426）—— 于是消费方必须自己为它补一份顶层转换器，
+		  否则同一个 Id 在 System.Text.Json 下是字符串、在 Newtonsoft 下却是对象形态。
+		-->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+		<!--
+		  生成器只作为分析器参与本工程的源码生成，不进编译引用：生成器程序集带的是 Roslyn 5.9 的
+		  System.Collections.Immutable / System.Reflection.Metadata，与 net8.0 引用集里的版本冲突
+		  （实测 MSB3277）。TestBase 之所以保留编译期引用，是因为它的 Verify.cs 要引用生成器类型。
+		-->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+</Project>

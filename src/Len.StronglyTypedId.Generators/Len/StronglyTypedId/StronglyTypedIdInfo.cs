@@ -225,6 +225,7 @@ internal readonly record struct StronglyTypedIdInfo
             ?? IntegrationFlags.All;
         HasSystemTextJsonConverter = WillHaveNestedType(type, SystemTextJsonConverterTypeName);
         HasNewtonsoftJsonConverter = WillHaveNestedType(type, NewtonsoftJsonConverterTypeName);
+        RequiresExternalNewtonsoftJsonConverter = RequiresExternalConverter(type, NewtonsoftJsonConverterTypeName);
         // 命名实例在构造期一次性渲染成文本：本类型是增量缓存的键，集合成员会退化成引用比较而让缓存永久失效。
         InstancesBlock = RenderInstancesBlock(type, primitiveIdType);
     }
@@ -312,6 +313,25 @@ internal readonly record struct StronglyTypedIdInfo
     /// 该 Id 是否带有（或本次生成即将产出）内嵌的 <c>NewtonsoftJsonConverter</c>。
     /// </summary>
     public bool HasNewtonsoftJsonConverter { get; }
+
+    /// <summary>
+    /// 该 Id 是否需要由**消费方程序集**提供 Newtonsoft 转换器。
+    /// </summary>
+    /// <remarks>
+    /// Newtonsoft 的转换器嵌在 Id 内部，只能生成在声明 Id 的那个程序集里 —— 消费方补一份会撞
+    /// CS0426（类型已存在）。于是「声明程序集没有引用 Newtonsoft.Json」时，那个 Id 就没有任何
+    /// Newtonsoft 转换器：消费方虽然引用了 Newtonsoft，也补不上（同一根因）。
+    /// <para>
+    /// 后果是同一个 Id 在 System.Text.Json 下是字符串形态、在 Newtonsoft 下却是对象形态
+    /// （<c>{"Value":"…"}</c>）：编译无警告、运行不抛异常，只在真实往返时暴露。
+    /// </para>
+    /// <para>
+    /// <c>System.Text.Json</c> 没有这个问题：<c>System.Text.Json.dll</c> 在
+    /// <c>Microsoft.NETCore.App</c> 共享框架里，任何 net8.0+ 项目都引用得到 → 声明程序集必然生成
+    /// STJ 转换器。
+    /// </para>
+    /// </remarks>
+    public bool RequiresExternalNewtonsoftJsonConverter { get; }
 
     /// <summary>
     /// 紧跟在 <c>record</c> 关键字之后的类型种类后缀，如 <c>" struct"</c>；<see langword="null"/> 表示引用类型 record。
@@ -700,6 +720,15 @@ internal readonly record struct StronglyTypedIdInfo
     private static bool WillHaveNestedType(ITypeSymbol type, string nestedTypeName)
         => type is INamedTypeSymbol namedType
             && (AlreadyHasNestedType(namedType, nestedTypeName) || IsDeclaredInThisCompilation(namedType));
+
+    /// <summary>
+    /// 判定该 Id 是否只能由消费方程序集提供转换器：它不是本次编译声明的（声明程序集里已定型），
+    /// 而它的声明程序集又没有生成过转换器（那份程序集没引用 Newtonsoft.Json）。
+    /// </summary>
+    private static bool RequiresExternalConverter(ITypeSymbol type, string nestedTypeName)
+        => type is INamedTypeSymbol namedType
+            && !AlreadyHasNestedType(namedType, nestedTypeName)
+            && !IsDeclaredInThisCompilation(namedType);
 
     /// <summary>
     /// 引用程序集里的 Id 已经生成过转换器：直接查嵌套类型是否存在。

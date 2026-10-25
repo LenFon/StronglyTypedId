@@ -87,6 +87,7 @@
     <Project Path="test/Len.StronglyTypedId.Packaging.Test/Len.StronglyTypedId.Packaging.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.TestBase/Len.StronglyTypedId.TestBase.csproj" />
+    <Project Path="test/Len.StronglyTypedId.TestBase.Layered/Len.StronglyTypedId.TestBase.Layered.csproj" />
     <Project Path="test/Len.StronglyTypedId.Testing.Test/Len.StronglyTypedId.Testing.Test.csproj" />
   </Folder>
   <Folder Name="/tools/">

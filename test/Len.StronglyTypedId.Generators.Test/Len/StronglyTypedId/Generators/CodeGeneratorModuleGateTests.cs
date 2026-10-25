@@ -843,8 +843,14 @@ public class CodeGeneratorModuleGateTests
     /// <summary>
     /// Newtonsoft 侧的同一判据：领域库不引 Newtonsoft、宿主应用引，是完全正常的分层。
     /// </summary>
+    /// <remarks>
+    /// 领域库里的 Id 因此没有内嵌转换器，而内嵌转换器只能生成在声明 Id 的那个程序集里 ——
+    /// 消费方补一份会撞 CS0426。宿主应用于是自己生成一份顶层转换器并注册它：
+    /// 否则那个 Id 在 Newtonsoft 下会被写成对象形态（<c>{"Value":"…"}</c>），
+    /// 而 System.Text.Json 写的是字符串 —— 同一份数据两种表示，且编译无警告、运行不抛异常。
+    /// </remarks>
     [Fact]
-    public void NewtonsoftJsonRegistration_Should_Skip_WhenReferencedIdHasNoConverter()
+    public void NewtonsoftJsonRegistration_Should_ProvideExternalConverter_WhenReferencedIdHasNoConverter()
     {
         var generated = RunGenerator(
             IdSource,
@@ -854,7 +860,10 @@ public class CodeGeneratorModuleGateTests
         var code = generated["StronglyTypedIds.NewtonsoftJson.g.cs"];
 
         code.Should().Contain("new global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter()")
-            .And.NotContain("LegacyOrderId");
+            .And.Contain("new global::Len.StronglyTypedId.StronglyTypedIds.LegacyOrderIdNewtonsoftJsonConverter()");
+
+        generated["Already.Generated.LegacyOrderId.NewtonsoftJsonExternal.g.cs"].Should()
+            .Contain("internal sealed class LegacyOrderIdNewtonsoftJsonConverter");
     }
 
     /// <summary>

@@ -33,6 +33,11 @@
 		-->
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
 		<!--
+		     Newtonsoft.Json：本工程扮演「宿主应用」—— 它引用了 Newtonsoft，而声明 Id 的领域层
+		     （Len.StronglyTypedId.TestBase.Layered）刻意没有引用。两边都要能把这个 Id 写成同一种形态。
+		-->
+		<PackageReference Include="Newtonsoft.Json" />
+		<!--
 		     ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」的消费者画像下可被触发，并提供
 		     MvcOptions / IModelBinder / IRouteConstraint 等可编译类型。
 		-->
@@ -44,6 +49,12 @@
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 		<!-- TestBase：提供 [StronglyTypedId] 标注的 Id 声明，生成器据此产出核心与集成产物。 -->
 		<ProjectReference Include="..\Len.StronglyTypedId.TestBase\Len.StronglyTypedId.TestBase.csproj" />
+		<!--
+		     分层领域层：它不引用 Newtonsoft.Json，于是那里的 Id 不带内嵌的 Newtonsoft 转换器。
+		     本工程（宿主应用）引用了 Newtonsoft，于是必须自己为那些 Id 补一份顶层转换器 ——
+		     否则同一个 Id 在 STJ 下是字符串、在 Newtonsoft 下却是对象形态。
+		-->
+		<ProjectReference Include="..\Len.StronglyTypedId.TestBase.Layered\Len.StronglyTypedId.TestBase.Layered.csproj" />
 	</ItemGroup>
 
 </Project>

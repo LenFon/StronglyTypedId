@@ -31,7 +31,9 @@ public class StronglyTypedIdGeneratorTests
     /// 生成代码里 <c>UnconditionalSuppressMessage</c> 的 <c>Justification</c> 文案。
     /// </summary>
     private const string AotJustification =
-        "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
+        "The primitive id type is a supported BCL primitive; it is read and written directly through "
+        + "Utf8JsonReader / Utf8JsonWriter, or through System.Text.Json's built-in converter for the few "
+        + "types that have no direct form. No reflection or dynamic code is required.";
 
     [Theory]
     [InlineData("record")]
@@ -512,7 +514,15 @@ public class StronglyTypedIdGeneratorTests
                             throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.");
                         }
 
-                        var value = global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options);
+                        global::System.Guid value;
+                        try
+                        {
+                            value = reader.GetGuid();
+                        }
+                        catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException)
+                        {
+                            throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.", e);
+                        }
 
                         return OrderId.TryCreate(value, out var id)
                             ? id
@@ -531,7 +541,7 @@ public class StronglyTypedIdGeneratorTests
                     {
                         if (value is { Value: var primitiveId })
                         {
-                            global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);
+                            writer.WriteStringValue(primitiveId);
                         }
                         else
                         {
@@ -2237,10 +2247,62 @@ public class StronglyTypedIdGeneratorTests
         var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
 
         converter.Should()
-            .Contain("var value = global::System.Text.Json.JsonSerializer.Deserialize<global::System.Guid>(ref reader, options);")
+            .Contain("value = reader.GetGuid();")
             .And.Contain("return OrderId.TryCreate(value, out var id)")
             .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a OrderId.\");")
             .And.NotContain("OrderId.Create(");
+    }
+
+    /// <summary>
+    /// 基元的读写必须直写 / 直读，不外包给 <c>JsonSerializer</c>。
+    /// </summary>
+    /// <remarks>
+    /// 外包给 <c>JsonSerializer.Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c> 意味着转换器要求
+    /// <c>options</c> 里有该基元类型的 <c>JsonTypeInfo</c>：源生成的 <c>JsonSerializerContext</c> 只服务
+    /// <c>[JsonSerializable]</c> 登记过的类型，于是调用方还得为每个用到的基元类型补一条登记；
+    /// 漏登记时报的是框架内部的 <c>NotSupportedException</c>，调用方很难自行定位到「少登记了一个基元」。
+    /// 直写 / 直读让转换器自给自足，而输出与 STJ 默认逐字节相同 ——
+    /// 那一条由 <c>PrimitiveContractMatrixTests</c> 的逐基元对比用例守着。
+    /// </remarks>
+    [Fact]
+    public void SystemTextJson_Should_ReadAndWritePrimitiveDirectly()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("writer.WriteStringValue(primitiveId);")
+            .And.Contain("value = reader.GetGuid();")
+            .And.NotContain("JsonSerializer.Serialize(writer, primitiveId")
+            .And.NotContain("JsonSerializer.Deserialize<global::System.Guid>");
+    }
+
+    /// <summary>
+    /// 直读失败时抛的必须是 <c>JsonException</c>：<c>Utf8JsonReader</c> 在 token 类型不符时抛
+    /// <c>InvalidOperationException</c>、文本格式不符时抛 <c>FormatException</c>，两者都得被转掉。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_ConvertDirectReadFailures_ToJsonException()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Guid"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException)")
+            .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.\", e);");
+    }
+
+    /// <summary>
+    /// 没有直写形式的基元（<c>Int128</c> / <c>Half</c> / <c>TimeSpan</c> 等）仍走 <c>JsonSerializer</c>，
+    /// 而那需要基元类型的 <c>JsonTypeInfo</c>。上下文没登记时框架抛的是 <c>NotSupportedException</c>，
+    /// 必须转成带指引的 <c>JsonException</c>，否则调用方无从得知要补哪一条 <c>[JsonSerializable]</c>。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_GiveActionableHint_WhenPrimitiveNeedsJsonTypeInfo()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Int128"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("catch (global::System.NotSupportedException e)")
+            .And.Contain("[JsonSerializable(typeof(global::System.Int128))]");
     }
 
     /// <summary>
@@ -2415,6 +2477,11 @@ public class StronglyTypedIdGeneratorTests
     /// D1：token 类型不符时必须抛 <c>JsonException</c>。抛 <c>InvalidOperationException</c> 会让按契约
     /// <c>catch (JsonException)</c> 的调用方漏掉这条路径，且拿不到 JSON path。
     /// </summary>
+    /// <remarks>
+    /// 基元改成直读（<c>reader.GetGuid()</c>）后，读取期失败由 <c>Utf8JsonReader</c> 抛
+    /// <c>InvalidOperationException</c>（token 类型不符）或 <c>FormatException</c>（文本格式不符）；
+    /// 转换器必须把它们捕获并转成 <c>JsonException</c>，否则同样会穿透契约。
+    /// </remarks>
     [Fact]
     public void SystemTextJson_Should_ThrowJsonException_WhenTokenCannotBecomeValue()
     {
@@ -2422,7 +2489,8 @@ public class StronglyTypedIdGeneratorTests
 
         converter.Should()
             .Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.\");")
-            .And.NotContain("InvalidOperationException");
+            .And.Contain("catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException)")
+            .And.NotContain("throw new global::System.InvalidOperationException");
     }
 
     /// <summary>

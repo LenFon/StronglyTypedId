@@ -13,7 +13,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 抑制 IL2026 / IL3050 时给出的理由。
     /// </summary>
     private const string AotSuppressionJustification =
-        "The primitive id type is a supported BCL primitive with a built-in System.Text.Json converter; no reflection or dynamic code is required.";
+        "The primitive id type is a supported BCL primitive; it is read and written directly through "
+        + "Utf8JsonReader / Utf8JsonWriter, or through System.Text.Json's built-in converter for the few "
+        + "types that have no direct form. No reflection or dynamic code is required.";
 
     public int Order { get; } = 1;
 
@@ -138,14 +140,6 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         => idInfo.IsEnum && !idInfo.HasPrefix;
 
     /// <summary>
-    /// 取读入基元值时用的表达式。
-    /// </summary>
-    private static string GetDeserializeExpression(StronglyTypedIdInfo idInfo)
-        => idInfo.IsStringPrimitive
-            ? "global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options)!"
-            : $"global::System.Text.Json.JsonSerializer.Deserialize<{idInfo.PrimitiveIdTypeName}>(ref reader, options)";
-
-    /// <summary>
     /// 追加「读出基元值并交给 <c>TryCreate</c>」的语句，结果放在局部变量 <c>value</c> 中。
     /// </summary>
     /// <remarks>
@@ -161,7 +155,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         {
             // BigInteger 没有内置转换器，按值读会落到「按属性反序列化」而得到 default，故改读规范文本。
             // 用 TryParse 而非 Parse：文本不是合法数字时 Parse 抛的 FormatException 同样会穿透转换器。
-            builder.Append(indent).Append("var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
+            AppendDirectRead(builder, idInfo, indent, "string?", "text", "reader.GetString()");
             builder.Append(indent).Append("if (text is null || !global::System.Numerics.BigInteger.TryParse(text, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var value))").Append('\n');
             builder.Append(indent).Append("{").Append('\n');
             builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
@@ -170,7 +164,52 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             return;
         }
 
-        builder.Append(indent).Append("var value = ").Append(GetDeserializeExpression(idInfo)).Append(';').Append('\n');
+        if (PrimitiveJsonIo.TryGetReadExpression(idInfo) is { } read)
+        {
+            // 直读：token 类型不符时 Utf8JsonReader 抛 InvalidOperationException，文本格式不符时抛
+            // FormatException（如 GetGuid）。两者都不是 JsonException，会穿透转换器、让按契约
+            // catch (JsonException) 的调用方漏掉这条路径，故在此统一转成 JsonException。
+            AppendDirectRead(builder, idInfo, indent, idInfo.PrimitiveIdTypeName, "value", read);
+
+            return;
+        }
+
+        // 委托路径：这些基元没有可直写的形式（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char），
+        // 仍由 JsonSerializer 处理 —— 而它要 options 里有该基元的 JsonTypeInfo。源生成的上下文若没登记
+        // 该基元类型，框架抛的是 NotSupportedException；此处转成带指引的 JsonException，
+        // 让调用方一眼看出「要给上下文补一条 [JsonSerializable]」。
+        builder.Append(indent).Append(idInfo.PrimitiveIdTypeName).Append(" value;").Append('\n');
+        builder.Append(indent).Append("try").Append('\n');
+        builder.Append(indent).Append("{").Append('\n');
+        builder.Append(indent).Append("    value = global::System.Text.Json.JsonSerializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append(">(ref reader, options);").Append('\n');
+        builder.Append(indent).Append("}").Append('\n');
+        builder.Append(indent).Append("catch (global::System.NotSupportedException e)").Append('\n');
+        builder.Append(indent).Append("{").Append('\n');
+        builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": the JSON source generation context does not provide metadata for '").Append(idInfo.PrimitiveIdTypeName).Append("'. Add [JsonSerializable(typeof(").Append(idInfo.PrimitiveIdTypeName).Append("))] to that context.\", e);").Append('\n');
+        builder.Append(indent).Append("}").Append('\n');
+    }
+
+    /// <summary>
+    /// 追加一段「直读基元值」的语句：先声明变量，再在 try 里赋值，把读取期的失败统一转成
+    /// <c>JsonException</c>。
+    /// </summary>
+    /// <param name="builder">产物构建器。</param>
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <param name="indent">每行前缀的绝对缩进。</param>
+    /// <param name="typeName">变量的类型（含可空标注）。</param>
+    /// <param name="variableName">变量名。</param>
+    /// <param name="expression">读取表达式。</param>
+    private static void AppendDirectRead(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string typeName, string variableName, string expression)
+    {
+        builder.Append(indent).Append(typeName).Append(' ').Append(variableName).Append(';').Append('\n');
+        builder.Append(indent).Append("try").Append('\n');
+        builder.Append(indent).Append("{").Append('\n');
+        builder.Append(indent).Append("    ").Append(variableName).Append(" = ").Append(expression).Append(';').Append('\n');
+        builder.Append(indent).Append("}").Append('\n');
+        builder.Append(indent).Append("catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException)").Append('\n');
+        builder.Append(indent).Append("{").Append('\n');
+        builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\", e);").Append('\n');
+        builder.Append(indent).Append("}").Append('\n');
     }
 
     /// <summary>
@@ -221,7 +260,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             if (idInfo.HasPrefix)
             {
                 // 有前缀时文本形是字符串，读回一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
-                builder.Append("            var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
+                AppendDirectRead(builder, idInfo, "            ", "string?", "text", "reader.GetString()");
                 builder.Append('\n');
                 builder.Append("            return text is not null && ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
                 builder.Append("                ? id").Append('\n');
@@ -311,11 +350,18 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 
         // 有前缀时写出规范文本形（字符串），无前缀时写出基元值本身。
         // BigInteger 例外：它没有内置转换器，按值写会退化成 {"IsPowerOfTwo":…,"Sign":1}，故也写规范文本。
+        //
+        // 其余基元优先直写：WriteStringValue / WriteNumberValue 不需要 options 里有基元的
+        // JsonTypeInfo，于是源生成的 JsonSerializerContext 不必为每个基元类型补一条
+        // [JsonSerializable] 登记；输出与 STJ 默认逐字节相同（见 PrimitiveJsonIo 的说明）。
+        // 直写不了的少数类型（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char）
+        // 仍委托给 JsonSerializer —— 那一档要 options 里有基元的元数据。
         var writeValue = idInfo.HasPrefix
             ? "writer.WriteStringValue(value.ToString());"
             : idInfo.IsBigIntegerPrimitive
                 ? "writer.WriteStringValue(primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture));"
-                : "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
+                : PrimitiveJsonIo.TryGetWriteExpression(idInfo)
+                    ?? "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
 
         builder.Append('\n');
         builder.Append("        {").Append('\n');

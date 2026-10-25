@@ -46,7 +46,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                             global::System.Type objectType,
                             {{idInfo.EscapedName}}? existingValue,
                             bool hasExistingValue,
-                            global::Newtonsoft.Json.JsonSerializer serializer){{GetReadTail(idInfo)}}
+                            global::Newtonsoft.Json.JsonSerializer serializer){{GetReadTail(idInfo, idInfo.EscapedName)}}
                 
                         /// <inheritdoc/>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -68,7 +68,12 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>ReadJson</c> 成员形参表之后的尾部：基元形态是表达式体，对象形态是方法体。
     /// </summary>
-    private static string GetReadTail(StronglyTypedIdInfo idInfo)
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <param name="typeReference">
+    /// 引用该 Id 类型时用的文本：转换器嵌在 Id 内部时用短名（<c>idInfo.EscapedName</c>），
+    /// 转换器放在 <c>StronglyTypedIds</c> 里、指向的是别的程序集里的 Id 时必须用全限定名。
+    /// </param>
+    internal static string GetReadTail(StronglyTypedIdInfo idInfo, string typeReference)
     {
         var builder = new StringBuilder();
 
@@ -82,7 +87,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                 // Newtonsoft 不认识 Int128 / UInt128 / Half / DateOnly / TimeOnly，也只能按文本读。
                 builder.Append("            serializer.Deserialize<string>(reader) switch").Append('\n');
                 builder.Append("            {").Append('\n');
-                builder.Append("                { } text when ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
+                builder.Append("                { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
                 builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
                 builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
                 builder.Append("            };");
@@ -96,7 +101,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             // 它会穿透 JsonConvert.DeserializeObject —— 而 Newtonsoft 的转换器契约要求失败一律抛 JsonSerializationException。
             // 枚举在此追加已定义性校验：TryCreate 不含它，而 Newtonsoft 对未定义数值（999）照常读出，
             // 不补就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条路径都已收紧，这里对齐）。
-            AppendTryCreateArm(builder, idInfo, "                ");
+            AppendTryCreateArm(builder, idInfo, "                ", typeReference);
             builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
             builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };");
@@ -134,7 +139,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             // 同上：有前缀或基元本身不被 Newtonsoft 认识时，值都以规范文本形存放。
             builder.Append("            return valueToken.ToObject<string>() switch").Append('\n');
             builder.Append("            {").Append('\n');
-            builder.Append("                { } text when ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
+            builder.Append("                { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
             builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
             builder.Append("            };").Append('\n');
             builder.Append("        }");
@@ -147,7 +152,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         // 同上：TryCreate 让验证失败落在下面的 JsonSerializationException 分支，而不是穿透 ArgumentException。
         // 枚举在此追加已定义性校验：TryCreate 不含它，而 Newtonsoft 对未定义数值（999）照常读出，
         // 不补就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条路径都已收紧，这里对齐）。
-        AppendTryCreateArm(builder, idInfo, "                ");
+        AppendTryCreateArm(builder, idInfo, "                ", typeReference);
         builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
         builder.Append("            };").Append('\n');
         builder.Append("        }");
@@ -159,9 +164,9 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// 追加 switch 的 <c>{ } value when Id.TryCreate(value, out var id) => id,</c> 臂；枚举基元附带
     /// 已定义性校验（见 <see cref="StronglyTypedIdInfo.GetEnumValidityCondition"/>）。
     /// </summary>
-    private static void AppendTryCreateArm(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent)
+    internal static void AppendTryCreateArm(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string typeReference)
     {
-        builder.Append(indent).Append("{ } value when ").Append(idInfo.EscapedName).Append(".TryCreate(value, out var id)");
+        builder.Append(indent).Append("{ } value when ").Append(typeReference).Append(".TryCreate(value, out var id)");
 
         if (idInfo.GetEnumValidityCondition("value") is { } validity)
         {
@@ -174,7 +179,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// <summary>
     /// 取 <c>WriteJson</c> 成员形参表之后的方法体。
     /// </summary>
-    private static string GetWriteTail(StronglyTypedIdInfo idInfo)
+    internal static string GetWriteTail(StronglyTypedIdInfo idInfo)
     {
         var builder = new StringBuilder();
 
