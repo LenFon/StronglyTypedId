@@ -6,7 +6,7 @@
 internal static class DiagnosticDocumentation
 {
     /// <summary>
-    /// 全部诊断的文档条目，按规则 ID 升序。
+    /// 全部诊断的文档条目。顺序不影响渲染：DocGen 把它转成以规则 ID 为键的字典后自行排序。
     /// </summary>
     internal static readonly ImmutableArray<DiagnosticDocEntry> Entries = ImmutableArray.Create(
         new DiagnosticDocEntry(Descriptors.TypeMustBeRecordId, new DocText("Convert to `record`", "转为 `record`")),

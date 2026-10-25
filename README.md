@@ -1,4 +1,4 @@
-# StronglyTypedId
+﻿# StronglyTypedId
 
 > 📖 中文文档：[README.zh-CN.md](README.zh-CN.md) · 🌐 Docs site: [lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
 
@@ -31,6 +31,10 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 - **Tiny to declare** — annotate a `partial record` (or `partial record struct`) with `[StronglyTypedId]`.
 - **Compile-time safety** — a built-in analyzer rejects invalid declarations as errors, and twenty-one of
   its twenty-six rules come with a code fix that repairs the declaration for you (see [Diagnostics](docs/diagnostics.md#diagnostics)).
+- **Muting the analyzer in one line** — a project that only consumes `IStronglyTypedId<,>` and declares no
+  ids of its own would otherwise carry the noise of all twenty-six rules. Set
+  `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>` in the project file and the
+  whole analyzer goes quiet (code generation is unaffected).
 - **Parsing & formatting** — `IParsable<TSelf>` and `ISpanParsable<TSelf>` support (`Parse` / `TryParse`
   for both `string` and `ReadOnlySpan<char>`) is generated automatically, together with `IFormattable`
   and `ISpanFormattable` whenever the primitive itself implements them — `string` does not, and

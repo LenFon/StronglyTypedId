@@ -42,7 +42,30 @@ Roslyn 5.9 的那个 SDK」—— 已在 .NET SDK **10.0.401** 上实测通过�
 自己一个 Id 都不声明的项目。这是刻意的：下游项目里声明的 Id 同样需要生成器，而一个悄悄缺了生成器的
 消费者只会得到一个莫名其妙的「找不到 `Create` 方法」，而不是一条诊断。
 
-确实不想要任何诊断的项目，可以按项目关掉。`.editorconfig` 里：
+确实不想要任何诊断的项目，可以按项目关掉——用工程文件里的一个属性把整个分析器静音：
+
+```xml
+<PropertyGroup>
+  <StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>
+</PropertyGroup>
+```
+
+这条属性走 MSBuild → 分析器这条通道：SDK 把它写进编译用的 analyzer config 的全局段
+（`build_property.StronglyTypedIdEnableAnalyzers`），分析器读到「否」就**一个诊断动作都不注册**——
+26 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
+
+三态语义：
+
+| 属性取值 | 分析器 |
+| --- | --- |
+| `false`（大小写不敏感）、`0`、`no`、`off` | 完全静音 |
+| `true` | 正常报诊断 |
+| 不设 | 正常报诊断（默认如此） |
+
+**只关诊断，不关代码生成。** 生成器与分析器是两个独立的组件，Id 的代码照常产出——静音的项目拿到的
+仍然是完整可用的强类型 Id。
+
+只想关掉某几条规则时，`.editorconfig` 仍然可用：
 
 ```ini
 [*.cs]
@@ -56,6 +79,13 @@ dotnet_diagnostic.STIA0011.severity = none
   <NoWarn>$(NoWarn);STIA0011;STIA0014</NoWarn>
 </PropertyGroup>
 ```
+
+> **为什么这个属性是「设了就能用」而不是「还要再配一步」**：SDK 不会把任意 MSBuild 属性写进
+> `build_property.*`——只有它自己内建的那二十来条（`TargetFramework`、`RootNamespace` 等）才会。
+> 要让自定义属性出现在那一段里，必须由 `<CompilerVisibleProperty Include="…" />` 显式放行，
+> 而放行这一步由本库在 `Len.StronglyTypedId.Generators` 包的
+> `buildTransitive/Len.StronglyTypedId.Generators.props` 里替使用者做了。
+> 那份 props 随依赖链流到最终使用者，因此**装主包的项目直接设属性即可**，不需要额外配置。
 
 <a id="symbols"></a>
 

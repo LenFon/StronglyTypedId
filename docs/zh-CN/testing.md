@@ -50,6 +50,24 @@ var fixture = new Fixture().WithStronglyTypedIds();
 OrderId orderId = fixture.Create<OrderId>();
 ```
 
+配合 Bogus 使用时，加上 `Len.StronglyTypedId.Testing.Bogus` 并启用定制：
+
+```csharp
+var faker = new Faker<Order>().WithStronglyTypedIds();
+
+Order order = faker.Generate();   // order.Id 已经是造好的 Id
+```
+
+Bogus 按属性的声明类型填值，而强类型 Id 是一个独立的类型 —— 没有这层适配，Bogus 无从下手，属性就停在
+默认值上，且**不报任何错**。适配之后，Bogus 会为每个 Id 类型登记自己的取值规则，生成时照常填上。
+
+Id 类型默认从**当前已加载的程序集**里发现；某个 Id 所在的程序集尚未加载时，显式列出即可：
+
+```csharp
+var faker = new Faker<Order>()
+    .WithStronglyTypedIds(new AnyIdGenerator(), typeof(OrderId), typeof(CustomerId));
+```
+
 完整说明见 [TESTING.md](https://github.com/LenFon/StronglyTypedId/blob/main/TESTING.md)。
 
 <a id="samples"></a>

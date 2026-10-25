@@ -62,18 +62,4 @@ public partial record struct ResourceUri(string Value)
 类型实参传入。转换器类本身是生成的 —— 请为你实际使用的闭合类型手工注册，见
 [嵌套类型](declaration.md#nested-types)。
 
-<a id="swashbuckle-minimal-api-parameters"></a>
-
-## Swashbuckle 覆盖不到 Minimal API 的参数
-
-`MapType` 是按 CLR 类型登记的，而 Minimal API 处理器的参数到达 `ApiExplorer` 时已经是 `string`——框架认得出
-`IParsable`，于是按文本描述——所以声明为 Id 的路由参数或查询参数，在 Swagger 文档里只剩裸的
-`type: string`，没有 `format`。请求 / 响应体与 DTO 属性不受影响；MVC 控制器参数也没问题：它以 Id 类型到达
-`ApiExplorer`，所以 `int` 支撑的 Id 在 `/api/products/{id}` 上是 `type: integer, format: int32`
-（`samples/Len.StronglyTypedId.Sample3`，Swashbuckle 10）。Minimal API 这个缺口实测于 `net8.0` +
-Swashbuckle 6.9.0（`samples/Len.StronglyTypedId.Sample4`）。
-
-内置的 [ASP.NET Core OpenAPI](integrations.md#aspnetcore-openapi) 集成没有这个缺口：它的转换器看的是框架
-为该参数建好的 schema，所以 `/orders/{id}` 在那里是 `type: string, format: uuid`。
-
 [<- 返回目录](index.md) · [English](../limitations.md)

@@ -34,7 +34,8 @@ internal sealed record ModuleInfo
     /// </summary>
     public bool MayDeclareIds { get; }
 
-    // 类型表在同一编译里稳定，4 个集成生成器各遍历一次，故用实例级懒缓存收敛为一次。
+    // 类型表在同一编译里稳定，发现阶段要遍历各模块的类型树；实例级懒缓存让重复的 GetTypes 调用
+    // 复用已算好的表，不必重走一遍类型树。
     // 注意 record 合成的 Equals 会比较缓存字段：「已填充」与「为空」的两个实例不相等；增量管线用 ModuleInfo.Comparer 不受影响，别处直接用默认相等性会踩坑。
     private ImmutableArray<ITypeSymbol>? _typesCache;
 

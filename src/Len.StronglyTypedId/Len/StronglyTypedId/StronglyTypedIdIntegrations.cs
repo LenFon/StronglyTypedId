@@ -1,98 +1,118 @@
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// 指定为强类型 Id 生成哪些集成代码。
+/// Specifies which integration code is generated for strongly typed ids.
 /// </summary>
 /// <remarks>
-/// 这是一道<b>过滤器</b>而非开关：只有当前编译引用了对应程序集才会生成代码，本枚举只能在此基础上收窄。
-/// 未指定该参数时按 <see cref="All"/> 的行为处理。
+/// This is a <b>filter</b>, not a switch: code is only generated when the current compilation actually
+/// references the corresponding assembly, and this enum can only narrow that down further. When the
+/// parameter is not specified, <see cref="All"/> behaviour applies.
 /// </remarks>
 [Flags]
 public enum StronglyTypedIdIntegrations
 {
     /// <summary>
-    /// 未指定。表示「沿用程序集级默认值；若也没有，则按引用生成」。这是默认值。
+    /// Not specified. Means "follow the assembly-level default; if there is none, generate whatever the
+    /// compilation references". This is the default value.
     /// </summary>
     /// <remarks>
-    /// 只用于区分「没写这个参数」与「写了但什么都没选」，故必须占用独立的位。
+    /// It only serves to tell "the parameter was not written" apart from "written, but nothing selected",
+    /// which is why <see cref="None"/> has to occupy a bit of its own.
     /// </remarks>
     Default = 0,
 
     /// <summary>
-    /// 显式关闭全部集成。核心实现（工厂、解析、比较、格式化）不受影响，
-    /// 显式打开的 <see cref="StronglyTypedIdAttribute.TypeConverter"/> 也不受影响。
+    /// Explicitly disables all integrations. The core implementation (factory, parsing, comparison,
+    /// formatting) is unaffected, and neither is an explicitly enabled
+    /// <see cref="StronglyTypedIdAttribute.TypeConverter"/>.
     /// </summary>
     /// <remarks>
-    /// 仅作「已显式指定」的标记，与其他标志组合时不产生额外效果：<c>None | Dapper</c> 等价于 <c>Dapper</c>。
+    /// Only a marker for "explicitly specified"; it adds nothing when combined with other flags:
+    /// <c>None | Dapper</c> is equivalent to <c>Dapper</c>.
     /// </remarks>
     None = 1 << 0,
 
     /// <summary>
-    /// Entity Framework Core 的值转换器与 <c>ApplyTo(ModelConfigurationBuilder)</c> /
-    /// <c>ApplyTo(ModelBuilder)</c>。需要引用 <c>Microsoft.EntityFrameworkCore</c> 7.0.0 及以上。
+    /// The Entity Framework Core value converters plus <c>ApplyTo(ModelConfigurationBuilder)</c> /
+    /// <c>ApplyTo(ModelBuilder)</c>. Requires a reference to <c>Microsoft.EntityFrameworkCore</c> 7.0.0 or
+    /// later.
     /// </summary>
     EntityFrameworkCore = 1 << 1,
 
     /// <summary>
-    /// Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 与 <c>ApplyTo()</c>。注册是进程级全局的，
-    /// 调用一次即可。需要引用 <c>Dapper</c> 2.0.0 及以上。
+    /// Dapper's <c>SqlMapper.TypeHandler&lt;TId&gt;</c> plus <c>ApplyTo()</c>. Registration is process-wide
+    /// and global, so calling it once is enough. Requires a reference to <c>Dapper</c> 2.0.0 or later.
     /// </summary>
     Dapper = 1 << 2,
 
     /// <summary>
-    /// System.Text.Json 的转换器、<c>[JsonConverter]</c> 特性与
-    /// <c>ApplyTo(JsonSerializerOptions)</c>。需要引用 <c>System.Text.Json</c>。
+    /// The System.Text.Json converter, the <c>[JsonConverter]</c> attribute and
+    /// <c>ApplyTo(JsonSerializerOptions)</c>. Requires a reference to <c>System.Text.Json</c>.
     /// </summary>
     SystemTextJson = 1 << 3,
 
     /// <summary>
-    /// Newtonsoft.Json 的转换器、<c>[JsonConverter]</c> 特性与
-    /// <c>AddStronglyTypedId(JsonSerializerSettings)</c>。需要引用 <c>Newtonsoft.Json</c> 13.0.0 及以上。
+    /// The Newtonsoft.Json converter, the <c>[JsonConverter]</c> attribute and
+    /// <c>AddStronglyTypedId(JsonSerializerSettings)</c>. Requires a reference to <c>Newtonsoft.Json</c>
+    /// 13.0.0 or later.
     /// </summary>
     NewtonsoftJson = 1 << 4,
 
     /// <summary>
-    /// Swashbuckle 的 <c>ApplyTo(SwaggerGenOptions)</c>。需要引用
-    /// <c>Swashbuckle.AspNetCore.SwaggerGen</c> 6.0.0 及以上。
+    /// Swashbuckle's <c>ApplyTo(SwaggerGenOptions)</c>. Requires a reference to
+    /// <c>Swashbuckle.AspNetCore.SwaggerGen</c> 6.0.0 or later.
     /// </summary>
     Swagger = 1 << 5,
 
     /// <summary>
-    /// ASP.NET Core OpenAPI 的 <c>ApplyTo(OpenApiOptions)</c>。需要引用
-    /// <c>Microsoft.AspNetCore.OpenApi</c> 9.0.0 及以上。
+    /// The ASP.NET Core OpenAPI <c>ApplyTo(OpenApiOptions)</c>. Requires a reference to
+    /// <c>Microsoft.AspNetCore.OpenApi</c> 9.0.0 or later.
     /// </summary>
     /// <remarks>
-    /// 8.0.x 只有 <c>WithOpenApi()</c>，schema 转换器 API 是 9.0.0 才引入的，故 <c>net8.0</c> 上无法生成，请改用 <see cref="Swagger"/>。
+    /// 8.0.x only has <c>WithOpenApi()</c>; the schema transformer API arrived in 9.0.0, so nothing can be
+    /// generated on <c>net8.0</c> — use <see cref="Swagger"/> instead.
     /// </remarks>
     AspNetCoreOpenApi = 1 << 6,
 
     /// <summary>
-    /// ASP.NET Core MVC 的模型绑定与路由约束（<c>ApplyTo(MvcOptions)</c> /
-    /// <c>ApplyTo(RouteOptions)</c>，同时支撑 Minimal API 的 <c>{id:OrderId}</c> 约束）。
-    /// 需要引用 <c>Microsoft.AspNetCore.Mvc</c> 2.0.0 及以上（或其 <c>.Core</c> / <c>.Abstractions</c> 门面）。
+    /// ASP.NET Core MVC model binding and route constraints (<c>ApplyTo(MvcOptions)</c> /
+    /// <c>ApplyTo(RouteOptions)</c>, which also back Minimal API's <c>{id:OrderId}</c> constraints).
+    /// Requires a reference to <c>Microsoft.AspNetCore.Mvc</c> 2.0.0 or later (or its <c>.Core</c> /
+    /// <c>.Abstractions</c> facade).
     /// </summary>
     AspNetCoreMvc = 1 << 7,
 
     /// <summary>
-    /// MessagePack 的 <c>IMessagePackFormatter&lt;TId&gt;</c>、<c>[MessagePackFormatter]</c> 特性与
-    /// <c>ApplyTo(MessagePackSerializerOptions)</c>。需要引用 <c>MessagePack</c> 2.0.0 及以上。
+    /// The MessagePack <c>IMessagePackFormatter&lt;TId&gt;</c> plus
+    /// <c>ApplyTo(MessagePackSerializerOptions)</c>. Requires a reference to <c>MessagePack</c> 2.0.0 or
+    /// later.
     /// </summary>
     /// <remarks>
-    /// 二进制载荷存放基元值本身，文本前缀只作用于文本形（<c>ToString()</c> / JSON）。
+    /// The formatter lives in the generated <c>StronglyTypedIds</c> class rather than being attached to the
+    /// id, so it is wired up through the entry point. The binary payload holds the primitive value itself,
+    /// so the text prefix only decorates the text forms (<c>ToString()</c> / JSON) — except for
+    /// <c>BigInteger</c>, <c>Int128</c> and <c>UInt128</c>, which are written as text, prefix included.
+    /// MessagePack can encode those three natively; the text form is kept only so the payload stays
+    /// compatible with what earlier versions wrote.
     /// </remarks>
     MessagePack = 1 << 8,
 
     /// <summary>
-    /// MongoDB BSON 的 <c>IBsonSerializer&lt;TId&gt;</c>、<c>[BsonSerializer]</c> 特性与
-    /// <c>ApplyTo()</c>。需要引用 <c>MongoDB.Bson</c> 3.0.0 及以上。
+    /// The MongoDB BSON <c>IBsonSerializer&lt;TId&gt;</c> plus <c>RegisterBsonSerializers()</c>. Requires a
+    /// reference to <c>MongoDB.Bson</c> 3.0.0 or later.
     /// </summary>
     /// <remarks>
-    /// 与 <see cref="MessagePack"/> 同理：载荷存放基元值本身，文本前缀不进入二进制。
+    /// The serializer lives in the generated <c>StronglyTypedIds</c> class rather than being attached to the
+    /// id, so it is registered through the entry point. As with <see cref="MessagePack"/>, the payload holds
+    /// the primitive value itself, so the text prefix does not enter the binary form — except for
+    /// <c>BigInteger</c>, <c>Int128</c> and <c>UInt128</c>, which are written as text because BSON has no
+    /// serializer for them.
     /// </remarks>
     MongoDb = 1 << 9,
 
     /// <summary>
-    /// 全部集成。仍受「是否引用了对应程序集」这一道门控约束。
+    /// Every integration. Still subject to the gate that checks whether the corresponding assembly is
+    /// referenced.
     /// </summary>
     All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb,
 }

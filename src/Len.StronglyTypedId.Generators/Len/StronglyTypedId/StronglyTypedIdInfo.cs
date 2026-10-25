@@ -255,21 +255,14 @@ internal readonly record struct StronglyTypedIdInfo
     /// 强类型 Id 的类型名，不含命名空间；C# 保留关键字已加 <c>@</c> 前缀转义，可直接写进生成的源码。
     /// </summary>
     /// <remarks>
-    /// <see cref="Name"/> 取自 <see cref="ISymbol.Name"/>，而它对 <c>class</c>、<c>return</c>、<c>int</c>
-    /// 这类保留关键字不加转义。把它原样写进类型声明位，编译器会把名字吃成关键字：
-    /// <c>partial record struct class :</c> 的类型名变成空串，进而爆出 CS0260 / CS1520 / CS0101 /
-    /// CS9348 等一串错误，成员整体掉出类型落进全局命名空间。
+    /// <see cref="Name"/> 对保留关键字（<c>class</c> / <c>return</c> / <c>int</c>）不加转义，原样写进类型声明位
+    /// 会被编译器吃成关键字，爆出 CS0260 / CS1520 / CS0101 / CS9348 等一串错误，成员整体掉出类型落进全局命名空间。
+    /// 上下文关键字一并转义（理由见 <see cref="EscapeIdentifier"/>）；加 <c>@</c> 对任何关键字都合法且不改变语义，
+    /// 故普通名字下本属性与 <see cref="Name"/> 逐字节相同。
     /// <para>
-    /// 上下文关键字（<c>var</c> / <c>record</c> / <c>nameof</c> 等）也一并转义：它们单独出现时是合法
-    /// 标识符，但本生成器自己就会在产物里写出 <c>out var id</c> 这类局部变量声明，Id 叫 <c>var</c>
-    /// 时那个 <c>var</c> 会被当成隐式类型声明而不是类型名。加 <c>@</c> 对任何关键字都是合法且不改变
-    /// 语义的。因此普通名字下 <see cref="EscapedName"/> 与 <see cref="Name"/> 逐字节相同，
-    /// 既有生成代码与快照测试不受影响。
-    /// </para>
-    /// <para>
-    /// 拼装生成源码时一律用本属性，不要用 <see cref="Name"/>。唯一的例外是名字要作为「非代码文本」
-    /// 使用的场合——例如 ASP.NET Core 路由约束的令牌（<c>options.ConstraintMap["OrderId"]</c>），
-    /// 那里比较的是路由模板里的字面量，加 <c>@</c> 会改变语义。
+    /// 拼装生成源码时一律用本属性，不要用 <see cref="Name"/>。唯一的例外是名字要作为「非代码文本」使用的场合
+    /// ——例如 ASP.NET Core 路由约束的令牌（<c>options.ConstraintMap["OrderId"]</c>），那里比较的是路由模板里的
+    /// 字面量，加 <c>@</c> 会改变语义。
     /// </para>
     /// </remarks>
     public string EscapedName => EscapeIdentifier(Name);
@@ -326,9 +319,8 @@ internal readonly record struct StronglyTypedIdInfo
     /// （<c>{"Value":"…"}</c>）：编译无警告、运行不抛异常，只在真实往返时暴露。
     /// </para>
     /// <para>
-    /// <c>System.Text.Json</c> 没有这个问题：<c>System.Text.Json.dll</c> 在
-    /// <c>Microsoft.NETCore.App</c> 共享框架里，任何 net8.0+ 项目都引用得到 → 声明程序集必然生成
-    /// STJ 转换器。
+    /// <c>System.Text.Json</c> 没有这个问题：它在 <c>Microsoft.NETCore.App</c> 共享框架里，
+    /// 任何 net8.0+ 项目都引用得到 → 声明程序集必然生成 STJ 转换器。
     /// </para>
     /// </remarks>
     public bool RequiresExternalNewtonsoftJsonConverter { get; }
@@ -760,20 +752,17 @@ internal readonly record struct StronglyTypedIdInfo
     /// <see cref="SyntaxFacts.GetKeywordKind"/> 查保留关键字、<see cref="SyntaxFacts.GetContextualKeywordKind"/>
     /// 查上下文关键字，两者都返回 <see cref="SyntaxKind.None"/> 表示不是关键字。
     /// <para>
-    /// 为什么上下文关键字也要转义：它们单独出现时确实是合法标识符，但本生成器自己就会在产物里写出
-    /// <c>out var id</c> / <c>out var val</c> 这类局部变量声明。Id 若叫 <c>var</c>，
-    /// <c>out var result</c> 里的 <c>var</c> 会被当成隐式类型声明而不是类型名，
-    /// 进而 CS1503 / CS8508 一串错误。加 <c>@</c> 对任何关键字都是合法且不改变语义的，故一律转义。
+    /// 上下文关键字也转义：它们单独出现时确实是合法标识符，但本生成器自己就会在产物里写出
+    /// <c>out var id</c> 这类局部变量声明，Id 若叫 <c>var</c>，那个 <c>var</c> 会被当成隐式类型声明而不是类型名，
+    /// 进而 CS1503 / CS8508 一串错误。
     /// </para>
     /// <para>
-    /// <see cref="IsKeywordMissingFromRoslynTables"/> 是补丁：C# 规范把这些词列为上下文关键字
-    /// （词法结构 §6.4.5 的 contextual_keyword 规则），但 Roslyn 的 <see cref="SyntaxFacts"/>
-    /// 两张表都不收录它们。其中 <c>value</c> 有实证危害——生成器在 STJ 读取路径里写出
-    /// <c>var value = ...Deserialize&lt;Guid&gt;(...); return value.TryCreate(...)</c>，
-    /// 局部变量 <c>value</c> 会遮蔽同名类型，CS1061「Guid 不包含 TryCreate」。
-    /// 其余几个（<c>nint</c> / <c>nuint</c> / <c>dynamic</c> 等）在当前发射模式下尚无实测危害，
-    /// 但同属规范上下文关键字，一并转义：不依赖「恰好没有冲突位置」这种运气。
-    /// 列表按 Roslyn 5.9.0 实测得出；将来 Roslyn 若收录其中某个词，这里只是变得冗余，无害。
+    /// <see cref="IsKeywordMissingFromRoslynTables"/> 是补丁：C# 规范把这些词列为上下文关键字（词法结构 §6.4.5），
+    /// 但 Roslyn 的 <see cref="SyntaxFacts"/> 两张表都不收录它们。其中 <c>value</c> 有实证危害——生成器在 STJ
+    /// 读取路径里写出局部变量 <c>value</c>，它会遮蔽同名类型，CS1061「Guid 不包含 TryCreate」。其余几个
+    /// （<c>nint</c> / <c>nuint</c> / <c>dynamic</c> 等）尚无实测危害，但同属规范上下文关键字，一并转义：
+    /// 不依赖「恰好没有冲突位置」这种运气。列表按 Roslyn 5.9.0 实测得出；将来 Roslyn 若收录其中某个词，
+    /// 这里只是变得冗余，无害。
     /// </para>
     /// </remarks>
     internal static string EscapeIdentifier(string name)

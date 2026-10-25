@@ -1,4 +1,4 @@
-# StronglyTypedId
+﻿# StronglyTypedId
 
 > 📖 英文文档：[README.md](README.md) · 🌐 文档站：[lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
 
@@ -30,6 +30,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 - **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
 - **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 26 条规则里有 21 条附带代码修复，
   可一键修好声明（见[诊断与代码修复](docs/zh-CN/diagnostics.md#diagnostics)）。
+- **一键静音** —— 只消费 `IStronglyTypedId<,>` 而自己不声明 Id 的项目要背 26 条规则的噪音。在工程文件里设
+  `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>` 即整个分析器静音（代码生成照常）。
 - **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
   的 `string` 与 `ReadOnlySpan<char>` 两套重载），并在基元类型自身实现 `IFormattable` / `ISpanFormattable`
   时一并生成 —— `string` 没有实现它们，枚举基元则两者都跳过，因为 `System.Enum` 继承来的成员已标记

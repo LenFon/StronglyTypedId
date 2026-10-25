@@ -217,4 +217,26 @@ where they are. Under `System.Text.Json` this also means a second call after the
 no-op rather than an `InvalidOperationException`; `JsonSerializerOptions` freezes on first use, and the
 entry point never touches the collection when everything is already registered.
 
+### When the id is declared in another assembly
+
+The two serializers differ in where they put the converter:
+
+- The `System.Text.Json` converter is nested in the id, but `System.Text.Json.dll` lives in the
+  `Microsoft.NETCore.App` shared framework, so every net8.0+ project references it — **the assembly that
+  declares the id always carries the converter**, and consumers never have to think about it.
+- `Newtonsoft.Json` is a separate NuGet package. If the assembly that declares the id (typically a domain
+  layer) does not reference it, that id has no Newtonsoft converter at all: a nested converter can only be
+  generated in the assembly that declares the id, and a consumer adding one of its own would hit `CS0426`
+  (the type already exists).
+
+  The consumer (the host app that does reference Newtonsoft) generates a **top-level** converter for such
+  ids and registers it through `AddStronglyTypedId`. Newtonsoft's `[JsonConverter]` attribute, however,
+  takes precedence over `JsonSerializerSettings.Converters`, and an attribute can only sit on the type
+  itself — so **across assemblies you must call `AddStronglyTypedId`**. Without it the id is written as an
+  object (`{"Value":"…"}`) while `System.Text.Json` writes a string: the same data in two shapes, with no
+  compiler warning and no exception at runtime.
+
+  When both the domain layer and the host app reference Newtonsoft, the nested converter in the declaring
+  assembly travels with the type and wins by attribute precedence; `AddStronglyTypedId` is then optional.
+
 [<- Back to the index](index.md) · [中文](zh-CN/serialization.md)

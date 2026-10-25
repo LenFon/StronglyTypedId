@@ -105,11 +105,20 @@ See [MongoDB](integrations.md#mongodb).
 
 ## The Swagger document shows an id as a plain string
 
-If the id sits in a **Minimal API** route or query parameter, that is expected with Swashbuckle: `MapType` is
-keyed on the CLR type, but `ApiExplorer` reports an `IParsable` parameter as `string`, so there is no id type
-left to match. Bodies, DTO properties and MVC controller parameters are mapped normally, and the built-in
-[ASP.NET Core OpenAPI](integrations.md#aspnetcore-openapi) integration does not have this gap. Details in
-[Limitations](limitations.md#swashbuckle-minimal-api-parameters).
+If the id sits in a **Minimal API** route or query parameter and the document still shows a bare
+`type: string`, the operation filter did not run — it is registered by
+`StronglyTypedIds.ApplyTo(options)`, so that call has to be there:
+
+```csharp
+services.AddSwaggerGen(options =>
+{
+    StronglyTypedIds.ApplyTo(options);
+});
+```
+
+`MapType` alone cannot cover those parameters: it is keyed on the CLR type, while `ApiExplorer` reports an
+`IParsable` parameter as `string`. The generated operation filter looks the parameter up by its declared
+type instead. Details in [Integrations](integrations.md#swashbuckle).
 
 ## An id inside a generic container has no JSON converter
 

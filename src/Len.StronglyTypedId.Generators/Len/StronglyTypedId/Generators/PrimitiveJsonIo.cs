@@ -19,8 +19,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 仍走委托，并另行给出可操作的错误提示。
 /// </para>
 /// <para>
-/// 直写与 STJ 默认的等价性由 <c>test/Len.StronglyTypedId.Integration.Test</c> 里的
-/// 「逐基元对比」用例守着：每种基元都拿「STJ 默认序列化结果」与「生成代码的写出结果」比字节。
+/// 直写与 STJ 默认的等价性由 <c>test/Len.StronglyTypedId.Test</c> 的
+/// <c>PrimitiveContractMatrixTests</c> 守着：每种基元都拿「STJ 默认序列化结果」与「生成代码的写出结果」比字节。
 /// </para>
 /// </remarks>
 internal static class PrimitiveJsonIo

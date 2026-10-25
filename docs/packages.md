@@ -45,7 +45,32 @@ analyzer** — including projects that only consume `IStronglyTypedId<,>` and de
 That is deliberate: an id declared further downstream still needs the generator, and a consumer that
 silently lacked it would fail with a puzzling "no `Create` method" error instead of a diagnostic.
 
-A project that wants none of the diagnostics can silence them per project, in `.editorconfig`:
+A project that wants none of the diagnostics can silence the whole analyzer with one property in the
+project file:
+
+```xml
+<PropertyGroup>
+  <StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>
+</PropertyGroup>
+```
+
+The property travels from MSBuild to the analyzer through the analyzer config the SDK writes for the
+compilation (`build_property.StronglyTypedIdEnableAnalyzers`); when it reads "no" the analyzer registers
+**no diagnostic action at all** — none of the 26 rules report, and the code fixes disappear with them
+(there is nothing left to fix).
+
+The three states:
+
+| Property value | Analyzer |
+| --- | --- |
+| `false` (any casing), `0`, `no`, `off` | fully muted |
+| `true` | reports as usual |
+| not set | reports as usual (the default) |
+
+**Only the diagnostics are muted, not code generation.** The generator and the analyzer are separate
+components, so a muted project still gets complete, fully usable strongly typed ids.
+
+To silence individual rules instead, `.editorconfig` still works:
 
 ```ini
 [*.cs]
@@ -59,6 +84,14 @@ or in the project file, which is blunter but survives a missing `.editorconfig`:
   <NoWarn>$(NoWarn);STIA0011;STIA0014</NoWarn>
 </PropertyGroup>
 ```
+
+> **Why the property works without any extra setup**: the SDK does not put arbitrary MSBuild properties
+> into `build_property.*` — only the two dozen it defines itself (`TargetFramework`, `RootNamespace`, …).
+> A custom property reaches that section only when it is explicitly allowed through
+> `<CompilerVisibleProperty Include="…" />`, and this library does that for you in the
+> `buildTransitive/Len.StronglyTypedId.Generators.props` file of the `Len.StronglyTypedId.Generators`
+> package. That props file flows down the dependency chain to the final consumer, so **setting the
+> property is all a project that references the main package has to do**.
 
 <a id="symbols"></a>
 

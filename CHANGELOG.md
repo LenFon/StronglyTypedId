@@ -14,6 +14,23 @@ change set rather than reproducing every commit.
 
 ### Added
 
+- `Len.StronglyTypedId.Testing.Bogus`: a new adapter package that teaches Bogus to create strongly typed
+  ids. `new Faker<Order>().WithStronglyTypedIds()` registers Bogus' own `RuleForType` rules for every id
+  type, so `faker.Generate()` fills id-typed members instead of leaving them at their default value —
+  silently, since Bogus has no way to produce a type it does not know. The id types are discovered from
+  the assemblies loaded right now; pass them explicitly when the assembly declaring an id is not loaded
+  yet. The package depends on `Bogus` and `Len.StronglyTypedId.Testing`, and the core testing package
+  stays free of third-party dependencies.
+- **Muting the analyzer in one line.** A project that only consumes `IStronglyTypedId<,>` and declares no
+  ids of its own carries the noise of all twenty-six rules, and the only way to turn them off was to list
+  every id in `.editorconfig` or in `NoWarn`. Set
+  `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>` in the project file and the
+  analyzer registers no diagnostic action at all. The property travels from MSBuild to the analyzer
+  through the analyzer config the SDK writes for the compilation; `Len.StronglyTypedId.Generators` ships
+  the `buildTransitive` props that lets the SDK see it, so nothing else has to be configured. Only the
+  diagnostics are muted — code generation is unaffected, and the id types are still fully generated.
+  `false` (any casing), `0`, `no` and `off` mute the analyzer; `true` and an unset property leave it
+  reporting as before.
 - `Len.StronglyTypedId.Testing`: deterministic id generation for tests — `Any.Id<T>()`,
   `Any.Ids<T>(count)`, seeded sequences, `Any.Register<T>(factory)` overrides and `Any.Reset()`.
   Values rejected by a generated validator are retried instead of surfacing as test failures. The
@@ -157,6 +174,34 @@ change set rather than reproducing every commit.
 
 ### Fixed
 
+- The `Swashbuckle` integration now also restores the schema of strongly typed ids used as **Minimal API**
+  parameters. `ApiExplorer` describes an `IParsable` parameter as `string` — the framework sees a type that
+  parses from text — so `MapType`, which is keyed on the CLR type, never applied to route or query
+  parameters: they came out as a bare `type: string` with no `format`, while the same id in a request body
+  carried `type: string, format: uuid`. A generated operation filter now looks the parameter up by its
+  declared type and puts the schema back. `ApplyTo` stays idempotent, and the `MapType` registrations are
+  guarded so that calling it twice no longer throws `An item with the same key has already been added`.
+- The `System.Text.Json` converter no longer delegates the primitive to `JsonSerializer`. It used to call
+  `JsonSerializer.Serialize(writer, primitiveId, options)` / `Deserialize<T>(ref reader, options)`, which
+  requires a `JsonTypeInfo` for the primitive. A source-generated `JsonSerializerContext` only serves the
+  types registered with `[JsonSerializable]`, so callers had to register the wrapped primitive as well —
+  and a missing entry surfaced as the framework's own
+  `NotSupportedException: JsonTypeInfo metadata for type 'System.Guid' was not provided`, which is hard to
+  trace back to a missing *primitive* type. The converter now reads and writes the primitive directly
+  through `Utf8JsonWriter` / `Utf8JsonReader` (`Guid` via `WriteStringValue(Guid)`, numbers via
+  `WriteNumberValue`, enums as their underlying value). The output is byte-for-byte identical to
+  `System.Text.Json`'s default, which the per-primitive contract matrix asserts. The few primitives with
+  no direct form (`Int128`, `UInt128`, `Half`, `TimeSpan`, `DateOnly`, `TimeOnly`, `char`) still go through
+  `JsonSerializer`; for them the framework's `NotSupportedException` is now turned into a `JsonException`
+  that names the `[JsonSerializable]` to add.
+- The `Newtonsoft.Json` converter is now generated in the consuming assembly for ids whose declaring
+  assembly does not reference Newtonsoft.Json. The nested converter can only live in the assembly that
+  declares the id — a consumer adding one of its own hits `CS0426` — so such an id ended up with no
+  Newtonsoft converter at all, and was written as an object (`{"Value":"…"}`) while `System.Text.Json`
+  wrote a string. The same data in two shapes, with no compiler warning and no exception at runtime. The
+  host app now gets a top-level converter for those ids, registered through `AddStronglyTypedId`. The
+  nested converter and its `[JsonConverter]` attribute are kept, so an assembly that does reference
+  Newtonsoft is unaffected.
 - `STIA0016` (duplicate primitive type) no longer degrades to O(N²). The namespace grouping was recomputed
   from scratch for every strongly typed id, so N ids sharing a namespace each rescanned the whole namespace
   (including nested types). The grouping is now cached per namespace and shared across the id's symbol

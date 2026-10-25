@@ -1,17 +1,19 @@
 ﻿namespace Len.StronglyTypedId;
 
 /// <summary>
-/// 指定强类型 Id 在 JSON 中的序列化形态。
+/// Specifies the shape a strongly typed id takes in JSON.
 /// </summary>
 public enum JsonShape
 {
     /// <summary>
-    /// 序列化为被包装的基元值本身，例如 <c>"3f2c…"</c> 或 <c>42</c>。这是默认值。
+    /// Serialized as the wrapped primitive value itself, for example <c>"3f2c…"</c> or <c>42</c>.
+    /// This is the default.
     /// </summary>
     Primitive = 0,
 
     /// <summary>
-    /// 序列化为单属性对象 <c>{ "value": … }</c>，属性名固定为 <c>value</c>。
+    /// Serialized as a single-property object <c>{ "value": … }</c>, whose property is named
+    /// <c>value</c>.
     /// </summary>
     Object = 1,
 }

@@ -20,11 +20,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 走 MSBuild → analyzer config 这条通道：消费方在 csproj 里设
     /// <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/StronglyTypedIdEnableAnalyzers&gt;</c>，
     /// SDK 把它写进编译用的 analyzer config 的**全局段**（<c>build_property.*</c>）。
-    /// <para>
     /// 属性必须由 <c>&lt;CompilerVisibleProperty Include="…" /&gt;</c> 显式放行才会出现在那一段里 ——
-    /// SDK 不会注入任意 MSBuild 属性。本库的 <c>buildTransitive/Len.StronglyTypedId.props</c> 就是替
-    /// 用户做这一步的。
-    /// </para>
+    /// SDK 不会注入任意 MSBuild 属性。本库的 <c>buildTransitive/Len.StronglyTypedId.Generators.props</c>
+    /// 就是替用户做这一步的。
     /// </remarks>
     private const string MutingPropertyName = "build_property.StronglyTypedIdEnableAnalyzers";
 
@@ -42,7 +40,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 注册位置不影响它们的作用范围（都作用于整次编译）。
         //
         // 集成请求（STIA0019）先攒起来，到编译结束再按「集成」聚合上报。逐类型各报一条时，
-        // 「N 个 Id 都写了 Integrations = All」会炸出 7N 条同义诊断，把真正缺失的那几个包淹掉。
+        // 「N 个 Id 都写了 Integrations = All」会炸出 9N 条同义诊断，把真正缺失的那几个包淹掉。
         context.RegisterCompilationStartAction(startContext =>
         {
             if (IsMuted(startContext.Options))
@@ -661,7 +659,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 汇总整个编译的集成请求，为每个「请求了但没有引用」的集成报一条 STIA0019。
     /// </summary>
     /// <remarks>
-    /// 逐类型逐集成上报时，50 个 Id 配 <c>Integrations = All</c> 会得到 350 条同义诊断；按集成去重后上限就是集成总数。
+    /// 逐类型逐集成上报时，50 个 Id 配 <c>Integrations = All</c> 会得到 450 条同义诊断；按集成去重后上限就是集成总数。
     /// </remarks>
     private static void ReportIntegrationProblems(CompilationAnalysisContext context, ConcurrentBag<IntegrationRequest> requests)
     {

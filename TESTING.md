@@ -3,12 +3,13 @@
 Test helpers for [Len.StronglyTypedId](https://github.com/lenfon/StronglyTypedId): create strongly typed ids with plausible values
 instead of hand-writing `OrderId.Create(Guid.NewGuid())` in every arrange block.
 
-Two packages:
+Three packages:
 
 | Package | Purpose | Dependencies |
 | --- | --- | --- |
 | `Len.StronglyTypedId.Testing` | `Any` / `AnyIdGenerator` — value generation for every supported primitive | none |
 | `Len.StronglyTypedId.Testing.AutoFixture` | `fixture.Create<OrderId>()` support | `AutoFixture` |
+| `Len.StronglyTypedId.Testing.Bogus` | `faker.Generate<Order>()` support | `Bogus` |
 
 ## Quick start
 
@@ -103,6 +104,36 @@ OrderId orderId = fixture.Create<OrderId>();
 The customization is inserted at the front of the customization list, so it wins over AutoFixture's
 constructor-based strategy — which would otherwise bypass `Create` and therefore the validator. Pass a
 seeded `AnyIdGenerator` to `WithStronglyTypedIds` for reproducible fixtures.
+
+## Bogus
+
+```csharp
+using Bogus;
+using Len.StronglyTypedId.Testing;
+
+var faker = new Faker<Order>().WithStronglyTypedIds();
+
+Order order = faker.Generate();   // order.Id is a real id
+```
+
+Bogus fills a member by its declared type, and a strongly typed id is a distinct type — without this
+adapter Bogus cannot produce one, so the member stays at its default value **without any error**. The
+adapter registers Bogus' own `RuleForType` rules for every id type, so generation fills them like any
+other member.
+
+Bogus instantiates the target type through its parameterless constructor, so the type it fills needs
+one: a class with settable properties, not a record with a primary constructor.
+
+The id types are discovered from the assemblies loaded right now. When the assembly declaring an id is
+not loaded yet, name the types explicitly:
+
+```csharp
+var faker = new Faker<Order>()
+    .WithStronglyTypedIds(new AnyIdGenerator(), typeof(OrderId), typeof(CustomerId));
+```
+
+Pass a seeded `AnyIdGenerator` for reproducible data. The adapter never overwrites a rule you wrote
+yourself — Bogus keeps it.
 
 ## Notes
 

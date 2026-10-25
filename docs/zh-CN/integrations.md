@@ -128,12 +128,16 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 把 Id 类型交给 `ApiExplorer`——DTO 上的属性、响应体、嵌套在另一个模型里的字段、MVC 控制器参数——用的都是
 同一份映射。
 
-有一处实测出来的例外，来自 `samples/Len.StronglyTypedId.Sample4`（`net8.0` + Swashbuckle 6.9.0）：
-**Minimal API** 的路由参数被 `ApiExplorer` 描述成 `string`——
-框架认得出这是 `IParsable` 类型，于是按文本上报——`MapType` 因此没有机会生效，该参数的 schema 是裸的
-`type: string`，不带 `format`。请求 / 响应体与 DTO 属性不受影响；MVC 控制器参数也照常映射，它以 Id 类型
-到达 `ApiExplorer`（`samples/Len.StronglyTypedId.Sample3` 里 `/api/products/{id}` 是
-`type: integer, format: int32`）。内置的 [ASP.NET Core OpenAPI](#aspnetcore-openapi) 集成没有这个缺口。
+**Minimal API** 的参数另有一处坑：`ApiExplorer` 会把实现了 `IParsable` 的参数描述成 `string`——
+框架认得出这是可解析的文本类型——于是按 CLR 类型登记的 `MapType` 没有机会生效。为此本库额外生成一个
+操作过滤器：它按参数的**真实类型**（`ApiParameterDescription.Type` 仍是 Id 类型）查同一份 schema 映射，
+把参数上那份裸的 `type: string` 换成带 `format` 的形态。请求 / 响应体与 DTO 属性照常由 `MapType` 照顾；
+MVC 控制器参数也一样（`samples/Len.StronglyTypedId.Sample3` 里 `/api/products/{id}` 是
+`type: integer, format: int32`）。实测见 `samples/Len.StronglyTypedId.Sample4`（`net8.0` +
+Swashbuckle 6.9.0）：`/orders/{id}` 现在是 `type: string, format: uuid`。
+
+过滤器随 `ApplyTo` 一起注册，重复调用不会让过滤器列表增长。内置的
+[ASP.NET Core OpenAPI](#aspnetcore-openapi) 集成没有这个缺口 —— 它的转换器看的是框架已建好的 schema。
 
 <a id="dapper"></a>
 

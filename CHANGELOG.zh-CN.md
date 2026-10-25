@@ -13,6 +13,18 @@
 
 ### 新增
 
+- `Len.StronglyTypedId.Testing.Bogus`：新增的适配包，让 Bogus 能造强类型 Id。
+  `new Faker<Order>().WithStronglyTypedIds()` 会为每个 Id 类型登记 Bogus 自己的 `RuleForType` 规则，
+  于是 `faker.Generate()` 会把 Id 类型的成员填上，而不是留在默认值上 —— 且**不报任何错**：Bogus 造不出
+  它不认识的类型。Id 类型默认从当前已加载的程序集里发现；声明 Id 的程序集尚未加载时，可显式列出类型。
+  该包依赖 `Bogus` 与 `Len.StronglyTypedId.Testing`，核心测试包本身仍然零第三方依赖。
+- **一键静音整个分析器。** 只消费 `IStronglyTypedId<,>` 而自己不声明 Id 的项目要背 26 条规则的噪音，
+  而此前唯一的关闭办法是在 `.editorconfig` 或 `NoWarn` 里把每一条都列出来。在工程文件里设
+  `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>`，分析器便一个诊断动作都不
+  注册。该属性经 SDK 写入的编译用 analyzer config 抵达分析器；`Len.StronglyTypedId.Generators` 随包
+  发布的那份 `buildTransitive` props 让 SDK 能看见它，因此使用者不需要再配别的。**只关诊断，不关代码
+  生成**——Id 的类型照常完整产出。`false`（大小写不敏感）、`0`、`no`、`off` 视为静音；`true` 与不设
+  一律按原来的行为报诊断。
 - `Len.StronglyTypedId.Testing`：测试用的确定性 Id 生成 —— `Any.Id<T>()`、`Any.Ids<T>(count)`、
   可设定种子的序列、`Any.Register<T>(factory)` 覆盖与 `Any.Reset()`。被生成的验证器拒绝的值会自动
   重试，而不是表现为测试失败。重试同样认得自定义 `ExceptionType`；验证器抛出的其它异常则原样冒泡。
@@ -120,6 +132,30 @@
   字符串，且在加上限之前会对无界取值集合无限增长。需要去重请自行使用 `string.Intern` 或在自有层做缓存。
 
 ### 修复
+
+- `Swashbuckle` 集成现在也会补回 **Minimal API 参数**上的强类型 Id schema。`ApiExplorer` 会把实现了
+  `IParsable` 的参数描述成 `string` —— 框架认得出这是可解析的文本类型 —— 于是按 CLR 类型登记的 `MapType`
+  对路由参数与查询参数一直没机会生效：它们在文档里是裸的 `type: string`、不带 `format`，而同一个 Id
+  在请求体里是 `type: string, format: uuid`。现在由生成的操作过滤器按参数的真实类型把 schema 补回去。
+  `ApplyTo` 仍然是幂等的，且 `MapType` 的注册加了守卫 —— 重复调用不再抛
+  `An item with the same key has already been added`。
+- `System.Text.Json` 转换器不再把基元外包给 `JsonSerializer`。原先调用
+  `JsonSerializer.Serialize(writer, primitiveId, options)` / `Deserialize<T>(ref reader, options)`，
+  于是要求 `options` 里有该基元类型的 `JsonTypeInfo`；而源生成的 `JsonSerializerContext` 只服务
+  `[JsonSerializable]` 登记过的类型 —— 调用方不得不为 Id 包裹的基元也补一条登记，漏登记时报的是框架
+  内部的 `NotSupportedException: JsonTypeInfo metadata for type 'System.Guid' was not provided`，
+  很难反推到「少登记了一个基元类型」。转换器现在直接经 `Utf8JsonWriter` / `Utf8JsonReader` 读写基元
+  （`Guid` 走 `WriteStringValue(Guid)`，数值走 `WriteNumberValue`，枚举写底层数值）。输出与
+  `System.Text.Json` 的默认形态逐字节相同，由逐基元契约矩阵守着。少数没有直写形式的基元
+  （`Int128`、`UInt128`、`Half`、`TimeSpan`、`DateOnly`、`TimeOnly`、`char`）仍走 `JsonSerializer`；
+  对它们，框架的 `NotSupportedException` 现在会被转成一条说得清楚的 `JsonException`，直接指出该补
+  哪一条 `[JsonSerializable]`。
+- 声明 Id 的程序集没有引用 Newtonsoft.Json 时，`Newtonsoft.Json` 转换器现在会在**消费方程序集**生成。
+  内嵌转换器只能生成在声明 Id 的那个程序集里（消费方补一份会撞 `CS0426`），于是这类 Id 此前一个
+  Newtonsoft 转换器都没有，被写成对象形态（`{"Value":"…"}`），而 `System.Text.Json` 写的是字符串 ——
+  同一份数据两种表示，编译无警告、运行不抛异常。宿主应用现在会为这些 Id 得到一份顶层转换器，
+  经 `AddStronglyTypedId` 注册。内嵌转换器与它的 `[JsonConverter]` 特性一律保留，因此引用了
+  Newtonsoft 的程序集不受影响。
 
 - `STIA0016`（重复基元类型）不再退化为 O(N²)。原先每个强类型 Id 都从头重算整组分组，于是同处一个命名空间的
   N 个 Id 各自重新扫描整个命名空间（含嵌套类型）。现在分组按命名空间缓存、在 Id 的符号操作之间共享，

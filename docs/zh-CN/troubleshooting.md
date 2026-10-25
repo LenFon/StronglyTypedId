@@ -95,10 +95,18 @@ BsonSerializer.TryRegisterSerializer(new GuidSerializer(GuidRepresentation.Stand
 
 ## Swagger 文档里 Id 变成了纯 string
 
-如果这个 Id 出现在 **Minimal API** 的路由参数或查询参数上，用 Swashbuckle 时这是预期行为：`MapType` 按 CLR
-类型登记，而 `ApiExplorer` 把 `IParsable` 参数报成 `string`，已经没有 Id 类型可供匹配。请求 / 响应体、DTO
-属性与 MVC 控制器参数都照常映射；内置的 [ASP.NET Core OpenAPI](integrations.md#aspnetcore-openapi) 集成没有
-这个缺口。细节见[限制](limitations.md#swashbuckle-minimal-api-parameters)。
+如果这个 Id 出现在 **Minimal API** 的路由参数或查询参数上，而文档里仍是裸的 `type: string`，说明操作过滤器
+没有生效 —— 它由 `StronglyTypedIds.ApplyTo(options)` 注册，这一调用必须在：
+
+```csharp
+services.AddSwaggerGen(options =>
+{
+    StronglyTypedIds.ApplyTo(options);
+});
+```
+
+单靠 `MapType` 覆盖不到这类参数：它按 CLR 类型登记，而 `ApiExplorer` 把 `IParsable` 参数报成 `string`。
+生成的操作过滤器改按参数的**声明类型**查表。细节见[集成](integrations.md#swashbuckle)。
 
 ## 泛型容器里的 Id 没有 JSON 转换器
 

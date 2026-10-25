@@ -191,4 +191,22 @@ settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 s
 而不是抛 `InvalidOperationException`——`JsonSerializerOptions` 一经使用即冻结，而入口在全部已注册时根本不触碰
 集合。
 
+### Id 声明在别的程序集时
+
+两个序列化器对「转换器放在哪儿」的取舍不同：
+
+- `System.Text.Json` 的转换器嵌在 Id 内部，但 `System.Text.Json.dll` 在 `Microsoft.NETCore.App` 共享框架里，
+  任何 net8.0+ 项目都引用得到 → **声明 Id 的程序集一定带得上转换器**，消费方无需操心。
+- `Newtonsoft.Json` 是独立的 NuGet 包。若声明 Id 的程序集（典型如领域层）没有引用它，那个 Id 就没有任何
+  Newtonsoft 转换器：内嵌转换器只能生成在声明 Id 的那个程序集里，消费方补一份会撞 `CS0426`（类型已存在）。
+
+  消费方（引用了 Newtonsoft 的宿主应用）会为这类 Id 自动生成一份**顶层**转换器并注册进
+  `AddStronglyTypedId`。但 Newtonsoft 的 `[JsonConverter]` 特性优先级高于
+  `JsonSerializerSettings.Converters`，而特性只能加在类型上——所以**跨程序集时必须调用
+  `AddStronglyTypedId`**，否则那个 Id 会被写成对象形态（`{"Value":"…"}`），而 `System.Text.Json` 写的是
+  字符串：同一份数据两种表示，编译无警告、运行不抛异常。
+
+  领域层与宿主应用都引用 Newtonsoft 时，声明程序集里的内嵌转换器会随类型一起生效（特性优先），
+  `AddStronglyTypedId` 可有可无。
+
 [<- 返回目录](index.md) · [English](../serialization.md)

@@ -54,7 +54,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
         foreach (var diagnostic in context.Diagnostics)
         {
-            // 只有可修复的诊断才在 Descriptors.All 中登记，找不到即代表无需提供修复。
+            // 描述符只用来兜底标题；生成器侧的 STIA0012 不在 All 里，查不到即代表无需提供修复。
             var descriptor = Descriptors.All.FirstOrDefault(item => item.Id == diagnostic.Id);
 
             if (descriptor is null || root is null || !IsFixable(diagnostic, root))

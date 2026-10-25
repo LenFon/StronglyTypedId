@@ -29,18 +29,40 @@ title: 原生 AOT 与裁剪
 
 ```csharp
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(Guid))]
-[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(OrderId))]
 internal sealed partial class AppJsonContext : JsonSerializerContext;
 
 var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Default };
 ```
 
-要登记 Id 所包裹的基元类型，以及每一个被你**当作根类型**序列化的类型 —— 上下文只服务从
-`[JsonSerializable]` 根可达的类型，因此 `JsonSerializer.Serialize(orderId, options)` 与其它根类型一样
-需要 `[JsonSerializable(typeof(OrderId))]`。当 Id 作为某个已登记类型的成员出现时，它不必单独列出：
-生成的 `[JsonConverter]` 会从这个特性上被取到。
+要登记每一个被你**当作根类型**序列化的类型 —— 上下文只服务从 `[JsonSerializable]` 根可达的类型，
+因此 `JsonSerializer.Serialize(orderId, options)` 与其它根类型一样需要
+`[JsonSerializable(typeof(OrderId))]`。
+
+**Id 所包裹的基元类型不必登记。** 生成的转换器直接用 `Utf8JsonWriter` / `Utf8JsonReader` 读写基元
+（`Guid` 走 `WriteStringValue(Guid)`，数值走 `WriteNumberValue`），不经过 `JsonSerializer`，
+因此不需要基元类型的 `JsonTypeInfo`。这一点很重要：源生成的上下文只服务登记过的类型，
+而漏登记时报的是框架内部的 `NotSupportedException: JsonTypeInfo metadata for type 'System.Guid'
+was not provided`——从这条报错很难反推「少登记了一个基元类型」。
+
+少数基元没有对应的直写形式（`Int128`、`UInt128`、`Half`、`TimeSpan`、`DateOnly`、`TimeOnly`，
+以及读单字符的 `char`），它们仍由 `JsonSerializer` 处理，此时上下文需要为基元补一条
+`[JsonSerializable]`。若漏了，本库会把框架的 `NotSupportedException` 转成一条说得清楚的
+`JsonException`，直接告诉你该补哪一条。
+
+### 两种 `GenerationMode` 的差别
+
+`JsonSourceGenerationMode.Metadata` 只产出元数据，`Default` 还会产出序列化逻辑。两者的差别在于
+**类型上的 `[JsonConverter]` 特性是否被取到**：
+
+- `Default` 模式下，源生成器会把类型上的 `[JsonConverter]` 展开成转换器；
+- `Metadata` 模式下走的是「按属性反射」那条路，特性不被取到——Id 会被当成普通对象按属性写出
+  （`{"Value":"…"}`），而不是字符串。
+
+`Metadata` 是 AOT 场景的推荐配置（产物体积更小），因此在那种配置下要靠
+`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` 把转换器注册进 `options.Converters`——
+那条路与源生成器的决策无关，是确定生效的。默认模式下类型上的特性已经够用，`ApplyTo` 可有可无。
+
 
 ## MessagePack 与 MongoDB.Bson 在 AOT 下
 

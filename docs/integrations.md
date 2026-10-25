@@ -140,14 +140,19 @@ property follows the same primitive mapping as the table above (including the `P
 per-endpoint to configure. Wherever the framework hands `ApiExplorer` the id type — a property on a DTO, a
 response body, a model nested inside another, an MVC controller parameter — the same mapping applies.
 
-One measured caveat, from `samples/Len.StronglyTypedId.Sample4` (`net8.0`, Swashbuckle 6.9.0): a
-**Minimal API** route parameter is described by `ApiExplorer` as
-`string` — the framework sees an `IParsable` type and reports it as text — so `MapType` never gets a chance
-to apply, and that parameter's schema is a bare `type: string` with no `format`. Request and response
-bodies, and DTO properties, are mapped as usual, and an MVC controller parameter is mapped too: it reaches
-`ApiExplorer` as the id type (`samples/Len.StronglyTypedId.Sample3` renders `/api/products/{id}` as
-`type: integer, format: int32`). The built-in [ASP.NET Core OpenAPI](#aspnetcore-openapi) integration does
-not have this gap.
+**Minimal API** parameters have one more wrinkle: `ApiExplorer` describes an `IParsable` parameter as
+`string` — the framework sees a type that parses from text — so `MapType`, which is keyed on the CLR type,
+never gets a chance to apply. This library therefore also generates an operation filter: it looks the
+parameter up by its **declared type** (`ApiParameterDescription.Type` still holds the id type) in the same
+schema mapping, and replaces the bare `type: string` with the shape that carries a `format`. Request and
+response bodies, and DTO properties, are mapped by `MapType` as usual; an MVC controller parameter is mapped
+too (`samples/Len.StronglyTypedId.Sample3` renders `/api/products/{id}` as `type: integer, format: int32`).
+Measured in `samples/Len.StronglyTypedId.Sample4` (`net8.0`, Swashbuckle 6.9.0): `/orders/{id}` now comes
+out as `type: string, format: uuid`.
+
+The filter is registered together with `ApplyTo`, and calling it twice does not grow the filter list. The
+built-in [ASP.NET Core OpenAPI](#aspnetcore-openapi) integration does not have this gap — its transformer
+inspects the schema the framework already built.
 
 <a id="dapper"></a>
 
@@ -444,9 +449,9 @@ integrations write the object shape, since the framework has no schema to preser
 
 The two also differ in where they reach. Measured with `samples/Len.StronglyTypedId.Sample2` (`net10.0`,
 `Microsoft.AspNetCore.OpenApi` 10.0.13), route and query parameters do get `type: string, format: uuid`.
-Swashbuckle on `net8.0` (`Sample4`) leaves a **Minimal API** route parameter as a bare `type: string`,
+Swashbuckle on `net8.0` (`Sample4`) reaches **Minimal API** parameters through an operation filter,
 because `ApiExplorer` reports an `IParsable` parameter as `string` and `MapType` is keyed on the CLR type —
-see the [caveat](#swashbuckle) in that section. Neither integration touches a schema that is not an id.
+see the [note](#swashbuckle) in that section. Neither integration touches a schema that is not an id.
 
 > This integration is independent of Swashbuckle: either, both, or neither may be present, and each generates
 > its own `ApplyTo` overload.

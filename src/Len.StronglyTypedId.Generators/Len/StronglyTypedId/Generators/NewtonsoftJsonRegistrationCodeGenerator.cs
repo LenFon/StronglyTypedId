@@ -12,11 +12,9 @@
 /// <item>生成 <c>AddStronglyTypedId</c> 注册入口，把每个 Id 该用的转换器注册进去。</item>
 /// </list>
 /// <para>
-/// 为什么需要顶层转换器：Newtonsoft 的转换器嵌在 Id 内部，只能生成在声明 Id 的那个程序集里 ——
-/// 消费方补一份会撞 CS0426（类型已存在）。于是声明程序集没引用 Newtonsoft.Json 时，那个 Id 在任何
-/// 程序集里都没有 Newtonsoft 转换器：消费方虽然引用了 Newtonsoft 也补不上。后果是同一个 Id 在
-/// System.Text.Json 下是字符串形态、在 Newtonsoft 下却是对象形态（<c>{"Value":"…"}</c>）——
-/// 编译无警告、运行不抛异常，只在真实往返时暴露。
+/// 为什么需要顶层转换器（后果详见 <see cref="StronglyTypedIdInfo.RequiresExternalNewtonsoftJsonConverter"/>）：
+/// Newtonsoft 的转换器嵌在 Id 内部，只能生成在声明 Id 的那个程序集里 —— 消费方补一份会撞 CS0426
+/// （类型已存在）。于是声明程序集没引用 Newtonsoft.Json 时，那个 Id 在任何程序集里都没有 Newtonsoft 转换器。
 /// </para>
 /// <para>
 /// 声明程序集里的内嵌转换器与 <c>[JsonConverter]</c> 特性一律保留：它们给「声明程序集自己就引用了

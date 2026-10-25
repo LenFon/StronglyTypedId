@@ -242,8 +242,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             context.CancellationToken);
 
     /// <summary>
-    /// 代码生成器的模块闸门登记：把「引用了哪个程序集才启用哪个生成器」集中在一处表达（Factory + Strategy），取代原先散落在 GetCodeGenerators /
-    /// GetEfCoreCodeGenerator 等处的重复判定。
+    /// 代码生成器的模块闸门登记：把「引用了哪个程序集才启用哪个生成器」集中在一处表达（Factory + Strategy），
+    /// 取代原先散落在各处按程序集名做重复判定的写法。
     /// </summary>
     private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog = ImmutableArray.Create(
         // 核心生成器按模块名精确匹配（区分大小写）。

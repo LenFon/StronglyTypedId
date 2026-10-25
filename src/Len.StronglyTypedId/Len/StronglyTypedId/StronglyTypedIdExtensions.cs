@@ -8,13 +8,15 @@ namespace Len.StronglyTypedId;
 /// </summary>
 public static class StronglyTypedIdExtensions
 {
-    // 类型 → 基元类型（null 表示「不是强类型 Id」）。这三个入口常落在模型绑定、EF 转换器、
-    // DI 注册这类热路径上，每次判定都要遍历 GetInterfaces()，而对同一个 Type 结果恒定。
-    //
-    // 键必须弱引用：Type 持有 Assembly，Assembly 持有 AssemblyLoadContext。用普通字典时，
-    // 插件热重载 / 测试宿主反复加载程序集，每加载一次就永久钉住一个可回收 ALC 及其全部类型。
-    // ConditionalWeakTable 是 ephemeron —— 值只在键可达时可达，键被回收后整条记录随之消失。
-    // 值用 StrongBox 是为了能把「不是 Id」这个 null 结果也缓存下来。
+    // Type → primitive type (null means "not a strongly typed id"). These three entry points sit on hot
+    // paths such as model binding, EF converters and DI registration: every call walks GetInterfaces(),
+    // while the result for a given Type never changes.
+    // The key has to be weakly referenced: Type holds an Assembly, the Assembly holds an
+    // AssemblyLoadContext. With an ordinary dictionary, plugin hot reload or a test host that loads
+    // assemblies repeatedly would pin one collectible ALC and all of its types for good. A
+    // ConditionalWeakTable is an ephemeron — the value is reachable only while the key is, and the entry
+    // disappears once the key is collected. StrongBox is used so the "not an id" null result can be
+    // cached too.
     private static readonly ConditionalWeakTable<Type, StrongBox<Type?>> _primitiveIdTypes = [];
 
     /// <summary>

@@ -31,19 +31,42 @@ specific to this library** — the generated converter plugs into that context l
 
 ```csharp
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(Guid))]
-[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(OrderId))]
 internal sealed partial class AppJsonContext : JsonSerializerContext;
 
 var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Default };
 ```
 
-Register the primitive types the ids wrap, plus every type you serialize **as a root** — a context only
-serves types reachable from a `[JsonSerializable]` root, so `JsonSerializer.Serialize(orderId, options)`
-needs `[JsonSerializable(typeof(OrderId))]` like any other root type. When an id appears as a member of a
-registered type it needs no entry of its own: the generated `[JsonConverter]` is picked up from the
-attribute.
+Register every type you serialize **as a root** — a context only serves types reachable from a
+`[JsonSerializable]` root, so `JsonSerializer.Serialize(orderId, options)` needs
+`[JsonSerializable(typeof(OrderId))]` like any other root type.
+
+**The primitive an id wraps does not need an entry.** The generated converter reads and writes the
+primitive directly through `Utf8JsonWriter` / `Utf8JsonReader` (`Guid` goes through
+`WriteStringValue(Guid)`, numbers through `WriteNumberValue`) instead of going through
+`JsonSerializer`, so no `JsonTypeInfo` for the primitive is required. That matters: a source-generated
+context only serves registered types, and a missing entry surfaces as the framework's own
+`NotSupportedException: JsonTypeInfo metadata for type 'System.Guid' was not provided` — from which
+it is hard to work out that a *primitive* type went missing.
+
+A few primitives have no direct form (`Int128`, `UInt128`, `Half`, `TimeSpan`, `DateOnly`, `TimeOnly`,
+and reading a single `char`); those still go through `JsonSerializer`, so the context needs an entry
+for them. If it is missing, the library turns the framework's `NotSupportedException` into a
+`JsonException` that names the `[JsonSerializable]` to add.
+
+### The two `GenerationMode` values differ
+
+`JsonSourceGenerationMode.Metadata` emits metadata only, `Default` also emits the serialization logic.
+The difference that matters here is **whether the `[JsonConverter]` attribute on the type is picked up**:
+
+- In `Default` mode the source generator expands the type's `[JsonConverter]` into a converter.
+- In `Metadata` mode it takes the "serialize by properties" path, where the attribute is not picked up —
+  the id is then written as a plain object (`{"Value":"…"}`) rather than a string.
+
+`Metadata` is the recommended configuration for AOT (smaller artifacts), so in that mode the converter
+has to be registered into `options.Converters` through
+`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` — a path that does not depend on what the source
+generator decides. Under `Default` the attribute is already enough and `ApplyTo` is optional.
 
 ## MessagePack and MongoDB.Bson under AOT
 

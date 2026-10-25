@@ -53,6 +53,26 @@ var fixture = new Fixture().WithStronglyTypedIds();
 OrderId orderId = fixture.Create<OrderId>();
 ```
 
+With Bogus, add `Len.StronglyTypedId.Testing.Bogus` and switch the customization on:
+
+```csharp
+var faker = new Faker<Order>().WithStronglyTypedIds();
+
+Order order = faker.Generate();   // order.Id is a real id
+```
+
+Bogus fills a member by its declared type, and a strongly typed id is a distinct type — without this
+adapter Bogus cannot produce one, so the member stays at its default value **without any error**. The
+adapter registers Bogus' own type rules for every id type, so generation fills them like any other member.
+
+The id types are discovered from the assemblies loaded right now. When the assembly declaring an id is
+not loaded yet, name the types explicitly:
+
+```csharp
+var faker = new Faker<Order>()
+    .WithStronglyTypedIds(new AnyIdGenerator(), typeof(OrderId), typeof(CustomerId));
+```
+
 See [TESTING.md](https://github.com/LenFon/StronglyTypedId/blob/main/TESTING.md) for the full guide.
 
 <a id="samples"></a>

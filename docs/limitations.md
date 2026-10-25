@@ -69,20 +69,4 @@ emitted, and the `ApplyTo` / `AddStronglyTypedId` entry points skip it because a
 be passed as a type argument. The converter classes themselves are generated — register the one for the
 closed type you use by hand, see [Nested types](declaration.md#nested-types).
 
-<a id="swashbuckle-minimal-api-parameters"></a>
-
-## Swashbuckle does not reach Minimal API parameters
-
-`MapType` is keyed on the CLR type, but a Minimal API handler's parameter reaches `ApiExplorer` as `string` —
-the framework recognises `IParsable` and describes it as text — so a route or query parameter declared as an
-id ends up as a bare `type: string` with no `format` in the Swagger document. Bodies and DTO properties are
-unaffected, and an MVC controller parameter is fine: it reaches `ApiExplorer` as the id type, so
-`/api/products/{id}` comes out as `type: integer, format: int32` for an `int`-backed id
-(`samples/Len.StronglyTypedId.Sample3`, Swashbuckle 10). The Minimal API gap was measured on `net8.0` with
-Swashbuckle 6.9.0 (`samples/Len.StronglyTypedId.Sample4`).
-
-The built-in [ASP.NET Core OpenAPI](integrations.md#aspnetcore-openapi) integration does not have this gap:
-its transformer inspects the schema the framework built for the parameter, which is why `/orders/{id}` comes
-out as `type: string, format: uuid` there.
-
 [<- Back to the index](index.md) · [中文](zh-CN/limitations.md)
