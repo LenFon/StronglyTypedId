@@ -2877,6 +2877,7 @@ public class StronglyTypedIdGeneratorTests
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.IRouteConstraint).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
             ]);
 
@@ -3128,6 +3129,7 @@ public class StronglyTypedIdGeneratorTests
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.IRouteConstraint).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
             ]);
 
@@ -3204,6 +3206,7 @@ public class StronglyTypedIdGeneratorTests
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.RouteOptions).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.IRouteConstraint).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
                 // EF Core 的 ValueConverter 签名里带 Expression<>，而合成编译的引用集由 AppDomain 里「已加载」的
                 // 程序集拼出（见 ShouldReferenceAssembly），单跑本用例时它可能尚未加载 —— 显式引入，让结果与运行顺序无关。
