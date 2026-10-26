@@ -66,7 +66,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                             {
                                 settings.Converters.Add(new {{converterType}}());
                             }
-                """;
+                    """;
             });
 
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -90,7 +90,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                         registered.Add(converter.GetType());
                     }
 
-            {{string.Join("\n", registrations)}}
+            {{string.Join("\n\n", registrations)}}
                 }
             }
             """;

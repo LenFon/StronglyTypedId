@@ -197,12 +197,12 @@ public class SwaggerCodeGeneratorTests
 
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
         generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.ProductId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" });");
-        // 两个调用之间应有换行 + 缩进分隔（string.Join 的分隔符）。断言跨到第二个调用，
+        // 两个调用之间应有空行分隔（string.Join 的分隔符）。断言跨到第二个调用，
         // 否则首个调用前面的换行也能满足它，等于什么都没锁。
         // 先把行尾归一化成 \n：产物行尾随检出（CRLF / LF）而定，而跨行断言里的「;\n」在 CRLF 产物中并不成立。
         generated.Replace("\r\n", "\n")
             .Should().Contain(
-                ";\n        }\n        if (!schemaMappings.ContainsKey(typeof(global::Len.StronglyTypedId.ProductId)))");
+                ";\n        }\n\n        if (!schemaMappings.ContainsKey(typeof(global::Len.StronglyTypedId.ProductId)))");
     }
 
     /// <summary>
@@ -742,6 +742,38 @@ public class SwaggerCodeGeneratorTests
         generated.Should()
             .Contain("private static void ApplySchema(global::Microsoft.OpenApi.Models.OpenApiParameter parameter, global::Microsoft.OpenApi.Models.OpenApiSchema schema)")
             .And.Contain("parameter.Schema = schema;");
+    }
+
+    /// <summary>
+    /// <c>ApplySchema</c> 嵌在 <c>StronglyTypedIdOperationFilter</c> 里，方法体在产物中必须比花括号深一级（12 空格）。
+    /// </summary>
+    /// <remarks>
+    /// 原始字符串模板的插值洞不随模板重新缩进，方法体文本必须自带绝对缩进；漏掉时产物仍能编译，
+    /// 但方法体与花括号同列，读起来像语法错误。
+    /// </remarks>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Swagger_Should_IndentApplySchemaBody(bool useOpenApiV2)
+    {
+        var extraReferences = useOpenApiV2
+            ? new[] { SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0") }
+            : [];
+
+        var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, [Swagger6Reference, .. extraReferences]);
+
+        var lines = generated.Replace("\r\n", "\n").Split('\n');
+        var signatureIndex = Array.FindIndex(lines, line => line.Contains("private static void ApplySchema(", StringComparison.Ordinal));
+
+        signatureIndex.Should().BeGreaterThan(-1);
+
+        var signatureIndent = lines[signatureIndex].Length - lines[signatureIndex].TrimStart().Length;
+
+        lines[signatureIndex + 1].Should().Be(new string(' ', signatureIndent) + "{");
+
+        // 方法体首行（1.x 的赋值语句 / 2.x 的 if）必须比花括号深一级。
+        lines[signatureIndex + 2].Should().StartWith(new string(' ', signatureIndent + 4));
+        lines[signatureIndex + 2].Trim().Should().NotBeEmpty();
     }
 
     #endregion

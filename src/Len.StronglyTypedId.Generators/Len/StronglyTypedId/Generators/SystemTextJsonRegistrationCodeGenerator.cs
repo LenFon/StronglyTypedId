@@ -28,10 +28,10 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
 
         var registrations = stronglyTypedIds
             .Select(idInfo => $$"""
-                            if (registered.Add(typeof({{idInfo.FullyQualifiedName}}.SystemTextJsonConverter)))
-                            {
-                                options.Converters.Add(new {{idInfo.FullyQualifiedName}}.SystemTextJsonConverter());
-                            }
+                        if (registered.Add(typeof({{idInfo.FullyQualifiedName}}.SystemTextJsonConverter)))
+                        {
+                            options.Converters.Add(new {{idInfo.FullyQualifiedName}}.SystemTextJsonConverter());
+                        }
                 """);
 
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -56,7 +56,7 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                         registered.Add(converter.GetType());
                     }
 
-            {{string.Join("\n", registrations)}}
+            {{string.Join("\n\n", registrations)}}
                 }
             }
             """;

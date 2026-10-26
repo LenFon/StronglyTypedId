@@ -38,7 +38,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
         //
         // MapType<T> 是该命名空间下的扩展方法，只能用 using 引入；类库 / 控制台消费者缺此 using 会 CS1061。
         // 注册语句经插值洞注入，洞本身写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
-        var guardedRegistrations = string.Join("\n", swaggerIds.Select(idInfo =>
+        var guardedRegistrations = string.Join("\n\n", swaggerIds.Select(idInfo =>
             _registrationIndent + "if (!schemaMappings.ContainsKey(typeof(" + idInfo.FullyQualifiedName + ")))"
             + "\n"
             + _registrationIndent + "{"
@@ -232,14 +232,15 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// </summary>
     /// <remarks>
     /// 2.x 的接口成员全是只读的，只能落到具体类上写；遇到别的实现就跳过 —— 那不是本库能替它决定的。
+    /// 方法体嵌在 <c>StronglyTypedIdOperationFilter</c> 里，产物中的缩进是 12 空格，各行自带。
     /// </remarks>
     private static string GetApplySchemaBody(bool useOpenApiV2)
         => useOpenApiV2
-            ? "        if (parameter is global::Microsoft.OpenApi.OpenApiParameter concreteParameter)\n"
-                + "        {\n"
-                + "            concreteParameter.Schema = schema;\n"
-                + "        }"
-            : "        parameter.Schema = schema;";
+            ? "            if (parameter is global::Microsoft.OpenApi.OpenApiParameter concreteParameter)\n"
+                + "            {\n"
+                + "                concreteParameter.Schema = schema;\n"
+                + "            }"
+            : "            parameter.Schema = schema;";
 
     /// <summary>
     /// 取 schema 的类型名：1.x 的 <c>OpenApiParameter.Schema</c> 是具体类，2.x 换成了接口
