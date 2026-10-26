@@ -1,18 +1,17 @@
 ﻿namespace Len.StronglyTypedId;
 
 /// <summary>
-/// Specifies how a strongly typed id is read back from prefixed text.
+/// 指定带前缀的文本如何读回为强类型 Id。
 /// </summary>
 public enum PrefixReadMode
 {
     /// <summary>
-    /// The prefix is optional: it is stripped when present, and the text is parsed as-is when absent.
-    /// This is the default.
+    /// 前缀可选：存在时剥离，不存在时按原样解析。默认值。
     /// </summary>
     Lenient = 0,
 
     /// <summary>
-    /// The prefix is required: parsing fails when it is missing.
+    /// 前缀必需：缺失时解析失败。
     /// </summary>
     Strict = 1,
 }

@@ -3,7 +3,7 @@
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// Defines an interface with a strongly typed id, without exposing the underlying primitive type.
+/// 强类型 Id 的接口，不暴露所包装的基元类型。
 /// </summary>
 public interface IStronglyTypedId<TSelf> : IParsable<TSelf>, IEqualityOperators<TSelf, TSelf, bool>
     where TSelf : IStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
@@ -11,25 +11,25 @@ public interface IStronglyTypedId<TSelf> : IParsable<TSelf>, IEqualityOperators<
 }
 
 /// <summary>
-/// Defines an interface with a strongly typed id.
+/// 强类型 Id 的接口。
 /// </summary>
 public interface IStronglyTypedId<TSelf, TPrimitiveId> : IStronglyTypedId<TSelf>
     where TSelf : IStronglyTypedId<TSelf, TPrimitiveId>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?
     where TPrimitiveId : notnull, IComparable
 {
     /// <summary>
-    /// Gets the underlying primitive value wrapped by the strongly typed id.
+    /// 获取强类型 Id 所包装的基元值。
     /// </summary>
     TPrimitiveId Value { get; }
 
     /// <summary>
-    /// Creates a new strongly typed id that wraps the specified primitive value.
+    /// 创建包装指定基元值的新强类型 Id。
     /// </summary>
     abstract static TSelf Create(TPrimitiveId value);
 }
 
 /// <summary>
-/// Defines a strongly typed id whose wrapped primitive supports culture-aware formatting.
+/// 强类型 Id 的接口，其包装的基元支持区域性感知的格式化。
 /// </summary>
 public interface IFormattableStronglyTypedId<TSelf> : IStronglyTypedId<TSelf>, IFormattable
     where TSelf : IFormattableStronglyTypedId<TSelf>?, IParsable<TSelf>?, IEqualityOperators<TSelf, TSelf, bool>?

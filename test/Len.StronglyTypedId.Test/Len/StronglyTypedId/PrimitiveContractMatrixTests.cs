@@ -78,7 +78,7 @@ public class PrimitiveContractMatrixTests
         testCase.Equal(id, other).Should().BeFalse($"{label}：不同基元值的 Id 必须不相等");
 
         // 6. 比较与基元比较同向。string 基元例外：生成代码按序数比较，而 IComparable.CompareTo 是
-        //    区域性敏感的 —— 拿它当期望值会复刻被修复的行为，永远测不出偏差。
+        //    区域性敏感的，拿它当期望值会复刻被修复的行为，永远测不出偏差。
         testCase.Compare(id, id).Should().Be(0, $"{label}：自比较必须为 0");
 
         var expectedSign = testCase.PrimitiveType == typeof(string)
@@ -95,7 +95,7 @@ public class PrimitiveContractMatrixTests
         // 7.1 Id 的写出必须与 STJ 默认写出基元逐字节一致。生成的转换器改成「直写基元」而不再外包给
         // JsonSerializer 之后，这条就是契约的锚点：任何一处直写表达式写错，输出就会与 STJ 默认分道扬镳。
         // BigInteger 例外：STJ 没有它的内置转换器，按值写会退化成 {"IsPowerOfTwo":…,"Sign":1}（读回来是
-        // default），故本库固定写规范文本形 —— 见 BigInteger_Should_SerializeAsJsonString_ForSystemTextJson。
+        // default），故本库固定写规范文本形，见 BigInteger_Should_SerializeAsJsonString_ForSystemTextJson。
         if (testCase.PrimitiveType != typeof(BigInteger))
         {
             testCase.SerializeStj(id)
@@ -135,7 +135,7 @@ public class PrimitiveContractMatrixTests
     }
 
     /// <summary>
-    /// 逐基元登记一行。期望文本一律手写为字面量，而不是用与实现相同的公式现算 ——
+    /// 逐基元登记一行。期望文本一律手写为字面量，而不是用与实现相同的公式现算
     /// 否则断言会跟着实现一起错。
     /// </summary>
     private static Dictionary<string, PrimitiveCase> BuildCases()
@@ -161,7 +161,7 @@ public class PrimitiveContractMatrixTests
             Case<Int64Id, long>("long", 42, 43, "42", "not-a-number"),
             Case<UInt64Id, ulong>("ulong", 42, 43, "42", "-1"),
             // Int128 / UInt128 / Half / DateOnly / TimeOnly 没有对应的 Newtonsoft PrimitiveTypeCode，
-            // BigInteger 没有 System.Text.Json 的内置转换器 —— 两侧都改走规范文本形，故同样参与往返断言。
+            // BigInteger 没有 System.Text.Json 的内置转换器，两侧都改走规范文本形，故同样参与往返断言。
             Case<Int128Id, Int128>("Int128", 42, 43, "42", "not-a-number"),
             Case<UInt128Id, UInt128>("UInt128", 42, 43, "42", "-1"),
             Case<DecimalId, decimal>("decimal", 1.5m, 2.5m, "1.5", "not-a-number"),

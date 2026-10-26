@@ -8,9 +8,8 @@ namespace Len.StronglyTypedId.Testing.Tests;
 /// Bogus 适配：<c>faker.Generate()</c> 必须能填出强类型 Id，而不是把它留在默认值。
 /// </summary>
 /// <remarks>
-/// Bogus 按属性的声明类型填值，而强类型 Id 是一个独立的类型 —— 没有适配时，Bogus 无从下手，
-/// 属性就停在默认值上，且**不报任何错**。这类失败在测试里表现为「断言里的 Id 恰好是空的」，
-/// 很容易被误判成被测代码的 bug。
+/// Bogus 按属性的声明类型填值，而强类型 Id 是独立类型，没有适配时属性就停在默认值上且不报任何错。
+/// 这类失败在测试里表现为「断言里的 Id 恰好是空的」，容易被误判成被测代码的 bug。
 /// </remarks>
 public class BogusIntegrationTests
 {
@@ -48,7 +47,7 @@ public class BogusIntegrationTests
             .WithStronglyTypedIds(new AnyIdGenerator(new AnyIdOptions { Seed = 4242 }))
             .Generate();
 
-        // 宿主是类而不是 record —— 值相等要逐个字段比。
+        // 宿主是类而不是 record，值相等要逐个字段比。
         first.Id.Should().Be(second.Id);
         first.Customer.Should().Be(second.Customer);
     }
@@ -67,7 +66,7 @@ public class BogusIntegrationTests
     /// Id 的适配不能挤掉使用者自己写的规则。
     /// </summary>
     /// <remarks>
-    /// Bogus 只填有规则的成员 —— 没有规则的成员留在默认值上，这是它本来的行为，适配不该改变它。
+    /// Bogus 只填有规则的成员，没有规则的成员留在默认值上，这是它本来的行为，适配不该改变它。
     /// </remarks>
     [Fact]
     public void Faker_Should_KeepTheCallersOwnRules()

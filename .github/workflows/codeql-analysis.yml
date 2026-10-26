@@ -23,7 +23,7 @@ on:
       - "global.json"
       - ".github/workflows/codeql-analysis.yml"
   pull_request:
-    # The branches below must be a subset of the branches above
+    # 下面的分支必须是上方分支的子集
     branches:
       - main
       - dev

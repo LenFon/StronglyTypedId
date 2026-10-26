@@ -37,7 +37,7 @@ public class SwaggerCodeGeneratorTests
             // 加载进 AppDomain，合成编译里就会出现「使用了不存在的 using」的假阳性。
             typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly,
             // 操作过滤器要读 ApiDescription（OperationFilterContext.ApiDescription 的类型）。
-            // 真实项目里它经 ASP.NET Core 框架引用传递进来 —— 引用 Swashbuckle 必然带上它。
+            // 真实项目里它经 ASP.NET Core 框架引用传递进来，引用 Swashbuckle 必然带上它。
             typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly,
             // 连带 MVC 生成器也会被触发（它的门控认 Mvc.Abstractions），故 MVC 侧的类型也得在引用集里。
             typeof(Microsoft.AspNetCore.Mvc.MvcOptions).Assembly,
@@ -86,7 +86,7 @@ public class SwaggerCodeGeneratorTests
     /// </summary>
     /// <remarks>
     /// ASP.NET Core 程序集一律保留：操作过滤器要用 <c>ApiDescription</c>，而真实项目里它是经框架
-    /// 引用传递进来的 —— 引用了 Swashbuckle 就必然带上它。连带的后果是 MVC 生成器也会被触发，
+    /// 引用传递进来的，引用了 Swashbuckle 就必然带上它。连带的后果是 MVC 生成器也会被触发，
     /// 但那不影响本文件对 Swagger 产物的断言。
     /// </remarks>
     private static bool ShouldReferenceAssembly(Assembly assembly)
@@ -396,7 +396,7 @@ public class SwaggerCodeGeneratorTests
     #region C10：文本前缀使 schema 变为无 format 的 string
 
     /// <summary>
-    /// 有前缀时规范文本形是字符串，故 schema 一律为 <c>string</c> 且不带 format ——数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
+    /// 有前缀时规范文本形是字符串，故 schema 一律为 <c>string</c> 且不带 format，数字 / 枚举 / 日期基元在有前缀时对外也是字符串。
     /// </summary>
     [Fact]
     public void Swagger_V1_Should_UsePlainStringSchema_WhenIdHasPrefix()
@@ -580,14 +580,10 @@ public class SwaggerCodeGeneratorTests
     #region 操作过滤器：补回 Minimal API 参数的 schema
 
     /// <summary>
-    /// Minimal API 的处理器参数到达 <c>ApiExplorer</c> 时，<c>ApiParameterDescription.Type</c> 仍是
-    /// 真实的 Id 类型，但 <c>ModelMetadata.ModelType</c> 已被框架换成 <see cref="string"/> ——
-    /// Swashbuckle 据后者生成 schema，于是声明为 Id 的路由 / 查询参数在文档里只剩裸的
-    /// <c>type: string</c>，而 <c>MapType</c> 对这类参数无从下手。
+    /// Minimal API 的处理器参数到达 <c>ApiExplorer</c> 时，<c>ApiParameterDescription.Type</c> 仍是真实的 Id 类型，
+    /// 但 <c>ModelMetadata.ModelType</c> 已被框架换成 <see cref="string"/>，Swashbuckle 据后者生成 schema，
+    /// 于是 Id 参数在文档里只剩裸的 <c>type: string</c>。过滤器按参数的真实类型查表，把 schema 补回参数上。
     /// </summary>
-    /// <remarks>
-    /// 过滤器按参数的真实类型查表，把 schema 补回参数上。
-    /// </remarks>
     private const string OperationFilterIdSource = """
         using System;
 
@@ -642,7 +638,7 @@ public class SwaggerCodeGeneratorTests
         generated.Should()
             .Contain("if (filter is StronglyTypedIdOperationFilter)")
             .And.Contain("generatorOptions.OperationFilters.Add(new StronglyTypedIdOperationFilter());")
-            // 幂等检查只能「跳过注册」，不能提前返回 —— 否则第二次调用 ApplyTo 会把 MapType 一起跳过。
+            // 幂等检查只能「跳过注册」，不能提前返回，否则第二次调用 ApplyTo 会把 MapType 一起跳过。
             .And.NotContain("return;\n                    }\n\n                    generatorOptions");
     }
 
@@ -714,7 +710,7 @@ public class SwaggerCodeGeneratorTests
     }
 
     /// <summary>
-    /// Microsoft.OpenApi 2.x 的 <c>IOpenApiParameter</c> 成员全是只读的 —— 直接给 <c>parameter.Schema</c>
+    /// Microsoft.OpenApi 2.x 的 <c>IOpenApiParameter</c> 成员全是只读的，直接给 <c>parameter.Schema</c>
     /// 赋值编译不过（CS0200），必须落到具体的 <c>OpenApiParameter</c> 上写。
     /// </summary>
     [Fact]

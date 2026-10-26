@@ -32,12 +32,9 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // MapType 的底层语义是 Add：同一个类型注册两次会抛「重复键」。而 ApplyTo 必须是幂等的 ——
-        // 调用方常在多个模块里各调一次。守卫走 CustomTypeMappings：已存在的类型不覆盖，
-        // 使用者自己先注册过的话，他那份保持有效。
-        //
-        // MapType<T> 是该命名空间下的扩展方法，只能用 using 引入；类库 / 控制台消费者缺此 using 会 CS1061。
-        // 注册语句经插值洞注入，洞本身写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
+        // MapType 底层是 Add，同一类型注册两次会抛「重复键」，而 ApplyTo 必须幂等（调用方常在多个模块各调一次）。
+        // 守卫走 CustomTypeMappings：已存在的类型不覆盖，使用者自己注册的那份保持有效。
+        // MapType<T> 是该命名空间下的扩展方法，缺 using 会 CS1061；注册语句经插值洞注入，故每行自带绝对缩进。
         var guardedRegistrations = string.Join("\n\n", swaggerIds.Select(idInfo =>
             _registrationIndent + "if (!schemaMappings.ContainsKey(typeof(" + idInfo.FullyQualifiedName + ")))"
             + "\n"
@@ -49,7 +46,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 
         // 操作过滤器补的是 Minimal API 的参数：框架把实现了 IParsable 的参数按 string 报给 ApiExplorer，
         // Swashbuckle 据此生成 schema，MapType 对这类参数无从下手（详见 StronglyTypedIdOperationFilter 的说明）。
-        // 表里存的是工厂而不是现成的 schema：每个参数拿到的必须是自己的实例 —— 共用同一个可变对象，
+        // 表里存的是工厂而不是现成的 schema：每个参数拿到的必须是自己的实例，共用同一个可变对象，
         // 一旦框架给它补了描述信息，所有参数都会跟着变。
         var schemaEntries = swaggerIds
             .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = () => {CreateOpenApiSchema(idInfo, useOpenApiV2)},")
@@ -61,7 +58,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
-                /// Employ strongly typed IDs in Swagger.
+                /// 在 Swagger 中启用强类型 Id。
                 /// </summary>
                 /// <param name="options"><see cref="global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -95,15 +92,11 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// Restores the schema of strongly typed IDs used as Minimal API parameters.
+                /// 还原作为 Minimal API 参数使用的强类型 Id 的 schema。
                 /// </summary>
                 /// <remarks>
-                /// <para>
-                /// The ASP.NET Core API explorer reports a parameter whose type implements <c>IParsable</c>
-                /// with the parsed primitive as its model metadata, so Swashbuckle describes such a parameter as a
-                /// plain <c>string</c> — the <c>MapType</c> registration never applies to it. The parameter
-                /// description still carries the declared type, which is what this filter looks up.
-                /// </para>
+                /// API explorer 会把实现 <c>IParsable</c> 的参数报告成以基元为模型元数据，Swashbuckle 因此把这类参数
+                /// 描述成普通 <c>string</c>，<c>MapType</c> 注册对它不生效。参数描述仍保留声明类型，本过滤器据此查找。
                 /// </remarks>
                 private sealed class StronglyTypedIdOperationFilter : global::Swashbuckle.AspNetCore.SwaggerGen.IOperationFilter
                 {
@@ -144,12 +137,11 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                     }
 
                     /// <summary>
-                    /// Writes the schema onto a parameter.
+                    /// 把 schema 写入参数。
                     /// </summary>
                     /// <remarks>
-                    /// Microsoft.OpenApi 2.x exposes the parameter through <c>IOpenApiParameter</c>, whose
-                    /// members are all read-only — the schema can only be written on the concrete
-                    /// <c>OpenApiParameter</c>. Microsoft.OpenApi 1.x hands out the concrete type directly.
+                    /// Microsoft.OpenApi 2.x 通过 <c>IOpenApiParameter</c> 暴露参数，其成员全为只读，schema 只能写在具体的
+                    /// <c>OpenApiParameter</c> 上；1.x 直接给出具体类型。
                     /// </remarks>
                     private static void ApplySchema({{GetOpenApiParameterTypeName(useOpenApiV2)}} parameter, {{GetOpenApiSchemaTypeName(useOpenApiV2)}} schema)
                     {
@@ -172,7 +164,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// 按 Microsoft.OpenApi 主版本生成 <c>OpenApiSchema</c> 初始化表达式。
     /// </summary>
     /// <remarks>
-    /// <c>MapType</c> 与操作过滤器共用这一份口径 —— 同一个 Id 在组件 schema 与参数 schema 上必须一致。
+    /// <c>MapType</c> 与操作过滤器共用这一份口径，同一个 Id 在组件 schema 与参数 schema 上必须一致。
     /// </remarks>
     private static string CreateOpenApiSchema(StronglyTypedIdInfo idInfo, bool useOpenApiV2)
     {
@@ -195,7 +187,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
         }
 
         // JsonShape.Object 的线上报文是 {"value": <基元>}，schema 必须照着写，否则生成的客户端按裸基元收发。
-        // 2.x 的 Properties 值是 IOpenApiSchema（接口），不能用 Dictionary<string, OpenApiSchema> 顶替 —— 泛型不变。
+        // 2.x 的 Properties 值是 IOpenApiSchema（接口），不能用 Dictionary<string, OpenApiSchema> 顶替，泛型不变。
         var propertyValueType = useOpenApiV2
             ? "global::Microsoft.OpenApi.IOpenApiSchema"
             : schemaTypeName;
@@ -231,7 +223,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// 取「把 schema 写到参数上」的方法体。
     /// </summary>
     /// <remarks>
-    /// 2.x 的接口成员全是只读的，只能落到具体类上写；遇到别的实现就跳过 —— 那不是本库能替它决定的。
+    /// 2.x 的接口成员全是只读的，只能落到具体类上写；遇到别的实现就跳过，那不是本库能替它决定的。
     /// 方法体嵌在 <c>StronglyTypedIdOperationFilter</c> 里，产物中的缩进是 12 空格，各行自带。
     /// </remarks>
     private static string GetApplySchemaBody(bool useOpenApiV2)

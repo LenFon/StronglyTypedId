@@ -189,7 +189,7 @@ public class StronglyTypedIdAnalyzerIntegrationTests
     #region 集成掩码含未定义的位（STIA0024）
 
     /// <summary>
-    /// 掩码里超出已知标志的位既不匹配任何集成、也不会被生成器读到 —— 不报就是「写了却什么都没发生」。
+    /// 掩码里超出已知标志的位既不匹配任何集成、也不会被生成器读到，不报就是「写了却什么都没发生」。
     /// </summary>
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenIntegrationsHasUndefinedBits()

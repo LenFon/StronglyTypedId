@@ -43,7 +43,7 @@ public class ReadmeDocumentationTests
     }
 
     /// <summary>
-    /// <c>PACKAGE.md</c> 是 NuGet 详情页正文，随包发布后无法回滚，而它不参与 README 那套区块重写 ——
+    /// <c>PACKAGE.md</c> 是 NuGet 详情页正文，随包发布后无法回滚，而它不参与 README 那套区块重写
     /// 基元清单、集成标志、目标框架这三段纯枚举事实必须单独守。
     /// </summary>
     [Fact]

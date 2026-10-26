@@ -11,7 +11,7 @@ namespace Len.StronglyTypedId.DocGen;
 internal static class MarkdownTable
 {
     /// <summary>
-    /// 渲染表格，行间以 <c>\n</c> 分隔且末尾不带换行 —— 换行符由调用方按目标文件统一转换。
+    /// 渲染表格，行间以 <c>\n</c> 分隔且末尾不带换行，换行符由调用方按目标文件统一转换。
     /// </summary>
     public static string Render(IReadOnlyList<string> headers, IReadOnlyList<IReadOnlyList<string>> rows)
     {

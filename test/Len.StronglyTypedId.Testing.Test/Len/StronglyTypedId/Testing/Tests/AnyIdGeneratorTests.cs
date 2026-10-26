@@ -51,7 +51,7 @@ public class AnyIdGeneratorTests
     /// <summary>
     /// D5：<c>int</c> / <c>long</c> / <c>ulong</c> 的采样必须覆盖整个取值范围。负数与 <c>ulong</c>
     /// 上半区若永不出现，负数格式化、排序、DB 往返这些分支在 <c>Any.Id&lt;T&gt;()</c> 生成的样本里
-    /// 就永远测不到 —— 测试工具的价值恰恰在于覆盖边界。
+    /// 就永远测不到，测试工具的价值恰恰在于覆盖边界。
     /// </summary>
     [Fact]
     public void Ids_Should_CoverFullPrimitiveRange()
@@ -70,7 +70,7 @@ public class AnyIdGeneratorTests
     }
 
     /// <summary>
-    /// D3：<c>Half</c> 的量程只有 ±65504，而通用浮点采样落在 <c>[1, 1_000_001]</c> ——
+    /// D3：<c>Half</c> 的量程只有 ±65504，而通用浮点采样落在 <c>[1, 1_000_001]</c>
     /// 直接转型会让约 93% 的样本按 IEEE 舍入成 <c>±Infinity</c>，序列化往返测试就变成了在测无穷大。
     /// <c>Int128</c> / <c>UInt128</c> 同族：<c>NextInt64()</c> 的无参重载只覆盖
     /// <c>[0, long.MaxValue)</c>，高低两个字都取它会让 <c>Int128</c> 永不为负、
@@ -142,7 +142,7 @@ public class AnyIdGeneratorTests
     }
 
     /// <summary>
-    /// 边界注入默认关闭：它对「断言唯一性」的测试是毒药 —— 两个端点各占 1/32，
+    /// 边界注入默认关闭：它对「断言唯一性」的测试是毒药，两个端点各占 1/32，
     /// 100 个样本里撞上同一端点的概率约 22%。
     /// </summary>
     [Fact]
@@ -213,7 +213,7 @@ public class AnyIdGeneratorTests
 
     /// <summary>
     /// <c>StringLength</c> 的下界是 1（0 在构造时就被拒，见 <c>Options_Should_RejectInvalidValues</c>），
-    /// 且只影响 <c>string</c> 基元 —— 调小它不该改变其它基元的形态。
+    /// 且只影响 <c>string</c> 基元，调小它不该改变其它基元的形态。
     /// </summary>
     [Fact]
     public void StringLength_Should_AffectOnlyStringPrimitives()
@@ -279,7 +279,7 @@ public class AnyIdGeneratorTests
 
     /// <summary>
     /// 配了 <c>ExceptionType</c> 后，验证器拒绝时抛的是自定义异常而不是 <see cref="ArgumentException"/>。
-    /// 重试循环若只认 <see cref="ArgumentException"/>，<c>MaxAttempts</c> 就形同虚设——第一次被拒即冒泡。
+    /// 重试循环若只认 <see cref="ArgumentException"/>，<c>MaxAttempts</c> 就形同虚设，第一次被拒即冒泡。
     /// </summary>
     [Fact]
     public void Validator_WithCustomExceptionType_Should_StillRetry()
@@ -391,7 +391,7 @@ public class AnyIdGeneratorTests
     [Fact]
     public void Any_Register_Should_NotLoseRegistration_WhenRacingWithReset()
     {
-        // Register 与 Reset 竞争时，注册可能落在刚被丢弃的实例上 —— 那样之后 Any.Id 会静默不生效。
+        // Register 与 Reset 竞争时，注册可能落在刚被丢弃的实例上，那样之后 Any.Id 会静默不生效。
         // 这里断言「不死锁、不抛异常，且竞争结束后注册仍落在当前实例上」。
         var known = Guid.Parse("11111111-2222-3333-4444-555555555555");
         var barrier = new Barrier(2);

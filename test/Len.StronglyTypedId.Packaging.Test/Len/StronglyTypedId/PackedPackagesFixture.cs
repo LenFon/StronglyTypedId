@@ -49,7 +49,7 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     /// 测试辅助包的产物路径。
     /// </summary>
     /// <remarks>
-    /// 这两个包尚未打开 <c>IsPackable</c>（尚未发布），打包时用 <c>-p:IsPackable=true</c> 临时打开 ——
+    /// 这两个包尚未打开 <c>IsPackable</c>（尚未发布），打包时用 <c>-p:IsPackable=true</c> 临时打开：
     /// 依赖声明的验证不能等到它们真的发布那天才做。
     /// </remarks>
     public string TestingPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Testing.{PackageVersion}.nupkg");
@@ -67,7 +67,7 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
 
         Directory.CreateDirectory(OutputDirectory);
 
-        // 两个 TFM 的测试模块会被 MTP 并行调度，而产物目录按输入指纹隔离、与 TFM 无关 —— 不加锁就会
+        // 两个 TFM 的测试模块会被 MTP 并行调度，而产物目录按输入指纹隔离、与 TFM 无关，不加锁就会
         // 两边同时判定「还没有包」、同时往同一目录写包，撞文件锁或 NU5026。这里用跨进程独占文件锁
         // 串行化：先到者打包，后到者等锁释放后重新检查产物、直接复用。
         await using var lockHandle = await AcquirePackLockAsync(
@@ -222,7 +222,7 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
         };
 
         // 图标同样是包内容：不计入指纹的话，只改 assets/icon.png 时指纹不变，夹具会直接复用
-        // 上一次打好的包，图标断言就对着旧包通过了 —— 换了图标却「测过了」是最坏的一种绿。
+        // 上一次打好的包，图标断言就对着旧包通过了，换了图标却「测过了」是最坏的一种绿。
         var assetsRoot = Path.Combine(repositoryRoot, "assets");
 
         if (Directory.Exists(assetsRoot))

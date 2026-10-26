@@ -19,7 +19,7 @@ namespace Len.StronglyTypedId;
 /// </remarks>
 public class StronglyTypedIdExtensionsUnloadTests
 {
-    /// <summary>
+/// <summary>
     /// 插件里的一份最小 Id 实现：只要能被 <c>IsStronglyTypedId</c> 认出来即可，不需要生成器的产物。
     /// </summary>
     private const string PluginIdSource = """
@@ -95,11 +95,10 @@ public class StronglyTypedIdExtensionsUnloadTests
     /// <remarks>
     /// 三点缺一不可，否则用例会静默失去判别力：
     /// <list type="bullet">
-    /// <item>必须显式 <c>Unload()</c>：不调用时 ALC 只是不可达，短弱引用照样先死，看不出缓存是否钉住它。</item>
-    /// <item>必须用 <c>trackResurrection: true</c> 的长弱引用：短弱引用在终结器排队时就报 false，而 ALC 尚未真正回收。</item>
-    /// <item>加载、触碰、卸载必须关在同一个 <see cref="MethodImplOptions.NoInlining"/> 方法里，GC 留在外面：
-    /// 否则 Debug 构建下 JIT 会把 <c>alc</c> / <c>assembly</c> / <c>idType</c> 的局部变量生命周期延长到方法结束，
-    /// GC 看到的全是活对象，断言就成了自我实现的空转。</item>
+    /// <item>必须显式 <c>Unload()</c>：不调用时 ALC 只是不可达，短弱引用照样先死。</item>
+    /// <item>必须用 <c>trackResurrection: true</c> 的长弱引用：短弱引用在终结器排队时就报 false。</item>
+    /// <item>加载、触碰、卸载必须关在同一个 <see cref="MethodImplOptions.NoInlining"/> 方法里，GC 留在外面，
+    /// 否则 Debug 构建下 JIT 会延长局部变量生命周期，断言就成了空转。</item>
     /// </list>
     /// </remarks>
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -110,7 +109,7 @@ public class StronglyTypedIdExtensionsUnloadTests
         var assembly = alc.LoadFromStream(new MemoryStream(image));
         var idType = assembly.GetType("PluginIds.PluginId", throwOnError: true)!;
 
-        // 这一步正是把 Type 写进缓存的地方 —— 修复前它会成为静态字典的强键。
+        // 这一步正是把 Type 写进缓存的地方，修复前它会成为静态字典的强键。
         var recognised = idType.IsStronglyTypedId() && idType.GetPrimitiveIdType() == typeof(Guid);
 
         var alcReference = new WeakReference(alc, trackResurrection: true);
@@ -141,7 +140,7 @@ public class StronglyTypedIdExtensionsUnloadTests
     }
 
     /// <summary>
-    /// 插件 ALC：自身不解析任何依赖，全部回落到默认上下文 —— 这样插件里的 Id 与本库的
+    /// 插件 ALC：自身不解析任何依赖，全部回落到默认上下文，这样插件里的 Id 与本库的
     /// <c>IStronglyTypedId&lt;,&gt;</c> 是同一个类型标识，接口判定才有意义。
     /// </summary>
     private sealed class CollectiblePluginLoadContext() : AssemblyLoadContext(isCollectible: true)

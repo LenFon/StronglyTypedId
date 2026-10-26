@@ -106,7 +106,7 @@ internal static partial class PackageReadmeVerifier
     }
 
     /// <summary>
-    /// 取以 <paramref name="marker"/> 开头的**那一句**（到第一个句号加空格为止）。
+    /// 取以 <paramref name="marker"/> 开头的那一句（到第一个句号加空格为止）。
     /// </summary>
     /// <remarks>
     /// 不能整段取：基元那句后面紧跟「Use `record struct` ...」，整段扫反引号会把 <c>record struct</c> / <c>record</c> 当成多余的基元类型报出来。

@@ -5,7 +5,7 @@ using CsCheck;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// K1：属性测试——用随机输入验证「对所有取值都成立」的不变式。
+/// K1：属性测试，用随机输入验证「对所有取值都成立」的不变式。
 /// </summary>
 public class PropertyBasedRoundTripTests
 {
@@ -56,7 +56,7 @@ public class PropertyBasedRoundTripTests
     public void ValueRoundTrip_Should_Hold_ForFloatingPointPrimitives()
     {
         // 浮点的默认格式串自 .NET Core 3.0 起是「最短可往返」形，因此值往返成立；
-        // NaN 也能往返 —— 记录的相等性走 EqualityComparer<double>.Default，它把 NaN 视作等于自身。
+        // NaN 也能往返，记录的相等性走 EqualityComparer<double>.Default，它把 NaN 视作等于自身。
         AssertValueRoundTrip<SingleId, float>(Gen.Float, nameof(SingleId));
         AssertValueRoundTrip<DoubleId, double>(Gen.Double, nameof(DoubleId));
         AssertValueRoundTrip<HalfId, Half>(_genHalf, nameof(HalfId));

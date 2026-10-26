@@ -136,7 +136,7 @@ public class IntegrationsFilterTests
 
     /// <summary>
     /// 库作者在自己的程序集上写 <c>[assembly: StronglyTypedIdDefaults(Integrations = None)]</c> 后，
-    /// 消费者不得再为该程序集里的 Id 生成集成代码——否则「我不想发布集成」这个意图跨程序集就失效了。
+    /// 消费者不得再为该程序集里的 Id 生成集成代码，否则「我不想发布集成」这个意图跨程序集就失效了。
     /// </summary>
     [Fact]
     public void Integrations_Should_SkipExternalId_WhenItsAssemblyDefaultsToNone()

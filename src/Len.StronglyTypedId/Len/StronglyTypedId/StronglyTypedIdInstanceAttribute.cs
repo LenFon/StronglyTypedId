@@ -1,22 +1,22 @@
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// Declares a named static instance of a strongly typed id.
+/// 声明强类型 Id 的命名静态实例。
 /// </summary>
 /// <remarks>
-/// The instance is generated as <c>public static readonly TSelf Name = Create(value)</c>, so it passes the same normalizer and validator as <c>Create</c>.
-/// The value is the primitive value in invariant text form, without any <see cref="StronglyTypedIdAttribute.Prefix"/>; it is validated at compile time and emitted as a literal, so no parsing happens at run time.
+/// 实例生成为 <c>public static readonly TSelf Name = Create(value)</c>，因此会经过与 <c>Create</c> 相同的归一化与验证。
+/// 值采用不变文本形，不含 <see cref="StronglyTypedIdAttribute.Prefix"/>；它在编译期完成校验并以字面量输出，运行期不再解析。
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
 public sealed class StronglyTypedIdInstanceAttribute(string name, string value) : Attribute
 {
     /// <summary>
-    /// Gets the name of the generated static field.
+    /// 获取生成的静态字段名。
     /// </summary>
     public string Name { get; } = name;
 
     /// <summary>
-    /// Gets the primitive value, in its invariant text form.
+    /// 获取基元值的不变文本形。
     /// </summary>
     public string Value { get; } = value;
 }

@@ -158,7 +158,7 @@ internal static class Descriptors
             true);
 
     /// <summary>
-    /// 直接构造强类型 Id（<c>new OrderId(...)</c> / <c>new(...)</c>）或用 <c>default</c> 取零值实例，绕过了 <c>Create</c> /
+    /// 直接构造强类型 Id（<c>new MyId(...)</c> / <c>new(...)</c>）或用 <c>default</c> 取零值实例，绕过了 <c>Create</c> /
     /// <c>TryParse</c> 强制的归一化与校验。
     /// </summary>
     public static readonly DiagnosticDescriptor BypassCreate
@@ -291,8 +291,8 @@ internal static class Descriptors
     /// <c>[StronglyTypedId(Integrations = …)]</c> 的取值含有未定义的位。
     /// </summary>
     /// <remarks>
-    /// 越界位不匹配任何集成、也不会被任何生成器读到：不报就是「写了却什么都没发生」。级别取 Warning —— 代码本身合法，只是不生效。
-    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/> 是因为程序集级默认值只能等到编译结束才知道，代价是 IDE 波浪线延后。
+    /// 越界位不匹配任何集成，也不会被任何生成器读到，不报就是「写了却什么都没发生」。级别取 Warning，因为代码本身合法。
+    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/> 是因为程序集级默认值要到编译结束才知道。
     /// </remarks>
     public static readonly DiagnosticDescriptor UnknownIntegration
         = new(UnknownIntegrationId,
@@ -310,8 +310,7 @@ internal static class Descriptors
     /// </summary>
     /// <remarks>
     /// 生成器要在另一个文件里重开它的 partial 声明，而 file 局部类型的各段必须都带 <c>file</c> 且仅在本文件可见，
-    /// 跨文件重开在语法上就不成立。放行的后果是凭空造出第二个同名类型，报 CS0535 且不带任何 STIA 诊断，
-    /// 用户既看不出错在生成代码，也看不出 Id 不能是 file 局部类型。
+    /// 跨文件重开在语法上不成立。放行的后果是凭空造出第二个同名类型，报 CS0535 且不带任何 STIA 诊断。
     /// </remarks>
     public static readonly DiagnosticDescriptor TypeCannotBeFileLocal
         = new(TypeCannotBeFileLocalId,

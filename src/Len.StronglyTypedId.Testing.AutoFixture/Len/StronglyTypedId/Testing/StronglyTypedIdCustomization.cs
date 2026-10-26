@@ -4,14 +4,14 @@ using AutoFixture.Kernel;
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Teaches AutoFixture to create strongly typed ids.
+/// 让 AutoFixture 能够创建强类型 Id。
 /// </summary>
 public sealed class StronglyTypedIdCustomization : ICustomization
 {
     private readonly AnyIdGenerator _generator;
 
     /// <summary>
-    /// Initializes a new instance backed by a default <see cref="AnyIdGenerator"/>.
+    /// 使用默认的 <see cref="AnyIdGenerator"/> 初始化新实例。
     /// </summary>
     public StronglyTypedIdCustomization()
         : this(new AnyIdGenerator())
@@ -19,7 +19,7 @@ public sealed class StronglyTypedIdCustomization : ICustomization
     }
 
     /// <summary>
-    /// Initializes a new instance backed by the specified generator.
+    /// 使用指定生成器初始化新实例。
     /// </summary>
     public StronglyTypedIdCustomization(AnyIdGenerator generator)
     {

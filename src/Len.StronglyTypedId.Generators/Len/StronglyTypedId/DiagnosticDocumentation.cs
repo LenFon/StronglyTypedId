@@ -37,7 +37,7 @@ internal static class DiagnosticDocumentation
         new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
         // 越界位同理：删掉 Integrations 实参即可去掉未定义的位，机器能安全做，故给修复。
         new DiagnosticDocEntry(Descriptors.UnknownIntegrationId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
-        // 命名实例：名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的两条，给「删掉整条 [StronglyTypedIdInstance]」修复 ——
+        // 命名实例：名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的两条，给「删掉整条 [StronglyTypedIdInstance]」修复。
         // 机器只能让诊断消失，补全业务语义留给人；PascalCase 改名会牵动所有引用点，不是单文件可安全完成的机械修复，故保持无修复。
         new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),

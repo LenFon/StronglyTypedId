@@ -1,4 +1,4 @@
-﻿// STIA0011：测试宿主类型的属性必须先有个初值，而 Id 的初值只能是 default ——
+﻿// STIA0011：测试宿主类型的属性必须先有个初值，而 Id 的初值只能是 default，
 // 但那正是「绕过 Create 与校验」的做法，分析器会报。测试宿主不参与生产代码，这里局部关掉。
 #pragma warning disable STIA0011
 using System.Numerics;
@@ -7,7 +7,7 @@ using Len.StronglyTypedId;
 namespace Len.StronglyTypedId.Testing.Tests;
 
 // 覆盖 SupportedPrimitiveTypes.DocumentedTypes 的全部 24 种基元（含 enum）。
-// 每个 Id 都只声明一行，生成器负责其余部分 —— 这正是本包要造值的对象。
+// 每个 Id 都只声明一行，生成器负责其余部分，这正是本包要造值的对象。
 [StronglyTypedId]
 public partial record struct GuidId(Guid Value);
 
@@ -88,7 +88,7 @@ public enum Color
 }
 
 /// <summary>
-/// 验证器只接受正数——随机值约有一半会被拒，用来验证重试路径。
+/// 验证器只接受正数，随机值约有一半会被拒，用来验证重试路径。
 /// </summary>
 [StronglyTypedId(Validator = nameof(IsPositive))]
 public partial record struct PositiveIntId(int Value)
@@ -97,7 +97,7 @@ public partial record struct PositiveIntId(int Value)
 }
 
 /// <summary>
-/// 验证器恒为 false ——用来验证重试预算耗尽后的失败提示。
+/// 验证器恒为 false，用来验证重试预算耗尽后的失败提示。
 /// </summary>
 [StronglyTypedId(Validator = nameof(AlwaysRejects))]
 public partial record struct ImpossibleId(int Value)
@@ -111,7 +111,7 @@ public partial record struct ImpossibleId(int Value)
 public sealed class DomainRuleException(string message) : Exception(message);
 
 /// <summary>
-/// 配了 <c>ExceptionType</c> 且验证器只接受正数——重试循环必须认得自定义异常，
+/// 配了 <c>ExceptionType</c> 且验证器只接受正数，重试循环必须认得自定义异常，
 /// 否则第一次被拒就直接冒泡（约一半概率失败）。
 /// </summary>
 [StronglyTypedId(Validator = nameof(IsPositive), ExceptionType = typeof(DomainRuleException))]
@@ -121,7 +121,7 @@ public partial record struct CustomExceptionPositiveIntId(int Value)
 }
 
 /// <summary>
-/// 配了 <c>ExceptionType</c> 且验证器恒为 false——用来验证重试预算耗尽后仍给出可操作的失败提示。
+/// 配了 <c>ExceptionType</c> 且验证器恒为 false，用来验证重试预算耗尽后仍给出可操作的失败提示。
 /// </summary>
 [StronglyTypedId(Validator = nameof(AlwaysRejects), ExceptionType = typeof(DomainRuleException))]
 public partial record struct CustomExceptionImpossibleId(int Value)
@@ -130,7 +130,7 @@ public partial record struct CustomExceptionImpossibleId(int Value)
 }
 
 /// <summary>
-/// 验证器自身抛异常——这不是「值被拒」，重试循环必须让它冒泡，而不是当成拒绝吞掉。
+/// 验证器自身抛异常，这不是「值被拒」，重试循环必须让它冒泡，而不是当成拒绝吞掉。
 /// </summary>
 [StronglyTypedId(Validator = nameof(Explodes))]
 public partial record struct ExplodingValidatorId(int Value)
@@ -147,7 +147,7 @@ public sealed record Order(GuidId Id, StringId Customer, int Quantity);
 /// Bogus 用例的宿主类型。
 /// </summary>
 /// <remarks>
-/// Bogus 的默认实例化器走 <c>Activator.CreateInstance&lt;T&gt;()</c>，要求目标类型有无参构造 ——
+/// Bogus 的默认实例化器走 <c>Activator.CreateInstance&lt;T&gt;()</c>，要求目标类型有无参构造
 /// 所以这里用「类 + 可写属性」而不是 record（record 只有带参构造）。
 /// </remarks>
 public sealed class BogusOrder

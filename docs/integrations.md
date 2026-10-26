@@ -366,8 +366,9 @@ list it returns without inserting another, so startup code that registers it fro
 configuration callback that runs twice — does not grow the provider list or rebuild the binder on every
 request. Nullable ids are covered too: `[FromQuery] OrderId?` has CLR type `Nullable<OrderId>`, which
 implements no interfaces at all, so the provider unwraps it before the interface check. Without that step the
-parameter would fall to MVC's `TryParseModelBinder`, which parses with the **current culture** — the same
-payload would then bind differently for a nullable and a non-nullable parameter on the same route.
+parameter would fall to MVC's `TryParseModelBinder`, which parses with `ValueProviderResult.Culture` (the
+invariant culture for query strings and routes, the current culture for forms) — the same form payload would
+then bind differently for a nullable and a non-nullable parameter on the same route.
 
 Binding behaviour, in the three cases that matter:
 

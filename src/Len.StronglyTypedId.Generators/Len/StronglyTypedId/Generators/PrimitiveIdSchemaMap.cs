@@ -5,7 +5,8 @@ namespace Len.StronglyTypedId.Generators;
 /// 避免两处各写一份 switch 而逐渐漂移。
 /// </summary>
 /// <remarks>
-/// 口径对齐 System.Text.Json 的默认写出形态：整数 → <c>integer</c>，浮点与 <c>decimal</c> → <c>number</c>，枚举 → 底层整数，日期时间 → <c>string</c> 加 format；有前缀时恒为 <c>string</c> 且不带 format。
+/// 口径对齐 System.Text.Json 的默认写出形态：整数 → <c>integer</c>，浮点与 <c>decimal</c> → <c>number</c>，
+/// 枚举 → 底层整数，日期时间 → <c>string</c> 加 format；有前缀时恒为 <c>string</c> 且不带 format。
 /// </remarks>
 internal static class PrimitiveIdSchemaMap
 {

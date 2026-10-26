@@ -407,7 +407,7 @@ public class StronglyTypedIdRefactoringProviderTests
 
     /// <summary>
     /// 反向重构：文件里虽无第二个 Id，但仍在用该命名空间导出的其他类型（<c>IStronglyTypedId&lt;,&gt;</c>、
-    /// <c>Any</c>、<c>StronglyTypedIdIntegrations</c> 等）时必须保留 using —— 只按「还有没有带特性的 record」
+    /// <c>Any</c>、<c>StronglyTypedIdIntegrations</c> 等）时必须保留 using，只按「还有没有带特性的 record」
     /// 判断会把它一并删掉，产出 CS0246。
     /// </summary>
     [Fact]
@@ -508,7 +508,7 @@ public class StronglyTypedIdRefactoringProviderTests
 
     /// <summary>
     /// 第三方命名空间下的同名特性不能被当成自家的：判定按语义绑定走，否则 Inline 重构会把
-    /// <c>Acme.StronglyTypedIdAttribute</c> 一并物理删掉 —— 用户点一下，别人的特性就没了，且没有任何提示。
+    /// <c>Acme.StronglyTypedIdAttribute</c> 一并物理删掉，用户点一下，别人的特性就没了，且没有任何提示。
     /// </summary>
     [Fact]
     public async Task Refactoring_ShouldNotTreatForeignAttributeAsStronglyTypedId()
@@ -571,7 +571,7 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
-    /// 第三方同名特性以**短名**书写时也不能被当成自家的。
+    /// 第三方同名特性以短名书写时也不能被当成自家的。
     /// </summary>
     /// <remarks>
     /// 这是上一用例的加强版：<c>[Acme.StronglyTypedIdAttribute]</c> 至少还带着限定前缀，纯语法匹配就能放过；

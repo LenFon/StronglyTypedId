@@ -86,7 +86,7 @@ internal static class ConsumerScenario
 
     /// <summary>
     /// 复刻增量生成器里 <c>MetadataReferencesProvider.Combine(CompilationProvider).SelectMany(GetModules)</c> 那一步，
-    /// 并按 <see cref="ModuleInfo.Comparer"/> 去重后收集——与生成器拿到的模块集合一致。
+    /// 并按 <see cref="ModuleInfo.Comparer"/> 去重后收集，与生成器拿到的模块集合一致。
     /// </summary>
     public static ImmutableArray<ModuleInfo> ResolveModules(CSharpCompilation compilation)
         => [.. References

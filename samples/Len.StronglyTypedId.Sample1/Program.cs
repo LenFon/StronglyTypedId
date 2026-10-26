@@ -14,13 +14,13 @@ builder.Services
     .AddControllers(options => StronglyTypedIds.ApplyTo(options))
     .AddNewtonsoftJson(options => options.SerializerSettings.AddStronglyTypedId());
 
-// 路由约束：{id:ProductId} 这类模板由这里注册，Minimal API 复用同一份注册。
+// 路由约束：{id:MyId} 这类模板由这里注册，Minimal API 复用同一份注册。
 builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
 
 builder.Services.AddDbContext<SampleDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Swagger/OpenAPI 的配置说明见 https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
 
@@ -31,7 +31,7 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<SampleDbContext>().Database.MigrateAsync();
 }
 
-// Configure the HTTP request pipeline.
+// 配置 HTTP 请求管道。
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

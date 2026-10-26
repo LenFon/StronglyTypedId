@@ -4,23 +4,11 @@ namespace Len.StronglyTypedId.Generators;
 /// 基元类型 → <c>System.Text.Json</c> 的直写 / 直读表达式。
 /// </summary>
 /// <remarks>
+/// 把基元读写外包给 <c>JsonSerializer</c> 会要求 <c>options</c> 里有该基元的 <c>JsonTypeInfo</c>，
+/// 源生成的 <c>JsonSerializerContext</c> 只服务 <c>[JsonSerializable]</c> 登记过的类型，漏登记时报的是框架内部异常。
 /// <para>
-/// 转换器若把基元的读写外包给 <c>JsonSerializer.Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c>，
-/// 就必须要求 <c>options</c> 里有该基元类型的 <c>JsonTypeInfo</c> —— 源生成的
-/// <c>JsonSerializerContext</c> 只服务 <c>[JsonSerializable]</c> 登记过的类型，于是调用方还得
-/// 为每个用到的基元类型补一条登记。漏登记时报的是框架内部的
-/// <c>NotSupportedException: JsonTypeInfo metadata for type 'System.Guid' was not provided</c>，
-/// 调用方很难自行定位到「少登记了一个基元类型」。
-/// </para>
-/// <para>
-/// 写一个 Guid 并不需要任何元数据：<c>Utf8JsonWriter.WriteStringValue(Guid)</c> 一行就够，
-/// 且输出与 STJ 默认<b>逐字节相同</b>。本表把能直写的基元全部改成直写直读，让转换器自给自足；
-/// 剩下的少数类型（<c>Int128</c> / <c>Half</c> / <c>TimeSpan</c> 等）
-/// 仍走委托，并另行给出可操作的错误提示。
-/// </para>
-/// <para>
-/// 直写与 STJ 默认的等价性由 <c>test/Len.StronglyTypedId.Test</c> 的
-/// <c>PrimitiveContractMatrixTests</c> 守着：每种基元都拿「STJ 默认序列化结果」与「生成代码的写出结果」比字节。
+/// 大部分基元可以直接写，如 <c>Utf8JsonWriter.WriteStringValue(Guid)</c>，输出与 STJ 默认逐字节相同。
+/// 少数类型（<c>Int128</c> / <c>Half</c> / <c>TimeSpan</c> 等）仍走委托。等价性由 <c>PrimitiveContractMatrixTests</c> 守着。
 /// </para>
 /// </remarks>
 internal static class PrimitiveJsonIo

@@ -144,7 +144,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// </summary>
     /// <remarks>
     /// 必须走 <c>TryCreate</c>：<c>Create</c> 在验证器拒绝时抛 <see cref="ArgumentException"/>（或 <c>ExceptionType</c>
-    /// 指定的类型），它会穿透 <c>JsonSerializer.Deserialize</c> —— 而 STJ 的转换器契约要求失败一律抛 <c>JsonException</c>。
+    /// 指定的类型），会穿透 <c>JsonSerializer.Deserialize</c>，而 STJ 的转换器契约要求失败一律抛 <c>JsonException</c>。
     /// </remarks>
     /// <param name="builder">产物构建器。</param>
     /// <param name="idInfo">当前 Id 的描述信息。</param>
@@ -175,9 +175,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         }
 
         // 委托路径：这些基元没有可直写的形式（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char），
-        // 仍由 JsonSerializer 处理 —— 而它要 options 里有该基元的 JsonTypeInfo。源生成的上下文若没登记
-        // 该基元类型，框架抛的是 NotSupportedException；此处转成带指引的 JsonException，
-        // 让调用方一眼看出「要给上下文补一条 [JsonSerializable]」。
+        // 由 JsonSerializer 处理，因而要求 options 里有该基元的 JsonTypeInfo。源生成的上下文未登记时会抛
+        // NotSupportedException，此处转成带指引的 JsonException。
         builder.Append(indent).Append(idInfo.PrimitiveIdTypeName).Append(" value;").Append('\n');
         builder.Append(indent).Append("try").Append('\n');
         builder.Append(indent).Append("{").Append('\n');
@@ -216,9 +215,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// 追加「把 <c>value</c> 转成 Id」的语句，验证失败抛 <c>JsonException</c>。
     /// </summary>
     /// <remarks>
-    /// 枚举基元在此追加已定义性校验：<c>TryCreate</c> 只跑用户配的 Validator，而 STJ 对未定义数值
-    /// （<c>999</c>）照常读出 —— 不补这一道就会反序列化出不对应任何成员的 Id（<c>TryParse</c> 与
-    /// Dapper 三条路径都已收紧，这里对齐）。
+    /// 枚举基元在此追加已定义性校验：<c>TryCreate</c> 只跑用户配的 Validator，而 STJ 对未定义数值（<c>999</c>）
+    /// 照常读出，不补这一道就会反序列化出不对应任何成员的 Id。
     /// </remarks>
     /// <param name="builder">产物构建器。</param>
     /// <param name="idInfo">当前 Id 的描述信息。</param>
@@ -299,9 +297,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("                    continue;").Append('\n');
         builder.Append("                }").Append('\n');
         builder.Append('\n');
-        // 属性名匹配要跟着 options.PropertyNameCaseInsensitive 走：`ValueTextEquals` 是逐字节比较，
-        // 只认小写 `value`。用户开了大小写不敏感后，`{"Value":"..."}` 会走进下面的 Skip 分支，
-        // 最终报「缺少 value 属性」—— 与 JsonSerializer 对普通对象的处理不一致。
+        // ValueTextEquals 是逐字节比较、只认小写 value，故需跟随 options.PropertyNameCaseInsensitive，
+        // 否则开了大小写不敏感后 {"Value":"..."} 会走进 Skip 分支并报「缺少 value 属性」。
         builder.Append("                if (reader.ValueTextEquals(\"value\")").Append('\n');
         builder.Append("                    || (options.PropertyNameCaseInsensitive && global::System.String.Equals(reader.GetString(), \"value\", global::System.StringComparison.OrdinalIgnoreCase)))").Append('\n');
         builder.Append("                {").Append('\n');
@@ -348,14 +345,10 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     {
         var builder = new StringBuilder();
 
-        // 有前缀时写出规范文本形（字符串），无前缀时写出基元值本身。
-        // BigInteger 例外：它没有内置转换器，按值写会退化成 {"IsPowerOfTwo":…,"Sign":1}，故也写规范文本。
-        //
-        // 其余基元优先直写：WriteStringValue / WriteNumberValue 不需要 options 里有基元的
-        // JsonTypeInfo，于是源生成的 JsonSerializerContext 不必为每个基元类型补一条
-        // [JsonSerializable] 登记；输出与 STJ 默认逐字节相同（见 PrimitiveJsonIo 的说明）。
-        // 直写不了的少数类型（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char）
-        // 仍委托给 JsonSerializer —— 那一档要 options 里有基元的元数据。
+        // 有前缀时写规范文本形，无前缀时写基元值本身；BigInteger 无内置转换器，按值写会退化成对象，故也写文本。
+        // 其余基元优先直写：WriteStringValue / WriteNumberValue 不需要 options 里有 JsonTypeInfo，
+        // 源生成的 JsonSerializerContext 因此不必为每个基元补 [JsonSerializable] 登记，输出与 STJ 默认逐字节相同。
+        // 直写不了的少数类型（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char）仍委托给 JsonSerializer。
         var writeValue = idInfo.HasPrefix
             ? "writer.WriteStringValue(value.ToString());"
             : idInfo.IsBigIntegerPrimitive
@@ -409,9 +402,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 
         if (ShouldApplyDictionaryKeyPolicy(idInfo))
         {
-            // 键文本可能已被 DictionaryKeyPolicy 改写（camelCase 等），故必须忽略大小写解析 ——
-            // 与 STJ 的原生枚举键一致（{"ACTIVE":1} 也能读回 Active）。注意这里不能复用 Id.TryParse：
-            // 它对枚举走大小写敏感的 Enum.TryParse，那是公共 API 的既定语义，不因字典键而改变。
+            // 键文本可能已被 DictionaryKeyPolicy 改写，故忽略大小写解析，与 STJ 的原生枚举键一致。
+            // 不能复用 Id.TryParse：它对枚举走大小写敏感的 Enum.TryParse，那是公共 API 的既定语义。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
             builder.Append($"            if (global::System.Enum.TryParse<{idInfo.PrimitiveIdTypeName}>(propertyName, ignoreCase: true, out var val)").Append('\n');
 
@@ -434,7 +426,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         else if (idInfo.IsStringPrimitive && !idInfo.HasPrefix)
         {
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
-            // 它会穿透 JsonSerializer.Deserialize —— 而 STJ 的转换器契约要求失败一律抛 JsonException。
+            // 它会穿透 JsonSerializer.Deserialize，而 STJ 的转换器契约要求失败一律抛 JsonException。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
             builder.Append($"            return propertyName is not null && {idInfo.EscapedName}.TryCreate(propertyName, out var id)").Append('\n');
             builder.Append("                ? id").Append('\n');

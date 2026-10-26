@@ -80,14 +80,11 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// 判断单条特性是否是本库的 <c>[StronglyTypedId]</c>：先按名字筛，再按语义确认。
     /// </summary>
     /// <remarks>
-    /// 只看名字不够：第三方库里同样叫 <c>StronglyTypedIdAttribute</c> 的特性，只要被 <c>using</c> 进来并以
-    /// <c>[StronglyTypedId]</c> 的短名书写，语法上与自家的一模一样，Inline 重构会把它物理删掉且不给任何提示。
-    /// 语义绑定能分辨两者，故名字命中后再确认一次。
+    /// 只看名字不够：第三方库的同名特性以短名书写时语法上与自家一致，Inline 重构会误删。
     /// <para>
-    /// 只有「明确绑定到了别的特性类型」才否决。绑定不出特性时一律沿用语法判定：声明位于
-    /// <c>namespace Len.StronglyTypedId.Tests</c> 这类命名空间下时，<c>[StronglyTypedId]</c> 会先解析到父命名空间
-    /// <c>Len.StronglyTypedId</c>，<c>GetSymbolInfo</c> 给出的是一个 Namespace 候选而非特性符号。若此时否决，
-    /// Inline 重构在本库自己的测试工程里都会失效。
+    /// 只有明确绑定到别的特性类型才否决。绑定不出特性时沿用语法判定，否则声明在
+    /// <c>namespace Len.StronglyTypedId.Tests</c> 下时 <c>[StronglyTypedId]</c> 会先解析到父命名空间，
+    /// 导致 Inline 重构在本库测试工程里失效。
     /// </para>
     /// </remarks>
     private static bool IsStronglyTypedIdAttribute(AttributeSyntax attribute, SemanticModel? semanticModel)
@@ -109,7 +106,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return IsStronglyTypedIdAttributeType(attributeType);
         }
 
-        // 候选里只要出现特性符号，就说明名字确实解析到了某个特性 —— 全是第三方的话必须否决。
+        // 候选里只要出现特性符号，就说明名字确实解析到了某个特性，全是第三方的话必须否决。
         var attributeCandidates = info.CandidateSymbols
             .OfType<IMethodSymbol>()
             .Where(static candidate => candidate.ContainingType is not null)
@@ -127,10 +124,10 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             && type.ContainingNamespace.ToDisplayString() == NamespaceName;
 
     /// <summary>
-    /// 判断特性名是否**精确**指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
+    /// 判断特性名是否精确指向 <c>Len.StronglyTypedId.StronglyTypedIdAttribute</c>。
     /// </summary>
     /// <remarks>
-    /// 只认这几种确定写法，不做任意后缀匹配 —— 否则 <c>[Acme.StronglyTypedId]</c> 这类限定名也会被当成自家的。
+    /// 只认这几种确定写法，不做任意后缀匹配，否则 <c>[Acme.StronglyTypedId]</c> 这类限定名也会被当成自家的。
     /// 短名写法仍需语义确认，见 <see cref="IsStronglyTypedIdAttribute"/>。
     /// </remarks>
     private static bool IsStronglyTypedIdAttributeName(NameSyntax name)
@@ -184,7 +181,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 
         var endOfLine = DocumentFormatting.GetEndOfLine(root);
 
-        // 新特性列表接管 record 原本的前导 trivia（通常是它上方那一行换行 / 空行），record 自身只留一个换行 ——
+        // 新特性列表接管 record 原本的前导 trivia（通常是它上方那一行换行 / 空行），record 自身只留一个换行，
         // 否则新特性会挤在上一行末尾，或与声明之间多出一个空行。
         var attributeList = SyntaxFactory.AttributeList(
                 SyntaxFactory.SingletonSeparatedList(
@@ -239,7 +236,7 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return document;
         }
 
-        // 「还有没有别的 Id」必须在替换**之前**判断：替换后的树里当前 record 已经没有特性了。
+        // 「还有没有别的 Id」必须在替换之前判断：替换后的树里当前 record 已经没有特性了。
         var hasOtherIds = root.DescendantNodes()
             .OfType<RecordDeclarationSyntax>()
             .Any(other => !ReferenceEquals(other, record) && HasStronglyTypedIdAttribute(other, semanticModel));
@@ -334,8 +331,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// 判断文件里是否还有标识符绑定到 <c>Len.StronglyTypedId</c> 命名空间下的符号。
     /// </summary>
     /// <remarks>
-    /// 该命名空间还导出 <c>IStronglyTypedId&lt;,&gt;</c>、<c>Any</c> 等，只按「还有没有带特性的 record」判断会误删仍在用的 using，产出 CS0246。
-    /// 待内联的 record 自己的特性列表必须排除：它马上要被摘掉，而 <c>StronglyTypedIdAttribute</c> 本身就属于该命名空间。
+    /// 该命名空间还导出 <c>IStronglyTypedId&lt;,&gt;</c>、<c>Any</c> 等，只按「还有没有带特性的 record」判断
+    /// 会误删仍在用的 using，产出 CS0246。待内联的 record 自己的特性列表必须排除。
     /// </remarks>
     private static async Task<bool> UsesNamespaceAsync(
         Document document,
@@ -375,11 +372,11 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     }
 
     /// <summary>
-    /// 判断某个标识符是否指向直接声明在 <c>Len.StronglyTypedId</c> 命名空间下的**类型**。
+    /// 判断某个标识符是否指向直接声明在 <c>Len.StronglyTypedId</c> 命名空间下的类型。
     /// </summary>
     /// <remarks>
-    /// 只认类型、不认命名空间：<c>namespace Len.StronglyTypedId.Tests;</c> 的 <c>ContainingNamespace</c> 恰好是 <c>Len.StronglyTypedId</c>，按命名空间判会让 using 永远删不掉。
-    /// 只比相等、不回溯祖先：声明在子命名空间里的类型本来就不需要这条 using。
+    /// 只认类型不认命名空间：<c>namespace Len.StronglyTypedId.Tests;</c> 的 <c>ContainingNamespace</c> 恰好是
+    /// <c>Len.StronglyTypedId</c>，按命名空间判会让 using 永远删不掉。只比相等不回溯祖先，子命名空间里的类型不需要这条 using。
     /// </remarks>
     private static bool NeedsNamespace(ISymbol? symbol)
         => symbol is INamedTypeSymbol { ContainingNamespace: { } containingNamespace }

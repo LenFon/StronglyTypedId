@@ -189,7 +189,8 @@ public class AspNetCoreMvcCodeGeneratorTests
 
     /// <summary>
     /// <c>Nullable&lt;T&gt;</c> 不实现任何接口，provider 必须先拆出底层类型，否则 <c>[FromQuery] OrderId?</c>
-    /// 会退回框架的 <c>TryParseModelBinder</c>（按 CurrentCulture 解析，与不变文化契约不一致）。
+    /// 会退回框架的 <c>TryParseModelBinder</c>（按 <c>ValueProviderResult.Culture</c> 解析，表单来源即当前文化，
+    /// 与强类型 Id 的不变文化契约不一致）。
     /// 同时泛型实参必须用底层类型：<c>Nullable&lt;OrderId&gt;</c> 不满足 <c>where TId : IParsable&lt;TId&gt;</c>。
     /// </summary>
     [Fact]

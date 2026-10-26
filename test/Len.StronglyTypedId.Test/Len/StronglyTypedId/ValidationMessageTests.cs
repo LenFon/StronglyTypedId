@@ -7,8 +7,8 @@ namespace Len.StronglyTypedId;
 /// 以及它与 <c>ExceptionType</c>、<c>TryCreate</c> / <c>TryParse</c> / <c>Parse</c> 三条入口的关系。
 /// </summary>
 /// <remarks>
-/// 生成器侧已有逐字符的文本契约用例（断言产物里写的是哪条消息），但那只能证明「代码长得对」。
-/// 这里补的是运行期事实：消息里到底有没有那个值 —— 它决定了用户输入会不会顺着异常进日志与 APM。
+/// 生成器侧已有逐字符的文本契约用例，但那只能证明「代码长得对」。这里补的是运行期事实：
+/// 消息里到底有没有那个值，它决定了用户输入会不会顺着异常进日志与 APM。
 /// </remarks>
 public class ValidationMessageTests
 {
@@ -71,7 +71,7 @@ public class ValidationMessageTests
 
     /// <summary>
     /// <c>TryCreate</c> 是非抛异常的工厂：被拒时返回 <see langword="false"/> 并把结果置为 <c>default</c>，
-    /// 压根没有消息可泄漏 —— 这也是「不想让用户输入进日志」时最省事的用法。
+    /// 压根没有消息可泄漏，这也是「不想让用户输入进日志」时最省事的用法。
     /// </summary>
     [Fact]
     public void TryCreate_Should_ReturnFalse_ForRejectedValue()
@@ -107,7 +107,7 @@ public class ValidationMessageTests
     }
 
     /// <summary>
-    /// <c>Parse</c> 的失败消息恒为固定文案，与脱敏开关无关 —— 它报的是「文本读不成 Id」，
+    /// <c>Parse</c> 的失败消息恒为固定文案，与脱敏开关无关，它报的是「文本读不成 Id」，
     /// 而 <c>RedactValidationMessage</c> 只作用于 <c>Create</c> 的验证拒绝分支。
     /// </summary>
     /// <remarks>

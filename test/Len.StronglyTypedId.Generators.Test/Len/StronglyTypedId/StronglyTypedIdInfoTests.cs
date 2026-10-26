@@ -75,7 +75,7 @@ public class StronglyTypedIdInfoTests
     public void PrimitiveIdTypeName_Should_BeResolvedFromInterface_NotRecordCopyConstructor()
     {
         // 缺陷回归：引用类型 record 会额外合成 Foo(Foo original) 复制构造函数。主构造函数参数多于一个时，
-        // 「首个单参数构造函数」命中的正是该复制构造函数，会把记录自身误判为基元类型——不抛异常，
+        // 「首个单参数构造函数」命中的正是该复制构造函数，会把记录自身误判为基元类型，不抛异常，
         // 生成出来的转换器 / JSON 契约全部指向错误类型，属静默错误。
         var type = GetTypeSymbol(
             """
@@ -420,7 +420,7 @@ public class StronglyTypedIdInfoTests
         var info = new StronglyTypedIdInfo(type);
 
         info.NestingDepth.Should().Be(2);
-        // 最外层在前，逐层一行；显式写出真实的可访问性 —— 内层省略修饰符时隐式为 private，
+        // 最外层在前，逐层一行；显式写出真实的可访问性，内层省略修饰符时隐式为 private，
         // 与重开时写下的可访问性必须一致，否则 CS0262。
         info.ContainingTypeDeclarations.Should().Be("public partial class Outer\nprivate partial class Inner");
         info.FullyQualifiedName.Should().Be("global::Referenced.Outer.Inner.OrderId");
@@ -610,7 +610,7 @@ public class StronglyTypedIdInfoTests
 
     /// <summary>
     /// 缺陷回归：<see cref="StronglyTypedIdInfo.Name"/> 取自 <see cref="ISymbol.Name"/>，而它对 C# 关键字
-    /// 不加 <c>@</c> 转义。原样写进类型声明位时，编译器会把名字吃成关键字——<c>partial record struct class :</c>
+    /// 不加 <c>@</c> 转义。原样写进类型声明位时，编译器会把名字吃成关键字，<c>partial record struct class :</c>
     /// 的类型名变成空串，成员整体掉出类型落进全局命名空间，爆出 CS0260 / CS1520 / CS0101 / CS9348 一串错误。
     /// </summary>
     /// <remarks>
@@ -652,14 +652,11 @@ public class StronglyTypedIdInfoTests
     /// <c>out var id</c> 这类局部变量声明，Id 叫 <c>var</c> 时那个 <c>var</c> 会被当成隐式类型声明。
     /// </summary>
     /// <remarks>
-    /// 不含 <c>file</c> 与 <c>required</c>：编译器本身禁止用它们作类型名（CS9056 / CS9029），
-    /// 那不是生成器能兜住的问题。
+    /// 不含 <c>file</c> 与 <c>required</c>：编译器本身禁止用它们作类型名（CS9056 / CS9029）。
     /// <para>
     /// 后八个（<c>Cdecl</c> / <c>dynamic</c> / <c>nint</c> / <c>notnull</c> / <c>nuint</c> /
-    /// <c>Stdcall</c> / <c>Thiscall</c> / <c>value</c>）是规范列为上下文关键字、但 Roslyn
-    /// <see cref="Microsoft.CodeAnalysis.CSharp.SyntaxFacts"/> 两张表都不收录的词，靠
-    /// <see cref="StronglyTypedIdInfo"/> 内的补丁清单兜住。其中 <c>value</c> 有实证危害：
-    /// 生成器在 STJ 读取路径里写 <c>var value = ...</c> 局部变量，会遮蔽同名类型。
+    /// <c>Stdcall</c> / <c>Thiscall</c> / <c>value</c>）是规范列为上下文关键字、但 Roslyn 两张表都不收录的词，
+    /// 靠补丁清单兜住。其中 <c>value</c> 有实证危害：STJ 读取路径写出的 <c>var value</c> 会遮蔽同名类型。
     /// </para>
     /// </remarks>
     [Theory]

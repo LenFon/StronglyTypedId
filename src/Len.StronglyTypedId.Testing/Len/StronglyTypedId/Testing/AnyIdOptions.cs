@@ -1,53 +1,48 @@
 ﻿namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Configures how <see cref="AnyIdGenerator"/> produces primitive values.
+/// 配置 <see cref="AnyIdGenerator"/> 如何生成基元值。
 /// </summary>
 public sealed class AnyIdOptions
 {
     /// <summary>
-    /// Gets or sets the seed passed to <see cref="Random"/>.
+    /// 获取或设置传给 <see cref="Random"/> 的种子。
     /// </summary>
     /// <value>
-    /// <see langword="null"/> (the default) to seed from the clock, or an explicit value to make the
-    /// sequence reproducible. Reproducibility is guaranteed for a given runtime version only: the
-    /// algorithm behind <see cref="Random"/> is an implementation detail and may change between .NET releases.
+    /// <see langword="null"/>（默认）表示按时钟取种；给定显式值可使序列可复现。可复现性仅在特定运行时版本内成立：
+    /// <see cref="Random"/> 的算法属实现细节，可能随 .NET 版本变化。
     /// </value>
     public int? Seed { get; set; }
 
     /// <summary>
-    /// Gets or sets the length of generated <see cref="string"/> primitives.
+    /// 获取或设置生成的 <see cref="string"/> 基元长度。
     /// </summary>
-    /// <value>The number of characters, 8 by default. Must be at least 1.</value>
+    /// <value>字符数，默认 8，最小为 1。</value>
     public int StringLength { get; set; } = 8;
 
     /// <summary>
-    /// Gets or sets how many random values are tried before giving up on an id whose validator rejects them.
+    /// 获取或设置验证器拒绝取值时，放弃前最多尝试的随机值个数。
     /// </summary>
-    /// <value>The maximum number of attempts, 100 by default. Must be at least 1.</value>
+    /// <value>最大尝试次数，默认 100，最小为 1。</value>
     public int MaxAttempts { get; set; } = 100;
 
     /// <summary>
-    /// Gets or sets a callback that supplies the primitive value for a given primitive type.
+    /// 获取或设置按基元类型提供取值的回调。
     /// </summary>
     /// <value>
-    /// A delegate returning the value to wrap, or <see langword="null"/> to fall back to the built-in
-    /// generator. <see langword="null"/> is also what the delegate itself returns to mean "not handled".
+    /// 返回待包装值的委托；返回 <see langword="null"/> 表示回退到内置生成器。委托自身返回 <see langword="null"/>
+    /// 同样表示「未处理」。
     /// </value>
     public Func<Type, object?>? PrimitiveValueFactory { get; set; }
 
     /// <summary>
-    /// Gets or sets whether generated values occasionally include the minimum and maximum of the
-    /// primitive's range.
+    /// 获取或设置生成值是否偶尔取基元范围的极值。
     /// </summary>
     /// <value>
-    /// <see langword="false"/> by default. Values then stay ordinary — <c>int.MaxValue</c> is reachable
-    /// in principle but never actually drawn. Turn it on when the code under test is boundary-sensitive
-    /// (formatting width, overflow checks, database column limits): roughly one value in sixteen is then
-    /// the primitive's <c>MinValue</c> or <c>MaxValue</c>. Integral and <see cref="decimal"/> primitives
-    /// only — the floating-point boundaries are <c>NaN</c> / <c>±Infinity</c>, which are deliberately
-    /// never generated because they make JSON round-trips fail for reasons unrelated to the code under
-    /// test. Leave it off when a test asserts uniqueness: two ids can then collide on the same extreme.
+    /// 默认 <see langword="false"/>，取值保持普通。被测代码对边界敏感（格式化宽度、溢出检查、数据库列上限）时打开：
+    /// 约每十六个值有一个是 <c>MinValue</c> 或 <c>MaxValue</c>。仅适用于整型与 <see cref="decimal"/>；
+    /// 浮点边界是 <c>NaN</c> / <c>±Infinity</c>，会让 JSON 往返失败，故从不生成。
+    /// 断言唯一性时不要打开：两个 Id 可能撞在同一个极值上。
     /// </value>
     public bool IncludeBoundaryValues { get; set; }
 }

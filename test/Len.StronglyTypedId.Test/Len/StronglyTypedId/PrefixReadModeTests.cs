@@ -8,18 +8,11 @@ namespace Len.StronglyTypedId;
 /// 前缀读入模式（<see cref="PrefixReadMode"/>）在各文本入口上的表现。
 /// </summary>
 /// <remarks>
+/// 前缀只存在于规范文本形里，所有「按文本读入」的入口都必须遵守同一套策略：
+/// <see cref="PrefixReadMode.Lenient"/> 接受带前缀与裸值，<see cref="PrefixReadMode.Strict"/> 只接受带前缀。
+/// JSON 转换器与 <c>TypeConverter</c> 是各自独立的读入路径，漏掉策略时严格模式下「缺前缀的裸值」会被静默接受。
 /// <para>
-/// 前缀只存在于<b>规范文本形</b>里，因此凡是「按文本读入」的入口都必须遵守同一套策略：
-/// <see cref="PrefixReadMode.Lenient"/> 接受带前缀与裸值两种写法，<see cref="PrefixReadMode.Strict"/> 只接受带前缀。
-/// </para>
-/// <para>
-/// 现有用例只在 <c>Parse</c> / <c>TryParse</c> 上验证过这条策略。JSON 转换器与 <c>TypeConverter</c> 是另外几条
-/// 独立的读入路径（各自生成，各自调用 <c>TryParse</c> / <c>Parse</c>），一旦哪条漏掉策略，
-/// 严格模式下「缺前缀的裸值」就会被静默接受 —— 而这正是严格模式存在的理由。
-/// </para>
-/// <para>
-/// 这里的 JSON 类型一律写全限定名：本文件同时用到 System.Text.Json 与 Newtonsoft.Json，
-/// 两者的 <c>JsonSerializer</c> / <c>JsonException</c> 同名，引入命名空间会造成 CS0104 歧义。
+/// JSON 类型一律写全限定名：本文件同时用到 System.Text.Json 与 Newtonsoft.Json，引入命名空间会造成 CS0104 歧义。
 /// </para>
 /// </remarks>
 public class PrefixReadModeTests

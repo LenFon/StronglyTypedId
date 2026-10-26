@@ -50,10 +50,8 @@ public class StronglyTypedIdGeneratorTests
             """";
         var expectedCodes = GetExpectedCodes(record);
 
-        // Act
         var actualCodes = GetGeneratedCode(code).ToList()!;
 
-        // Assert
         var verifier = new DefaultVerifier();
 
         // System.Text.Json 与 Newtonsoft.Json 产物与框架无关，按原基线逐字节校验。
@@ -62,7 +60,7 @@ public class StronglyTypedIdGeneratorTests
 
         // 核心产物（OrderId.g.cs）除框架无关成员外，还按目标框架的 BCL 能力条件生成 UTF-8 解析成员
         // （IUtf8SpanParsable<Guid> 仅 .NET 10+ 才有），因此改用 Contain 断言锁定契约，
-        // 而非逐字节比对 —— 否则需为 net8.0 / net10.0 各维护一份基线。
+        // 而非逐字节比对，否则需为 net8.0 / net10.0 各维护一份基线。
         var core = actualCodes[0]!;
         var utf8Parsable = GuidSupportsUtf8Parsing();
 
@@ -138,12 +136,11 @@ public class StronglyTypedIdGeneratorTests
 
     /// <summary>
     /// 缺陷回归：Id 自身的名字是 C# 保留关键字时，生成器曾把未转义的 <see cref="ISymbol.Name"/> 写进
-    /// 类型声明位与全部类型引用位。<c>partial record struct class :</c> 的类型名被编译器吃成空串，
-    /// 成员整体掉出类型落进全局命名空间，爆出 CS0260 / CS1520 / CS0101 / CS9348 一串错误。
+    /// 类型声明位与全部类型引用位，导致成员整体掉出类型落进全局命名空间，爆出 CS0260 / CS1520 / CS0101 / CS9348。
     /// </summary>
     /// <remarks>
     /// 同时锁 hint 名：含 <c>@</c> 会让 <c>AddSource</c> 抛 <see cref="ArgumentException"/>，
-    /// 表现为 STIA0012「生成器失败」且该类型全部输出被丢弃——用户只会看到一条与真实意图无关的报错。
+    /// 表现为 STIA0012 且该类型全部输出被丢弃。
     /// </remarks>
     [Theory]
     [InlineData("class")]
@@ -238,7 +235,7 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(code);
         var core = generated.Values.Single(text => text.Contains("public static readonly"));
 
-        // 整型实例值带显式转换：(int)(7) 而非 7 —— 字面量默认推断成 int，
+        // 整型实例值带显式转换：(int)(7) 而非 7，字面量默认推断成 int，
         // 对 byte / short 等更窄基元会无法隐式转换，故统一加壳。
         core.Should().Contain("public static readonly OrderId @class = Create((int)(7));");
 
@@ -274,7 +271,7 @@ public class StronglyTypedIdGeneratorTests
     private static List<string> GetExpectedCodes(string record = "record")
     {
         // record 与 record struct 的产物只差两处：record 关键字后的 struct 后缀，
-        // 以及 IComparable<TSelf>.CompareTo 的形参 —— 无约束泛型里的 T? 对值类型即 T 本身，
+        // 以及 IComparable<TSelf>.CompareTo 的形参，无约束泛型里的 T? 对值类型即 T 本身，
         // 引用类型写可空、值类型不写才与接口签名一致（否则 CS8767）。
         var compareToParameter = record == "record" ? "OrderId? other" : "OrderId other";
         var compareToBody = record == "record"
@@ -413,11 +410,11 @@ public class StronglyTypedIdGeneratorTests
                 public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
 
                 /// <summary>
-                /// Attempts to create a new strongly typed id that wraps the specified primitive value.
+                /// 尝试创建包装指定基元值的新强类型 Id。
                 /// </summary>
-                /// <param name="value">The primitive value to wrap.</param>
-                /// <param name="result">The created id when this method returns <see langword="true"/>.</param>
-                /// <returns><see langword="true"/> when <paramref name="value"/> is acceptable; otherwise, <see langword="false"/>.</returns>
+                /// <param name="value">要包装的基元值。</param>
+                /// <param name="result">方法返回 <see langword="true"/> 时创建出的 Id。</param>
+                /// <returns>当 <paramref name="value"/> 可接受时返回 <see langword="true"/>，否则返回 <see langword="false"/>。</returns>
                 [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
                 [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "{{_generatorVersion}}")]
                 public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
@@ -723,7 +720,7 @@ public class StronglyTypedIdGeneratorTests
 
     /// <summary>
     /// 缺陷回归（连带效应）：那条冲突声明是声明级错误，csc 会因此丢弃整个编译单元的全部分析器诊断
-    /// —— 实测同单元内无关 Id 的 STIA0006 / STIA0007 / STIA0009 全部静默消失（构建日志与 binlog 中
+    ///，实测同单元内无关 Id 的 STIA0006 / STIA0007 / STIA0009 全部静默消失（构建日志与 binlog 中
     /// 均无 AD0001，是编译器既有行为，但触发它的是本库的产物）。生成器现在直接跳过 file 局部 Id，
     /// 编译不再有声明级错误，同单元其他 Id 的诊断必须照常上报。
     /// </summary>
@@ -748,7 +745,7 @@ public class StronglyTypedIdGeneratorTests
             .Create(new StronglyTypedIdGenerator())
             .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
 
-        // 前提：生成器不报错、合并产物后的编译也没有声明级错误 —— 任一成立都会让下面的分析器诊断被 csc 吞掉。
+        // 前提：生成器不报错、合并产物后的编译也没有声明级错误，任一成立都会让下面的分析器诊断被 csc 吞掉。
         generatorDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
         outputCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
 
@@ -999,7 +996,7 @@ public class StronglyTypedIdGeneratorTests
 
     /// <summary>
     /// 增量稳定性：只改与 Id 无关的语法时，所有 <c>RegisterSourceOutput</c> 步骤都应命中缓存。
-    /// 这条用例守着 <see cref="ModuleInfo"/> 的相等性口径——它带一个可变的类型表缓存字段，
+    /// 这条用例守着 <see cref="ModuleInfo"/> 的相等性口径，它带一个可变的类型表缓存字段，
     /// 一旦该字段混进比较，每次按键都会让全部集成生成器重跑。
     /// </summary>
     [Fact]
@@ -1343,7 +1340,7 @@ public class StronglyTypedIdGeneratorTests
 
     /// <summary>
     /// 回归用例：门控只看是否引用 EF Core，不再看源码里有没有 <c>ConfigureConventions</c> 重写。
-    /// 否则「context 只用 <c>OnModelCreating</c>」这一最常见形态反而拿不到任何产物 —— 而那正是
+    /// 否则「context 只用 <c>OnModelCreating</c>」这一最常见形态反而拿不到任何产物，而那正是
     /// <c>ApplyTo(ModelBuilder)</c> 存在的意义。
     /// </summary>
     [Fact]
@@ -1833,7 +1830,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 逐类型的 <c>false</c> 不能撤销装配级脱敏——脱敏是安全策略，不是逐类型偏好。
+    /// 逐类型的 <c>false</c> 不能撤销装配级脱敏，脱敏是安全策略，不是逐类型偏好。
     /// </summary>
     /// <remarks>
     /// 属性是 <c>bool</c>，未写时读到的同样是 <c>false</c>，生成器无法区分「没写」与「写了 false」，故逐类型只能单向打开。
@@ -1903,7 +1900,8 @@ public class StronglyTypedIdGeneratorTests
     /// 产物里的 XML 文档注释必须遵循 C# 惯例：<c>&lt;summary&gt;</c> 独占一行，正文另起一行。
     /// </summary>
     /// <remarks>
-    /// 单行写法既能编译也能被 <c>Contain</c> 命中，故只能按「行首形状」断言：以 <c>/// &lt;summary&gt;</c> 开头却不是纯该行的都算违规。
+    /// 单行写法既能编译也能被 <c>Contain</c> 命中，故只能按「行首形状」断言：
+    /// 以 <c>&lt;summary&gt;</c> 开头却不是纯该行的都算违规。
     /// </remarks>
     [Fact]
     public void Generator_Should_EmitMultiLineSummaryComments()
@@ -1957,7 +1955,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹——无验证器的形态必须与加入该能力之前逐字符一致。
+    /// 未指定 <c>Validator</c> 时产物里不应出现任何校验痕迹，无验证器的形态必须与加入该能力之前逐字符一致。
     /// </summary>
     [Fact]
     public void Generator_Should_NotEmitValidationGuard_WhenValidatorIsAbsent()
@@ -2193,7 +2191,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 非枚举基元的键值是数据本身而非名字，不能被 <c>DictionaryKeyPolicy</c> 改写 ——
+    /// 非枚举基元的键值是数据本身而非名字，不能被 <c>DictionaryKeyPolicy</c> 改写
     /// 改写 string 键等于损坏数据（写出去读不回来），Guid 同理不该被当作命名风格处理。
     /// </summary>
     [Theory]
@@ -2257,12 +2255,10 @@ public class StronglyTypedIdGeneratorTests
     /// 基元的读写必须直写 / 直读，不外包给 <c>JsonSerializer</c>。
     /// </summary>
     /// <remarks>
-    /// 外包给 <c>JsonSerializer.Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c> 意味着转换器要求
-    /// <c>options</c> 里有该基元类型的 <c>JsonTypeInfo</c>：源生成的 <c>JsonSerializerContext</c> 只服务
-    /// <c>[JsonSerializable]</c> 登记过的类型，于是调用方还得为每个用到的基元类型补一条登记；
-    /// 漏登记时报的是框架内部的 <c>NotSupportedException</c>，调用方很难自行定位到「少登记了一个基元」。
-    /// 直写 / 直读让转换器自给自足，而输出与 STJ 默认逐字节相同 ——
-    /// 那一条由 <c>PrimitiveContractMatrixTests</c> 的逐基元对比用例守着。
+    /// 外包给 <c>JsonSerializer</c> 意味着转换器要求 <c>options</c> 里有该基元的 <c>JsonTypeInfo</c>，
+    /// 而源生成的 <c>JsonSerializerContext</c> 只服务 <c>[JsonSerializable]</c> 登记过的类型，
+    /// 漏登记时报的是框架内部异常，很难定位。直写 / 直读让转换器自给自足，输出与 STJ 默认逐字节相同，
+    /// 这一点由 <c>PrimitiveContractMatrixTests</c> 守着。
     /// </remarks>
     [Fact]
     public void SystemTextJson_Should_ReadAndWritePrimitiveDirectly()
@@ -2333,7 +2329,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 缺陷回归：枚举 Id 的 JSON 反序列化曾接受未定义值 —— 值位置的读入只走 <c>TryCreate</c>，
+    /// 缺陷回归：枚举 Id 的 JSON 反序列化曾接受未定义值，值位置的读入只走 <c>TryCreate</c>，
     /// 而它只执行用户配置的 Validator，不含枚举已定义性校验。实测修复前
     /// <c>Deserialize&lt;StatusId&gt;("999")</c> 成功得到 <c>(Status)999</c>，与 <c>TryParse("999")</c>
     /// 返回 false 自相矛盾（Dapper 三条路径与 <c>ReadAsPropertyName</c> 也都拒绝）。现在 Read 路径附带
@@ -2478,9 +2474,8 @@ public class StronglyTypedIdGeneratorTests
     /// <c>catch (JsonException)</c> 的调用方漏掉这条路径，且拿不到 JSON path。
     /// </summary>
     /// <remarks>
-    /// 基元改成直读（<c>reader.GetGuid()</c>）后，读取期失败由 <c>Utf8JsonReader</c> 抛
-    /// <c>InvalidOperationException</c>（token 类型不符）或 <c>FormatException</c>（文本格式不符）；
-    /// 转换器必须把它们捕获并转成 <c>JsonException</c>，否则同样会穿透契约。
+    /// 基元改成直读后，读取期失败由 <c>Utf8JsonReader</c> 抛 <c>InvalidOperationException</c>（token 类型不符）
+    /// 或 <c>FormatException</c>（文本格式不符），转换器必须把它们转成 <c>JsonException</c>，否则会穿透契约。
     /// </remarks>
     [Fact]
     public void SystemTextJson_Should_ThrowJsonException_WhenTokenCannotBecomeValue()
@@ -2507,8 +2502,8 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// <c>JsonShape = JsonShape.Object</c> 时，System.Text.Json 产物改为读写 <c>{ "value": …
-    /// }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。
+    /// <c>JsonShape = JsonShape.Object</c> 时，System.Text.Json 产物改为读写
+    /// <c>{ "value": … }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移。
     /// </summary>
     [Fact]
     public void JsonShape_Object_Should_GenerateObjectShape_ForSystemTextJson()
@@ -2528,7 +2523,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 默认（基元形态）下产物不含任何对象形态痕迹——引入本开关不改变既有产物，是「不破坏既有契约」的前提。
+    /// 默认（基元形态）下产物不含任何对象形态痕迹，引入本开关不改变既有产物，是「不破坏既有契约」的前提。
     /// </summary>
     [Fact]
     public void JsonShape_Primitive_Should_NotGenerateObjectShape_ForSystemTextJson()
@@ -2814,7 +2809,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 装配级默认验证器与逐类型 <c>Validator</c> 同名时，逐类型优先级更高——但这里两者一致，仅确认装配级默认值在「Id 自身未声明 Validator」时确实生效。
+    /// 装配级默认验证器与逐类型 <c>Validator</c> 同名时，逐类型优先级更高，但这里两者一致，仅确认装配级默认值在「Id 自身未声明 Validator」时确实生效。
     /// </summary>
     [Fact]
     public void Generator_Should_UseAssemblyDefaultValidator_WhenTypeHasNoOwnValidator()
@@ -3209,7 +3204,7 @@ public class StronglyTypedIdGeneratorTests
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Routing.IRouteConstraint).Assembly),
                 AssemblyReferenceCache.FromAssembly(typeof(Microsoft.AspNetCore.Http.HttpContext).Assembly),
                 // EF Core 的 ValueConverter 签名里带 Expression<>，而合成编译的引用集由 AppDomain 里「已加载」的
-                // 程序集拼出（见 ShouldReferenceAssembly），单跑本用例时它可能尚未加载 —— 显式引入，让结果与运行顺序无关。
+                // 程序集拼出（见 ShouldReferenceAssembly），单跑本用例时它可能尚未加载，显式引入，让结果与运行顺序无关。
                 AssemblyReferenceCache.FromAssembly(typeof(System.Linq.Expressions.Expression).Assembly),
             ]);
 
@@ -3291,7 +3286,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// 泛型容器里的 Id：两个 JSON 转换器类照常生成，但类型上不能挂 <c>[JsonConverter]</c> —— 特性实参引用含类型参数的
+    /// 泛型容器里的 Id：两个 JSON 转换器类照常生成，但类型上不能挂 <c>[JsonConverter]</c>，特性实参引用含类型参数的
     /// 转换器会 CS0416。使用者只能按闭合类型手动注册（运行时行为见集成测试
     /// <c>GenericContainerId_Should_NeedManualConverterRegistration</c>）。
     /// </summary>

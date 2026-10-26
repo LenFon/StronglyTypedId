@@ -317,8 +317,8 @@ public class OrdersController : ControllerBase
 列表里已有 `StronglyTypedIdModelBinderProvider` 时直接返回，不再插入第二个，因此启动代码从多个模块各注册一次、
 或配置回调被执行两次，都不会让提供者列表增长、也不会让绑定器在每个请求上重建。可空 Id 同样覆盖：
 `[FromQuery] OrderId?` 的 CLR 类型是 `Nullable<OrderId>`，它不实现任何接口，所以提供者先拆壳再做接口判定。
-少了这一步，该参数会落到 MVC 的 `TryParseModelBinder`，而它按**当前区域**解析——同一条路由上的可空与
-非可空参数对同一份载荷就会绑出不同的值。
+少了这一步，该参数会落到 MVC 的 `TryParseModelBinder`，而它按 `ValueProviderResult.Culture` 解析
+（查询串与路由传不变文化，表单传当前文化）——同一条路由上的可空与非可空参数对同一份表单载荷就会绑出不同的值。
 
 绑定行为，三种要紧的情形：
 

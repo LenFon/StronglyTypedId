@@ -37,10 +37,9 @@ public static class AssemblyReferenceCache
     /// 尝试取得已加载程序集的引用；无法解析（路径为空 / 身份为 «Unknown» / 文件不存在）时返回 <c>null</c>，交由调用方跳过，而非抛异常中断整批引用收集。
     /// </summary>
     /// <remarks>
-    /// net10.0 测试宿主下，部分从 NuGet 缓存 / <see cref="System.Runtime.Loader.AssemblyLoadContext"/> / 共享框架加载的程序集
-    /// <see cref="Assembly.Location"/> 为空串、<see cref="Assembly.GetName"/> 可能为 «Unknown»；另一些 <see cref="AppDomain"/> 内程序集（如测试宿主基础设施）身份同样反常。
-    /// 兜底链：① Location（文件存在）；② 模块完全限定名；③ 受信平台程序集（TPA）列表按模块文件名匹配（覆盖共享框架程序集）；
-    /// ④ 测试输出目录下的模块名 / «简单名».dll（覆盖已复制到输出的 NuGet 库）。任一环节文件不存在即放弃，返回 <c>null</c>。
+    /// net10.0 测试宿主下，部分程序集的 <see cref="Assembly.Location"/> 为空串、<see cref="Assembly.GetName"/> 为 «Unknown»。
+    /// 兜底链：① Location；② 模块完全限定名；③ 受信平台程序集（TPA）列表按文件名匹配；④ 测试输出目录下的模块名。
+    /// 任一环节文件不存在即返回 <c>null</c>，由调用方跳过。
     /// </remarks>
     public static MetadataReference? TryResolveReference(Assembly assembly)
     {

@@ -112,7 +112,7 @@ internal static class GitRepository
 
             // 两个管道各有约 4 KB 的内核缓冲：必须并发读。顺序 ReadToEnd 时，只要 git 往
             // stderr 写满缓冲（dubious ownership、LF→CRLF 告警、LFS 钩子……），它就会阻塞在
-            // 写 stderr 上，而我们阻塞在 stdout 的 EOF 上 —— 双方互等，永久挂起。
+            // 写 stderr 上，而我们阻塞在 stdout 的 EOF 上，双方互等，永久挂起。
             var outputTask = process.StandardOutput.ReadToEndAsync();
             var errorTask = process.StandardError.ReadToEndAsync();
 

@@ -21,7 +21,7 @@ public class StronglyTypedIdBehaviorTests
     /// </summary>
     private static readonly (Type IdType, string Text, string InvalidInput)[] _samples =
     [
-        // record struct
+        // record struct（值类型）
         (typeof(GuidId), "d8ac85d4-ed76-4974-b055-8ef3508743f3", "not-a-guid"),
         (typeof(Int32Id), "12", "abc"),
         (typeof(UInt32Id), "14", "abc"),
@@ -152,7 +152,7 @@ public class StronglyTypedIdBehaviorTests
     }
 
     /// <summary>
-    /// C1：char 基元的解析按「长度恰为 1」判定——空串与多字符都必须失败，string 与 span 两个重载一致。
+    /// C1：char 基元的解析按「长度恰为 1」判定，空串与多字符都必须失败，string 与 span 两个重载一致。
     /// </summary>
     [Fact]
     public void CharId_Should_RejectTextWhoseLengthIsNotOne()
@@ -390,7 +390,7 @@ public class StronglyTypedIdBehaviorTests
         ((IFormattable)id).ToString(null, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
         ((IFormattable)id).ToString(string.Empty, null).Should().Be("ord_d8ac85d4-ed76-4974-b055-8ef3508743f3");
 
-        // format 非空：format 只作用于基元部分，前缀仍在——否则 $"{id:N}" 会与 ToString() 不同形。
+        // format 非空：format 只作用于基元部分，前缀仍在，否则 $"{id:N}" 会与 ToString() 不同形。
         ((IFormattable)id).ToString("N", null).Should().Be("ord_" + g.ToString("N", null));
     }
 
@@ -503,7 +503,7 @@ public class StronglyTypedIdBehaviorTests
         => idType.IsValueType ? Activator.CreateInstance(idType) : null;
 
     // 编译期契约断言：TSelf 必须实现 IStronglyTypedId<TSelf, TPrimitiveId>，否则此处无法通过编译。
-    // 用泛型约束替代「声明为接口类型的局部变量」——同为编译期校验，但不触发 CA1859。
+    // 用泛型约束替代「声明为接口类型的局部变量」，同为编译期校验，但不触发 CA1859。
     private static TSelf AsStronglyTypedId<TSelf, TPrimitiveId>(TSelf self)
         where TSelf : IStronglyTypedId<TSelf, TPrimitiveId>
         where TPrimitiveId : notnull, IComparable, IComparable<TPrimitiveId>, IEquatable<TPrimitiveId>

@@ -6,8 +6,8 @@ namespace Len.StronglyTypedId;
 /// 把命名实例声明的文本值翻译成生成代码里的表达式，并在编译期完成校验。
 /// </summary>
 /// <remarks>
-/// 生成器跑在 netstandard2.0 上，<c>Half</c> / <c>Int128</c> / <c>UInt128</c> / <c>DateOnly</c> / <c>TimeOnly</c> 在那里不存在，故手写文本校验后生成运行期 <c>Parse</c>。
-/// 其余基元翻译成字面量或构造函数表达式，运行期零解析；校验与发射共用同一份代码。
+/// 生成器跑在 netstandard2.0 上，<c>Half</c> / <c>Int128</c> / <c>UInt128</c> / <c>DateOnly</c> / <c>TimeOnly</c>
+/// 在那里不存在，故手写文本校验后生成运行期 <c>Parse</c>；其余基元翻译成字面量或构造函数表达式，运行期零解析。
 /// </remarks>
 internal static class InstanceValueEmitter
 {
@@ -127,7 +127,7 @@ internal static class InstanceValueEmitter
     {
         expression = null;
 
-        // NumberStyles.Integer 只接受前后空白与正负号，挡掉千位分隔符与小数 —— 与 Parse 的整型语义一致。
+        // NumberStyles.Integer 只接受前后空白与正负号，挡掉千位分隔符与小数，与 Parse 的整型语义一致。
         if (!parser(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
         {
             return false;

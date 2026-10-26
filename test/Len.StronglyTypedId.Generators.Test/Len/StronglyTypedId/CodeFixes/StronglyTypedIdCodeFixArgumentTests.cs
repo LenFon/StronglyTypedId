@@ -80,7 +80,7 @@ public class StronglyTypedIdCodeFixArgumentTests
     }
 
     /// <summary>
-    /// STIA0017：归一化方法已存在但签名不符时删掉实参——再生成同名方法会撞 CS0101。
+    /// STIA0017：归一化方法已存在但签名不符时删掉实参，再生成同名方法会撞 CS0101。
     /// </summary>
     [Fact]
     public async Task CodeFix_Should_RemoveNormalizerArgument_WhenNormalizerSignatureInvalid()
@@ -188,7 +188,7 @@ public class StronglyTypedIdCodeFixArgumentTests
 
     /// <summary>
     /// STIA0005 的 IsFixable 负向分支：record 已有 body 构造函数、却无单参主构造函数时，再加主构造会与既有 body 构造撞 CS0111。此时诊断虽触发，但 CodeFix
-    /// 不应提供任何修复入口—— RegisterCodeFixesAsync 经 IsFixable 门禁直接跳过，注册 0 个 CodeAction。该场景无法用 VerifyCodeFixAsync
+    /// 不应提供任何修复入口，RegisterCodeFixesAsync 经 IsFixable 门禁直接跳过，注册 0 个 CodeAction。该场景无法用 VerifyCodeFixAsync
     /// 表达（框架假定修复一定会被应用），故直接驱动 provider 断言 0 个修复。
     /// </summary>
     [Fact]

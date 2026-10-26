@@ -47,7 +47,7 @@ public class LocalizedStringTests
     #region 区域性回退
 
     /// <summary>
-    /// 资源键不存在时必须回退显示键本身，而不是抛异常——漏配一条文案不应让整个诊断崩溃。
+    /// 资源键不存在时必须回退显示键本身，而不是抛异常，漏配一条文案不应让整个诊断崩溃。
     /// </summary>
     [Fact]
     public void ToString_Should_FallBackToKey_WhenResourceIsMissing() => new LocalizedString("NoSuchResourceKey").ToString().Should().Be("NoSuchResourceKey");
@@ -91,7 +91,7 @@ public class LocalizedStringTests
     }
 
     /// <summary>
-    /// 回退链的最后一环是内嵌的 en 资源。它一旦缺失，加载器会拿到 null 流并静默回退到资源键——不再抛异常，
+    /// 回退链的最后一环是内嵌的 en 资源。它一旦缺失，加载器会拿到 null 流并静默回退到资源键，不再抛异常，
     /// 但所有诊断文案都会退化成键名。这条断言把「资源确实被打进了程序集」钉住，让那种退化能被发现。
     /// </summary>
     [Fact]
@@ -100,7 +100,7 @@ public class LocalizedStringTests
             .Should().Contain(name => name.EndsWith(".Locales.en.txt", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// STIA0005 的修复标题必须自带「其余参数会被移除」的信息，且两种语言都得配上——
+    /// STIA0005 的修复标题必须自带「其余参数会被移除」的信息，且两种语言都得配上
     /// 漏配时 <see cref="LocalizedString"/> 会静默回退成键名，用户看到的是一串英文标识符。
     /// </summary>
     [Fact]

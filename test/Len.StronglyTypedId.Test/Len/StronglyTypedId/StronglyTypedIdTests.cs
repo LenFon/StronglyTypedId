@@ -119,7 +119,7 @@ public class StronglyTypedIdTests
     }
 
     /// <summary>
-    /// 抽象类型即便继承了强类型 Id 的接口实现，也不能算强类型 Id —— 它没有可构造的实例，
+    /// 抽象类型即便继承了强类型 Id 的接口实现，也不能算强类型 Id，它没有可构造的实例，
     /// 而模型绑定器与 EF 转换器拿到它只会尝试实例化。
     /// </summary>
     /// <remarks>
@@ -152,7 +152,7 @@ public class StronglyTypedIdTests
     /// </summary>
     /// <remarks>
     /// <see cref="Type.GetInterfaces"/> 的返回顺序不作保证，直接取 <c>FirstOrDefault</c> 会让同一类型在不同
-    /// 运行时（甚至同一次运行的不同时刻）给出不同的基元类型 —— 模型绑定器与 EF 转换器据此选转换器，
+    /// 运行时（甚至同一次运行的不同时刻）给出不同的基元类型，模型绑定器与 EF 转换器据此选转换器，
     /// 结果就成了不确定的。这里让「外来契约」排在前面也无所谓：选中自身契约是规则，不是运气。
     /// </remarks>
     [Fact]
@@ -171,7 +171,7 @@ public class StronglyTypedIdTests
 /// 抽象 Id：继承了 <see cref="GuidIdV2"/> 的接口实现，但自身不可实例化。
 /// </summary>
 /// <remarks>
-/// 刻意从真实的生成类型派生，而不是手写一份接口实现 —— 这样「接口齐全但类型抽象」才是唯一让它被判否的原因。
+/// 刻意从真实的生成类型派生，而不是手写一份接口实现，这样「接口齐全但类型抽象」才是唯一让它被判否的原因。
 /// </remarks>
 public abstract record AbstractGuidId(Guid Value) : GuidIdV2(Value);
 
@@ -180,7 +180,7 @@ public abstract record AbstractGuidId(Guid Value) : GuidIdV2(Value);
 /// <see cref="ForeignId"/> 的 <c>int</c> 契约。用来锁定「优先选 TSelf 等于自身」的选择规则。
 /// </summary>
 /// <remarks>
-/// 第二份契约的 <c>TSelf</c> 故意不是本类型 —— 这正是 CA2260 要警告的写法，也正是本用例要覆盖的场景。
+/// 第二份契约的 <c>TSelf</c> 故意不是本类型，这正是 CA2260 要警告的写法，也正是本用例要覆盖的场景。
 /// </remarks>
 #pragma warning disable CA2260
 public readonly struct MultiContractId(Guid value)

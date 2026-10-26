@@ -56,7 +56,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                     class {{converterName}} : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<{{idInfo.FullyQualifiedName}}, {{idInfo.PrimitiveIdTypeName}}>
                     {
                         /// <summary>
-                        /// Default constructor.
+                        /// 默认构造函数。
                         /// </summary>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
@@ -65,7 +65,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                         }
 
                         /// <summary>
-                        /// Apply the {{idInfo.EscapedName}} converter to the Entity Framework Core via conventions. Call this from <c>ConfigureConventions(ModelConfigurationBuilder)</c>.
+                        /// 通过约定把 {{idInfo.EscapedName}} 转换器应用到 Entity Framework Core。请在 <c>ConfigureConventions(ModelConfigurationBuilder)</c> 中调用。
                         /// </summary>
                         /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -74,7 +74,8 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                             configurationBuilder.Properties<{{idInfo.FullyQualifiedName}}>().HaveConversion(typeof({{converterName}}));
 
                         /// <summary>
-                        /// Apply the {{idInfo.EscapedName}} converter to the Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when conventions are not available (e.g. when the context does not override <c>ConfigureConventions</c>). Only entity types already added to the model are scanned, so call it at the end of <c>OnModelCreating</c>.
+                        /// 通过扫描模型把 {{idInfo.EscapedName}} 转换器应用到 Entity Framework Core。
+                        /// 约定不可用时在 <c>OnModelCreating(ModelBuilder)</c> 末尾调用，只扫描已加入模型的实体类型。
                         /// </summary>
                         /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -106,7 +107,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
-                /// Employ strongly typed IDs in Entity Framework Core via conventions.
+                /// 通过约定在 Entity Framework Core 中启用强类型 Id。
                 /// </summary>
                 /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -116,7 +117,8 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// Employ strongly typed IDs in Entity Framework Core by scanning the model. Call this from <c>OnModelCreating(ModelBuilder)</c> when the context does not override <c>ConfigureConventions(ModelConfigurationBuilder)</c>. Only entity types already added to the model are scanned, so call it at the end of <c>OnModelCreating</c>.
+                /// 通过扫描模型在 Entity Framework Core 中启用强类型 Id。
+                /// 上下文未重写 <c>ConfigureConventions</c> 时在 <c>OnModelCreating</c> 末尾调用，只扫描已加入模型的实体类型。
                 /// </summary>
                 /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}

@@ -98,7 +98,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("            serializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(reader) switch").Append('\n');
             builder.Append("            {").Append('\n');
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
-            // 它会穿透 JsonConvert.DeserializeObject —— 而 Newtonsoft 的转换器契约要求失败一律抛 JsonSerializationException。
+            // 它会穿透 JsonConvert.DeserializeObject，而 Newtonsoft 的转换器契约要求失败一律抛 JsonSerializationException。
             // 枚举在此追加已定义性校验：TryCreate 不含它，而 Newtonsoft 对未定义数值（999）照常读出，
             // 不补就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条路径都已收紧，这里对齐）。
             AppendTryCreateArm(builder, idInfo, "                ", typeReference);

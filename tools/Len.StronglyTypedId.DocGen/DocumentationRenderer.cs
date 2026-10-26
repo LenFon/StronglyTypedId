@@ -51,7 +51,7 @@ internal static class DocumentationRenderer
 
     /// <summary>
     /// 渲染 docs 的「Generated files」表：与 <see cref="RenderGeneratedCode"/> 同一批登记项，
-    /// 但第二列换成文件名 —— 文件名只在调试 <c>EmitCompilerGeneratedFiles</c> 时才需要，
+    /// 但第二列换成文件名，文件名只在调试 <c>EmitCompilerGeneratedFiles</c> 时才需要，
     /// 放进 README 会把表格撑到必须横向滚动。
     /// </summary>
     public static string RenderGeneratedFiles(CultureInfo culture)

@@ -9,8 +9,8 @@ internal static class StronglyTypedIdDiscovery
     /// 合并「引用程序集中已实现 <c>IStronglyTypedId</c> 的类型」与「本次编译声明的强类型 Id」并去重。
     /// </summary>
     /// <remarks>
-    /// 这里只负责合并去重。「排除声明在泛型包含类型内部的 Id」是集成生成器的需求，由
-    /// <see cref="DiscoveredIds"/> 在合并结果上再筛一次 —— 核心生成器需要包含它们。
+    /// 这里只负责合并去重。排除声明在泛型包含类型内部的 Id 是集成生成器的需求，由
+    /// <see cref="DiscoveredIds"/> 在合并结果上再筛一次，核心生成器需要包含它们。
     /// </remarks>
     public static IEnumerable<StronglyTypedIdInfo> Discover(
         ImmutableArray<StronglyTypedIdInfo> declaredInfos,

@@ -13,17 +13,10 @@ namespace Len.StronglyTypedId.Swagger;
 /// Minimal API 参数在 Swagger 文档里的 schema 回归。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 缺口出在框架与 Swashbuckle 的交界处：ASP.NET Core 的 API explorer 把实现了 <c>IParsable</c> 的
-/// 参数按「可解析的文本」报给 Swashbuckle —— <c>ApiParameterDescription.Type</c> 仍是真实的 Id 类型，
-/// 但 <c>ModelMetadata.ModelType</c> 已被换成 <see cref="string"/>。Swashbuckle 据后者生成 schema，
-/// 于是声明为 Id 的路由 / 查询参数在文档里只剩裸的 <c>type: string</c>，而 <c>MapType</c> 对这类
-/// 参数无从下手。
-/// </para>
-/// <para>
-/// 这类缺口最难在评审里发现：文档照常生成，客户端照常能调，只是生成的客户端把 Id 当成无格式字符串，
-/// 少了 <c>format: uuid</c> 这类信息。
-/// </para>
+/// 缺口出在框架与 Swashbuckle 的交界处：API explorer 把实现 <c>IParsable</c> 的参数按「可解析的文本」报告，
+/// <c>ApiParameterDescription.Type</c> 仍是真实 Id 类型，但 <c>ModelMetadata.ModelType</c> 已被换成
+/// <see cref="string"/>。Swashbuckle 据后者生成 schema，于是 Id 参数在文档里只剩裸的 <c>type: string</c>。
+/// 这类缺口最难在评审里发现：文档照常生成、客户端照常能调，只是少了 <c>format: uuid</c> 这类信息。
 /// </remarks>
 public class SwaggerParameterSchemaTests
 {

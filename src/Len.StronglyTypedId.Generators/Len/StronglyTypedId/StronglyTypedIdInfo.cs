@@ -128,9 +128,9 @@ internal readonly record struct StronglyTypedIdInfo
     /// 二进制序列化（MessagePack / BSON）走规范文本形的基元。
     /// </summary>
     /// <remarks>
-    /// 两个集成走文本形的理由已经不同：BSON 3.x 至今没有 <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 的
-    /// 序列化器（写出来是空文档、读回 0，静默丢数据），那边仍然必需；MessagePack 3.x 已能原生编码三者，
-    /// 本库继续用文本形只是为了与 2.x 时代的载荷保持可读。改掉会变更线上格式，故不随依赖升级而调整。
+    /// BSON 3.x 至今没有 <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 的序列化器（写出来是空文档、读回 0），
+    /// 那边仍然必需；MessagePack 3.x 已能原生编码三者，继续用文本形只是为了兼容 2.x 的载荷，
+    /// 改掉会变更线上格式。
     /// </remarks>
     private static readonly ImmutableHashSet<string> _binaryTextPrimitives = ImmutableHashSet.Create(
         StringComparer.Ordinal,
@@ -195,7 +195,7 @@ internal readonly record struct StronglyTypedIdInfo
         CharTryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Char);
         Utf8TryFormatKind = GetTryFormatKind(primitiveIdType, SpecialType.System_Byte);
         // System.Text.Json 没有 BigInteger 的内置转换器：JsonSerializer 会把它当普通对象序列化成
-        // {"IsPowerOfTwo":…,"Sign":1}，读回来又是 default —— 静默丢数据。故这类基元改走规范文本形。
+        // {"IsPowerOfTwo":…,"Sign":1}，读回来又是 default，静默丢数据。故这类基元改走规范文本形。
         IsBigIntegerPrimitive = primitiveIdType.ToDisplayString() == BigIntegerTypeName;
         // Newtonsoft.Json 的 JsonWriter.WriteValue 不认识这几个类型，会抛 JsonWriterException；
         // 读侧同理。它们的转换器因此也改走规范文本形。
@@ -211,7 +211,7 @@ internal readonly record struct StronglyTypedIdInfo
                 ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
             ?? defaultExceptionTypeName;
         HasTypeConverter = AttributeReader.GetBoolean(attribute, TypeConverterArgumentName);
-        // 逐类型优先，其次程序集默认。属性是 bool，未写时读到的就是 false，无法区分「没写」与「写了 false」——
+        // 逐类型优先，其次程序集默认。属性是 bool，未写时读到的就是 false，无法区分「没写」与「写了 false」，
         // 因此逐类型只能单向打开：程序集默认打开后，单个 Id 无法再关回去。这是有意的：脱敏是安全策略，
         // 允许逐类型放宽等于把「整库不泄露用户输入」变成一句空话。
         RedactsValidationMessage = AttributeReader.GetBoolean(attribute, RedactValidationMessageArgumentName)
@@ -255,14 +255,11 @@ internal readonly record struct StronglyTypedIdInfo
     /// 强类型 Id 的类型名，不含命名空间；C# 保留关键字已加 <c>@</c> 前缀转义，可直接写进生成的源码。
     /// </summary>
     /// <remarks>
-    /// <see cref="Name"/> 对保留关键字（<c>class</c> / <c>return</c> / <c>int</c>）不加转义，原样写进类型声明位
-    /// 会被编译器吃成关键字，爆出 CS0260 / CS1520 / CS0101 / CS9348 等一串错误，成员整体掉出类型落进全局命名空间。
-    /// 上下文关键字一并转义（理由见 <see cref="EscapeIdentifier"/>）；加 <c>@</c> 对任何关键字都合法且不改变语义，
-    /// 故普通名字下本属性与 <see cref="Name"/> 逐字节相同。
+    /// <see cref="Name"/> 对关键字不加转义，原样写进类型声明位会编译失败（CS0260 / CS1520 / CS0101 / CS9348）。
+    /// 加 <c>@</c> 对任何关键字都合法且不改变语义，普通名字下与 <see cref="Name"/> 相同。
     /// <para>
-    /// 拼装生成源码时一律用本属性，不要用 <see cref="Name"/>。唯一的例外是名字要作为「非代码文本」使用的场合
-    /// ——例如 ASP.NET Core 路由约束的令牌（<c>options.ConstraintMap["OrderId"]</c>），那里比较的是路由模板里的
-    /// 字面量，加 <c>@</c> 会改变语义。
+    /// 拼装源码时一律用本属性。唯一例外是名字作为非代码文本使用的场合，例如路由约束令牌
+    /// （<c>options.ConstraintMap["MyId"]</c>），加 <c>@</c> 会改变语义。
     /// </para>
     /// </remarks>
     public string EscapedName => EscapeIdentifier(Name);
@@ -308,20 +305,12 @@ internal readonly record struct StronglyTypedIdInfo
     public bool HasNewtonsoftJsonConverter { get; }
 
     /// <summary>
-    /// 该 Id 是否需要由**消费方程序集**提供 Newtonsoft 转换器。
+    /// 该 Id 是否需要由消费方程序集提供 Newtonsoft 转换器。
     /// </summary>
     /// <remarks>
-    /// Newtonsoft 的转换器嵌在 Id 内部，只能生成在声明 Id 的那个程序集里 —— 消费方补一份会撞
-    /// CS0426（类型已存在）。于是「声明程序集没有引用 Newtonsoft.Json」时，那个 Id 就没有任何
-    /// Newtonsoft 转换器：消费方虽然引用了 Newtonsoft，也补不上（同一根因）。
-    /// <para>
-    /// 后果是同一个 Id 在 System.Text.Json 下是字符串形态、在 Newtonsoft 下却是对象形态
-    /// （<c>{"Value":"…"}</c>）：编译无警告、运行不抛异常，只在真实往返时暴露。
-    /// </para>
-    /// <para>
-    /// <c>System.Text.Json</c> 没有这个问题：它在 <c>Microsoft.NETCore.App</c> 共享框架里，
-    /// 任何 net8.0+ 项目都引用得到 → 声明程序集必然生成 STJ 转换器。
-    /// </para>
+    /// 内嵌转换器只能生成在声明 Id 的程序集里，消费方补一份会撞 CS0426。因此声明程序集未引用 Newtonsoft.Json 时，
+    /// 该 Id 在任何程序集里都没有 Newtonsoft 转换器，结果是在 STJ 下是字符串、在 Newtonsoft 下是对象
+    /// （<c>{"Value":"…"}</c>），编译和运行都不报错，只在往返时暴露。STJ 没有这个问题，它在共享框架里。
     /// </remarks>
     public bool RequiresExternalNewtonsoftJsonConverter { get; }
 
@@ -399,7 +388,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// </summary>
     /// <remarks>
     /// 驱动可能把枚举列返回成 <c>long</c> / <c>double</c> 等与底层类型不同的 CLR 类型。还原时必须先按这个
-    /// 类型做范围检查再交给 <c>Enum.ToObject</c> —— 后者对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c>
+    /// 类型做范围检查再交给 <c>Enum.ToObject</c>，后者对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c>
     /// 枚举会变成 <c>44</c>，甚至恰好命中某个已定义成员），对浮点数则静默截断。
     /// </remarks>
     public string? EnumUnderlyingTypeName { get; }
@@ -485,7 +474,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 验证失败消息是否隐去被拒绝的原始值。
     /// </summary>
     /// <remarks>
-    /// 打开后 <c>Create</c> 的消息是 <c>The value is not a valid OrderId.</c>，不再内插原始值 —— 后者往往是用户输入。
+    /// 打开后 <c>Create</c> 的消息是 <c>The value is not a valid MyId.</c>，不再内插原始值，后者往往是用户输入。
     /// </remarks>
     public bool RedactsValidationMessage { get; }
 
@@ -499,8 +488,8 @@ internal readonly record struct StronglyTypedIdInfo
     /// 自带产物中的绝对缩进（成员级 4 空格），块首是两个换行。
     /// </summary>
     /// <remarks>
-    /// 存渲染后的文本而非实例集合：本类型是 <c>readonly record struct</c>，<see cref="ImmutableArray{T}"/> 的引用相等性会让缓存永久失效。
-    /// 未声明实例或全部非法时为空串，产物与加入该能力之前逐字节一致。
+    /// 存渲染后的文本而非实例集合：本类型是 <c>readonly record struct</c>，集合的引用相等性会让增量缓存永久失效。
+    /// 未声明实例或全部非法时为空串。
     /// </remarks>
     public string InstancesBlock { get; }
 
@@ -508,7 +497,7 @@ internal readonly record struct StronglyTypedIdInfo
     /// 渲染全部合法命名实例的成员块；没有合法实例时为空串。
     /// </summary>
     /// <remarks>
-    /// 非法项静默跳过：分析器会为它们报 <c>STIA0020</c> / <c>STIA0021</c>；生成器绝不能抛异常，那会降级成 <c>STIA0012</c> 盖掉真正原因。
+    /// 非法项静默跳过：分析器会报 <c>STIA0020</c> / <c>STIA0021</c>；生成器不能抛异常，那会降级成 <c>STIA0012</c> 盖掉真正原因。
     /// </remarks>
     private static string RenderInstancesBlock(ITypeSymbol type, ITypeSymbol primitiveType)
     {
@@ -537,12 +526,12 @@ internal readonly record struct StronglyTypedIdInfo
             // 块经插值洞注入模板，洞写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
             builder.Append('\n').Append('\n');
             builder.Append("    /// <summary>").Append('\n');
-            builder.Append("    /// Gets the <c>").Append(instance.Name).Append("</c> instance of <c>").Append(EscapeIdentifier(type.Name)).Append("</c>.").Append('\n');
+            builder.Append("    /// 获取 <c>").Append(EscapeIdentifier(type.Name)).Append("</c> 的 <c>").Append(instance.Name).Append("</c> 实例。").Append('\n');
             builder.Append("    /// </summary>").Append('\n');
             builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
             builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append('\n');
             // 字段类型是 Id 自身、字段名是实例名，两者都要转义：Id 叫 class 或实例叫 class 时，
-            // 原样写出 "public static readonly class Empty" / "public static readonly OrderId class" 都是语法错误。
+            // 原样写出 "public static readonly class Empty" / "public static readonly MyId class" 都是语法错误。
             // 实例名转义只在落盘这一刻做，IsReservedName 的撞名判定仍用原始名，两者判据一致。
             builder.Append("    public static readonly ").Append(EscapeIdentifier(type.Name)).Append(' ').Append(EscapeIdentifier(instance.Name)).Append(" = Create(").Append(instance.Expression).Append(");");
         }
@@ -605,10 +594,9 @@ internal readonly record struct StronglyTypedIdInfo
     /// 解析强类型 Id 所包装的基元类型符号。
     /// </summary>
     /// <remarks>
-    /// 一个类型可以同时实现多个 <c>IStronglyTypedId&lt;,&gt;</c>（手写类型或跨版本继承）。此时必须选
-    /// <c>TSelf</c> 恰好等于该类型的那个接口 —— 那才是「它自己」的契约。直接取 <c>FirstOrDefault</c>
-    /// 会让结果取决于接口枚举顺序，与运行时的 <c>StronglyTypedIdExtensions.ResolvePrimitiveIdType</c>
-    /// 给出不同答案（模型绑定器与 EF 转换器按后者选转换器）。
+    /// 一个类型可能实现多个 <c>IStronglyTypedId&lt;,&gt;</c>，此时取 <c>TSelf</c> 等于自身的那个接口。
+    /// 直接取 <c>FirstOrDefault</c> 会让结果取决于接口枚举顺序，与运行时
+    /// <c>StronglyTypedIdExtensions.ResolvePrimitiveIdType</c> 的结论不一致。
     /// </remarks>
     private static ITypeSymbol GetPrimitiveIdType(ITypeSymbol type)
     {
@@ -636,8 +624,8 @@ internal readonly record struct StronglyTypedIdInfo
                 return fallback;
             }
 
-            // 构造回退：同样要跳过参数类型等于自身的那个 —— 没有主构造函数的 record 会把合成的拷贝构造
-            // 排在 Constructors 首位，取 FirstOrDefault 会绑到 record 自身，得到一个「基元是自己」的假象。
+            // 构造回退同样要跳过参数类型等于自身的那个：没有主构造函数的 record 会把合成的拷贝构造排在首位，
+            // 取第一个会绑到 record 自身，得到「基元是自己」的假象。
             foreach (var constructor in namedType.InstanceConstructors)
             {
                 if (constructor.Parameters is [var parameter]
@@ -688,13 +676,11 @@ internal readonly record struct StronglyTypedIdInfo
             _ => "class",
         };
 
-        // 必须复现类型参数表（否则 CS0693），但约束子句只需在任一 partial 上声明一次，故省略 where。
-        // 类型参数名同样要转义：形参叫 class 时原样写出 "<class>" 就是语法错误。
+        // 必须复现类型参数表（否则 CS0693），约束子句只需在任一 partial 上声明一次，故省略 where。
         var typeParameterList = type.TypeParameters.Length > 0
             ? "<" + string.Join(", ", type.TypeParameters.Select(parameter => EscapeIdentifier(parameter.Name))) + ">"
             : string.Empty;
 
-        // 包含类型名同样要转义：容器叫 return 时原样写出 "internal partial class return" 就是语法错误。
         return $"{GetAccessibilityKeyword(type.DeclaredAccessibility)} partial {keyword} {EscapeIdentifier(type.Name)}{typeParameterList}";
     }
 
@@ -702,12 +688,8 @@ internal readonly record struct StronglyTypedIdInfo
     /// 判断该 Id 是否带有（或本次生成即将产出）指定的内嵌转换器类型。
     /// </summary>
     /// <remarks>
-    /// 两种情况：
-    /// <list type="bullet">
-    /// <item>引用程序集里的 Id —— 接口已实现，转换器也已生成，直接查嵌套类型是否存在；</item>
-    /// <item>本次编译声明的 Id —— 生成器还没跑，接口尚未实现，此时按「没实现接口 ⇒ 是声明类型 ⇒ 会生成」推断。</item>
-    /// </list>
-    /// 两个分支拆开写是为了让第二种情况的「推断」性质显式可见，而不是藏在一个布尔表达式里。
+    /// 引用程序集里的 Id 直接查嵌套类型是否存在；本次编译声明的 Id 尚未实现接口，
+    /// 按「没实现接口就是声明类型，转换器会被生成」推断。
     /// </remarks>
     private static bool WillHaveNestedType(ITypeSymbol type, string nestedTypeName)
         => type is INamedTypeSymbol namedType
@@ -745,24 +727,14 @@ internal readonly record struct StronglyTypedIdInfo
     }
 
     /// <summary>
-    /// 把标识符转成可安全写入 C# 源码的形式：C# 关键字（保留关键字与上下文关键字）加 <c>@</c> 前缀，其余原样返回。
+    /// 把标识符转成可安全写入 C# 源码的形式：C# 关键字（保留与上下文关键字）加 <c>@</c> 前缀，其余原样返回。
     /// </summary>
     /// <remarks>
-    /// 判据走 Roslyn 自己的关键字表而非自己维护一份：表会漏，且将来新增关键字时不会有人想起回来改这里。
-    /// <see cref="SyntaxFacts.GetKeywordKind"/> 查保留关键字、<see cref="SyntaxFacts.GetContextualKeywordKind"/>
-    /// 查上下文关键字，两者都返回 <see cref="SyntaxKind.None"/> 表示不是关键字。
+    /// 判据走 Roslyn 的关键字表，避免自维护清单遗漏。上下文关键字也转义：产物里有 <c>out var id</c> 这类局部变量，
+    /// Id 若叫 <c>var</c> 会被当成隐式类型声明（CS1503 / CS8508）。
     /// <para>
-    /// 上下文关键字也转义：它们单独出现时确实是合法标识符，但本生成器自己就会在产物里写出
-    /// <c>out var id</c> 这类局部变量声明，Id 若叫 <c>var</c>，那个 <c>var</c> 会被当成隐式类型声明而不是类型名，
-    /// 进而 CS1503 / CS8508 一串错误。
-    /// </para>
-    /// <para>
-    /// <see cref="IsKeywordMissingFromRoslynTables"/> 是补丁：C# 规范把这些词列为上下文关键字（词法结构 §6.4.5），
-    /// 但 Roslyn 的 <see cref="SyntaxFacts"/> 两张表都不收录它们。其中 <c>value</c> 有实证危害——生成器在 STJ
-    /// 读取路径里写出局部变量 <c>value</c>，它会遮蔽同名类型，CS1061「Guid 不包含 TryCreate」。其余几个
-    /// （<c>nint</c> / <c>nuint</c> / <c>dynamic</c> 等）尚无实测危害，但同属规范上下文关键字，一并转义：
-    /// 不依赖「恰好没有冲突位置」这种运气。列表按 Roslyn 5.9.0 实测得出；将来 Roslyn 若收录其中某个词，
-    /// 这里只是变得冗余，无害。
+    /// <see cref="IsKeywordMissingFromRoslynTables"/> 补的是规范列为上下文关键字、但 Roslyn 两张表都不收录的词，
+    /// 其中 <c>value</c> 有实证危害：STJ 读取路径的局部变量 <c>value</c> 会遮蔽同名类型（CS1061）。
     /// </para>
     /// </remarks>
     internal static string EscapeIdentifier(string name)
@@ -776,9 +748,8 @@ internal readonly record struct StronglyTypedIdInfo
     /// C# 规范列为上下文关键字、但 Roslyn 5.9 的 <see cref="SyntaxFacts"/> 两张关键字表均不收录的词。
     /// </summary>
     /// <remarks>
-    /// 清单来自规范的 contextual_keyword 规则（词法结构 §6.4.5），逐词对照
-    /// <see cref="SyntaxFacts.GetKeywordKind"/> / <see cref="SyntaxFacts.GetContextualKeywordKind"/>
-    /// 实测得出。将来 Roslyn 若收录其中某个词，这里只是变得冗余，无害。
+    /// 清单来自规范的 contextual_keyword 规则（词法结构 §6.4.5），逐词对照 Roslyn 两张表实测得出。
+    /// 将来 Roslyn 若收录其中某个词，这里只是变得冗余。
     /// </remarks>
     private static bool IsKeywordMissingFromRoslynTables(string name)
         => name is "Cdecl" or "Stdcall" or "Thiscall"  // 函数指针调用约定
@@ -789,13 +760,10 @@ internal readonly record struct StronglyTypedIdInfo
     /// 把类型显示名净化成合法的 hint 名：只保留 Unicode 字母、数字与 <c>_</c> <c>.</c>，其余一律剔除。
     /// </summary>
     /// <remarks>
-    /// 白名单而非黑名单：<see cref="FullName"/> 来自 <c>ToDisplayString()</c>，除了尖括号、逗号、
-    /// 空格，还会因为关键字转义而带上 <c>@</c>（<c>@int.@return</c>），泛型包含类型的类型参数甚至
-    /// 可能带来 <c>[]</c>。Roslyn 的 <c>AddSource</c> 会把其中的 <c>@</c> 判为非法字符并抛
-    /// <see cref="ArgumentException"/>，表现为 STIA0012「生成器失败」且本类型全部输出被丢弃。
-    /// 黑名单只能逐个补字符，白名单一次覆盖全部非法字符。
+    /// 用白名单而非黑名单：<see cref="FullName"/> 可能带尖括号、逗号、空格、<c>@</c>（关键字转义）甚至 <c>[]</c>，
+    /// 而 <c>AddSource</c> 遇到 <c>@</c> 会抛 <see cref="ArgumentException"/>，表现为 STIA0012 且该类型全部输出被丢弃。
     /// <para>
-    /// 剔除会让不同全名塌陷到同一 hint 名，撞名时 <c>AddSource</c> 抛异常并降级成 STIA0012；故只要确实剔掉了字符，就追加原始全名的稳定哈希。
+    /// 剔除会让不同全名塌陷到同一 hint 名，撞名同样降级成 STIA0012，因此只要剔掉了字符就追加原始全名的稳定哈希。
     /// </para>
     /// </remarks>
     private static string SanitizeHintName(string fullName)
@@ -862,8 +830,8 @@ internal readonly record struct StronglyTypedIdInfo
     /// 计算 <c>[Flags]</c> 枚举里「没有任何成员占用」的位，供 <c>TryParse</c> 做位校验。
     /// </summary>
     /// <remarks>
-    /// <c>Enum.TryParse</c> 接受任意数值文本，<c>[Flags]</c> 又不能用 <c>Enum.IsDefined</c> 收紧，故改为「不许出现未定义的位」。
-    /// 掩码按底层类型宽度裁剪：<c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，不裁剪会把整个掩码吃掉。
+    /// <c>[Flags]</c> 不能用 <c>Enum.IsDefined</c> 收紧，故改为「不许出现未定义的位」。
+    /// 掩码按底层类型宽度裁剪，否则 <c>sbyte</c> 的 <c>-1</c> 在 <see cref="ulong"/> 里是满位，会吃掉整个掩码。
     /// </remarks>
     internal static ulong? GetFlagsEnumUndefinedBitsMask(ITypeSymbol enumType)
     {
@@ -912,15 +880,10 @@ internal readonly record struct StronglyTypedIdInfo
     /// 取「枚举值是否落在已定义取值内」的条件表达式；非枚举基元、或无需校验时返回 <see langword="null"/>。
     /// </summary>
     /// <remarks>
-    /// <paramref name="variableName"/> 是产物里持有该枚举值的局部变量名，条件按它渲染。
-    /// 判据与 <c>TryParse</c> 的枚举分支同源：普通枚举查 <see cref="Enum.IsDefined"/>，
-    /// <c>[Flags]</c> 枚举查「不许出现未定义的位」（全部位都已定义时为 <see langword="null"/>，调用方直接跳过）。
-    /// <para>
-    /// 存在的意义是让每条「文本/数值 → Id」的入口都做同一道校验：<c>TryCreate</c> 只跑用户配的
-    /// Validator，而 <c>Enum.TryParse</c> 与各 JSON 读取路径对未定义数值一律放行 —— 不补这一道，
-    /// <c>999</c> 会变成一个不对应任何成员的 Id，后续 switch 落空、序列化写出野值。
-    /// 用非泛型重载：泛型 <c>Enum.IsDefined&lt;T&gt;(T)</c> 是 .NET 5+ 才有的，生成代码要照顾老 TFM 的消费者。
-    /// </para>
+    /// <paramref name="variableName"/> 是产物里持有该枚举值的局部变量名。普通枚举查 <see cref="Enum.IsDefined"/>，
+    /// <c>[Flags]</c> 枚举查「不许出现未定义的位」。各条「文本/数值 → Id」的入口都要做这道校验，
+    /// 因为 <c>TryCreate</c> 只跑用户配的 Validator，而 <c>Enum.TryParse</c> 与 JSON 读取路径对未定义数值一律放行。
+    /// 用非泛型重载是因为泛型 <c>Enum.IsDefined&lt;T&gt;</c> 只有 .NET 5+ 才有。
     /// </remarks>
     internal string? GetEnumValidityCondition(string variableName)
     {
@@ -981,7 +944,7 @@ internal readonly record struct StronglyTypedIdInfo
         var hasPlainOverload = false;
 
         // 沿基类链取成员：GetMembers 只返回声明成员。当前 24 种基元都是 sealed 值类型或 string，
-        // 没有继承来的 TryFormat，但这条判定是「按成员名 + 参数形状」猜的 —— 将来若加入某个自带
+        // 没有继承来的 TryFormat，但这条判定是「按成员名 + 参数形状」猜的，将来若加入某个自带
         // TryFormat 的自定义结构体基元，漏看基类会静默落到 Interface 分支（每次格式化都装箱）。
         var members = new List<ISymbol>();
         for (var current = type; current is not null; current = current.BaseType)

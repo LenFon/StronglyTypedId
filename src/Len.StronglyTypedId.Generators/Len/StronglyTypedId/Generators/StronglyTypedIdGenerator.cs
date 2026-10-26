@@ -64,7 +64,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return false;
         }
 
-        // 带主构造函数时参数名与可空性可提前排除；不带主构造函数的段必须放行 —— attribute 可能标在
+        // 带主构造函数时参数名与可空性可提前排除；不带主构造函数的段必须放行，attribute 可能标在
         // 不承载主构造函数的 partial 段上，一律要求 (Value) 形状会让这种写法既不产出代码也不报诊断。
         if (record.ParameterList is { } parameterList
             && parameterList.Parameters is not [{ Type: not NullableTypeSyntax, Identifier.ValueText: "Value" }])
@@ -483,7 +483,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         // 不能用 Constructors[0]：没有主构造函数的 record 会把合成的拷贝构造排在首位，于是参数类型
         // 绑到 record 自身，IsSupported 返回 false，生成器静默不产出任何代码。改为遍历实例构造、
-        // 跳过参数类型等于自身的那个 —— 与分析器 GetSingleParameterType 同一套判据。
+        // 跳过参数类型等于自身的那个，与分析器 GetSingleParameterType 同一套判据。
         var ctorArgType = GetSingleParameterType(symbol);
 
         if (ctorArgType is null)
@@ -507,9 +507,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 取强类型 Id 的基元类型，即唯一一个「单参数、且参数类型不是自身」的实例构造函数所带的参数类型。
     /// </summary>
     /// <remarks>
-    /// 跳过参数类型等于自身的构造，是为了滤掉 record 合成的拷贝构造；它也顺带覆盖了「用户手写的
-    /// 单参数构造排在主构造之前」这种声明顺序。可空引用类型（<c>string?</c>）返回 <see langword="null"/>：
-    /// 基元本身不能是可空的，这一点由分析器的 <c>ParameterCannotBeNullable</c> 报错。
+    /// 跳过参数类型等于自身的构造，是为了滤掉 record 合成的拷贝构造，也顺带覆盖了用户手写的单参数构造
+    /// 排在主构造之前的情况。可空引用类型返回 <see langword="null"/>，由分析器的 <c>ParameterCannotBeNullable</c> 报错。
     /// </remarks>
     private static ITypeSymbol? GetSingleParameterType(INamedTypeSymbol type)
     {

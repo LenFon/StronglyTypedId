@@ -7,7 +7,7 @@ namespace Len.StronglyTypedId.CodeFixes;
 
 /// <summary>
 /// M3 新增 CodeFix 的覆盖：STIA0019 / STIA0024（删掉 <c>Integrations</c> 实参）、STIA0020 / STIA0021（删掉整条
-/// <c>[StronglyTypedIdInstance]</c> 特性）。STIA0022（PascalCase 改名）刻意不提供修复——改名会牵动所有引用点，单文件无法安全完成。
+/// <c>[StronglyTypedIdInstance]</c> 特性）。STIA0022（PascalCase 改名）刻意不提供修复，改名会牵动所有引用点，单文件无法安全完成。
 /// </summary>
 public class StronglyTypedIdCodeFixIntegrationInstanceTests
 {

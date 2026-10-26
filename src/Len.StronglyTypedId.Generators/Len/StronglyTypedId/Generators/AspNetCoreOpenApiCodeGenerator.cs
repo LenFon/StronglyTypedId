@@ -106,7 +106,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// Employ strongly typed IDs in the built-in OpenAPI.
+                /// 在内置 OpenAPI 中启用强类型 Id。
                 /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.OpenApi.OpenApiOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}

@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 namespace Len.StronglyTypedId.Analyzers;
 
 // 与 CodeFixProvider 合并后必须引用 Workspaces，因而触发 RS1038。命令行编译时 Roslyn 会跳过无法解析的
-// 扩展点，生成器与分析器仍正常加载（实测无 CS8032），故局部豁免而非全项目 NoWarn。
+// 扩展点，生成器与分析器仍正常加载，故局部豁免而非全项目 NoWarn。
 #pragma warning disable RS1038
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
@@ -19,8 +19,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <remarks>
     /// 走 MSBuild → analyzer config 这条通道：消费方在 csproj 里设
     /// <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/StronglyTypedIdEnableAnalyzers&gt;</c>，
-    /// SDK 把它写进编译用的 analyzer config 的**全局段**（<c>build_property.*</c>）。
-    /// 属性必须由 <c>&lt;CompilerVisibleProperty Include="…" /&gt;</c> 显式放行才会出现在那一段里 ——
+    /// SDK 把它写进编译用的 analyzer config 的全局段（<c>build_property.*</c>）。
+    /// 属性必须由 <c>&lt;CompilerVisibleProperty Include="…" /&gt;</c> 显式放行才会出现在那一段里，
     /// SDK 不会注入任意 MSBuild 属性。本库的 <c>buildTransitive/Len.StronglyTypedId.Generators.props</c>
     /// 就是替用户做这一步的。
     /// </remarks>
@@ -31,16 +31,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        // 一键静音：用户明确要求关掉本分析器时，一个诊断动作都不注册。
-        // 只关诊断，不关代码生成 —— 生成器与本分析器是两个独立的组件，代码照常产出。
-        //
-        // 静音判断放在编译开始回调里，而不是 Initialize 开头：AnalysisContext 上没有 Options，
-        // 只有 CompilationStartAnalysisContext 才有（AnalyzerOptions）。因此两个语法/语义动作
-        // 一并挪进这个回调 —— CompilationStartAnalysisContext 同样提供这两个注册方法，
-        // 注册位置不影响它们的作用范围（都作用于整次编译）。
-        //
-        // 集成请求（STIA0019）先攒起来，到编译结束再按「集成」聚合上报。逐类型各报一条时，
-        // 「N 个 Id 都写了 Integrations = All」会炸出 9N 条同义诊断，把真正缺失的那几个包淹掉。
+        // 一键静音：用户要求关掉本分析器时不注册任何诊断动作，但代码生成照常（两者是独立组件）。
+        // 静音判断放在编译开始回调里，因为只有 CompilationStartAnalysisContext 才带 AnalyzerOptions。
+        // 集成请求（STIA0019）先攒起来，到编译结束再按集成聚合上报，避免 N 个 Id 炸出 9N 条同义诊断。
         context.RegisterCompilationStartAction(startContext =>
         {
             if (IsMuted(startContext.Options))
@@ -50,8 +43,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
             var requests = new ConcurrentBag<IntegrationRequest>();
 
-            // 重复基元类型分组按命名空间缓存：同命名空间下 N 个 Id 原本各自重扫整个命名空间（含嵌套），
-            // 形成 O(N²)；缓存后整组只算一次，整体降为 O(M)。放在编译开始闭包里，保证每次编译都是独立的新鲜实例。
+            // 重复基元类型分组按命名空间缓存，避免 N 个 Id 各自重扫命名空间形成 O(N²)。
+            // 放在编译开始闭包里，保证每次编译都是独立实例。
             var namespacePrimitiveGroups =
                 new ConcurrentDictionary<INamespaceSymbol, (INamedTypeSymbol Member, string? Primitive)[]>(SymbolEqualityComparer.Default);
 
@@ -59,8 +52,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
                 context => AnalyzeNamedType(context, requests, namespacePrimitiveGroups),
                 SymbolKind.NamedType);
 
-            // 程序集级默认值也走同一条聚合路径：符号操作不支持 SymbolKind.Assembly（RS1003），
-            // 只能在整编译回调里读。
+            // 符号操作不支持 SymbolKind.Assembly（RS1003），程序集级默认值只能在整编译回调里读。
             startContext.RegisterCompilationEndAction(context => ReportIntegrationProblems(context, requests));
 
             startContext.RegisterSyntaxNodeAction(
@@ -81,8 +73,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // 类型级约束描述整个类型，故跨全部声明段判定且最多报一次；参数级约束只在声明主构造函数的那一段判定
-        // —— 按段逐条校验会把只追加成员的后续段误判为 STIA0005。
+        // 类型级约束跨全部声明段判定且最多报一次；参数级约束只在声明主构造函数的那一段判定，
+        // 按段逐条校验会把只追加成员的后续段误判为 STIA0005。
         var declarations = type.DeclaringSyntaxReferences
             .Select(reference => reference.GetSyntax(context.CancellationToken))
             .ToArray();
@@ -118,9 +110,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // file 局部类型只查容器不够：record 自身带 file 时生成器同样无法在别的文件里重开它。
-        // 不拦的后果是产出一条不带 file 的冲突 partial 声明 —— 编译器报 CS0535 且不带任何 STIA 诊断，
-        // 用户既看不出错在生成代码，也看不出 Id 不能是 file 局部类型；严重时整个编译单元的分析器诊断还会被 csc 一并丢弃。
+        // file 局部类型只查容器不够：record 自身带 file 时生成器同样无法在别的文件里重开它，
+        // 结果是一条不带 file 的冲突 partial 声明，编译器报 CS0535 且没有任何 STIA 诊断。
         var fileLocal = records.FirstOrDefault(record => record.Modifiers.Any(SyntaxKind.FileKeyword));
 
         if (fileLocal is not null)
@@ -179,8 +170,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // 不能用 type.Constructors[0]：顺序不保证主构造在前，取 [0].Parameters[0] 会越界抛 AD0001，把该类型的全部 STIA 诊断一起吞掉。
-        // GetSingleParameterType 遍历 InstanceConstructors 并按「单参数且类型不是自身」过滤，顺带跳过 record 合成的拷贝构造。
+        // 不能用 type.Constructors[0]：顺序不保证主构造在前，越界会抛 AD0001 吞掉该类型的全部诊断。
+        // GetSingleParameterType 按「单参数且类型不是自身」过滤，顺带跳过 record 合成的拷贝构造。
         var constructorParameterType = GetSingleParameterType(type);
 
         if (constructorParameterType is null || !SupportedPrimitiveTypes.IsSupported(constructorParameterType))
@@ -233,8 +224,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 类型名不以约定的后缀结尾时给出改名建议（STIA0015）。
     /// </summary>
     /// <remarks>
-    /// 后缀默认 <c>Id</c>，可用 <c>dotnet_diagnostic.STIA0015.suffix</c> 在 <c>.editorconfig</c> 里改成任意串
-    /// （例如某些代码库约定 <c>Key</c> / <c>Id2</c>）。后缀随诊断消息一并带出，保证提示文字与判定口径一致。
+    /// 后缀默认 <c>Id</c>，可用 <c>dotnet_diagnostic.STIA0015.suffix</c> 在 <c>.editorconfig</c> 里改成任意串。
+    /// 后缀随诊断消息一并带出，保证提示文字与判定口径一致。
     /// </remarks>
     private static void ValidateNameConvention(SymbolAnalysisContext context, INamedTypeSymbol type, RecordDeclarationSyntax[] records)
     {
@@ -245,8 +236,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // 以 "ID" 收尾时替换而非追加，否则建议名会变成 "OrderIDId"；仅当后缀恰为默认的 "Id" 时才做这个特判，
-        // 自定义后缀不应触发这个针对 "Id" 的大小写归一。
+        // 以 "ID" 收尾时替换而非追加，否则建议名会变成 "OrderIDId"；仅默认后缀 "Id" 才做这个特判。
         var suggestion = suffix == "Id" && type.Name.EndsWith("ID", StringComparison.Ordinal)
             ? type.Name[..^2] + "Id"
             : type.Name + suffix;
@@ -258,13 +248,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 判断用户是否要求把本分析器整体静音。
     /// </summary>
     /// <remarks>
-    /// 取值口径与 MSBuild 的布尔语义一致：<c>false</c> / <c>0</c> / <c>no</c> / <c>off</c> 算「否」，
-    /// 且大小写不敏感。**其它取值一律按「开启」处理**（含空串与拼错的词）——用户写错一个词就静默丢掉
-    /// 全部诊断，是最难在评审里发现的一类问题。
-    /// <para>
-    /// 读的是<b>全局</b>选项：<c>build_property.*</c> 恒在 analyzer config 的全局段里，而全局段会汇入
-    /// 每文件视图，故只查全局即可。
-    /// </para>
+    /// 取值口径与 MSBuild 布尔语义一致：<c>false</c> / <c>0</c> / <c>no</c> / <c>off</c> 算「否」，大小写不敏感；
+    /// 其它取值一律按「开启」处理，避免拼错一个词就静默丢掉全部诊断。
     /// </remarks>
     private static bool IsMuted(AnalyzerOptions options)
     {
@@ -322,13 +307,11 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 分组键必须与兄弟类型的取值方式一致，否则当前类型落不进自己的组（见 GetSingleParameterType）。
         var primitiveName = (GetSingleParameterType(type) ?? primitiveType).ToDisplayString();
 
-        // 命名空间级分组按命名空间缓存：N 个 Id 同处一个命名空间时，原本每个都重扫整个命名空间（含逐层嵌套类型），
-        // 形成 O(N²)；缓存后整组只算一次。分组按成员完整名排序，与下方「第一个成员上报」的确定性一致。
+        // 命名空间级分组按命名空间缓存，避免 N 个 Id 各自重扫整个命名空间形成 O(N²)。
         var members = namespacePrimitiveGroups.GetOrAdd(namespaceSymbol, ComputeNamespacePrimitiveMembers);
 
-        // 范围是「命名空间下的全部类型」，含嵌套类型：`GetTypeMembers()` 只返回顶层类型，
-        // 漏掉嵌套会让 `class Orders { record OrderId(Guid Value); }` 与同命名空间的
-        // `CustomerId(Guid Value)` 撞车却不报警 —— 而两者的规范文本形确实无法区分。
+        // 范围含嵌套类型：GetTypeMembers() 只返回顶层类型，漏掉会让嵌套的 MyId 与同命名空间的 OtherId
+        // 撞车却不报警，而两者的规范文本形确实无法区分。
         var group = members
             .Where(pair => pair.Primitive == primitiveName)
             .Select(pair => pair.Member)
@@ -438,8 +421,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 校验 <c>[StronglyTypedId(Prefix = …)]</c>：纯空白前缀报 STIA0013，与基元文本重叠的前缀报 STIA0023。
     /// </summary>
     /// <remarks>
-    /// 空串<b>不</b>报：生成器侧把空串与纯空白都视为「未设置」，删掉实参与不删完全等价；纯空白才是笔误，仍然报。
-    /// 前缀直接参与 <c>ToString()</c> 拼接与 <c>Parse</c> 剥离且无分隔符，若前缀本身可能是基元文本的开头，会被静默剥掉一段（<c>Prefix = "-"</c> 时 <c>Parse("-5")</c> 得 5）。
+    /// 空串不报：生成器侧把空串与纯空白都视为「未设置」，纯空白才是笔误。
+    /// 前缀直接参与 <c>ToString()</c> 拼接与 <c>Parse</c> 剥离且无分隔符，若前缀可能是基元文本的开头，
+    /// 会被静默剥掉一段（<c>Prefix = "-"</c> 时 <c>Parse("-5")</c> 得 5）。
     /// </remarks>
     private static void ValidatePrefix(
         SymbolAnalysisContext context,
@@ -471,7 +455,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 判断是否存在某个基元取值，其文本形式以该前缀开头 —— 即前缀与基元文本不可区分。
+    /// 判断是否存在某个基元取值，其文本形式以该前缀开头，即前缀与基元文本不可区分。
     /// </summary>
     /// <remarks>
     /// 只看首字符就够了：多字符前缀只有在首字符可作开头时才需进一步考虑（<c>NaN</c> / <c>Infinity</c> 单独处理），故 <c>"DT-"</c> / <c>"INV-"</c> 不会被误伤。
@@ -482,8 +466,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         return GetPrimitiveTextKind(primitiveType) switch
         {
-            // 数字、正负号、小数点都能开启一个数值文本；"NaN" / "Infinity" 按前缀逐字符比对，
-            // 而不是「首字母是 N 或 I 就拒」—— 后者会误伤 "INV-" 这类完全安全的前缀。
+            // 数字、正负号、小数点都能开启一个数值文本；NaN / Infinity 按前缀逐字符比对，
+            // 而不是「首字母是 N 或 I 就拒」，后者会误伤 "INV-" 这类安全前缀。
             PrimitiveTextKind.Numeric => IsAsciiDigit(first)
                 || first is '+' or '-' or '.'
                 || "NaN".StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
@@ -498,9 +482,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             // char 的文本形式就是单个字符，任何单字符前缀都是一个合法取值。
             PrimitiveTextKind.Char => prefix.Length == 1,
 
-            // string 与 enum 不判定：字符串取值可以是任意文本，枚举文本是用户自定义的成员名，
-            // 两者都没有可枚举的文本文法，任何前缀都可能与之重叠。这是「前缀与基元文本之间没有
-            // 分隔符」这一设计本身的固有歧义，只能靠文档说明。
+            // string 与 enum 不判定：两者都没有可枚举的文本文法，任何前缀都可能与之重叠。
+            // 这是「前缀与基元文本之间没有分隔符」这一设计本身的固有歧义，只能靠文档说明。
             _ => false,
         };
     }
@@ -558,7 +541,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 改名建议（STIA0022）。
     /// </summary>
     /// <remarks>
-    /// 逐条按属性顺序上报，位置落在对应的那条 attribute 上 —— 报在类型声明处等于让人自己猜是哪一条写错了。
+    /// 逐条按属性顺序上报，位置落在对应的那条 attribute 上，否则等于让人自己猜是哪一条写错了。
     /// </remarks>
     private static void ValidateInstances(
         SymbolAnalysisContext context,
@@ -724,7 +707,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 把请求方名字压成一行：超过 <see cref="MaxReportedOwners"/> 个时截断并附总数。
     /// </summary>
     /// <remarks>
-    /// 只用逗号与括号计数，不写 "and N more" 之类英文措辞 —— 参数会嵌进中英两套文案里。
+    /// 只用逗号与括号计数，不写 "and N more" 之类英文措辞，参数会嵌进中英两套文案里。
     /// </remarks>
     private static string SummarizeOwners(IEnumerable<string> owners)
     {
@@ -929,9 +912,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     private static string? GetEffectiveValidatorName(INamedTypeSymbol type, IAssemblySymbol assembly)
         => GetValidatorName(type) ?? GetAssemblyDefaultValidator(assembly);
 
-    /// <summary>
-    /// 读取 <c>[assembly: StronglyTypedIdDefaults(Validator = …)]</c> 的默认验证器方法名；未声明时为 <see langword="null"/>。
-    /// </summary>
+    /// <inheritdoc cref="StronglyTypedIdInfo.GetAssemblyDefaultValidator"/>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
         => StronglyTypedIdInfo.GetAssemblyDefaultValidator(assembly);
 
@@ -1027,7 +1008,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 判断该类型是否「配了归一化或验证器、因而绕过 Create 就等于绕过这些约束」——STIA0011 各形态的统一前提。
+    /// 判断该类型是否「配了归一化或验证器、因而绕过 Create 就等于绕过这些约束」，STIA0011 各形态的统一前提。
     /// </summary>
     private static bool BypassesGuards(INamedTypeSymbol type, Compilation compilation)
         => HasStronglyTypedIdAttribute(type)

@@ -51,7 +51,7 @@ internal sealed record ModuleInfo
             return cached;
         }
 
-        // 看不见 IStronglyTypedId<,> 的模块不可能声明 Id，没必要走一遍类型树 —— 光是
+        // 看不见 IStronglyTypedId<,> 的模块不可能声明 Id，没必要走一遍类型树，光是
         // System.Private.CoreLib 就有上万个类型。判定只查一次元数据字典或一张引用表，比遍历便宜几个数量级。
         if (!MayDeclareIds)
         {

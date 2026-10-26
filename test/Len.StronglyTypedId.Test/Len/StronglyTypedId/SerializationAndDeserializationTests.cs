@@ -79,8 +79,8 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为 <c>{ "value": …
-    /// }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
+    /// C4：<c>JsonShape = JsonShape.Object</c> 时，值位置序列化为
+    /// <c>{ "value": … }</c>，供「已对外承诺对象形态」的既有契约在不改动客户端的前提下迁移；两种序列化器行为一致。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_SerializeAsObject_When()
@@ -117,7 +117,7 @@ public class SerializationAndDeserializationTests
 
     /// <summary>
     /// 对象形态的属性名匹配要跟着 <c>PropertyNameCaseInsensitive</c> 走：默认只认小写 <c>value</c>，
-    /// 开了选项后 <c>{"Value": …}</c> 也必须能读 —— 否则与 JsonSerializer 对普通对象的处理不一致。
+    /// 开了选项后 <c>{"Value": …}</c> 也必须能读，否则与 JsonSerializer 对普通对象的处理不一致。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_HonorPropertyNameCaseInsensitive_When()
@@ -134,7 +134,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：对象形态只作用于「值」的位置——字典键本就是字符串，读写键的路径不受影响。
+    /// C4：对象形态只作用于「值」的位置，字典键本就是字符串，读写键的路径不受影响。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_KeepPrimitiveDictionaryKey_When()
@@ -238,7 +238,7 @@ public class SerializationAndDeserializationTests
 
     /// <summary>
     /// <c>[Flags]</c> 枚举作字典键：位组合必须能往返（键文本是 <c>"Read, Write"</c>），
-    /// 而含未定义位的键必须被拒 —— 字典键走的是忽略大小写的独立解析路径，位校验在那里同样要生效。
+    /// 而含未定义位的键必须被拒，字典键走的是忽略大小写的独立解析路径，位校验在那里同样要生效。
     /// </summary>
     [Fact]
     public void FlagsEnumId_Should_RoundTripCombinationAsDictionaryKey_AndRejectUndefinedBits()
@@ -263,13 +263,12 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// 缺陷回归：枚举 Id 的 JSON <b>值</b>路径曾绕过枚举已定义性校验。两个转换器的读入都走
-    /// <c>TryCreate</c>，而它只跑用户配的 Validator —— <c>999</c> 会原样造出一个不对应任何成员的 Id，
-    /// 后续 switch 落空、序列化写出野值。TryParse 与 Dapper 三条路径早已收紧（见
-    /// <see cref="EnumPrimitiveTests"/> 与集成矩阵），这里把 JSON 入口对齐。
+    /// 缺陷回归：枚举 Id 的 JSON 值路径曾绕过枚举已定义性校验。两个转换器的读入都走 <c>TryCreate</c>，
+    /// 而它只跑用户配的 Validator，<c>999</c> 会原样造出一个不对应任何成员的 Id。这里把 JSON 入口对齐到
+    /// <c>TryParse</c> 与 Dapper 三条路径的收紧规则。
     /// </summary>
     /// <remarks>
-    /// 序列化形钉住数字：枚举在两种序列化器下都按数值写出，这是与 STJ 对原生枚举一致的既有行为。
+    /// 序列化形钉住数字：枚举在两种序列化器下都按数值写出，与 STJ 对原生枚举的既有行为一致。
     /// </remarks>
     [Fact]
     public void EnumId_Should_RejectUndefinedValue_OnJsonValuePath()
@@ -360,7 +359,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// D3：string 基元的字典键被验证器拒绝时，必须抛 <c>JsonException</c> 而不是 <c>ArgumentException</c> ——
+    /// D3：string 基元的字典键被验证器拒绝时，必须抛 <c>JsonException</c> 而不是 <c>ArgumentException</c>
     /// STJ 的转换器契约要求失败一律抛 <c>JsonException</c>，同一生成器的带前缀 / 非 string 分支都是这么做的。
     /// </summary>
     [Fact]
@@ -414,7 +413,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C10：前缀 + 对象形态—— <c>{ "value": "ord_x" }</c>。
+    /// C10：前缀 + 对象形态，<c>{ "value": "ord_x" }</c>。
     /// </summary>
     [Fact]
     public void Prefix_WithObjectShape_Should_SerializeAsObject_When()

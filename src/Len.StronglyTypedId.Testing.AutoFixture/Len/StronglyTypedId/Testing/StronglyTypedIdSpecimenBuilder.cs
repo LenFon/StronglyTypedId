@@ -3,7 +3,7 @@
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Supplies strongly typed ids to AutoFixture requests.
+/// 为 AutoFixture 的请求提供强类型 Id。
 /// </summary>
 public sealed class StronglyTypedIdSpecimenBuilder(AnyIdGenerator generator) : ISpecimenBuilder
 {

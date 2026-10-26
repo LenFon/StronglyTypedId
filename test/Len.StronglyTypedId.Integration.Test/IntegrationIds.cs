@@ -4,7 +4,7 @@ namespace Len.StronglyTypedId;
 [StronglyTypedId]
 public partial record struct IntegrationGuidId(Guid Value);
 
-// C10：文本前缀。用来验证「前缀经规范文本形自动贯通 MVC 路由约束 / Minimal API 绑定」——
+// C10：文本前缀。用来验证「前缀经规范文本形自动贯通 MVC 路由约束 / Minimal API 绑定」，
 // 这两处生成器零改动，全靠 Id 的 TryParse / ToString 走文本路径。
 [StronglyTypedId(Prefix = "ord_")]
 public partial record struct PrefixedIntegrationGuidId(Guid Value);

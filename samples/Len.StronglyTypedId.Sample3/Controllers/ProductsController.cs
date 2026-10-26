@@ -8,13 +8,13 @@ namespace Len.StronglyTypedId.Sample3.Controllers;
 public sealed class ProductsController : ControllerBase
 {
     /// <summary>
-    /// 路由段经生成的模型绑定器绑定；{id:ProductId} 再由生成的路由约束校验格式。
+    /// 路由段经生成的模型绑定器绑定；再由生成的路由约束校验格式。
     /// </summary>
     [HttpGet("{id:ProductId}")]
     public ActionResult<ProductId> Get([FromRoute] ProductId id) => id;
 
     /// <summary>
-    /// 查询参数同样走 IParsable&lt;ProductId&gt;。
+    /// 查询参数同样走 IParsable&lt;SellerId&gt;。
     /// </summary>
     [HttpGet("by-seller")]
     public ActionResult<SellerId> BySeller([FromQuery] SellerId seller) => seller;

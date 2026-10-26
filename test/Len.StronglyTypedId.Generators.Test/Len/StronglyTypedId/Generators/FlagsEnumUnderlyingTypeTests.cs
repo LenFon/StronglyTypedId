@@ -95,7 +95,7 @@ public class FlagsEnumUnderlyingTypeTests
     #region 掩码按底层宽度裁剪
 
     /// <summary>
-    /// <c>A = 1, B = 2</c> 只占用低两位，其余位都未定义 —— 掩码就是「宽度内除低两位外全 1」。
+    /// <c>A = 1, B = 2</c> 只占用低两位，其余位都未定义，掩码就是「宽度内除低两位外全 1」。
     /// </summary>
     [Theory]
     [InlineData("byte", "0x00000000000000FCUL")]
@@ -112,7 +112,7 @@ public class FlagsEnumUnderlyingTypeTests
     }
 
     /// <summary>
-    /// <c>All = -1</c> 意味着宽度内每一位都有定义，掩码为 0 —— 此时必须整条省掉位校验，
+    /// <c>All = -1</c> 意味着宽度内每一位都有定义，掩码为 0，此时必须整条省掉位校验，
     /// 产物与「加入该能力之前」逐字节一致，否则所有取值都会被拒。
     /// </summary>
     /// <remarks>

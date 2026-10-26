@@ -68,7 +68,7 @@ public partial class Box<T>
     public partial record struct BoxedId(Guid Value);
 }
 
-// N2：命名实例。值以基元的不变文化文本声明，编译期校验并翻译成字面量，运行期一律经 Create 构造 ——
+// N2：命名实例。值以基元的不变文化文本声明，编译期校验并翻译成字面量，运行期一律经 Create 构造，
 // 因此实例必然满足验证器，Parse(id.ToString()) 一定读得回来。
 [StronglyTypedId]
 [StronglyTypedIdInstance("Unspecified", "-1")]
@@ -84,7 +84,7 @@ public partial record struct StockLevelId(int Value)
     private static bool IsPositive(int value) => value > 0;
 }
 
-// N2 的反例：实例值被验证器拒绝时，类型初始化即失败 —— 宁可第一次触碰就炸，
+// N2 的反例：实例值被验证器拒绝时，类型初始化即失败，宁可第一次触碰就炸，
 // 也不让一个「不可能存在」的 Id 悄悄流进领域模型。
 [StronglyTypedId(Validator = nameof(IsPositive))]
 [StronglyTypedIdInstance("Zero", "0")]
@@ -115,7 +115,7 @@ public partial record struct PlainGuidId(Guid Value);
 public partial record struct PriceId(decimal Value);
 
 // N3 的隐私开关：验证器拒绝时不把被拒的原文写进异常消息。
-// 对 string 基元尤其重要 —— 那段文本往往就是用户输入的邮箱、手机号或 token 片段，
+// 对 string 基元尤其重要，那段文本往往就是用户输入的邮箱、手机号或 token 片段，
 // 而被拒绝的原因恰恰是它不合规，却仍然是个人信息。默认关闭（消息里带原文）。
 [StronglyTypedId(Validator = nameof(IsEmail), RedactValidationMessage = true)]
 public partial record struct RedactedEmailId(string Value)

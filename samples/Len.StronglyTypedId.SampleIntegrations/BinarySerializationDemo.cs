@@ -10,7 +10,7 @@ namespace Len.StronglyTypedId.SampleIntegrations;
 /// </summary>
 /// <remarks>
 /// 与 EF Core / Dapper 的区别在「谁决定编码」：那两个把 Id 拆成裸基元交给列类型，这两个库自己编码。
-/// 载荷里只有基元值 —— 文本前缀不进二进制，改前缀不会让已落盘的数据读不回来。
+/// 载荷里只有基元值，文本前缀不进二进制，改前缀不会让已落盘的数据读不回来。
 /// </remarks>
 internal static class BinarySerializationDemo
 {
@@ -39,7 +39,7 @@ internal static class BinarySerializationDemo
         var primitiveBytes = MessagePackSerializer.Serialize(orderId.Value, options);
         Demo.Line($"与裸 Guid 载荷逐字节相同           -> {bytes.AsSpan().SequenceEqual(primitiveBytes)}");
 
-        // 生成的格式化器只认 Id；其它类型照常退回原有解析器 —— ApplyTo 是「先查生成的，再退回原来的」。
+        // 生成的格式化器只认 Id；其它类型照常退回原有解析器，ApplyTo 是「先查生成的，再退回原来的」。
         var numbers = new[] { 1, 2, 3 };
         var numberBytes = MessagePackSerializer.Serialize(numbers, options);
         Demo.Line($"退回原有解析器（int[]）            -> {string.Join(',', MessagePackSerializer.Deserialize<int[]>(numberBytes, options))}");
@@ -75,7 +75,7 @@ internal static class BinarySerializationDemo
 }
 
 /// <summary>
-/// BSON 的根必须是文档，Id 总是某个文档的字段 —— 这就是真实形态。
+/// BSON 的根必须是文档，Id 总是某个文档的字段，这就是真实形态。
 /// </summary>
 internal sealed class LedgerEntry
 {

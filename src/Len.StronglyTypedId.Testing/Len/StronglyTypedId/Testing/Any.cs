@@ -1,7 +1,7 @@
 ﻿namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Static convenience entry point for creating strongly typed ids in tests.
+/// 在测试中创建强类型 Id 的静态便捷入口。
 /// </summary>
 public static class Any
 {
@@ -15,43 +15,42 @@ public static class Any
     private static AnyIdGenerator Generator { get; set; } = new();
 
     /// <summary>
-    /// Creates a strongly typed id of type <typeparamref name="TId"/>.
+    /// 创建 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
     public static TId Id<TId>()
         where TId : IStronglyTypedId<TId>
         => Current.Id<TId>();
 
     /// <summary>
-    /// Creates a strongly typed id of type <typeparamref name="TId"/> from a freshly seeded generator.
+    /// 使用新播种的生成器创建 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
     public static TId Id<TId>(int seed)
         where TId : IStronglyTypedId<TId>
         => new AnyIdGenerator(new AnyIdOptions { Seed = seed }).Id<TId>();
 
     /// <summary>
-    /// Creates <paramref name="count"/> strongly typed ids of type <typeparamref name="TId"/>.
+    /// 创建 <paramref name="count"/> 个 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
     public static IReadOnlyList<TId> Ids<TId>(int count)
         where TId : IStronglyTypedId<TId>
         => Current.Ids<TId>(count);
 
     /// <summary>
-    /// Creates <paramref name="count"/> strongly typed ids of type <typeparamref name="TId"/> from a freshly
-    /// seeded generator.
+    /// 使用新播种的生成器创建 <paramref name="count"/> 个 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
     public static IReadOnlyList<TId> Ids<TId>(int count, int seed)
         where TId : IStronglyTypedId<TId>
         => new AnyIdGenerator(new AnyIdOptions { Seed = seed }).Ids<TId>(count);
 
     /// <summary>
-    /// Registers an explicit factory for <typeparamref name="TId"/> on the shared generator.
+    /// 在共享生成器上为 <typeparamref name="TId"/> 注册显式工厂。
     /// </summary>
     public static void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
     {
-        // 注册必须落在「当前的」共享生成器上。Reset() 可能在「读到引用」与「写进字典」之间换掉实例，
-        // 那样注册会留在被丢弃的旧实例里 —— 之后 Any.Id<TId>() 静默不生效，且没有任何报错。
-        // 用「写后复查」而不是「持锁执行」：后者会在锁内调用用户工厂，工厂跨线程再进 Any 就死锁。
+        // 注册必须落在当前的共享生成器上：Reset() 可能在「读到引用」与「写进字典」之间换掉实例，
+        // 那样注册会留在被丢弃的旧实例里，之后 Any.Id<TId>() 静默不生效。
+        // 用「写后复查」而非「持锁执行」，后者会在锁内调用用户工厂，工厂再进 Any 就死锁。
         while (true)
         {
             var generator = Current;
@@ -69,7 +68,7 @@ public static class Any
     }
 
     /// <summary>
-    /// Discards the shared generator, dropping every registration made through <see cref="Register{TId}"/>.
+    /// 丢弃共享生成器，同时清除通过 <see cref="Register{TId}"/> 建立的全部注册。
     /// </summary>
     public static void Reset()
     {
@@ -80,11 +79,11 @@ public static class Any
     }
 
     /// <summary>
-    /// Gets a snapshot of the shared generator.
+    /// 获取共享生成器的快照。
     /// </summary>
     /// <remarks>
-    /// Generation works on a snapshot: racing with <see cref="Reset"/> only loses one reset, and holding the lock would run user factories while locked.
-    /// The one operation that needs atomicity is <see cref="Register{TId}"/>, which re-checks the instance after writing.
+    /// 生成基于快照：与 <see cref="Reset"/> 竞争最多丢失一次重置，而持锁会在锁内运行用户工厂。
+    /// 唯一需要原子性的是 <see cref="Register{TId}"/>，它在写入后复查实例。
     /// </remarks>
     private static AnyIdGenerator Current
     {

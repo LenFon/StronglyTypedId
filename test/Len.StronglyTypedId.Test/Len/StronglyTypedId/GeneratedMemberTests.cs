@@ -13,7 +13,7 @@ namespace Len.StronglyTypedId;
 /// </summary>
 /// <remarks>
 /// 这些成员的共同点是：成功路径早就在别处验过了，而失败路径一旦写错（失败时仍报告已写入的长度、
-/// 把非字符串源静默转型、把 null 当成空串），调用方拿到的是「看起来成功」的错误结果 —— 比抛异常更难发现。
+/// 把非字符串源静默转型、把 null 当成空串），调用方拿到的是「看起来成功」的错误结果，比抛异常更难发现。
 /// </remarks>
 public class GeneratedMemberTests
 {
@@ -49,7 +49,7 @@ public class GeneratedMemberTests
     }
 
     /// <summary>
-    /// 解构给的是基元值，不是 <c>ToString()</c> 的规范文本形 —— 前缀只属于文本，不属于值。
+    /// 解构给的是基元值，不是 <c>ToString()</c> 的规范文本形，前缀只属于文本，不属于值。
     /// </summary>
     [Fact]
     public void Deconstruct_Should_YieldRawPrimitive_NotCanonicalText()
@@ -117,7 +117,7 @@ public class GeneratedMemberTests
 
     /// <summary>
     /// 有前缀时的关键分支：前缀先写、基元后写。前缀写得下而基元写不下时，缓冲区里已经有前缀了，
-    /// 但报告的长度仍必须是 0 —— 否则调用方会把 <c>"ord_"</c> 当成完整结果。
+    /// 但报告的长度仍必须是 0，否则调用方会把 <c>"ord_"</c> 当成完整结果。
     /// </summary>
     [Fact]
     public void TryFormat_Should_ReportZero_WhenPrefixFitsButPrimitiveDoesNot()
@@ -236,7 +236,7 @@ public class GeneratedMemberTests
 
     /// <summary>
     /// 归一化必须发生在校验之前：<c>-5</c> 过不了「必须为正」的验证器，取绝对值后是 5 才通过。
-    /// 顺序反了这里就会被拒 —— <c>Create</c> 与两条读入路径都得守这个顺序。
+    /// 顺序反了这里就会被拒，<c>Create</c> 与两条读入路径都得守这个顺序。
     /// </summary>
     [Fact]
     public void Normalizer_Should_RunBeforeValidator_OnEveryEntryPoint()
@@ -320,7 +320,7 @@ public class GeneratedMemberTests
 
     /// <summary>
     /// <see langword="null"/> 值转字符串返回 <see langword="null"/>（<c>value?.ToString()</c>），
-    /// 而不是抛异常 —— 配置绑定与 XAML 都可能喂进空值。
+    /// 而不是抛异常，配置绑定与 XAML 都可能喂进空值。
     /// </summary>
     [Fact]
     public void TypeConverter_Should_ConvertNullToNull()

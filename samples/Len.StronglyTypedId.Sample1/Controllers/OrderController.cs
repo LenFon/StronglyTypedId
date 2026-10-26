@@ -68,7 +68,7 @@ public class OrderController(SampleDbContext db) : ControllerBase
     public UserId Test(UserId id) => id;
 
     /// <summary>
-    /// 路由约束：{id:ProductId} 在进入 action 之前就用 TryParse 校验格式，非法段直接 404。
+    /// 路由约束在进入 action 之前就用 TryParse 校验格式，非法段直接 404。
     /// </summary>
     [HttpGet("products/{id:ProductId}")]
     public ProductId Product([FromRoute] ProductId id) => id;

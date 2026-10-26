@@ -7,7 +7,7 @@ namespace Len.StronglyTypedId.Generators;
 /// </summary>
 /// <remarks>
 /// 与 MessagePack 同构：序列化器放在 <c>StronglyTypedIds</c> 里，靠 <c>RegisterBsonSerializers()</c> 注册进进程级注册表。
-/// 不走 <c>[BsonSerializer]</c> 是因为它只能加在本次编译声明的类型上，「库作者声明、消费者使用」这条路径反而没有序列化器。
+/// 不用 <c>[BsonSerializer]</c> 是因为它只能加在本次编译声明的类型上，「库作者声明、消费者使用」这条路径反而没有序列化器。
 /// </remarks>
 internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
 {
@@ -66,7 +66,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
-                    /// Serializes <see cref="{{idInfo.FullName}}"/> to and from BSON.
+                    /// 在 BSON 与 <see cref="{{idInfo.FullName}}"/> 之间序列化。
                     /// </summary>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MongoDbCodeGenerator), version)}}
@@ -117,38 +117,16 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
-                    /// Registers the generated BSON serializers for strongly typed ids.
+                    /// 注册强类型 Id 的 BSON 序列化器。
                     /// </summary>
                     /// <remarks>
-                    /// <c>BsonSerializer</c> keeps serializers in a process-wide registry, so this only needs to run once
-                    /// per process, before the first document is serialized. Registration is idempotent: an already
-                    /// registered serializer is left untouched.
+                    /// 注册表是进程级的，首次序列化前运行一次即可。注册幂等：已注册的序列化器保持原样，
+                    /// 包括他人为同一 Id 类型注册的版本，因此别处注册的优先于生成的版本。
                     /// <para>
-                    /// "Left untouched" includes a serializer someone else registered for the same id type: the driver's
-                    /// <c>TryRegisterSerializer</c> reports <see langword="false"/> and keeps the existing one, so a
-                    /// conflicting registration silently wins. This is deliberate — overwriting would break the
-                    /// idempotency above — but it means a serializer registered elsewhere takes precedence over the
-                    /// generated one for that id.
-                    /// </para>
-                    /// <para>
-                    /// Primitive-backed ids also get their underlying primitive serializers registered here with the
-                    /// default configuration (int, enums, and so on). Without this, BSON's
-                    /// <c>PrimitiveSerializationProvider</c> would create them via reflection, which throws under
-                    /// Native AOT where non-referenced constructors are trimmed. The registered instances match the
-                    /// provider-created defaults, so existing behavior is unchanged.
-                    /// </para>
-                    /// <para>
-                    /// Guid-backed ids are the exception: since driver 3.0 there is no global default, and
-                    /// serializing a Guid without one throws. Register a <c>GuidSerializer</c> with the representation your
-                    /// existing data uses before serializing.
-                    /// </para>
-                    /// <para>
-                    /// BSON's dynamic types (<c>object</c>, <c>List&lt;object&gt;</c> and <c>ExpandoObject</c>) are
-                    /// registered too, because every root serialization context takes
-                    /// <c>BsonDefaults.DynamicArraySerializer</c> and <c>BsonDefaults.DynamicDocumentSerializer</c>,
-                    /// and those look the types up in the registry — where the driver would otherwise create them
-                    /// through reflection, which throws under Native AOT. The registered instances are the same
-                    /// types the driver would have created, so behavior is unchanged.
+                    /// 基元类型的 Id 会按默认配置注册底层基元序列化器，避免 <c>PrimitiveSerializationProvider</c>
+                    /// 通过反射创建（Native AOT 下构造函数被裁剪会抛异常）。Guid 基元例外，驱动 3.0 起没有全局默认表示，
+                    /// 需自行注册 <c>GuidSerializer</c>。动态类型（<c>object</c>、<c>List&lt;object&gt;</c>、
+                    /// <c>ExpandoObject</c>）也会注册，因为根序列化上下文会到注册表里查它们。
                     /// </para>
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -158,12 +136,11 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                     }
 
                     /// <summary>
-                    /// Registers a serializer, keeping an existing registration when the type already has one.
+                    /// 注册序列化器；若该类型已有注册则保留既有注册。
                     /// </summary>
                     /// <remarks>
-                    /// The driver's <c>TryRegisterSerializer</c> throws when a *different* serializer is already
-                    /// registered for the type. For these shared driver types that would break an application that
-                    /// registered its own, so the existing registration is kept instead.
+                    /// 当该类型已注册了<em>另一个</em>序列化器时，驱动的 <c>TryRegisterSerializer</c> 会抛异常。
+                    /// 对这些共享的驱动类型而言，那会破坏自行注册过的应用，因此改为保留既有注册。
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MongoDbCodeGenerator), version)}}
@@ -275,12 +252,12 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
         else
         {
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
-            // 它会穿透 BsonSerializer —— 而 BSON 序列化器的契约要求失败一律抛 BsonSerializationException。
+            // 它会穿透 BsonSerializer，而 BSON 序列化器的契约要求失败一律抛 BsonSerializationException。
             lines.Add(_nestedIndent + $"var value = global::MongoDB.Bson.Serialization.BsonSerializer.LookupSerializer<{idInfo.PrimitiveIdTypeName}>().Deserialize(context, args);");
             lines.Add(string.Empty);
 
             // 枚举基元在此追加已定义性校验：TryCreate 只跑用户配的 Validator，而 BSON 对未定义数值
-            // （999）照常读出 —— 不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
+            // （999）照常读出，不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
             // STJ、Newtonsoft 路径都已收紧，这里对齐）。
             var enumValidity = idInfo.GetEnumValidityCondition("value");
             lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id){(enumValidity is null ? string.Empty : $" && {enumValidity}")})");

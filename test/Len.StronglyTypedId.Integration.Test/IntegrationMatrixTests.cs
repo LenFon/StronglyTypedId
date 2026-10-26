@@ -112,7 +112,7 @@ public class IntegrationMatrixTests
     /// <remarks>
     /// 驱动返回成员名文本时大小写约定各不相同（Oracle 默认大写、PostgreSQL 原样返回），
     /// 而 <c>Enum.Parse</c> 区分大小写；同时它对 <c>"999"</c>、<c>"1,2"</c> 一律返回 true，
-    /// 放行会造出一个不对应任何成员的 Id —— 后续 <c>switch</c> 落空、序列化写出野值。
+    /// 放行会造出一个不对应任何成员的 Id，后续 <c>switch</c> 落空、序列化写出野值。
     /// </remarks>
     [Fact]
     public void Dapper_Handler_Should_ParseEnumText_CaseInsensitively_AndRejectUndefined()

@@ -695,7 +695,7 @@ public class CodeGeneratorModuleGateTests
     /// <summary>
     /// 8.0 线上没有 schema 转换器 API（<c>IOpenApiSchemaTransformer</c> / <c>OpenApiOptions</c> 都是 9.0.0
     /// 才引入的），OpenAPI 文档由 Swashbuckle 产出。本用例锁定这条替代路径：同一个编译里
-    /// OpenApi 8.0 + Swashbuckle 6 时，只产出 Swagger 入口，不产出 OpenAPI 入口 —— 否则消费者会拿到
+    /// OpenApi 8.0 + Swashbuckle 6 时，只产出 Swagger 入口，不产出 OpenAPI 入口，否则消费者会拿到
     /// 一份引用 8.0 里不存在类型的产物，编译直接 CS0246。
     /// </summary>
     [Fact]
@@ -825,7 +825,7 @@ public class CodeGeneratorModuleGateTests
 
     /// <summary>
     /// 引用程序集里的 Id 若没有内嵌 <c>SystemTextJsonConverter</c>（声明它的程序集没引用 System.Text.Json），注册入口必须跳过它。否则生成
-    /// <c>new X.SystemTextJsonConverter()</c> 会 CS0426 ——而这条编译错误出现在<b>消费者</b>的编译里，库作者完全看不到。
+    /// <c>new X.SystemTextJsonConverter()</c> 会 CS0426，而这条编译错误出现在<b>消费者</b>的编译里，库作者完全看不到。
     /// </summary>
     [Fact]
     public void SystemTextJsonRegistration_Should_Skip_WhenReferencedIdHasNoConverter()
@@ -844,10 +844,9 @@ public class CodeGeneratorModuleGateTests
     /// Newtonsoft 侧的同一判据：领域库不引 Newtonsoft、宿主应用引，是完全正常的分层。
     /// </summary>
     /// <remarks>
-    /// 领域库里的 Id 因此没有内嵌转换器，而内嵌转换器只能生成在声明 Id 的那个程序集里 ——
-    /// 消费方补一份会撞 CS0426。宿主应用于是自己生成一份顶层转换器并注册它：
-    /// 否则那个 Id 在 Newtonsoft 下会被写成对象形态（<c>{"Value":"…"}</c>），
-    /// 而 System.Text.Json 写的是字符串 —— 同一份数据两种表示，且编译无警告、运行不抛异常。
+    /// 领域库里的 Id 没有内嵌转换器，而内嵌转换器只能生成在声明 Id 的程序集里，消费方补一份会撞 CS0426。
+    /// 宿主应用于是自己生成一份顶层转换器并注册，否则该 Id 在 Newtonsoft 下会被写成对象形态，
+    /// 而 System.Text.Json 写的是字符串。
     /// </remarks>
     [Fact]
     public void NewtonsoftJsonRegistration_Should_ProvideExternalConverter_WhenReferencedIdHasNoConverter()
@@ -901,7 +900,7 @@ public class CodeGeneratorModuleGateTests
     /// <remarks>
     /// 运行时侧 <c>StronglyTypedIdExtensions.ResolvePrimitiveIdType</c> 就是这么选的（并有
     /// <c>MultiContractId</c> 用例守着）。生成器若取 <c>FirstOrDefault</c>，结果会取决于接口枚举顺序，
-    /// 与模型绑定器 / EF 转换器选中的基元不一致 —— 同一个类型两套答案。
+    /// 与模型绑定器 / EF 转换器选中的基元不一致，同一个类型两套答案。
     /// </remarks>
     [Fact]
     public void PrimitiveResolution_Should_PreferOwnContract_WhenTypeImplementsSeveral()
@@ -1008,7 +1007,7 @@ public class CodeGeneratorModuleGateTests
         """;
 
     /// <summary>
-    /// 混合基元源码：覆盖 Dapper <c>Parse</c> 的每一条转换分支 —— 枚举（底层整数 / 成员名文本）、
+    /// 混合基元源码：覆盖 Dapper <c>Parse</c> 的每一条转换分支，枚举（底层整数 / 成员名文本）、
     /// <c>char</c>（string）、<c>decimal</c>（double）、<c>Guid</c>（string）、<c>string</c>。
     /// </summary>
     private const string MixedPrimitiveIdSource = """

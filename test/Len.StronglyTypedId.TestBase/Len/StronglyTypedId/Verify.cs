@@ -54,8 +54,8 @@ public static class Verify
     /// </summary>
     /// <remarks>
     /// <see cref="VerifyAnalyzerWithEditorConfigAsync"/> 会顺手解除 STIA0014 与两条命名风格提示的屏蔽，
-    /// 那对「验证某条规则的诊断」是对的，对「验证一条诊断都<b>不</b>报」却是干扰——解除屏蔽后多出来的
-    /// 风格提示会让期望失配。此处保持屏蔽原样，让「零诊断」这个断言真的在断言零诊断。
+    /// 那对「验证某条规则的诊断」是对的，对「验证一条诊断都不报」却是干扰。此处保持屏蔽原样，
+    /// 让「零诊断」这个断言真的在断言零诊断。
     /// </remarks>
     public static Task VerifyAnalyzerWithRawEditorConfigAsync(string source, string editorConfig, params DiagnosticResult[] expected)
     {
@@ -227,9 +227,8 @@ public static class Verify
     /// 直接驱动 <see cref="StronglyTypedIdCodeFixProvider"/> 并应用它注册的唯一修复，返回改写后的源码文本。
     /// </summary>
     /// <remarks>
-    /// 绕开 <see cref="Microsoft.CodeAnalysis.Testing"/> 的 <c>CodeFixTest</c> 限制：后者拒绝为
-    /// <c>CompilationEnd</c> 诊断（STIA0019 / STIA0024 即在此类）提供修复。本方法在 AdhocWorkspace 里手工
-    /// 跑修复并套用，用来断言「改写结果」这类 <c>VerifyCodeFixAsync</c> 框架本身不支持的场景。
+    /// 绕开 <see cref="Microsoft.CodeAnalysis.Testing"/> 的 <c>CodeFixTest</c> 限制：后者拒绝为 <c>CompilationEnd</c>
+    /// 诊断（如 STIA0019 / STIA0024）提供修复。本方法在 AdhocWorkspace 里手工跑修复并套用。
     /// </remarks>
     public static async Task<string> ApplyCodeFixAsync(
         string source,

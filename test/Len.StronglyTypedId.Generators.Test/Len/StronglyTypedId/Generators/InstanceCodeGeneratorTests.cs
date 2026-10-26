@@ -559,7 +559,7 @@ public class InstanceCodeGeneratorTests
         createIndex.Should().BeGreaterThan(0);
         fieldIndex.Should().BeGreaterThan(createIndex);
 
-        generated.Should().Contain("    /// Gets the <c>Unspecified</c> instance of <c>OrderId</c>.");
+        generated.Should().Contain("    /// 获取 <c>OrderId</c> 的 <c>Unspecified</c> 实例。");
         generated.Should().Contain("    [global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"StronglyTypedIdCodeGenerator\", ");
     }
 

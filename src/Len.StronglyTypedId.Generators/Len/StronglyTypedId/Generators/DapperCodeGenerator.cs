@@ -110,10 +110,10 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
-                    /// Registers the generated Dapper type handlers.
+                    /// 注册生成的 Dapper 类型处理器。
                     /// </summary>
-                    /// <remarks>Dapper keeps type handlers in a process-wide registry, so this only needs to run once
-                    /// per process. Calling it again replaces each handler with an equivalent instance.</remarks>
+                    /// <remarks>Dapper 的类型处理器注册表是进程级的，因此每个进程只需运行一次。
+                    /// 再次调用会用等价实例替换各处理器。</remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(DapperCodeGenerator), version)}}
                     public static void ApplyTo()
@@ -121,10 +121,10 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                     }
 
                     /// <summary>
-                    /// Registers the generated Dapper type handlers.
+                    /// 注册生成的 Dapper 类型处理器。
                     /// </summary>
-                    /// <param name="connection">Ignored. Dapper registers type handlers globally rather than per
-                    /// connection, so there is nothing to scope to this argument; it is kept for source compatibility.</param>
+                    /// <param name="connection">忽略。Dapper 的类型处理器是全局注册而非按连接注册，
+                    /// 因此该参数没有可作用的对象；保留它只为源码兼容。</param>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(DapperCodeGenerator), version)}}
                     public static void ApplyTo(global::System.Data.IDbConnection connection) => ApplyTo();
@@ -180,13 +180,11 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// 追加枚举基元的 <c>Parse</c> 方法体：直通路径、文本路径、数值路径，三者共用同一套「已定义」校验。
     /// </summary>
     /// <remarks>
-    /// 三条路径必须共用同一套收紧规则，否则同一个非法取值会因为驱动返回的 CLR 类型不同而被接受或拒绝：
+    /// 三条路径必须共用同一套校验，否则同一非法取值会因驱动返回的 CLR 类型不同而被接受或拒绝：
     /// <list type="bullet">
-    /// <item>文本路径：<c>Enum.TryParse</c> 对 <c>"999"</c>、<c>"1,2"</c> 一律返回 true，必须再校验已定义；</item>
-    /// <item>数值路径：<c>Enum.ToObject</c> 对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c> 枚举会变成 <c>44</c>，
-    /// 甚至恰好命中某个已定义成员），对浮点数静默截断（<c>1.5d</c> 变成 <c>0</c>）。故必须先按底层类型做范围检查，
-    /// 并拒绝带小数部分的取值，再校验已定义；</item>
-    /// <item>直通路径：驱动直接返回枚举类型时同样要校验，不能因为是「已经是枚举」就放行。</item>
+    /// <item>文本路径：<c>Enum.TryParse</c> 对 <c>"999"</c>、<c>"1,2"</c> 返回 true，须再校验已定义；</item>
+    /// <item>数值路径：<c>Enum.ToObject</c> 对超范围整数静默绕回、对浮点数静默截断，须先做范围检查并拒绝小数；</item>
+    /// <item>直通路径：驱动直接返回枚举类型时同样要校验。</item>
     /// </list>
     /// </remarks>
     private static void AppendEnumParseBody(List<string> lines, StronglyTypedIdInfo idInfo, string create)
@@ -223,7 +221,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         lines.Add(string.Empty);
 
         // 数值路径：先归一化成 decimal（覆盖全部数值 CLR 类型，并让 NaN / ±Infinity 抛 OverflowException），
-        // 拒绝带小数部分的取值，再按底层类型做范围检查 —— 这三步都在 Enum.ToObject 之前完成，
+        // 拒绝带小数部分的取值，再按底层类型做范围检查，这三步都在 Enum.ToObject 之前完成，
         // 因为它自己既不检查范围也不检查小数。bool / char / DateTime 等非数值类型不进入这条路径。
         lines.Add(_parseStatementIndent + "if (value is byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal)");
         lines.Add(_parseStatementIndent + "{");
@@ -266,7 +264,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// 追加「匹配到枚举值且取值已定义就返回，否则落到后面的统一抛错」的语句块。
     /// </summary>
     /// <remarks>
-    /// 全部位都已定义的 <c>[Flags]</c> 枚举没有可校验的条件，此时直接返回、不产出抛错分支 ——
+    /// 全部位都已定义的 <c>[Flags]</c> 枚举没有可校验的条件，此时直接返回、不产出抛错分支，
     /// 否则 <c>return</c> 之后的 <c>throw</c> 是不可达代码（CS0162）。
     /// </remarks>
     private static void AppendGuardedEnumReturn(
@@ -303,7 +301,8 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// <see cref="GetParseBody"/> 里单独成段）。
     /// </summary>
     /// <remarks>
-    /// 不能直接写 <c>(TPrimitive)value!</c>：那是拆箱语义，SQLite 下枚举列返回 <c>long</c>、<c>char</c> / <c>Guid</c> 列返回 <c>string</c>、<c>decimal</c> 列返回 <c>double</c>，四种基元全抛 <see cref="InvalidCastException"/>。
+    /// 不能直接写 <c>(TPrimitive)value!</c>：那是拆箱语义，SQLite 下枚举列返回 <c>long</c>、<c>char</c> / <c>Guid</c>
+    /// 列返回 <c>string</c>、<c>decimal</c> 列返回 <c>double</c>，都会抛 <see cref="InvalidCastException"/>。
     /// </remarks>
     private static string GetConversionExpression(StronglyTypedIdInfo idInfo)
     {

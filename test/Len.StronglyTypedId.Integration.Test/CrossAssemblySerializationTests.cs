@@ -9,16 +9,11 @@ namespace Len.StronglyTypedId;
 /// 跨程序集（分层）的序列化回归：领域层不引用序列化基础设施，宿主应用引用。
 /// </summary>
 /// <remarks>
-/// 领域层是 <c>Len.StronglyTypedId.TestBase.Layered</c>：它**没有**引用 Newtonsoft.Json，
-/// 于是那里的 Id 不带内嵌的 Newtonsoft 转换器。而内嵌转换器只能生成在声明 Id 的那个程序集里 ——
-/// 宿主应用补一份内嵌的会撞 CS0426（类型已存在）。
-/// <para>
-/// 由此必须成立两件事：
-/// </para>
+/// 领域层 <c>Len.StronglyTypedId.TestBase.Layered</c> 没有引用 Newtonsoft.Json，那里的 Id 不带内嵌转换器；
+/// 而内嵌转换器只能生成在声明 Id 的程序集里，宿主应用补内嵌的会撞 CS0426。
 /// <list type="number">
-/// <item>宿主应用能自己为它补一份顶层 Newtonsoft 转换器，并把它注册进去；</item>
-/// <item>补出来的转换器写出的形态必须与 System.Text.Json 一致 —— 同一份数据两种表示，
-/// 且编译无警告、运行不抛异常，是最难在评审里发现的一类问题。</item>
+/// <item>宿主应用能自己补一份顶层 Newtonsoft 转换器并注册；</item>
+/// <item>补出的转换器写出的形态必须与 System.Text.Json 一致，否则同一份数据会有两种表示且无任何报错。</item>
 /// </list>
 /// </remarks>
 public class CrossAssemblySerializationTests

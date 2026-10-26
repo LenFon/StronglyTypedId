@@ -131,7 +131,7 @@ public class NamedInstanceTests
     }
 
     /// <summary>
-    /// 值类型 Id 的零值实例与 <c>default</c> 相等 —— 这是值语义的必然结果，不是缺陷。
+    /// 值类型 Id 的零值实例与 <c>default</c> 相等，这是值语义的必然结果，不是缺陷。
     /// 需要「与 default 可区分」的哨兵值应避开基元的零值。
     /// </summary>
     [Fact]

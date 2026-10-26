@@ -3,7 +3,7 @@
 [StronglyTypedId]
 public partial record struct GuidId(Guid Value);
 
-// C1 新增基元：扩展整型、浮点、日期/时间、大整数。各自代表一条生成器形态分支 ——
+// C1 新增基元：扩展整型、浮点、日期/时间、大整数。各自代表一条生成器形态分支，
 // Int128/UInt128/DateOnly/TimeOnly/Single/Double/Half 与整型同构（全套含 UTF-16 / UTF-8 span）；
 // BigInteger 虽有 UTF-8 语义，但其 TryParse(ReadOnlySpan<byte>,…) 是显式接口实现，故不生成 UTF-8 解析。
 [StronglyTypedId]
@@ -21,7 +21,7 @@ public partial record struct TimeOnlyId(TimeOnly Value);
 [StronglyTypedId]
 public partial record struct DoubleId(double Value);
 
-// H2：decimal 是「静默错值」最危险的场景 —— de-DE 下小数分隔符是逗号、千位分隔符是句点，
+// H2：decimal 是「静默错值」最危险的场景，de-DE 下小数分隔符是逗号、千位分隔符是句点，
 // 规范形的 "1.5" 会被读成 15。用它验证 Parse / TryParse 在 provider 为 null 时按不变文化解析。
 [StronglyTypedId]
 public partial record struct DecimalId(decimal Value);
@@ -53,7 +53,7 @@ public partial record struct ByteId(byte Value);
 [StronglyTypedId]
 public partial record struct StringId(string Value);
 
-// C1：char 是唯一「接口面同构、但成员全是显式接口实现」的基元 —— IParsable / IFormattable 的
+// C1：char 是唯一「接口面同构、但成员全是显式接口实现」的基元，IParsable / IFormattable 的
 // Parse / TryParse / ToString(format, provider) 都不能按类型名直呼（CS1501），故生成器为它单列分支：
 // 解析按「长度恰为 1」判定，格式化走无参 ToString() 或 IFormattable 接口调用。
 [StronglyTypedId]
@@ -102,7 +102,7 @@ public partial record UInt16IdV2(ushort Value);
 public partial record struct StringIdV3(System.String Value);
 
 // 以下三个 Id 用 Validator 钩子覆盖「取值校验」：验证器是 Id 类型自身的私有静态方法，
-// 生成代码在 Create 与两个 TryParse 重载里调用它。三种基元各自代表一条分支 ——
+// 生成代码在 Create 与两个 TryParse 重载里调用它。三种基元各自代表一条分支，
 // Guid/int 的解析结果落在 out 参数上，string 则直接以参数本身参与校验。
 [StronglyTypedId(Validator = nameof(Validate))]
 public partial record struct NonEmptyGuidId(Guid Value)
@@ -123,7 +123,7 @@ public partial record struct ShortStringId(string Value)
 }
 
 // N3：验证失败异常类型可配。领域库希望 Create 抛自己的异常而不是 ArgumentException，
-// 故把异常类型写成 attribute 命名实参；Parse 抛的是 FormatException —— 它的失败还包含
+// 故把异常类型写成 attribute 命名实参；Parse 抛的是 FormatException，它的失败还包含
 // 「文本根本不是 Id」，与「值被领域规则拒绝」不是同一类错误。
 public sealed class DomainRuleViolationException(string message) : Exception(message);
 
@@ -134,7 +134,7 @@ public partial record struct DomainValidatedGuidId(Guid Value)
 }
 
 // 验证失败消息是否内插被拒原文。默认内插（便于定位问题），开启 RedactValidationMessage 后只报
-// 「不是合法的 X」—— 对 string 基元的 Id 来说，被拒原文就是用户输入，会顺着异常进日志与 APM。
+// 「不是合法的 X」，对 string 基元的 Id 来说，被拒原文就是用户输入，会顺着异常进日志与 APM。
 // 两个夹具除该开关外完全同构，差异只来自这一个布尔值。
 [StronglyTypedId(Validator = nameof(Validate))]
 public partial record struct VerboseValidatedStringId(string Value)
@@ -244,7 +244,7 @@ public partial record struct StrictPrefixedGuidId(Guid Value);
 public partial record struct StrictConvertiblePrefixedGuidId(Guid Value);
 
 // 严格前缀 + 对象形态：{ "value": "ord_x" } 的对象读入分支与基元形态是两段生成代码，
-// 前缀策略必须两边都生效 —— 否则严格模式在对象形态上形同虚设。
+// 前缀策略必须两边都生效，否则严格模式在对象形态上形同虚设。
 [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict, JsonShape = JsonShape.Object)]
 public partial record struct StrictPrefixedObjectGuidId(Guid Value);
 
@@ -253,7 +253,7 @@ public partial record struct StrictPrefixedObjectGuidId(Guid Value);
 public partial record struct PrefixedPriorityId(SamplePriority Value);
 
 // K1：属性测试要覆盖「规范文本形有损」的时间基元。无参 ToString() 对 IFormattable 基元走
-// Value.ToString(null, InvariantCulture)，即默认格式串 —— DateTime / DateTimeOffset 的 "G" 丢亚秒、
+// Value.ToString(null, InvariantCulture)，即默认格式串，DateTime / DateTimeOffset 的 "G" 丢亚秒、
 // TimeOnly 的 "t" 丢秒。这三个夹具把这条边界显式测出来：它们只能断言文本幂等，不能断言值往返。
 [StronglyTypedId]
 public partial record struct DateTimeId(DateTime Value);
@@ -278,7 +278,7 @@ public enum SampleStatus
 public partial record struct SampleStatusId(SampleStatus Value);
 
 /// <summary>
-/// <c>[Flags]</c> 枚举基元：位组合本身就是合法取值，<c>IsDefined</c> 会误杀，故生成器改用「未定义位掩码」校验 ——
+/// <c>[Flags]</c> 枚举基元：位组合本身就是合法取值，<c>IsDefined</c> 会误杀，故生成器改用「未定义位掩码」校验
 /// <c>Read | Write</c> 通过，<c>999</c>（含未定义位）被拒。
 /// </summary>
 [Flags]
@@ -305,7 +305,7 @@ public enum SamplePriority
 [StronglyTypedId]
 public partial record struct SamplePriorityId(SamplePriority Value);
 
-// N2：命名实例。值以「基元的不变文化文本形」声明，编译期校验并翻译成字面量，运行期经 Create 构造 ——
+// N2：命名实例。值以「基元的不变文化文本形」声明，编译期校验并翻译成字面量，运行期经 Create 构造，
 // 因此实例必然满足验证器，Parse(id.ToString()) 一定读得回来。
 // int 覆盖负值与零：零值实例与 default 相等是值语义的必然结果，不是缺陷。
 [StronglyTypedId]
@@ -348,7 +348,7 @@ public partial record struct NormalizedInstanceStringId(string Value)
 }
 
 // 归一化 + 验证：Create 与两条读入路径（UTF-16 / UTF-8）都必须「先归一化、再校验」。
-// 负数取绝对值 —— 原文 -5 若先校验（要求 > 0）会被拒，先归一化则是 5。
+// 负数取绝对值，原文 -5 若先校验（要求 > 0）会被拒，先归一化则是 5。
 [StronglyTypedId(Normalizer = nameof(Normalize), Validator = nameof(Validate))]
 public partial record struct NormalizedValidatedInt32Id(int Value)
 {
@@ -373,7 +373,7 @@ public partial record struct InstanceDateTimeId(DateTime Value);
 public partial record struct InstanceDateTimeOffsetId(DateTimeOffset Value);
 
 // Half 的特殊值与舍入边界：NaN / ±Infinity 是合法取值（Half.Parse 接受），
-// 而 (65504, 65520) 会舍入回最大有限值 —— 都不是溢出。
+// 而 (65504, 65520) 会舍入回最大有限值，都不是溢出。
 [StronglyTypedId]
 [StronglyTypedIdInstance("NotANumber", "NaN")]
 [StronglyTypedIdInstance("PositiveInfinity", "Infinity")]
@@ -381,7 +381,7 @@ public partial record struct InstanceDateTimeOffsetId(DateTimeOffset Value);
 [StronglyTypedIdInstance("RoundedToMax", "65510")]
 public partial record struct InstanceHalfId(Half Value);
 
-// N2：实例必须通过验证器。哨兵值被业务规则拒绝时，类型初始化器会抛 TypeInitializationException ——
+// N2：实例必须通过验证器。哨兵值被业务规则拒绝时，类型初始化器会抛 TypeInitializationException，
 // 这是刻意的取舍：宁可第一次触碰就失败，也不要让一个「不可能存在」的 Id 悄悄流进领域模型。
 [StronglyTypedId(Validator = nameof(Validate))]
 [StronglyTypedIdInstance("Zero", "0")]

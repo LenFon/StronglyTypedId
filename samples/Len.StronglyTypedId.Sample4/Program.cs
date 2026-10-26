@@ -8,7 +8,7 @@ builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
 
 builder.Services.AddEndpointsApiExplorer();
 
-// 8.0 线没有内置的文档生成器 —— AddOpenApi / MapOpenApi / IOpenApiSchemaTransformer 都是 9.0.0 才引入的，
+// 8.0 线没有内置的文档生成器，AddOpenApi / MapOpenApi / IOpenApiSchemaTransformer 都是 9.0.0 才引入的，
 // 所以这里没有 StronglyTypedIds.ApplyTo(OpenApiOptions) 可调，文档由 Swashbuckle 产出，
 // Id 的 schema 映射走 ApplyTo(SwaggerGenOptions)。
 builder.Services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
@@ -20,9 +20,8 @@ app.UseSwaggerUI();
 
 // 路由参数经 IParsable<OrderId>.TryParse 绑定，格式非法时框架直接返回 400。
 // WithOpenApi() 是 8.0 包里与 OpenAPI 相关的唯一 API：给操作打注解，由 Swashbuckle 读走。
-//
 // 实测（/swagger/v1/swagger.json）：请求 / 响应体里的 Id 属性拿到 type: string + format: uuid，
-// 路径参数也一样 —— 8.0 的 ApiExplorer 把实现了 IParsable 的参数报成 string，MapType 按类型注册
+// 路径参数也一样，8.0 的 ApiExplorer 把实现了 IParsable 的参数报成 string，MapType 按类型注册
 // 对这类参数无从下手，于是本库另外生成一个操作过滤器，按参数的真实类型把 schema 补回去。
 app.MapGet("/orders/{id}", (OrderId id) => Results.Ok(id.Value))
     .WithName("GetOrder")

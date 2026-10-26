@@ -35,8 +35,8 @@ internal enum InstanceIssue
 /// 一条 <c>[StronglyTypedIdInstance]</c> 声明：名字、原始文本、翻译出的表达式与校验结论。
 /// </summary>
 /// <remarks>
-/// 生成器与分析器共用这一份读取逻辑，保证「报错的那条」与「跳过不生成的那条」永远是同一条。
-/// 刻意用普通 <see langword="readonly"/> 结构体而非位置记录：生成器跑在 netstandard2.0 上，位置记录需要的 <c>IsExternalInit</c> 在那里不存在。
+/// 生成器与分析器共用这一份读取逻辑，保证「报错的那条」与「跳过不生成的那条」是同一条。
+/// 用普通 <see langword="readonly"/> 结构体而非位置记录：生成器跑在 netstandard2.0 上，没有 <c>IsExternalInit</c>。
 /// </remarks>
 internal readonly struct InstanceDeclaration
 {
@@ -165,7 +165,7 @@ internal readonly struct InstanceDeclaration
     /// </summary>
     /// <remarks>
     /// 与类型同名触发 CS0542，与既有成员同名触发 CS0102；保留名清单覆盖生成器稍后才产出的成员。
-    /// 必须滤掉生成器自己产出的命名实例字段，否则每条实例都会撞上它自己刚生成的那个字段；但生成的方法与嵌套类型必须照常参与判定。
+    /// 必须滤掉生成器自己产出的命名实例字段，否则每条实例都会撞上自己刚生成的字段。
     /// </remarks>
     private static bool IsReservedName(INamedTypeSymbol type, string name)
         => name == type.Name

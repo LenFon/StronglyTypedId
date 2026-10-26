@@ -4,48 +4,32 @@ using Bogus;
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Extension methods that wire strongly typed id generation into Bogus.
+/// 把强类型 Id 生成接入 Bogus 的扩展方法。
 /// </summary>
 /// <remarks>
-/// <para>
-/// Bogus fills a property by the property's declared type. A strongly typed id is a distinct type, so
-/// without help Bogus cannot produce one — the property is simply left at its default value, silently.
-/// This adapter registers Bogus' <c>RuleForType</c> rules for every id type it finds, after which
-/// <c>faker.Generate()</c> fills id-typed members just like any other member.
-/// </para>
-/// <para>
-/// Unlike AutoFixture, Bogus knows the target type up front: <c>new Faker&lt;Order&gt;()</c> already
-/// says what is being produced, so wiring the ids in is the last step before generating.
-/// </para>
+/// Bogus 按属性的声明类型填充，而强类型 Id 是独立类型，不加干预时属性会被静默留为默认值。
+/// 本适配器为发现的每个 Id 类型注册 <c>RuleForType</c> 规则，之后 <c>faker.Generate()</c> 即可填充 Id 成员。
+/// 与 AutoFixture 不同，Bogus 事先知道目标类型，接入 Id 是生成前的最后一步。
 /// </remarks>
 public static class FakerExtensions
 {
     /// <summary>
-    /// Teaches Bogus to create strongly typed ids.
+    /// 让 Bogus 能够创建强类型 Id。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// By default the id types are discovered from the assemblies loaded in the current application
-    /// domain, and the values come from a default <see cref="AnyIdGenerator"/>. Pass
-    /// <paramref name="generator"/> to control how the values are produced, and <paramref name="idTypes"/>
-    /// to state the id types explicitly.
-    /// </para>
-    /// <para>
-    /// Stating the types explicitly is the way out when the discovery does not match what the test
-    /// needs — an id type in an assembly that is not loaded yet, or an id type that should stay out of
-    /// the faker.
-    /// </para>
+    /// 默认从当前应用程序域已加载的程序集中发现 Id 类型，取值来自默认的 <see cref="AnyIdGenerator"/>。
+    /// 传入 <paramref name="generator"/> 可控制取值方式，传入 <paramref name="idTypes"/> 可显式指定类型
+    /// （自动发现的结果不符预期时用这个）。
     /// </remarks>
-    /// <typeparam name="T">The type the faker produces.</typeparam>
-    /// <param name="faker">The faker to configure.</param>
+    /// <typeparam name="T">faker 生成的目标类型。</typeparam>
+    /// <param name="faker">要配置的 faker。</param>
     /// <param name="generator">
-    /// The generator producing the id values; <see langword="null"/> to use a default generator.
+    /// 生成 Id 取值的生成器；<see langword="null"/> 表示使用默认生成器。
     /// </param>
     /// <param name="idTypes">
-    /// The id types Bogus should be able to create; <see langword="null"/> to discover them from the
-    /// loaded assemblies.
+    /// Bogus 应能创建的 Id 类型；<see langword="null"/> 表示从已加载的程序集中自动发现。
     /// </param>
-    /// <returns>The same faker, so calls can be chained.</returns>
+    /// <returns>同一个 faker，便于链式调用。</returns>
     public static Faker<T> WithStronglyTypedIds<T>(this Faker<T> faker, AnyIdGenerator? generator = null, params Type[]? idTypes)
         where T : class
     {
@@ -53,7 +37,7 @@ public static class FakerExtensions
 
         var effectiveGenerator = generator ?? new AnyIdGenerator();
 
-        // params 参数省略时是**空数组**而不是 null —— 只判 null 会让「自动发现」这条分支永远走不到。
+        // params 参数省略时是空数组而不是 null，只判 null 会让「自动发现」这条分支永远走不到。
         var effectiveTypes = idTypes is null or { Length: 0 } ? [.. DiscoverIdTypes()] : idTypes;
 
         foreach (var idType in effectiveTypes)
@@ -67,12 +51,11 @@ public static class FakerExtensions
     }
 
     /// <summary>
-    /// Registers Bogus' type rule for one id type.
+    /// 为一个 Id 类型注册 Bogus 的类型规则。
     /// </summary>
     /// <remarks>
-    /// Bogus' <c>RuleForType</c> is generic in the value type, so the call has to be made from a
-    /// generic method closed over the id type. The id type is only known at run time here, hence the
-    /// reflection.
+    /// Bogus 的 <c>RuleForType</c> 以值类型为泛型参数，因此必须在闭合到该 Id 类型的泛型方法中调用。
+    /// 此处 Id 类型只有运行期才知道，故借助反射。
     /// </remarks>
     private static void RegisterTypeRule<TTarget>(Faker<TTarget> faker, Type idType, AnyIdGenerator generator)
         where TTarget : class
@@ -90,12 +73,10 @@ public static class FakerExtensions
         => faker.RuleForType(typeof(TId), _ => generator.Id<TId>());
 
     /// <summary>
-    /// Finds every strongly typed id type in the assemblies loaded right now.
+    /// 查找当前已加载程序集中的全部强类型 Id 类型。
     /// </summary>
     /// <remarks>
-    /// An assembly that is not loaded yet is invisible here. That is why the overload taking explicit
-    /// types exists: an id type declared in an assembly the test never touched would otherwise stay
-    /// unfilled — silently, since the property is simply left at its default value.
+    /// 尚未加载的程序集在此不可见，这正是提供显式类型重载的原因，否则那些 Id 会静默保持默认值。
     /// </remarks>
     private static IEnumerable<Type> DiscoverIdTypes()
     {
@@ -124,7 +105,7 @@ public static class FakerExtensions
         }
         catch (Exception)
         {
-            // 动态程序集与某些受限程序集连类型表都取不到；跳过即可 —— 显式指定类型的那条路仍然可用。
+            // 动态程序集与某些受限程序集连类型表都取不到；跳过即可，显式指定类型的那条路仍然可用。
             return [];
         }
     }

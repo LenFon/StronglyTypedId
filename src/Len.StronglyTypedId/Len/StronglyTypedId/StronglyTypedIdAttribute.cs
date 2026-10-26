@@ -1,72 +1,67 @@
 ﻿namespace Len.StronglyTypedId;
 
 /// <summary>
-/// Marks a partial record (or record struct) as a strongly typed id.
+/// 将 partial record（或 record struct）标记为强类型 Id。
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false, AllowMultiple = false)]
 public class StronglyTypedIdAttribute : Attribute
 {
     /// <summary>
-    /// Gets or sets the name of a static validator method declared on the strongly typed id type itself.
+    /// 获取或设置声明在强类型 Id 类型自身的静态验证方法名。
     /// </summary>
     public string? Validator { get; set; }
 
     /// <summary>
-    /// Gets or sets the name of a static normalizer method declared on the strongly typed id type itself.
+    /// 获取或设置声明在强类型 Id 类型自身的静态归一化方法名。
     /// </summary>
     public string? Normalizer { get; set; }
 
     /// <summary>
-    /// Gets or sets the exception type thrown by <c>Create</c> when the validator rejects a value. The type
-    /// must derive from <see cref="Exception"/>, must not be abstract, and must expose a constructor that
-    /// takes a single <see cref="string"/> message. Defaults to <see cref="ArgumentException"/>.
+    /// 获取或设置验证器拒绝取值时由 <c>Create</c> 抛出的异常类型。该类型须派生自 <see cref="Exception"/>、
+    /// 不可为抽象类，并暴露接收单个 <see cref="string"/> 消息的构造函数。默认为 <see cref="ArgumentException"/>。
     /// </summary>
     /// <remarks>
-    /// Only the validator rejection in <c>Create</c> uses this type; <c>Parse</c> throws <see cref="FormatException"/> per <see cref="IParsable{TSelf}"/>.
+    /// 仅 <c>Create</c> 中的验证器拒绝使用该类型；<c>Parse</c> 按 <see cref="IParsable{TSelf}"/> 的约定抛 <see cref="FormatException"/>。
     /// </remarks>
     public Type? ExceptionType { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether a validator rejection leaves the rejected value out of the
-    /// exception message. The default is <see langword="false"/>, which keeps the value in the message.
+    /// 获取或设置验证器拒绝时是否在异常消息中隐去被拒绝的值。默认为 <see langword="false"/>，即保留该值。
     /// </summary>
     /// <remarks>
-    /// The rejected text reaches logs and APM traces; for a <see cref="string"/> id that text is user input.
-    /// Turning this on yields <c>The value is not a valid OrderId.</c> instead of embedding the value.
+    /// 被拒绝的文本会进入日志与 APM 追踪；对 <see cref="string"/> 类型的 Id 而言那往往是用户输入。
+    /// 打开后消息为 <c>The value is not a valid MyId.</c>，不再内插原始值。
     /// </remarks>
     public bool RedactValidationMessage { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether a <see cref="System.ComponentModel.TypeConverter"/> is
-    /// generated for the strongly typed id.
+    /// 获取或设置是否为强类型 Id 生成 <see cref="System.ComponentModel.TypeConverter"/>。
     /// </summary>
     public bool TypeConverter { get; set; }
 
     /// <summary>
-    /// Gets or sets which integration code is generated for the strongly typed id. The default is
-    /// <see cref="StronglyTypedIdIntegrations.Default"/>, which means "generate whatever the compilation
-    /// references".
+    /// 获取或设置强类型 Id 生成哪些集成代码。默认为 <see cref="StronglyTypedIdIntegrations.Default"/>，
+    /// 即「编译引用了什么就生成什么」。
     /// </summary>
     /// <remarks>
-    /// A filter, not a switch: an integration is generated only when its assembly is referenced <em>and</em> the flag is set.
-    /// <see cref="StronglyTypedIdIntegrations.None"/> suppresses every integration but leaves the core and an explicit <see cref="TypeConverter"/> untouched.
+    /// 这是过滤器而非开关：只有对应程序集被引用<em>且</em>标志位被设置时才会生成。
+    /// <see cref="StronglyTypedIdIntegrations.None"/> 会关闭全部集成，但不影响核心实现与显式开启的 <see cref="TypeConverter"/>。
     /// </remarks>
     public StronglyTypedIdIntegrations Integrations { get; set; }
 
     /// <summary>
-    /// Gets or sets the shape the strongly typed id takes in JSON. The default is
-    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>.
+    /// 获取或设置强类型 Id 在 JSON 中的形态。默认为 <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>。
     /// </summary>
     public JsonShape JsonShape { get; set; }
 
     /// <summary>
-    /// Gets or sets a literal prefix carried by the canonical text form of the strongly typed id.
+    /// 获取或设置强类型 Id 规范文本形携带的字面前缀。
     /// </summary>
     public string? Prefix { get; set; }
 
     /// <summary>
-    /// Gets or sets how the canonical text form is read back when <see cref="Prefix"/> is configured. The
-    /// default is <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/>.
+    /// 获取或设置配置了 <see cref="Prefix"/> 时规范文本形的读回方式。默认为
+    /// <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/>。
     /// </summary>
     public PrefixReadMode PrefixReadMode { get; set; }
 }

@@ -1,4 +1,4 @@
-﻿// G2：集成运行时验证——在真实包引用下直接调用生成产物 StronglyTypedIds.ApplyTo，
+﻿// G2：集成运行时验证。在真实包引用下直接调用生成产物 StronglyTypedIds.ApplyTo，
 // 断言各集成（EF Core / Dapper / Swagger / 内置 OpenApi / MVC）的产物可执行且行为正确，
 // 而非仅靠文本契约（CodeGeneratorModuleGateTests 已锁定文本形态，本文件补运行时语义）。
 using System.Data;
@@ -13,9 +13,9 @@ using Microsoft.Extensions.Logging;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// 生成的 <c>StronglyTypedIds</c> 是 <c>internal static partial class</c>（本编译单元内可见），各集成产物按引用的包被门控生成。本测试工程的包引用（EF
-/// Core / Dapper / Swashbuckle / Microsoft.AspNetCore.OpenApi / FrameworkReference
-/// Microsoft.AspNetCore.App）使 5 个集成生成器全部触发，故 <c>StronglyTypedIds</c> 的 5 组 <c>ApplyTo</c> 都在本编译里可见。
+/// 生成的 <c>StronglyTypedIds</c> 是 <c>internal static partial class</c>（本编译单元内可见），各集成产物按引用的包被门控生成。
+/// 本测试工程引用了 EF Core、Dapper、Swashbuckle、Microsoft.AspNetCore.OpenApi 与 ASP.NET Core 框架，
+/// 使 5 个集成生成器全部触发，故 5 组 <c>ApplyTo</c> 都在本编译里可见。
 /// </summary>
 public class IntegrationRuntimeTests
 {
@@ -25,7 +25,7 @@ public class IntegrationRuntimeTests
     public void Dapper_ApplyTo_RegistersTypeHandlersAndRoundTrips()
     {
         // 带参重载是为源码兼容保留的转发：Dapper 的注册是进程级全局的，connection 不参与。
-        // 传 null 即可——ApplyTo 不对 connection 解引用。
+        // 传 null 即可，ApplyTo 不对 connection 解引用。
         Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
 
         // 验证生成的 IntegrationGuidIdTypeHandler（internal 嵌套类）可实例化且 SetValue/Parse 往返正确。
@@ -51,7 +51,7 @@ public class IntegrationRuntimeTests
 
     /// <summary>
     /// 引用类型 Id（<c>record class</c>）的 <c>SetValue</c> 必须写出基元值，而不是 Id 包装对象。
-    /// 后者会让 SqlClient / Sqlite 在参数绑定时抛「No mapping exists from object type ...」——
+    /// 后者会让 SqlClient / Sqlite 在参数绑定时抛「No mapping exists from object type ...」
     /// 这正是曾经的缺陷：值类型分支取了 <c>.Value</c>，引用类型分支直接把 <c>value</c> 塞了进去。
     /// </summary>
     [Fact]
@@ -89,7 +89,7 @@ public class IntegrationRuntimeTests
     /// <summary>
     /// 重复调用 <c>ApplyTo</c> 必须幂等。Dapper 的 <c>AddTypeHandler</c> 是按类型赋值而不是追加，
     /// 所以第二次调用只会把处理器换成等价的新实例：不抛异常，注册表也不膨胀。
-    /// 这正是「每个连接注册一次」这种误用能长期不被发现的原因——它不报错，只是白做功。
+    /// 这正是「每个连接注册一次」这种误用能长期不被发现的原因，它不报错，只是白做功。
     /// </summary>
     [Fact]
     public void Dapper_ApplyTo_IsIdempotent()
@@ -149,10 +149,8 @@ public class IntegrationRuntimeTests
     /// 枚举的三条读取路径（直通 / 文本 / 数值）必须共用同一套「已定义」校验。
     /// </summary>
     /// <remarks>
-    /// 数值路径曾完全绕过校验：<c>Enum.ToObject</c> 对超范围整数静默绕回（<c>300L</c> 交给 <c>byte</c> 枚举会变成
-    /// <c>44</c>，甚至恰好命中某个已定义成员），对浮点数静默截断（<c>1.5d</c> 变成 <c>0</c>）。于是同一个非法取值
-    /// 会因驱动返回的 CLR 类型不同而被接受或拒绝 —— 文本 <c>"999"</c> 被拒，数值 <c>999L</c> 却造出一个不对应任何
-    /// 成员的 Id。本用例逐条锁定三条路径的拒绝行为。
+    /// 数值路径曾完全绕过校验：<c>Enum.ToObject</c> 对超范围整数静默绕回、对浮点数静默截断，于是同一个非法取值
+    /// 会因驱动返回的 CLR 类型不同而被接受或拒绝。本用例逐条锁定三条路径的拒绝行为。
     /// </remarks>
     [Fact]
     public void Dapper_Parse_RejectsUndefinedEnumValues_OnEveryPath()
@@ -450,13 +448,12 @@ public class IntegrationRuntimeTests
 
     /// <summary>
     /// 可空强类型 Id（<c>[FromQuery] IntegrationGuidId?</c>）必须同样由生成的绑定器接管。
-    /// <para>
-    /// <c>Nullable&lt;T&gt;</c> 不实现任何接口（<c>typeof(IntegrationGuidId?).GetInterfaces()</c> 长度为 0），
-    /// provider 若不先拆出底层类型就会返回 <c>null</c>，MVC 随即退回框架的 <c>TryParseModelBinder</c>。
-    /// 那条链路按 <c>CurrentCulture</c> 解析，与强类型 Id 的不变文化契约不一致：同一条路由上，
-    /// 可空参数与非可空参数会对同一份载荷得出不同的值，非法值的错误消息也不同。
-    /// </para>
     /// </summary>
+    /// <remarks>
+    /// <c>Nullable&lt;T&gt;</c> 不实现任何接口，provider 若不先拆出底层类型就会返回 <c>null</c>，
+    /// MVC 随即退回框架的 <c>TryParseModelBinder</c>，那条链路按 <c>ValueProviderResult.Culture</c> 解析
+    /// （查询串与路由为不变文化，表单为当前文化），与强类型 Id 始终使用不变文化的契约不一致。
+    /// </remarks>
     [Fact]
     public async Task Mvc_NullableId_RoutesToGeneratedBinder()
     {
@@ -631,7 +628,7 @@ public class IntegrationRuntimeTests
         var requestDelegate = factoryResult.RequestDelegate;
 
         // Ok<T> 结果写出时会向容器索取 ILoggerFactory，故必须注册日志服务，否则裸容器会抛
-        // 「No service for type 'ILoggerFactory'」——这是测试宿主的最小依赖，与被测绑定逻辑无关。
+        // 「No service for type 'ILoggerFactory'」，这是测试宿主的最小依赖，与被测绑定逻辑无关。
         var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
         {
             RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider()
@@ -814,7 +811,7 @@ public class IntegrationRuntimeTests
         _ = System.Text.Json.JsonSerializer.Serialize(1, options);
         var frozenCount = options.Converters.Count;
 
-        // 冻结后重复注册不得抛异常 —— 全部转换器都已注册，实现应当直接跳过。
+        // 冻结后重复注册不得抛异常，全部转换器都已注册，实现应当直接跳过。
         var act = () => Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
         act.Should().NotThrow("已注册时不应触碰已冻结的集合");
         options.Converters.Count.Should().Be(frozenCount);
@@ -824,10 +821,9 @@ public class IntegrationRuntimeTests
     /// <c>JsonShape.Object</c> 下 Newtonsoft 的属性名匹配必须大小写不敏感，与它自己对普通 POCO 的行为一致。
     /// </summary>
     /// <remarks>
-    /// <c>JObject.TryGetValue</c> 是序数比较，只认小写 <c>"value"</c>。而 Newtonsoft 反序列化普通 POCO 时
-    /// <c>{"Value":…}</c>、<c>{"VALUE":…}</c> 都能填进 <c>Value</c> 属性 —— 生成的转换器若比它所在的序列化器
-    /// 更严，同一个载荷会在 Id 这一层突然失败。对象形态本就是为「对接既有客户端契约」才启用的，恰恰最容易
-    /// 遇到大小写不一致。
+    /// <c>JObject.TryGetValue</c> 是序数比较，只认小写 <c>"value"</c>，而 Newtonsoft 反序列化普通 POCO 时
+    /// <c>{"Value":…}</c>、<c>{"VALUE":…}</c> 都能填进 <c>Value</c> 属性。生成的转换器若更严，
+    /// 同一个载荷会在 Id 这一层突然失败，而对象形态正是为对接既有客户端契约才启用的。
     /// </remarks>
     [Fact]
     public void Newtonsoft_ObjectShape_MatchesPropertyNameCaseInsensitively()

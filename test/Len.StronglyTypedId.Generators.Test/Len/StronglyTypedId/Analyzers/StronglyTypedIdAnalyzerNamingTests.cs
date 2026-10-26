@@ -94,7 +94,7 @@ public class StronglyTypedIdAnalyzerNamingTests
     }
 
     /// <summary>
-    /// 后缀改为 <c>Key</c> 后，以 <c>Key</c> 结尾的名字（如 <c>OrderKey</c>）应判为合规、不再报告——
+    /// 后缀改为 <c>Key</c> 后，以 <c>Key</c> 结尾的名字（如 <c>OrderKey</c>）应判为合规、不再报告
     /// 证明后缀确实改变了判定口径，而非只在提示文字里换个词。注意：<c>OrderKey</c> 在默认 <c>Id</c> 后缀下反而是不合规的。
     /// </summary>
     [Fact]

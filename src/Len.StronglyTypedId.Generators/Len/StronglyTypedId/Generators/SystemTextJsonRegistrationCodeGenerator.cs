@@ -38,17 +38,15 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
-                /// Employ strongly typed IDs in System.Text.Json.
+                /// 在 System.Text.Json 中启用强类型 Id。
                 /// </summary>
-                /// <remarks>Idempotent: a converter that is already registered is left alone, so calling this
-                /// from several modules — or twice from the same one — does not grow the converter list.</remarks>
+                /// <remarks>幂等：已注册的转换器保持原样，因此从多个模块调用，或从同一模块调用两次，都不会让转换器列表增长。</remarks>
                 /// <param name="options"><see cref="global::System.Text.Json.JsonSerializerOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SystemTextJsonRegistrationCodeGenerator), version)}}
                 public static void ApplyTo(global::System.Text.Json.JsonSerializerOptions options)
                 {
-                    // 先收集已注册的转换器类型再逐个比对：重复调用时列表不增长，且已注册时完全不触碰集合 ——
-                    // JsonSerializerOptions 一旦被使用就会冻结，此时再 Add 会抛 InvalidOperationException。
+                    // 幂等：已注册时完全不触碰集合，因为 JsonSerializerOptions 一旦被使用就会冻结，再 Add 会抛异常。
                     var registered = new global::System.Collections.Generic.HashSet<global::System.Type>();
 
                     foreach (var converter in options.Converters)

@@ -23,10 +23,9 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // 每个 Id 注册为路由约束，模板里写 {id:OrderId} 即可校验分段格式。同名 Id 按字典覆盖，属边缘冲突。
-        // 键用 Name 而非 EscapedName：路由约束令牌是路由模板里的字面量，不是 C# 代码 ——
-        // 写成 "@class" 会让用户必须在路由里写 {id:@class}，与约束语义相反。加 @ 只有写在
-        // 类型声明位才有意义（见 StronglyTypedIdInfo.EscapedName）。
+        // 每个 Id 注册为路由约束，模板里写 {id:MyId} 即可校验分段格式。同名 Id 按字典覆盖，属边缘冲突。
+        // 键用 Name 而非 EscapedName：路由约束令牌是路由模板里的字面量，不是 C# 代码，
+        // 写成 "@class" 会让用户必须在路由里写 {id:@class}，与约束语义相反。
         var constraintRegistrations = stronglyTypedIds
             .Select(idInfo => $$"""        options.ConstraintMap["{{idInfo.Name}}"] = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdRouteConstraint<{{idInfo.FullyQualifiedName}}>);""");
 
@@ -34,15 +33,14 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
-                /// Employ strongly typed IDs in ASP.NET Core MVC model binding.
+                /// 在 ASP.NET Core MVC 模型绑定中启用强类型 Id。
                 /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.Mvc.MvcOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 public static void ApplyTo(global::Microsoft.AspNetCore.Mvc.MvcOptions options)
                 {
-                    // 按类型去重：启动代码里重复调用（多个模块各自注册、或配置被复用）时，
-                    // 每次都 Insert 一个新实例会让 provider 列表无限增长，且绑定器被反复重建。
+                    // 幂等：重复调用时不再插入，避免 provider 列表增长。
                     foreach (var provider in options.ModelBinderProviders)
                     {
                         if (provider is StronglyTypedIdModelBinderProvider)
@@ -55,7 +53,7 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// Employ strongly typed IDs as ASP.NET Core route constraints.
+                /// 把强类型 Id 用作 ASP.NET Core 路由约束。
                 /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.Routing.RouteOptions"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -66,7 +64,8 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// 把「实现了 <see cref="global::Len.StronglyTypedId.IStronglyTypedId{TSelf, TPrimitiveId}"/> 的强类型 Id」路由到 <see cref="StronglyTypedIdModelBinder{TSelf}"/>；其余类型交还 MVC 默认绑定链路。
+                /// 把实现了 <see cref="global::Len.StronglyTypedId.IStronglyTypedId{TSelf, TPrimitiveId}"/> 的类型
+                /// 交给 <see cref="StronglyTypedIdModelBinder{TSelf}"/>，其余类型交还 MVC 默认绑定链路。
                 /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
@@ -80,15 +79,11 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                     {
                         var modelType = context.Metadata.ModelType;
 
-                        // Nullable<T> 不实现任何接口（typeof(OrderId?).GetInterfaces() 长度为 0），直接扫 modelType
-                        // 会让 [FromQuery] OrderId? 落到框架的 TryParseModelBinder：它按 CurrentCulture 解析，
-                        // 与强类型 Id 的不变文化契约相悖——同一条路由的可空与非可空参数对同一份载荷会得出不同值
-                        // （de-DE 下 "1,5" 分别得到 1.5 与 15），非法值的错误消息也不同。
-                        // 故先拆出底层类型再判定。泛型实参也必须用底层类型：Nullable<OrderId> 不满足
-                        // where TId : IParsable<TId>，拿它 MakeGenericType 会抛 ArgumentException。
+                        // Nullable<T> 不实现任何接口，先拆壳才能扫到 IStronglyTypedId<,>，也才能满足 IParsable<TId> 约束；
+                        // 否则参数会落到框架的 TryParseModelBinder，按来源文化解析，与不变文化契约不符。
                         var idType = global::System.Nullable.GetUnderlyingType(modelType) ?? modelType;
 
-                        // 仅接管实现了 IStronglyTypedId<,> 的类型，避免误伤其它可解析类型。
+                        // 只接管实现了 IStronglyTypedId<,> 的类型，避免误伤其它可解析类型。
                         foreach (var interfaceType in idType.GetInterfaces())
                         {
                             if (interfaceType.IsGenericType
@@ -105,7 +100,8 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// 通用强类型 Id 模型绑定器：以静态 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/> 把字符串值还原为强类型 Id（每个强类型 Id 都经 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 间接实现 <see cref="global::System.IParsable{TSelf}"/>）。
+                /// 通用模型绑定器：用 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/>
+                /// 把字符串还原为强类型 Id。
                 /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
@@ -147,7 +143,8 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// 通用强类型 Id 路由约束：分段值能经 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/> 还原即视为通过，使 <c>{id:OrderId}</c> 这类模板命中强类型 Id 的解析规则。
+                /// 通用路由约束：分段值能经 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/>
+                /// 还原即通过，使 <c>{id:MyId}</c> 这类模板命中强类型 Id 的解析规则。
                 /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
@@ -168,10 +165,8 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                             return false;
                         }
 
-                        // 与框架内置约束（IntRouteConstraint 等）一致：先把路由值统一转成字符串再解析。
-                        // 链接生成（RouteDirection.UrlGeneration）阶段传进来的是 Id 实例本身，
-                        // 原来那句 `rawValue is not string` 会把它直接判死，带 {id:OrderId} 的路由
-                        // 因此永远生成不出 URL。
+                        // 与框架内置约束一致：先把路由值转成字符串再解析。链接生成阶段传进来的是
+                        // Id 实例本身，直接判 string 会让带 {id:MyId} 的路由生成不出 URL。
                         var text = global::System.Convert.ToString(rawValue, global::System.Globalization.CultureInfo.InvariantCulture);
 
                         return text is not null && TId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out _);

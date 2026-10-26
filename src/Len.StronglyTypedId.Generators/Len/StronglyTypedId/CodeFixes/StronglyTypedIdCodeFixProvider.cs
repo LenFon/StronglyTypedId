@@ -96,9 +96,9 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 取修复标题。默认沿用诊断标题；STIA0005 例外——它的修复是把参数表整体换成 <c>(Guid Value)</c>，
+    /// 取修复标题。默认沿用诊断标题；STIA0005 例外，它的修复是把参数表整体换成 <c>(Guid Value)</c>，
     /// 原有参数会被丢弃，标题必须把这一点说出来，否则用户会以为只是「补一个参数」。
-    /// STIA0025 例外——诊断标题说的是「不能是文件本地类型」，照搬会变成一句读不通的修复项。
+    /// STIA0025 例外，诊断标题说的是「不能是文件本地类型」，照搬会变成一句读不通的修复项。
     /// </summary>
     private static string GetFixTitle(string diagnosticId, DiagnosticDescriptor descriptor)
         => diagnosticId switch
@@ -605,10 +605,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 摘掉诊断所在的那条 <c>[StronglyTypedIdInstance]</c> 特性，使 STIA0020 / STIA0021 消失。
     /// </summary>
     /// <remarks>
-    /// 名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的命名实例，没有任何可机械改写的目标；
-    /// 唯一安全到家的一步是整条删掉，把「重新挑一个合法名字 / 取值」留给人决定。这跟删掉
-    /// <c>Validator</c> / <c>Normalizer</c> 实参是同一类取舍：机器只能做到「让诊断消失」，不能替你补全业务语义。
-    /// 只摘诊断落点的那一条特性：类型可能同时挂着多条命名实例，其余的必须原样保留。
+    /// 名字非法或取值无法解析的命名实例没有可机械改写的目标，只能整条删掉，把「重新挑一个合法名字 / 取值」
+    /// 留给人决定。只摘诊断落点的那一条特性，类型上其余的命名实例必须原样保留。
     /// </remarks>
     private static async Task<Document> RemoveInstanceAttributeAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {

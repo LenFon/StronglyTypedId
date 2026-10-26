@@ -53,7 +53,7 @@ public class DiscoveryBenchmarks
     public int Discover_OneCall() => Discover().Count();
 
     /// <summary>
-    /// 改造前：五个集成生成器各跑一遍，全量枚举做五遍——本例应约等于基准的五倍。
+    /// 改造前：五个集成生成器各跑一遍，全量枚举做五遍，本例应约等于基准的五倍。
     /// </summary>
     [Benchmark]
     public int Discover_FiveCalls() => Enumerable.Range(0, 5).Sum(_ => Discover().Count());
@@ -78,7 +78,7 @@ public class DiscoveryBenchmarks
 
     /// <summary>
     /// 复刻 <see cref="StronglyTypedIdDiscovery.Discover"/> 的管道，只把「取类型表」换成缓存版本。
-    /// 管道必须与产品代码保持一致，否则反事实不再等价——<see cref="Setup"/> 会校验两者结果相同。
+    /// 管道必须与产品代码保持一致，否则反事实不再等价，<see cref="Setup"/> 会校验两者结果相同。
     /// </summary>
     private IEnumerable<StronglyTypedIdInfo> DiscoverWithCache()
         => _modules

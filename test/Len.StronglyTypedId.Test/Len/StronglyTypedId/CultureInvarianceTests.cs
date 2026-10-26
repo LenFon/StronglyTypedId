@@ -85,7 +85,7 @@ public class CultureInvarianceTests
     }
 
     /// <summary>
-    /// 显式传入的 provider 必须被尊重 —— 这是 <c>IParsable</c> 的契约，也是使用者处理本地化输入的出口。
+    /// 显式传入的 provider 必须被尊重，这是 <c>IParsable</c> 的契约，也是使用者处理本地化输入的出口。
     /// </summary>
     [Fact]
     public void Parse_Should_HonourExplicitProvider()

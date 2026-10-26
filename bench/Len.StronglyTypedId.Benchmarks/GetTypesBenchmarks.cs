@@ -3,10 +3,10 @@
 namespace Len.StronglyTypedId.Benchmarks;
 
 /// <summary>
-/// 单个引用程序集的<b>全量递归类型枚举</b>成本——<see cref="ModuleInfo.GetTypes"/> 就是这段代码。
+/// 单个引用程序集的<b>全量递归类型枚举</b>成本，<see cref="ModuleInfo.GetTypes"/> 就是这段代码。
 /// </summary>
 /// <remarks>
-/// 被测程序集取引用集里类型最多的前几个 —— 它们是 Discover 的成本构成单元。
+/// 被测程序集取引用集里类型最多的前几个，它们是 Discover 的成本构成单元。
 /// </remarks>
 [MemoryDiagnoser]
 public class GetTypesBenchmarks

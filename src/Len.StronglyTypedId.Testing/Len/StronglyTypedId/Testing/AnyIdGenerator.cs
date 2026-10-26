@@ -4,7 +4,7 @@ using System.Reflection;
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Creates strongly typed ids with plausible primitive values, for use in tests.
+/// 用合理的基元值创建强类型 Id，供测试使用。
 /// </summary>
 public sealed class AnyIdGenerator
 {
@@ -30,7 +30,7 @@ public sealed class AnyIdGenerator
 #endif
 
     /// <summary>
-    /// Initializes a new instance with default options.
+    /// 使用默认选项初始化新实例。
     /// </summary>
     public AnyIdGenerator()
         : this(new AnyIdOptions())
@@ -38,7 +38,7 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
-    /// Initializes a new instance with the specified options.
+    /// 使用指定选项初始化新实例。
     /// </summary>
     public AnyIdGenerator(AnyIdOptions options)
     {
@@ -55,14 +55,14 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
-    /// Creates a strongly typed id of type <typeparamref name="TId"/>.
+    /// 创建 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
     public TId Id<TId>()
         where TId : IStronglyTypedId<TId>
         => (TId)Create(typeof(TId));
 
     /// <summary>
-    /// Creates <paramref name="count"/> strongly typed ids of type <typeparamref name="TId"/>.
+    /// 创建 <paramref name="count"/> 个 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
     public IReadOnlyList<TId> Ids<TId>(int count)
         where TId : IStronglyTypedId<TId>
@@ -80,7 +80,7 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
-    /// Creates a strongly typed id of the specified runtime type.
+    /// 创建指定运行时类型的强类型 Id。
     /// </summary>
     public object Create(Type idType)
     {
@@ -92,7 +92,7 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
-    /// Registers an explicit factory for <typeparamref name="TId"/>, overriding value generation.
+    /// 为 <typeparamref name="TId"/> 注册显式工厂，覆盖默认的取值生成。
     /// </summary>
     public void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
@@ -131,7 +131,7 @@ public sealed class AnyIdGenerator
             ?? typeof(ArgumentException));
 
     /// <summary>
-    /// Generates a value and wraps it, retrying while the id's validator rejects it.
+    /// 生成一个值并包装成 Id；若 Id 的验证器拒绝则重试。
     /// </summary>
     private object CreateCore<TId, TPrimitive>()
         where TId : IStronglyTypedId<TId, TPrimitive>
@@ -140,7 +140,7 @@ public sealed class AnyIdGenerator
         Exception? lastFailure = null;
 
         // 拒绝异常可能是 ArgumentException，也可能是 ExceptionType 指定的自定义类型。
-        // 只认这两种：其它异常（验证器自身的 NullReferenceException 之类）是真 bug，必须冒泡。
+        // 其它异常（如验证器自身的 NullReferenceException）是真 bug，必须冒泡。
         var rejectionType = ResolveRejectionType(typeof(TId));
 
         for (var attempt = 0; attempt < _options.MaxAttempts; attempt++)

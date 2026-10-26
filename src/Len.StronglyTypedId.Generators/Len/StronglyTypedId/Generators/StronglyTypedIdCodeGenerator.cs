@@ -18,11 +18,11 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     private static readonly string[] _tryCreateDocLines =
     [
         "<summary>",
-        "Attempts to create a new strongly typed id that wraps the specified primitive value.",
+        "尝试创建包装指定基元值的新强类型 Id。",
         "</summary>",
-        "<param name=\"value\">The primitive value to wrap.</param>",
-        "<param name=\"result\">The created id when this method returns <see langword=\"true\"/>.</param>",
-        "<returns><see langword=\"true\"/> when <paramref name=\"value\"/> is acceptable; otherwise, <see langword=\"false\"/>.</returns>",
+        "<param name=\"value\">要包装的基元值。</param>",
+        "<param name=\"result\">方法返回 <see langword=\"true\"/> 时创建出的 Id。</param>",
+        "<returns>当 <paramref name=\"value\"/> 可接受时返回 <see langword=\"true\"/>，否则返回 <see langword=\"false\"/>。</returns>",
     ];
 
     internal static readonly ICoreCodeGenerator Instance = new StronglyTypedIdCodeGenerator();
@@ -263,7 +263,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     {
         builder.Append('\n').Append('\n');
         builder.Append("    /// <summary>").Append('\n');
-        builder.Append("    /// Converts the strongly typed id to and from its underlying primitive string representation.").Append('\n');
+        builder.Append("    /// 在强类型 Id 与其底层基元的字符串表示之间转换。").Append('\n');
         builder.Append("    /// </summary>").Append('\n');
         builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
         builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append('\n');
@@ -542,10 +542,9 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 取两个基元值之间的比较表达式。
     /// </summary>
     /// <remarks>
-    /// <c>string</c> 基元必须走序数比较。<c>string.CompareTo(string)</c> 是区域性敏感的（内部用当前线程的区域设置），
-    /// 会把 <c>"a\u00ADb"</c> 与 <c>"ab"</c> 判为相等、让 <c>"I"</c> 与 <c>"i"</c> 的顺序随区域翻转；而 record 合成的
-    /// <c>Equals</c> 与全部序列化入口都是序数的。两者不一致时，<c>SortedSet</c> / <c>SortedDictionary</c> 会把两个
-    /// 不相等的 Id 当成同一个键，静默丢掉元素。
+    /// <c>string</c> 基元必须走序数比较：<c>string.CompareTo</c> 是区域性敏感的，会把 <c>"a\u00ADb"</c> 与 <c>"ab"</c>
+    /// 判为相等、让 <c>"I"</c> 与 <c>"i"</c> 的顺序随区域翻转，而 record 合成的 <c>Equals</c> 与序列化入口都是序数的。
+    /// 两者不一致时 <c>SortedSet</c> / <c>SortedDictionary</c> 会把不相等的 Id 当成同一个键。
     /// </remarks>
     private static string GetComparisonExpression(StronglyTypedIdInfo idInfo, string left, string right)
         => idInfo.IsStringPrimitive
@@ -780,8 +779,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// 追加 <c>Deconstruct</c>：让用户以 <c>id.Deconstruct(out var value);</c> 解构出基元值。
     /// </summary>
     /// <remarks>
-    /// 单元素的解构声明 <c>var (value) = id;</c> 不是合法 C#（CS8129：解构声明至少需要两个元素），
-    /// 因此只能直接调用 <c>Deconstruct</c>。
+    /// 单元素解构声明 <c>var (value) = id;</c> 不合法（CS1003），只能直接调用 <c>Deconstruct</c>。
     /// </remarks>
     private static void AppendDeconstructMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {

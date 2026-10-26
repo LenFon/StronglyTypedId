@@ -112,7 +112,7 @@ public class SupportedPrimitiveTypesTests
     /// <summary>
     /// 生成代码按具体类型名调用 <c>TryParse(ReadOnlySpan&lt;byte&gt;, IFormatProvider, out T)</c>，故只有暴露了该公开重载的基元才生成
     /// UTF-8 解析。数值型 / <c>decimal</c> 都有；时间型没有 UTF-8 语义（连 <c>IUtf8SpanParsable</c> 都不实现），<c>BigInteger</c>
-    /// 则把它实现为显式接口实现——两者都拿不到公开重载，故都不生成。
+    /// 则把它实现为显式接口实现，两者都拿不到公开重载，故都不生成。
     /// </summary>
     [Theory]
     [InlineData("System.Int32", true)]
@@ -133,7 +133,7 @@ public class SupportedPrimitiveTypesTests
 
     /// <summary>
     /// <c>Guid</c> 的公开 UTF-8 <c>TryParse</c> 自 .NET 10 起才有：net8.0 消费者下判定为假，生成产物因此不含 UTF-8
-    /// 解析——同一份源码在两个目标框架下的产物本就允许不同。
+    /// 解析，同一份源码在两个目标框架下的产物本就允许不同。
     /// </summary>
     [Fact]
     public void HasPublicStaticTryParse_Should_DependOnTargetFramework_ForGuid()

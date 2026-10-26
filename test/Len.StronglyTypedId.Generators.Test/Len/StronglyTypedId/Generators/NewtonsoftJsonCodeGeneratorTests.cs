@@ -23,8 +23,8 @@ public class NewtonsoftJsonCodeGeneratorTests
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
         // 显式 seed 若干程序集，确保它们出现在合成编译引用里（即使尚未被 AppDomain 延迟加载）：
-        //   · Newtonsoft.Json  —— 门控触发来源 + 产物里 JsonConverter / JsonReader / JsonWriter 的来源；
-        //   · System.Text.Json —— 核心 SystemTextJson 生成器随引用自动启用，需纳入。
+        //   · Newtonsoft.Json，门控触发来源 + 产物里 JsonConverter / JsonReader / JsonWriter 的来源；
+        //   · System.Text.Json，核心 SystemTextJson 生成器随引用自动启用，需纳入。
         var seedAssemblies = new[]
         {
             typeof(StronglyTypedIdAttribute).Assembly,
@@ -232,7 +232,7 @@ public class NewtonsoftJsonCodeGeneratorTests
     }
 
     /// <summary>
-    /// 默认（基元形态）下产物不含任何对象形态痕迹——引入本开关不改变既有产物。
+    /// 默认（基元形态）下产物不含任何对象形态痕迹，引入本开关不改变既有产物。
     /// </summary>
     [Fact]
     public void JsonShape_Primitive_Should_NotGenerateObjectShape_ForNewtonsoftJson()
@@ -248,7 +248,7 @@ public class NewtonsoftJsonCodeGeneratorTests
 
     /// <summary>
     /// 对象形态 + 前缀：<c>value</c> 属性里存的是<b>规范文本形</b>（含前缀），读回必须经 <c>TryParse</c>，
-    /// 不能走 <c>Create(基元)</c> —— 后者拿到的会是带前缀的字符串，与基元类型对不上。
+    /// 不能走 <c>Create(基元)</c>，后者拿到的会是带前缀的字符串，与基元类型对不上。
     /// </summary>
     [Fact]
     public void JsonShape_Object_WithPrefix_Should_ReadValueAsCanonicalText()

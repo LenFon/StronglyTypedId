@@ -22,7 +22,7 @@ internal static class SupportedPrimitiveTypes
         new PrimitiveTypeEntry("Guid", nameof(Guid), PrimitiveNamespace, false),
         new PrimitiveTypeEntry("string", nameof(String), PrimitiveNamespace, true),
         // 字符基元：CLR 里是 16 位无符号整数，接口面与整型同构，但 IParsable / IFormattable 的成员
-        // 全是显式接口实现 —— 按类型名直呼会 CS1501，故生成器为它单列分支（见 StronglyTypedIdInfo.IsCharPrimitive）。
+        // 全是显式接口实现，按类型名直呼会 CS1501，故生成器为它单列分支（见 StronglyTypedIdInfo.IsCharPrimitive）。
         new PrimitiveTypeEntry("char", nameof(Char), PrimitiveNamespace, false),
         new PrimitiveTypeEntry("byte", nameof(Byte), PrimitiveNamespace, false),
         new PrimitiveTypeEntry("sbyte", nameof(SByte), PrimitiveNamespace, false),

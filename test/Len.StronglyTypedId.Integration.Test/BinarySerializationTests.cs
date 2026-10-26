@@ -96,7 +96,7 @@ public class BinarySerializationTests
 
             if (IntegrationSampleValues.IsBinaryTextPrimitive(primitiveType))
             {
-                // 这几种基元没有原生表示，退回规范文本 —— 前缀在这条路上是「文本形」的一部分，理应带上。
+                // 这几种基元没有原生表示，退回规范文本，前缀在这条路上是「文本形」的一部分，理应带上。
                 MessagePackSerializer.Deserialize<string>(bytes, _messagePackOptions, TestContext.Current.CancellationToken)
                     .Should().Be(id.ToString(), $"{idType.Name}：退回文本形时必须写规范文本");
 
@@ -188,10 +188,9 @@ public class BinarySerializationTests
     /// 验证器拒绝时，MessagePack 反序列化必须抛 <see cref="MessagePackSerializationException"/>。
     /// </summary>
     /// <remarks>
-    /// 只断言外层类型不够：<c>MessagePackSerializer</c> 本来就会把格式化器抛出的任意异常包一层，
-    /// 所以即使格式化器直接调 <c>Create</c>，外层也仍是这个类型。真正的差别在内层 ——
-    /// 格式化器自己判定失败时内层是它抛的 <see cref="MessagePackSerializationException"/>，
-    /// 而直接调 <c>Create</c> 时内层是 <see cref="ArgumentException"/>。
+    /// 只断言外层类型不够：<c>MessagePackSerializer</c> 本就会把格式化器抛出的任意异常包一层，
+    /// 即使格式化器直接调 <c>Create</c>，外层也仍是这个类型。差别在内层：格式化器自己判定失败时是
+    /// <see cref="MessagePackSerializationException"/>，直接调 <c>Create</c> 时是 <see cref="ArgumentException"/>。
     /// </remarks>
     [Fact]
     public void MessagePack_Should_ThrowSerializationException_WhenValidatorRejects()
@@ -255,7 +254,7 @@ public class BinarySerializationTests
     /// <summary>
     /// 枚举基元的线格式不得因实现方式变化而改变：MessagePack 的枚举格式化器在 AOT 下换成零反射的
     /// <c>GenericEnumFormatter</c>（原动态 resolver 走 IL Emit，AOT 下不可用），两者写出的必须仍是
-    /// 同一个底层数值载荷 —— 否则已落盘的数据读不回来。
+    /// 同一个底层数值载荷，否则已落盘的数据读不回来。
     /// </summary>
     [Fact]
     public void MessagePack_Should_KeepEnumPayloadIdenticalToBareEnum()
@@ -331,7 +330,7 @@ public class BinarySerializationTests
     /// 把单个值写成一个只含 <c>v</c> 字段的 BSON 文档。
     /// </summary>
     /// <remarks>
-    /// BSON 的根必须是文档，裸标量写不进 <see cref="BsonDocumentWriter"/>，故统一包一层 —— 这也正是真实用法。
+    /// BSON 的根必须是文档，裸标量写不进 <see cref="BsonDocumentWriter"/>，故统一包一层，这也正是真实用法。
     /// </remarks>
     private static BsonDocument WriteDocument(Type nominalType, object value)
     {

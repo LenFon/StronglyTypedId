@@ -71,7 +71,7 @@ public class StronglyTypedIdCapabilityTests
 
         withSoftHyphen.Equals(plain).Should().BeFalse();
 
-        // 「比较为 0」与「相等」必须同时成立或不成立 —— 这就是有序集合判重的依据。
+        // 「比较为 0」与「相等」必须同时成立或不成立，这就是有序集合判重的依据。
         (withSoftHyphen.CompareTo(plain) == 0).Should().Be(withSoftHyphen.Equals(plain));
 
         var set = new SortedSet<StringId> { withSoftHyphen, plain };
@@ -454,7 +454,7 @@ public class StronglyTypedIdCapabilityTests
     public void NestedId_Should_DeclareGeneratedMembers_OnNestedType()
     {
         // 关键判据：生成代码必须把 partial 段嵌回容器里。若它落在命名空间层级，会另起一个同名顶层类型，
-        // 整份代码照样编译通过 —— 只有「从容器里取这个类型」并要求它具备生成成员，才能发现区别。
+        // 整份代码照样编译通过，只有「从容器里取这个类型」并要求它具备生成成员，才能发现区别。
         typeof(OrderAggregate).GetNestedType(nameof(OrderAggregate.OrderId)).Should().Be<OrderAggregate.OrderId>();
         typeof(ShipmentBatch).GetNestedType(nameof(ShipmentBatch.BatchId)).Should().Be<ShipmentBatch.BatchId>();
         typeof(Inventory).GetNestedType(nameof(Inventory.SkuId)).Should().Be<Inventory.SkuId>();
@@ -863,7 +863,7 @@ public class StronglyTypedIdCapabilityTests
         PrefixedValidatedGuidId.TryParse($"ord_{_lowGuid}", CultureInfo.InvariantCulture, out var parsed).Should().BeTrue();
         parsed.Value.Should().Be(_lowGuid);
 
-        // 空 Guid 被验证器拒绝 —— 无论是否带前缀。
+        // 空 Guid 被验证器拒绝，无论是否带前缀。
         PrefixedValidatedGuidId.TryParse($"ord_{Guid.Empty}", CultureInfo.InvariantCulture, out _).Should().BeFalse();
     }
 

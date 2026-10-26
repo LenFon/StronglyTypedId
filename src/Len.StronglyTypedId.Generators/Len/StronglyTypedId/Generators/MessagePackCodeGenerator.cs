@@ -6,8 +6,9 @@ namespace Len.StronglyTypedId.Generators;
 /// 为强类型 Id 生成 MessagePack 的 <c>IMessagePackFormatter&lt;TId&gt;</c> 与选项装配入口。
 /// </summary>
 /// <remarks>
-/// 格式化器放在 <c>StronglyTypedIds</c> 里而非嵌进 Id 名下，代价是少了 <c>[MessagePackFormatter]</c> 的零配置捷径，换来引用程序集里的 Id 也能拿到格式化器。
-/// 载荷存放基元值本身；例外是 <see cref="StronglyTypedIdInfo.IsBinaryTextPrimitive"/>，那些基元没有格式化器，只能退回规范文本。
+/// 格式化器放在 <c>StronglyTypedIds</c> 里而非嵌进 Id 名下，代价是少了 <c>[MessagePackFormatter]</c> 的零配置捷径，
+/// 换来引用程序集里的 Id 也能拿到格式化器。载荷存基元值本身；例外是 <see cref="StronglyTypedIdInfo.IsBinaryTextPrimitive"/>，
+/// 那些基元没有格式化器，只能退回规范文本。
 /// </remarks>
 internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 {
@@ -76,7 +77,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
-                    /// Serializes <see cref="{{idInfo.FullName}}"/> with MessagePack.
+                    /// 用 MessagePack 序列化 <see cref="{{idInfo.FullName}}"/>。
                     /// </summary>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MessagePackCodeGenerator), version)}}
@@ -95,7 +96,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
         }
 
         // 枚举基元的格式化器也必须由本入口显式提供：MessagePack 在 AOT（AvoidDynamicCode）下的
-        // StandardResolver 链不含任何枚举 resolver —— DynamicEnumResolver 走 IL Emit 被排除，又没有
+        // StandardResolver 链不含任何枚举 resolver，DynamicEnumResolver 走 IL Emit 被排除，又没有
         // 零反射的枚举 resolver，GetFormatter<TEnum> 返回 null 会让 Id 的值通道抛 formatter not found。
         // GenericEnumFormatter<T> 用 Unsafe.As 转换底层类型，零反射、AOT 安全，且载荷（底层类型的数值）
         // 与 DynamicEnumResolver 完全一致，非 AOT 下替换它不改变线格式。
@@ -115,23 +116,16 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
-                    /// Returns MessagePack serializer options that resolve the generated formatters for strongly typed ids.
+                    /// 返回能解析强类型 Id 生成格式化器的 MessagePack 序列化选项。
                     /// </summary>
-                    /// <param name="options">The options to extend.</param>
+                    /// <param name="options">要扩展的选项。</param>
                     /// <returns>
-                    /// A new options instance whose resolver consults the generated formatters first and then
-                    /// <paramref name="options"/>'s own resolver.
+                    /// 新的选项实例，其解析器先查生成的格式化器，再查 <paramref name="options"/> 自带的解析器。
                     /// </returns>
                     /// <remarks>
-                    /// <see cref="global::MessagePack.MessagePackSerializerOptions"/> is immutable, so the returned instance
-                    /// must be used instead of the argument.
-                    /// <para>
-                    /// Enum-backed ids also get an explicit enum formatter here: MessagePack's AOT-safe resolver chain
-                    /// contains no enum resolver at all (the IL-emitting <c>DynamicEnumResolver</c> is excluded when
-                    /// dynamic code is unavailable), so without this entry an enum-backed id cannot be serialized at all
-                    /// under Native AOT. The generated <c>GenericEnumFormatter&lt;T&gt;</c> instance writes the same
-                    /// underlying numeric payload as the dynamic resolver, so the wire format is unchanged.
-                    /// </para>
+                    /// <see cref="global::MessagePack.MessagePackSerializerOptions"/> 不可变，必须使用返回值。
+                    /// 枚举基元的 Id 会额外注册枚举格式化器：AOT 安全解析器链不含枚举解析器，缺这条注册时
+                    /// 枚举基元的 Id 在 Native AOT 下无法序列化。
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MessagePackCodeGenerator), version)}}
@@ -234,12 +228,12 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
         else
         {
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
-            // 它会穿透 MessagePackSerializer —— 而格式化器的契约要求失败一律抛 MessagePackSerializationException。
+            // 它会穿透 MessagePackSerializer，而格式化器的契约要求失败一律抛 MessagePackSerializationException。
             lines.Add(_nestedIndent + $"var value = {FormatterResolverExtensions}.GetFormatterWithVerify<{idInfo.PrimitiveIdTypeName}>(options.Resolver).Deserialize(ref reader, options);");
             lines.Add(string.Empty);
 
             // 枚举基元在此追加已定义性校验：TryCreate 只跑用户配的 Validator，而 MessagePack 对未定义数值
-            // （999）照常读出 —— 不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
+            // （999）照常读出，不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
             // STJ、Newtonsoft 路径都已收紧，这里对齐）。
             var enumValidity = idInfo.GetEnumValidityCondition("value");
             lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id){(enumValidity is null ? string.Empty : $" && {enumValidity}")})");

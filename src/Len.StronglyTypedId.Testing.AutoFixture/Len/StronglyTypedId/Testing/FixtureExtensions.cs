@@ -3,12 +3,12 @@
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
-/// Extension methods that wire strongly typed id generation into AutoFixture.
+/// 把强类型 Id 生成接入 AutoFixture 的扩展方法。
 /// </summary>
 public static class FixtureExtensions
 {
     /// <summary>
-    /// Adds strongly typed id generation to the fixture.
+    /// 为 fixture 添加强类型 Id 生成能力。
     /// </summary>
     public static IFixture WithStronglyTypedIds(this IFixture fixture, AnyIdGenerator? generator = null)
     {

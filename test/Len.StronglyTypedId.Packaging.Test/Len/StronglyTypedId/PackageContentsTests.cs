@@ -24,7 +24,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     #region 生成器包：使用者能拿到生成器
 
     /// <summary>
-    /// 生成器程序集必须落在 <c>analyzers/dotnet/cs/</c> 下——这是 Roslyn 加载分析器 / 源生成器的约定目录，放错目录（比如落到
+    /// 生成器程序集必须落在 <c>analyzers/dotnet/cs/</c> 下，这是 Roslyn 加载分析器 / 源生成器的约定目录，放错目录（比如落到
     /// <c>lib/</c>）使用者就完全拿不到生成器。
     /// </summary>
     [Fact]
@@ -37,7 +37,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     }
 
     /// <summary>
-    /// 生成器包只该有分析器产物：<c>IncludeBuildOutput=false</c> 意味着它不该有任何 <c>lib/</c> 条目，也不该有调试符号——分析器包没有可被引用的运行期程序集。
+    /// 生成器包只该有分析器产物：<c>IncludeBuildOutput=false</c> 意味着它不该有任何 <c>lib/</c> 条目，也不该有调试符号，分析器包没有可被引用的运行期程序集。
     /// </summary>
     [Fact]
     public void GeneratorsPackage_Should_Not_ContainLibraryOrSymbols()
@@ -100,18 +100,10 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     /// 「一键静音」开关必须随包发布。
     /// </summary>
     /// <remarks>
-    /// 开关走 MSBuild → analyzer config 这条通道：用户在 csproj 里设
-    /// <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/StronglyTypedIdEnableAnalyzers&gt;</c>，
-    /// SDK 把它写进编译用的 analyzer config 的全局段（<c>build_property.*</c>）。
-    /// <para>
-    /// 但 SDK <b>不会</b>注入任意 MSBuild 属性 —— 要让那个属性出现在 <c>build_property.*</c> 里，
-    /// 必须由 <c>&lt;CompilerVisibleProperty Include="…" /&gt;</c> 显式放行。少了随包发布的这份 props，
-    /// 用户的属性就静默失效：开关看起来存在，实际不生效，且没有任何报错。
-    /// </para>
-    /// <para>
-    /// 放在 <c>buildTransitive</c> 而不是 <c>build</c>：前者会沿依赖链继续向下流到最终消费者
-    /// （本包是主包的传递依赖），后者只给直接引用本包的项目。
-    /// </para>
+    /// 开关走 MSBuild → analyzer config 通道：用户设 <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/…&gt;</c>，
+    /// SDK 把它写进 <c>build_property.*</c>。但 SDK 不会注入任意 MSBuild 属性，必须由
+    /// <c>&lt;CompilerVisibleProperty /&gt;</c> 显式放行，少了这份 props 用户的属性会静默失效。
+    /// 放在 <c>buildTransitive</c> 而非 <c>build</c>，才能沿依赖链流到最终消费者。
     /// </remarks>
     [Fact]
     public void GeneratorsPackage_Should_ShipAnalyzerMutingProps()
@@ -122,8 +114,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
             "静音开关的属性放行靠 buildTransitive 里的 props；少了它，用户设的属性不会进 build_property.*");
 
         // 文件名必须与包 ID 同名：NuGet 只自动导入 build / buildTransitive 下与包 ID 同名的
-        // .props / .targets。名字对不上时包照样「带着」这个文件，NuGet 却不会导入它 ——
-        // 开关于是静默失效：设了不报错，也不生效。
+        // .props / .targets。名字对不上时包照样「带着」这个文件，NuGet 却不会导入它，开关于是静默失效：设了不报错，也不生效。
         entries
             .Where(entry => entry.StartsWith("buildTransitive/", StringComparison.Ordinal) && entry.EndsWith(".props", StringComparison.Ordinal))
             .Should().AllSatisfy(entry => entry.Should().Be($"buildTransitive/{GeneratorsPackageId}.props",
@@ -131,7 +122,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     }
 
     /// <summary>
-    /// props 的内容必须真的放行了那个属性名 —— 名字对不上，SDK 会照收不误，而分析器读不到。
+    /// props 的内容必须真的放行了那个属性名，名字对不上，SDK 会照收不误，而分析器读不到。
     /// </summary>
     [Fact]
     public void GeneratorsPackage_Should_ExposeAnalyzerMutingProperty()
@@ -145,7 +136,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
 
     /// <summary>
     /// 生成器程序集的引用必须全部来自 Roslyn / BCL。分析器目录里只有这一个 dll，任何第三方运行期依赖
-    /// 都会在使用者**编译期**变成 <c>FileNotFoundException</c> —— <c>IndexRange</c> 之所以安全，是因为它是
+    /// 都会在使用者编译期变成 <c>FileNotFoundException</c>，<c>IndexRange</c> 之所以安全，是因为它是
     /// 源码包（只提供 polyfill 源码，不产生程序集引用）。
     /// </summary>
     [Fact]
@@ -211,7 +202,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     }
 
     /// <summary>
-    /// 主包必须依赖生成器包——这是「使用者装主包就能拿到生成器」的唯一途径。
+    /// 主包必须依赖生成器包，这是「使用者装主包就能拿到生成器」的唯一途径。
     /// </summary>
     [Fact]
     public void MainPackage_Should_DependOnGeneratorsPackage_ForEveryTargetFramework()
@@ -283,7 +274,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
 
     /// <summary>
     /// 两个包都要把图标打进包并写进 nuspec。<c>PackageIcon</c> 声明的是「包内路径」，与真正被打包的文件
-    /// 是两条独立的配置 —— 只改一处时 pack 会报 NU5046，但若把文件放错目录、nuspec 仍指向它，
+    /// 是两条独立的配置，只改一处时 pack 会报 NU5046，但若把文件放错目录、nuspec 仍指向它，
     /// 就只有使用者看到默认灰块。这里同时校验条目、nuspec 指针与 PNG 魔数。
     /// </summary>
     [Theory]
@@ -338,7 +329,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     /// Bogus 适配包必须自带 <c>Bogus</c> 与 <c>Len.StronglyTypedId.Testing</c> 两个依赖。
     /// </summary>
     /// <remarks>
-    /// 方向反了就是「核心测试辅助包被第三方库绑死」—— 只想用 <c>Any.Id&lt;T&gt;()</c> 的人也得装上 Bogus。
+    /// 方向反了就是「核心测试辅助包被第三方库绑死」，只想用 <c>Any.Id&lt;T&gt;()</c> 的人也得装上 Bogus。
     /// </remarks>
     [Fact]
     public void TestingBogusPackage_Should_DependOnBogusAndTesting()
@@ -350,7 +341,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     }
 
     /// <summary>
-    /// 核心测试辅助包**不能**依赖 Bogus。
+    /// 核心测试辅助包不能依赖 Bogus。
     /// </summary>
     /// <remarks>
     /// 这是「适配包独立、核心包干净」的分界：依赖只能从适配包指向核心包，不能反过来。
@@ -371,7 +362,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
         var nuspec = PackedPackagesFixture.ReadNuspec(packagePath);
 
         // nuspec 带默认 XML 命名空间（http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd），
-        // 按带命名空间的名字匹配会一个都找不到 —— 只能按 LocalName 认。
+        // 按带命名空间的名字匹配会一个都找不到，只能按 LocalName 认。
         return
         [
             .. nuspec.Descendants()

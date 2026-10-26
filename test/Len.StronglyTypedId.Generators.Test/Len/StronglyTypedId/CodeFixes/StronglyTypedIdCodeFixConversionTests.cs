@@ -162,7 +162,7 @@ public class StronglyTypedIdCodeFixConversionTests
 
     /// <summary>
     /// STIA0008：文件里没有 <c>using System;</c> 时，修复产物不能是裸 <c>Guid</c>，否则会留下新的 CS0246
-    /// ——把一条诊断换成另一条诊断，等于没修。Simplifier 在没有 using 时只削掉 <c>global::</c>，
+    ///，把一条诊断换成另一条诊断，等于没修。Simplifier 在没有 using 时只削掉 <c>global::</c>，
     /// 停在 <c>System.Guid</c>；这已足够解析，不必强求保留 <c>global::</c>。
     /// </summary>
     [Fact]
@@ -287,7 +287,7 @@ public class StronglyTypedIdCodeFixConversionTests
     }
 
     /// <summary>
-    /// STIA0000：<c>ref struct</c> 不提供修复 —— 它不能装箱、不能实现接口，转成任何一种 record 都不可能成为
+    /// STIA0000：<c>ref struct</c> 不提供修复，它不能装箱、不能实现接口，转成任何一种 record 都不可能成为
     /// 合法的强类型 Id，机械转换只会把「一条诊断」换成「一片编译错误」。
     /// </summary>
     [Fact]

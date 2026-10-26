@@ -4,22 +4,12 @@
 /// 为强类型 Id 生成 Newtonsoft.Json 的转换器与全局注册入口。
 /// </summary>
 /// <remarks>
+/// 承担两件事：为「声明程序集没有引用 Newtonsoft.Json」的外部 Id 生成顶层转换器，以及生成
+/// <c>AddStronglyTypedId</c> 注册入口。
 /// <para>
-/// 本生成器承担两件事，与 MessagePack 生成器的分工一致：
-/// </para>
-/// <list type="number">
-/// <item>为「声明程序集没有引用 Newtonsoft.Json」的外部 Id 生成**顶层**转换器；</item>
-/// <item>生成 <c>AddStronglyTypedId</c> 注册入口，把每个 Id 该用的转换器注册进去。</item>
-/// </list>
-/// <para>
-/// 为什么需要顶层转换器（后果详见 <see cref="StronglyTypedIdInfo.RequiresExternalNewtonsoftJsonConverter"/>）：
-/// Newtonsoft 的转换器嵌在 Id 内部，只能生成在声明 Id 的那个程序集里 —— 消费方补一份会撞 CS0426
-/// （类型已存在）。于是声明程序集没引用 Newtonsoft.Json 时，那个 Id 在任何程序集里都没有 Newtonsoft 转换器。
-/// </para>
-/// <para>
-/// 声明程序集里的内嵌转换器与 <c>[JsonConverter]</c> 特性一律保留：它们给「声明程序集自己就引用了
-/// Newtonsoft」的情形提供零配置；且 Newtonsoft 的特性优先级高于
-/// <c>JsonSerializerSettings.Converters</c>，两边同时存在也不会打架。
+/// 需要顶层转换器的原因见 <see cref="StronglyTypedIdInfo.RequiresExternalNewtonsoftJsonConverter"/>：
+/// 内嵌转换器只能生成在声明 Id 的程序集里，消费方补一份会撞 CS0426。
+/// 声明程序集里的内嵌转换器与 <c>[JsonConverter]</c> 特性一律保留，供自身已引用 Newtonsoft 的情形零配置使用。
 /// </para>
 /// </remarks>
 internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerator
@@ -73,16 +63,15 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
-                /// Employ strongly typed IDs in Newtonsoft.Json.
+                /// 在 Newtonsoft.Json 中启用强类型 Id。
                 /// </summary>
-                /// <remarks>Idempotent: a converter that is already registered is left alone, so calling this
-                /// from several modules — or twice from the same one — does not grow the converter list.</remarks>
+                /// <remarks>幂等：已注册的转换器保持原样，因此从多个模块调用，或从同一模块调用两次，都不会让转换器列表增长。</remarks>
                 /// <param name="settings"><see cref="global::Newtonsoft.Json.JsonSerializerSettings"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonRegistrationCodeGenerator), version)}}
                 public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)
                 {
-                    // 先收集已注册的转换器类型再逐个比对：重复调用时列表不增长。
+                    // 幂等：先收集已注册的转换器类型，重复调用时列表不增长。
                     var registered = new global::System.Collections.Generic.HashSet<global::System.Type>();
 
                     foreach (var converter in settings.Converters)
@@ -118,13 +107,11 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
-                    /// Serializes <see cref="{{idInfo.FullName}}"/> with Newtonsoft.Json.
+                    /// 用 Newtonsoft.Json 序列化 <see cref="{{idInfo.FullName}}"/>。
                     /// </summary>
                     /// <remarks>
-                    /// Generated in the consuming assembly because the id's own assembly did not reference
-                    /// Newtonsoft.Json, so it carries no converter of its own. Without this one the id would
-                    /// be written as an object (<c>{"Value":"…"}</c>) here while System.Text.Json writes it
-                    /// as a plain string.
+                    /// 生成在消费方程序集中，因为该 Id 自身所在程序集未引用 Newtonsoft.Json，自身不带转换器。
+                    /// 没有这一个，该 Id 在此会被写成对象（<c>{"Value":"…"}</c>），而 System.Text.Json 却把它写成普通字符串。
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonRegistrationCodeGenerator), version)}}
@@ -159,8 +146,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
     /// 取在多个 Id 之间重名的短名集合。
     /// </summary>
     /// <remarks>
-    /// 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
-    /// 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
+    /// 分组键用 Name 而非 EscapedName：这里只比是否重名，名字不落进生成代码，两者又是 1:1 映射。
     /// </remarks>
     private static ImmutableHashSet<string> GetAmbiguousNames(List<StronglyTypedIdInfo> stronglyTypedIds)
         => stronglyTypedIds
