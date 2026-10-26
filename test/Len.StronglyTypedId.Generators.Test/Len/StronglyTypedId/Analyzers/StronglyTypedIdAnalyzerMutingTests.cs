@@ -75,29 +75,23 @@ public class StronglyTypedIdAnalyzerMutingTests
     }
 
     [Fact]
-    public async Task AnalyzingCode_Should_ReturnNoDiagnostics_WhenMutingPropertyIsFalse()
-    {
+    public Task AnalyzingCode_Should_ReturnNoDiagnostics_WhenMutingPropertyIsFalse()
         // 属性为「否」→ 一条都不报。
-        await Verify.VerifyAnalyzerWithRawEditorConfigAsync(SourceWithViolations, EditorConfig("false"));
-    }
+        => Verify.VerifyAnalyzerWithRawEditorConfigAsync(SourceWithViolations, EditorConfig("false"));
 
     [Theory]
     [InlineData("FALSE")]
     [InlineData("False")]
     [InlineData("false")]
-    public async Task AnalyzingCode_Should_ReturnNoDiagnostics_WhenMutingPropertyIsFalse_RegardlessOfCasing(string value)
-    {
-        await Verify.VerifyAnalyzerWithRawEditorConfigAsync(SourceWithViolations, EditorConfig(value));
-    }
+    public Task AnalyzingCode_Should_ReturnNoDiagnostics_WhenMutingPropertyIsFalse_RegardlessOfCasing(string value)
+        => Verify.VerifyAnalyzerWithRawEditorConfigAsync(SourceWithViolations, EditorConfig(value));
 
     [Theory]
     [InlineData("0")]
     [InlineData("no")]
     [InlineData("off")]
-    public async Task AnalyzingCode_Should_ReturnNoDiagnostics_WhenMutingPropertyIsFalsy(string value)
-    {
-        await Verify.VerifyAnalyzerWithRawEditorConfigAsync(SourceWithViolations, EditorConfig(value));
-    }
+    public Task AnalyzingCode_Should_ReturnNoDiagnostics_WhenMutingPropertyIsFalsy(string value)
+        => Verify.VerifyAnalyzerWithRawEditorConfigAsync(SourceWithViolations, EditorConfig(value));
 
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostics_WhenMutingPropertyHasUnrelatedValue()

@@ -750,7 +750,7 @@ public class StronglyTypedIdGeneratorTests
         outputCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
 
         var analyzerDiagnostics = await outputCompilation
-            .WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new StronglyTypedIdAnalyzer()))
+            .WithAnalyzers([new StronglyTypedIdAnalyzer()])
             .GetAnalyzerDiagnosticsAsync();
 
         // file 局部 Id 报 STIA0025；同单元里 BrokenId 的参数可空，这条在缺陷存在时会随 CS0535 一起消失。

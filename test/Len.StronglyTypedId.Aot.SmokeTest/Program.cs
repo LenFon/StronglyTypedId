@@ -33,12 +33,7 @@ public enum AotStatus
 public partial record struct AotStatusId(AotStatus Value);
 
 // ExceptionType：Create 拒绝时抛「指定类型」而非 ArgumentException，生成器走编译期 new（无反射），需在 AOT 下实证。
-public sealed class AotDomainException : Exception
-{
-    public AotDomainException(string message) : base(message)
-    {
-    }
-}
+public sealed class AotDomainException(string message) : Exception(message);
 
 [StronglyTypedId(Validator = nameof(IsPositive), ExceptionType = typeof(AotDomainException))]
 public partial record struct AotAmountId(int Value)

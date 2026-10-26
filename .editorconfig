@@ -172,13 +172,11 @@ dotnet_diagnostic.STIA0011.severity = warning
 dotnet_diagnostic.IDE1006.severity = warning
 
 # IDE0022（方法体）：`csharp_style_expression_bodied_methods` 只给了 suggestion，
-# 单行方法写成块体在 VS 里仅是灰色建议。提升为 warning，让「单行方法该用 `=>`」这条
-# 仓库既有的书写习惯在错误列表里可见、可评审。
+# 单行方法写成块体在 VS 里仅是灰色建议。提升为 error，让「单行方法该用 `=>`」这条
+# 仓库既有的书写习惯成为硬性约束。
 # 与上面的风格声明是同一条规则的两种表达：`dotnet_diagnostic.*` 只管严重级别，
 # 不改变偏好方向（仍是 when_on_single_line）。
-# 提升后暴露 23 处块体单行方法（src 2 / samples 3 / test 18），已全部改写为表达式体，
-# 故不产生告警。
-dotnet_diagnostic.IDE0022.severity = warning
+dotnet_diagnostic.IDE0022.severity = error
 
 # 下面这批 IDE 规则同样默认是 suggestion（VS 里灰色建议、不进错误列表）。
 # 它们各自对应的风格选项在上面的「C# 代码风格」段里已声明为 suggestion，
@@ -214,7 +212,11 @@ dotnet_diagnostic.IDE0034.severity = warning
 dotnet_diagnostic.IDE0032.severity = warning
 
 # IDE0290（用主构造函数）：对应 csharp_style_prefer_primary_constructors。
-dotnet_diagnostic.IDE0290.severity = warning
+dotnet_diagnostic.IDE0290.severity = error
+
+# IDE0303（用集合表达式代替 Create()）：对应 dotnet_style_prefer_collection_expression。
+# `ImmutableArray.Create(…)` / `new List<T> { … }` 这类写法可写成 `[…]`。
+dotnet_diagnostic.IDE0303.severity = error
 
 # IDE0017（简化对象初始化）：对应 dotnet_style_object_initializer。
 dotnet_diagnostic.IDE0017.severity = warning
