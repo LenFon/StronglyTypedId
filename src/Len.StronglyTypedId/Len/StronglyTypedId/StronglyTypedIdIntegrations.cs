@@ -28,37 +28,37 @@ public enum StronglyTypedIdIntegrations
     None = 1 << 0,
 
     /// <summary>
-    /// Entity Framework Core 值转换器，以及 <c>ApplyTo(ModelConfigurationBuilder)</c> /
-    /// <c>ApplyTo(ModelBuilder)</c>。需要引用 <c>Microsoft.EntityFrameworkCore</c> 7.0.0 或更高版本。
+    /// Entity Framework Core 值转换器，以及 <c>ModelConfigurationBuilder</c> / <c>ModelBuilder</c> 上的
+    /// <c>AddStronglyTypedIds()</c>。需要引用 <c>Microsoft.EntityFrameworkCore</c> 7.0.0 或更高版本。
     /// </summary>
     EntityFrameworkCore = 1 << 1,
 
     /// <summary>
-    /// Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 以及 <c>ApplyTo()</c>。注册是进程级全局的，
+    /// Dapper 的 <c>SqlMapper.TypeHandler&lt;TId&gt;</c> 以及 <c>AddStronglyTypedIds()</c>。注册是进程级全局的，
     /// 调用一次即可。需要引用 <c>Dapper</c> 2.0.0 或更高版本。
     /// </summary>
     Dapper = 1 << 2,
 
     /// <summary>
-    /// System.Text.Json 转换器、<c>[JsonConverter]</c> 特性以及 <c>ApplyTo(JsonSerializerOptions)</c>。
-    /// 需要引用 <c>System.Text.Json</c>。
+    /// System.Text.Json 转换器、<c>[JsonConverter]</c> 特性以及 <c>JsonSerializerOptions</c> 上的
+    /// <c>AddStronglyTypedIds()</c>。需要引用 <c>System.Text.Json</c>。
     /// </summary>
     SystemTextJson = 1 << 3,
 
     /// <summary>
-    /// Newtonsoft.Json 转换器、<c>[JsonConverter]</c> 特性以及 <c>AddStronglyTypedId(JsonSerializerSettings)</c>。
+    /// Newtonsoft.Json 转换器、<c>[JsonConverter]</c> 特性以及 <c>AddStronglyTypedIds(JsonSerializerSettings)</c>。
     /// 需要引用 <c>Newtonsoft.Json</c> 13.0.0 或更高版本。
     /// </summary>
     NewtonsoftJson = 1 << 4,
 
     /// <summary>
-    /// Swashbuckle 的 <c>ApplyTo(SwaggerGenOptions)</c>。需要引用
+    /// Swashbuckle 的 <c>SwaggerGenOptions</c> 上的 <c>AddStronglyTypedIds()</c>。需要引用
     /// <c>Swashbuckle.AspNetCore.SwaggerGen</c> 6.0.0 或更高版本。
     /// </summary>
     Swagger = 1 << 5,
 
     /// <summary>
-    /// ASP.NET Core OpenAPI 的 <c>ApplyTo(OpenApiOptions)</c>。需要引用
+    /// ASP.NET Core OpenAPI 的 <c>OpenApiOptions</c> 上的 <c>AddStronglyTypedIds()</c>。需要引用
     /// <c>Microsoft.AspNetCore.OpenApi</c> 9.0.0 或更高版本。
     /// </summary>
     /// <remarks>
@@ -68,15 +68,16 @@ public enum StronglyTypedIdIntegrations
     AspNetCoreOpenApi = 1 << 6,
 
     /// <summary>
-    /// ASP.NET Core MVC 模型绑定与路由约束（<c>ApplyTo(MvcOptions)</c> / <c>ApplyTo(RouteOptions)</c>，
-    /// 后者也支撑 Minimal API 的 <c>{id:MyId}</c> 约束）。需要引用 <c>Microsoft.AspNetCore.Mvc</c>
-    /// 2.0.0 或更高版本（或其 <c>.Core</c> / <c>.Abstractions</c> 外观包）。
+    /// ASP.NET Core MVC 模型绑定与路由约束（<c>MvcOptions</c> / <c>RouteOptions</c> 上的
+    /// <c>AddStronglyTypedIds()</c>，后者也支撑 Minimal API 的 <c>{id:MyId}</c> 约束）。需要引用
+    /// <c>Microsoft.AspNetCore.Mvc</c> 2.0.0 或更高版本（或其 <c>.Core</c> / <c>.Abstractions</c> 外观包）。
     /// </summary>
     AspNetCoreMvc = 1 << 7,
 
     /// <summary>
     /// MessagePack 的 <c>IMessagePackFormatter&lt;TId&gt;</c> 以及
-    /// <c>ApplyTo(MessagePackSerializerOptions)</c>。需要引用 <c>MessagePack</c> 2.0.0 或更高版本。
+    /// <c>MessagePackSerializerOptions</c> 上的 <c>AddStronglyTypedIds()</c>。需要引用 <c>MessagePack</c>
+    /// 2.0.0 或更高版本。
     /// </summary>
     /// <remarks>
     /// 格式化器放在生成的 <c>StronglyTypedIds</c> 类中，通过入口方法接线。载荷存基元值本身，文本前缀只影响
@@ -96,7 +97,30 @@ public enum StronglyTypedIdIntegrations
     MongoDb = 1 << 9,
 
     /// <summary>
+    /// HotChocolate（GraphQL）的 <c>ScalarType&lt;TId&gt;</c> 以及
+    /// <c>AddStronglyTypedIds()</c>（<c>IRequestExecutorBuilder</c> 上的扩展方法）。
+    /// 需要引用 <c>HotChocolate</c> 13.0.0 或更高版本。
+    /// </summary>
+    /// <remarks>
+    /// scalar 放在生成的 <c>StronglyTypedIds</c> 类中，通过入口方法注册。表示口径与 JSON 一致：
+    /// 文本基元（含带前缀的 Id）是 GraphQL <c>String</c>，整数与枚举是 <c>Int</c>，浮点是 <c>Float</c>。
+    /// 枚举按底层整数而非成员名，因此同一个 Id 在 REST 与 GraphQL 两侧表示相同。
+    /// </remarks>
+    HotChocolate = 1 << 10,
+
+    /// <summary>
+    /// protobuf-net 的 surrogate 契约（<c>[ProtoContract(Surrogate = ...)]</c> + 转换运算符）。
+    /// 需要引用 <c>protobuf-net</c> 3.0.0 或更高版本。
+    /// </summary>
+    /// <remarks>
+    /// 与其余集成不同，surrogate 只能通过<b>特性</b>声明，而特性只能加在本次编译声明的类型上 ——
+    /// 因此引用程序集里的 Id 拿不到 protobuf 支持。载荷存基元值本身；<c>Int128</c> / <c>UInt128</c> /
+    /// <c>Half</c> / <c>DateTimeOffset</c> / <c>BigInteger</c> 与自定义基元没有原生表示，改存规范文本。
+    /// </remarks>
+    Protobuf = 1 << 11,
+
+    /// <summary>
     /// 全部集成。仍受「对应程序集是否被引用」这一前置检查约束。
     /// </summary>
-    All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb,
+    All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb | HotChocolate | Protobuf,
 }

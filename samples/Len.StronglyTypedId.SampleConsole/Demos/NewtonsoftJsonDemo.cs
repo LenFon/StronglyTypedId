@@ -24,7 +24,7 @@ internal static class NewtonsoftJsonDemo
         Demo.Section("Newtonsoft.Json：显式注册到自定义 settings");
 
         var settings = new JsonSerializerSettings();
-        settings.AddStronglyTypedId();
+        settings.AddStronglyTypedIds();
         Demo.Line($"settings.Converters.Count         -> {settings.Converters.Count}");
     }
 }

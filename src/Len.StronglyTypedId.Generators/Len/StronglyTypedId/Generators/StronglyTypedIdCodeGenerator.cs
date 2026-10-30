@@ -169,7 +169,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-        context.AddSource($"{idInfo.HintName}.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.g.cs", code);
     }
 
     /// <summary>
@@ -234,7 +234,8 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         };
 
     /// <summary>
-    /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 无条件附加，
+    /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 与
+    /// <see cref="System.Diagnostics.DebuggerTypeProxyAttribute"/> 无条件附加，
     /// <see cref="System.ComponentModel.TypeConverterAttribute"/> 仅在
     /// <see cref="StronglyTypedIdInfo.HasTypeConverter"/> 开启时附加。
     /// </summary>
@@ -243,6 +244,14 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         var builder = new StringBuilder();
 
         builder.Append("[global::System.Diagnostics.DebuggerDisplay(\"{Value}\")]").Append('\n');
+
+        // 泛型容器里的 Id 不能带 [DebuggerTypeProxy]：特性实参必须是封闭类型，而
+        // Box<T>.BoxedId.BoxedIdDebugView 含类型参数，会 CS0416。代理类本身也不生成——
+        // 它是 private 的，没有手动接线的可能，留着只会是死代码。
+        if (!idInfo.IsInGenericContainer)
+        {
+            builder.Append($"[global::System.Diagnostics.DebuggerTypeProxy(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}DebugView))]").Append('\n');
+        }
 
         if (idInfo.HasTypeConverter)
         {
@@ -403,19 +412,11 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             var parseArgument = isSpan ? "value.ToString()" : "value";
             var tryParse = $"global::System.Enum.TryParse<{idInfo.PrimitiveIdTypeName}>({parseArgument}, out var val)";
 
-            if (!idInfo.IsFlagsEnum)
-            {
-                // Enum.TryParse 对「未定义的数值」（"999"）、「逗号组合」（"1,2"）与前后空白都返回 true，
-                // 会产出一个不对应任何成员的 Id，后续 switch 落空、序列化写出野值，故再查一次 IsDefined 收紧。
-                // 用非泛型重载：泛型 Enum.IsDefined<T>(T) 是 .NET 5+ 才有的，生成代码要照顾老 TFM 的消费者。
-                return $"{tryParse} && global::System.Enum.IsDefined(typeof({idInfo.PrimitiveIdTypeName}), val)";
-            }
-
-            // [Flags] 的合法取值本就是位组合，IsDefined 会误杀，改用「不许出现未定义的位」：
-            // 掩码在编译期由全部成员的常量算出，运行期只剩一次按位与。
-            // 必须显式 unchecked：调用方若开了 CheckForOverflowUnderflow，负数枚举值转 ulong 会抛 OverflowException。
-            return idInfo.FlagsEnumUndefinedBitsMask is { } undefinedBits
-                ? $"{tryParse} && (unchecked((ulong)val) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL"
+            // 已定义性校验与其余「文本/数值 → Id」入口共用同一份判据（见 GetEnumValidityCondition）：
+            // Enum.TryParse 对「未定义的数值」（"999"）、「逗号组合」（"1,2"）与前后空白都返回 true，
+            // 不收紧就会产出一个不对应任何成员的 Id；[Flags] 则改判「不许出现未定义的位」。
+            return idInfo.GetEnumValidityCondition("val") is { } validity
+                ? $"{tryParse} && {validity}"
                 : tryParse;
         }
 
@@ -424,6 +425,15 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             // char 的 TryParse 是显式接口实现（CS1501），且「合法文本」的定义就是长度恰为 1；
             // 取值直接下标取，不经过 out 参数，故 GetTryParseValue 也走同一分支。
             return isSpan ? "value.Length == 1" : "value is { Length: 1 }";
+        }
+
+        if (idInfo.IsCustomPrimitive)
+        {
+            // 自定义基元的契约只保证 string 重载（IParsable<TSelf> 的成员签名），故 span 重载先转成字符串。
+            // 不要求 span 重载是刻意的：要求它会排除掉只实现 IParsable 的常见写法。
+            var parseArgument = isSpan ? "value.ToString()" : "value";
+
+            return $"{idInfo.PrimitiveIdTypeName}.TryParse({parseArgument}, {ProviderOrDefault}, out var val)";
         }
 
         return $"{idInfo.PrimitiveIdTypeName}.TryParse(value, {ProviderOrDefault}, out var val)";
@@ -633,52 +643,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsSpanFormattable)
         {
-            // 有公开的实例 TryFormat 重载就按具体类型直呼，省掉装箱；否则退回接口调用。
-            if (idInfo.HasPrefix)
-            {
-                var prefix = idInfo.Prefix!;
-                var charCount = prefix.Length;
-
-                // 前缀无条件先写：format 只作用于基元部分，不影响「规范文本形带前缀」这一点。
-                AppendMember(
-                    members,
-                    version,
-                    ["<inheritdoc/>"],
-                    "public bool TryFormat(",
-                    "    global::System.Span<char> destination,",
-                    "    out int charsWritten,",
-                    "    global::System.ReadOnlySpan<char> format,",
-                    "    global::System.IFormatProvider? provider)",
-                    "{",
-                    $"    if (!{Literal(prefix)}.AsSpan().TryCopyTo(destination))",
-                    "    {",
-                    "        charsWritten = 0;",
-                    "        return false;",
-                    "    }",
-                    string.Empty,
-                    $"    if ({GetTryFormatCall(idInfo.CharTryFormatKind, isUtf8: false, $"destination.Slice({charCount})", "var written")})",
-                    "    {",
-                    $"        charsWritten = {charCount} + written;",
-                    "        return true;",
-                    "    }",
-                    string.Empty,
-                    "    charsWritten = 0;",
-                    "    return false;",
-                    "}");
-            }
-            else
-            {
-                AppendMember(
-                    members,
-                    version,
-                    ["<inheritdoc/>"],
-                    "public bool TryFormat(",
-                    "    global::System.Span<char> destination,",
-                    "    out int charsWritten,",
-                    "    global::System.ReadOnlySpan<char> format,",
-                    "    global::System.IFormatProvider? provider) =>",
-                    $"    {GetTryFormatCall(idInfo.CharTryFormatKind, isUtf8: false, "destination", "charsWritten")};");
-            }
+            AppendTryFormatMember(members, idInfo, version, isUtf8: false);
         }
 
         if (idInfo.IsUtf8SpanParsable)
@@ -688,51 +653,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsUtf8SpanFormattable)
         {
-            // 与 UTF-16 的 TryFormat 同构：前缀无条件先写，format 只作用于基元部分。
-            if (idInfo.HasPrefix)
-            {
-                var prefix = idInfo.Prefix!;
-                var byteCount = Encoding.UTF8.GetByteCount(prefix);
-
-                AppendMember(
-                    members,
-                    version,
-                    ["<inheritdoc/>"],
-                    "public bool TryFormat(",
-                    "    global::System.Span<byte> utf8Destination,",
-                    "    out int bytesWritten,",
-                    "    global::System.ReadOnlySpan<char> format,",
-                    "    global::System.IFormatProvider? provider)",
-                    "{",
-                    $"    if (!{Literal(prefix)}u8.TryCopyTo(utf8Destination))",
-                    "    {",
-                    "        bytesWritten = 0;",
-                    "        return false;",
-                    "    }",
-                    string.Empty,
-                    $"    if ({GetTryFormatCall(idInfo.Utf8TryFormatKind, isUtf8: true, $"utf8Destination.Slice({byteCount})", "var written")})",
-                    "    {",
-                    $"        bytesWritten = {byteCount} + written;",
-                    "        return true;",
-                    "    }",
-                    string.Empty,
-                    "    bytesWritten = 0;",
-                    "    return false;",
-                    "}");
-            }
-            else
-            {
-                AppendMember(
-                    members,
-                    version,
-                    ["<inheritdoc/>"],
-                    "public bool TryFormat(",
-                    "    global::System.Span<byte> utf8Destination,",
-                    "    out int bytesWritten,",
-                    "    global::System.ReadOnlySpan<char> format,",
-                    "    global::System.IFormatProvider? provider) =>",
-                    $"    {GetTryFormatCall(idInfo.Utf8TryFormatKind, isUtf8: true, "utf8Destination", "bytesWritten")};");
-            }
+            AppendTryFormatMember(members, idInfo, version, isUtf8: true);
         }
 
         if (idInfo.HasTypeConverter)
@@ -740,7 +661,47 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             AppendTypeConverter(members, idInfo, version);
         }
 
+        // 与 [DebuggerTypeProxy] 特性同条件：泛型容器里两者都不发射（特性会 CS0416）。
+        if (!idInfo.IsInGenericContainer)
+        {
+            AppendDebugView(members, idInfo, version);
+        }
+
         return members.ToString();
+    }
+
+    /// <summary>
+    /// 追加调试器展开视图的代理类型：点开 <c>+</c> 之后看到裸基元值与规范文本形，而不是 record 展开后的成员表。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="System.Diagnostics.DebuggerTypeProxyAttribute"/> 要求代理类有一个接收目标类型实例的构造函数，
+    /// 且调试器只显示其公开成员。代理类保持 <see langword="private"/>：它只供调试器使用，不构成 API 面。
+    /// </remarks>
+    private static void AppendDebugView(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
+    {
+        // 引用类型 Id 的实例可以是 null，而调试器在 null 上同样会构造代理，故字段与成员都要容忍 null。
+        var isReferenceType = idInfo.TypeKindSuffix is null;
+        var fieldType = isReferenceType ? $"{idInfo.EscapedName}?" : idInfo.EscapedName;
+        var valueType = isReferenceType ? $"{idInfo.PrimitiveIdTypeName}?" : idInfo.PrimitiveIdTypeName;
+        var valueExpression = isReferenceType ? "_id?.Value" : "_id.Value";
+        var textExpression = isReferenceType ? "_id?.ToString() ?? \"<null>\"" : "_id.ToString()";
+
+        builder.Append('\n').Append('\n');
+        builder.Append("    /// <summary>").Append('\n');
+        builder.Append("    /// 调试器展开视图：显示裸基元值与规范文本形（含文本前缀）。").Append('\n');
+        builder.Append("    /// </summary>").Append('\n');
+        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
+        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append('\n');
+        builder.Append($"    private sealed class {idInfo.EscapedName}DebugView").Append('\n');
+        builder.Append("    {").Append('\n');
+        builder.Append($"        private readonly {fieldType} _id;").Append('\n');
+        builder.Append('\n');
+        builder.Append($"        public {idInfo.EscapedName}DebugView({fieldType} id) => _id = id;").Append('\n');
+        builder.Append('\n');
+        builder.Append($"        public {valueType} Value => {valueExpression};").Append('\n');
+        builder.Append('\n');
+        builder.Append($"        public string Text => {textExpression};").Append('\n');
+        builder.Append("    }");
     }
 
     /// <summary>
@@ -791,6 +752,70 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
              "</summary>",
              "<param name=\"value\">The underlying primitive value.</param>"],
             $"public void Deconstruct(out {idInfo.PrimitiveIdTypeName} value) => value = Value;");
+    }
+
+    /// <summary>
+    /// 追加一个 <c>TryFormat</c> 重载：UTF-16 与 UTF-8 两条路径结构相同，只有目标缓冲类型、写入量变量名与
+    /// 前缀长度算法不同。
+    /// </summary>
+    /// <remarks>
+    /// 有前缀时前缀无条件先写，<c>format</c> 只作用于基元部分；无前缀时直接转发给基元的 <c>TryFormat</c>。
+    /// 有公开的实例重载就按具体类型直呼（省掉装箱），否则退回接口调用（见 <see cref="GetTryFormatCall"/>）。
+    /// </remarks>
+    private static void AppendTryFormatMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version, bool isUtf8)
+    {
+        var destinationType = isUtf8 ? "global::System.Span<byte>" : "global::System.Span<char>";
+        var destinationName = isUtf8 ? "utf8Destination" : "destination";
+        var writtenName = isUtf8 ? "bytesWritten" : "charsWritten";
+        var kind = isUtf8 ? idInfo.Utf8TryFormatKind : idInfo.CharTryFormatKind;
+
+        if (!idInfo.HasPrefix)
+        {
+            AppendMember(
+                builder,
+                version,
+                ["<inheritdoc/>"],
+                "public bool TryFormat(",
+                $"    {destinationType} {destinationName},",
+                $"    out int {writtenName},",
+                "    global::System.ReadOnlySpan<char> format,",
+                "    global::System.IFormatProvider? provider) =>",
+                $"    {GetTryFormatCall(kind, isUtf8, destinationName, writtenName)};");
+
+            return;
+        }
+
+        var prefix = idInfo.Prefix!;
+        var prefixLength = isUtf8 ? Encoding.UTF8.GetByteCount(prefix) : prefix.Length;
+        var copyPrefix = isUtf8
+            ? $"{Literal(prefix)}u8.TryCopyTo({destinationName})"
+            : $"{Literal(prefix)}.AsSpan().TryCopyTo({destinationName})";
+
+        AppendMember(
+            builder,
+            version,
+            ["<inheritdoc/>"],
+            "public bool TryFormat(",
+            $"    {destinationType} {destinationName},",
+            $"    out int {writtenName},",
+            "    global::System.ReadOnlySpan<char> format,",
+            "    global::System.IFormatProvider? provider)",
+            "{",
+            $"    if (!{copyPrefix})",
+            "    {",
+            $"        {writtenName} = 0;",
+            "        return false;",
+            "    }",
+            string.Empty,
+            $"    if ({GetTryFormatCall(kind, isUtf8, $"{destinationName}.Slice({prefixLength})", "var written")})",
+            "    {",
+            $"        {writtenName} = {prefixLength} + written;",
+            "        return true;",
+            "    }",
+            string.Empty,
+            $"    {writtenName} = 0;",
+            "    return false;",
+            "}");
     }
 
     /// <summary>

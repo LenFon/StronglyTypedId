@@ -84,99 +84,15 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var nonRecord = declarations.FirstOrDefault(syntax => syntax is not RecordDeclarationSyntax);
-
-        if (nonRecord is not null)
+        // 声明形状（record / partial / 容器 / 命名空间）与主构造函数形状是两组独立的失败原因，
+        // 各自最多报一条；拆开后本方法只剩「形状通过后再做语义校验」这一条主线。
+        if (ValidateDeclarationShape(context, type, declarations) is not { } records)
         {
-            Report(context, Descriptors.TypeMustBeRecord, nonRecord.GetLocation(), type.Name);
             return;
         }
 
-        var records = declarations.Cast<RecordDeclarationSyntax>().ToArray();
-
-        var abstracted = records.FirstOrDefault(record => record.Modifiers.Any(SyntaxKind.AbstractKeyword));
-
-        if (abstracted is not null)
+        if (ValidatePrimaryConstructor(context, type, records) is not { } constructorParameterType)
         {
-            Report(context, Descriptors.TypeCannotBeAbstract, abstracted.GetLocation(), type.Name);
-            return;
-        }
-
-        var nonPartial = records.FirstOrDefault(record => !record.Modifiers.Any(SyntaxKind.PartialKeyword));
-
-        if (nonPartial is not null)
-        {
-            Report(context, Descriptors.TypeMustBePartial, nonPartial.GetLocation(), type.Name);
-            return;
-        }
-
-        // file 局部类型只查容器不够：record 自身带 file 时生成器同样无法在别的文件里重开它，
-        // 结果是一条不带 file 的冲突 partial 声明，编译器报 CS0535 且没有任何 STIA 诊断。
-        var fileLocal = records.FirstOrDefault(record => record.Modifiers.Any(SyntaxKind.FileKeyword));
-
-        if (fileLocal is not null)
-        {
-            Report(context, Descriptors.TypeCannotBeFileLocal, fileLocal.GetLocation(), type.Name);
-            return;
-        }
-
-        var generic = records.FirstOrDefault(record => record.TypeParameterList is not null);
-
-        if (generic is not null)
-        {
-            Report(context, Descriptors.TypeCannotBeGeneric, generic.GetLocation(), type.Name);
-            return;
-        }
-
-        // 逐层向上判定容器能否被原样重开（要求 partial、不能是 file 本地类型），报错落在最内层不合规的容器上。
-        // 定位取整个类型声明：指向子片段会让代码修复测试框架判定为「非本地的分析器诊断」。
-        var container = records[0].Parent;
-
-        while (container is TypeDeclarationSyntax declaration)
-        {
-            if (!declaration.Modifiers.Any(SyntaxKind.PartialKeyword) || declaration.Modifiers.Any(SyntaxKind.FileKeyword))
-            {
-                Report(context, Descriptors.ContainingTypeMustBePartial, declaration.GetLocation(), declaration.Identifier.ValueText);
-                return;
-            }
-
-            container = declaration.Parent;
-        }
-
-        if (container is not BaseNamespaceDeclarationSyntax)
-        {
-            Report(context, Descriptors.TypeMustHaveNamespace, records[0].GetLocation(), type.Name);
-            return;
-        }
-
-        // 主构造函数最多出现在一段声明中，以该段为准。
-        var primaryConstructor = records.FirstOrDefault(record => record.ParameterList is not null) ?? records[0];
-
-        if (primaryConstructor.ParameterList is not { Parameters: [var parameter] })
-        {
-            Report(context, Descriptors.TypeMustHaveSingleParameterPrimaryConstructor, primaryConstructor.GetLocation(), type.Name);
-            return;
-        }
-
-        if (parameter.Type is NullableTypeSyntax)
-        {
-            Report(context, Descriptors.ParameterCannotBeNullable, parameter.Type.GetLocation(), parameter.Type);
-            return;
-        }
-
-        if (parameter.Identifier.ValueText != "Value")
-        {
-            Report(context, Descriptors.ParameterNameMustBeValue, parameter.Identifier.GetLocation(), parameter.Identifier.ValueText);
-            return;
-        }
-
-        // 不能用 type.Constructors[0]：顺序不保证主构造在前，越界会抛 AD0001 吞掉该类型的全部诊断。
-        // GetSingleParameterType 按「单参数且类型不是自身」过滤，顺带跳过 record 合成的拷贝构造。
-        var constructorParameterType = GetSingleParameterType(type);
-
-        if (constructorParameterType is null || !SupportedPrimitiveTypes.IsSupported(constructorParameterType))
-        {
-            Report(context, Descriptors.ParameterTypeIsInvalid, parameter.Type!.GetLocation(), parameter.Type);
             return;
         }
 
@@ -218,6 +134,137 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 风格提示放在全部硬性校验之后，避免连 record 都不是的类型同时冒出改名建议。
         ValidateNameConvention(context, type, records);
         ValidateDuplicatePrimitiveType(context, type, constructorParameterType, records, namespacePrimitiveGroups);
+    }
+
+    /// <summary>
+    /// 校验类型声明本身能否承载强类型 Id：必须是 record、非抽象、partial、非 file 本地、非泛型，
+    /// 且整条包含类型链可被原样重开、最终落在命名空间里。
+    /// </summary>
+    /// <returns>全部通过时返回各段 record 声明；否则已上报诊断并返回 <see langword="null"/>。</returns>
+    private static RecordDeclarationSyntax[]? ValidateDeclarationShape(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        SyntaxNode[] declarations)
+    {
+        var nonRecord = declarations.FirstOrDefault(syntax => syntax is not RecordDeclarationSyntax);
+
+        if (nonRecord is not null)
+        {
+            Report(context, Descriptors.TypeMustBeRecord, nonRecord.GetLocation(), type.Name);
+            return null;
+        }
+
+        var records = declarations.Cast<RecordDeclarationSyntax>().ToArray();
+
+        var abstracted = records.FirstOrDefault(record => record.Modifiers.Any(SyntaxKind.AbstractKeyword));
+
+        if (abstracted is not null)
+        {
+            Report(context, Descriptors.TypeCannotBeAbstract, abstracted.GetLocation(), type.Name);
+            return null;
+        }
+
+        var nonPartial = records.FirstOrDefault(record => !record.Modifiers.Any(SyntaxKind.PartialKeyword));
+
+        if (nonPartial is not null)
+        {
+            Report(context, Descriptors.TypeMustBePartial, nonPartial.GetLocation(), type.Name);
+            return null;
+        }
+
+        // file 局部类型只查容器不够：record 自身带 file 时生成器同样无法在别的文件里重开它，
+        // 结果是一条不带 file 的冲突 partial 声明，编译器报 CS0535 且没有任何 STIA 诊断。
+        var fileLocal = records.FirstOrDefault(record => record.Modifiers.Any(SyntaxKind.FileKeyword));
+
+        if (fileLocal is not null)
+        {
+            Report(context, Descriptors.TypeCannotBeFileLocal, fileLocal.GetLocation(), type.Name);
+            return null;
+        }
+
+        var generic = records.FirstOrDefault(record => record.TypeParameterList is not null);
+
+        if (generic is not null)
+        {
+            Report(context, Descriptors.TypeCannotBeGeneric, generic.GetLocation(), type.Name);
+            return null;
+        }
+
+        // 逐层向上判定容器能否被原样重开（要求 partial、不能是 file 本地类型），报错落在最内层不合规的容器上。
+        // 定位取整个类型声明：指向子片段会让代码修复测试框架判定为「非本地的分析器诊断」。
+        var container = records[0].Parent;
+
+        while (container is TypeDeclarationSyntax declaration)
+        {
+            if (!declaration.Modifiers.Any(SyntaxKind.PartialKeyword) || declaration.Modifiers.Any(SyntaxKind.FileKeyword))
+            {
+                Report(context, Descriptors.ContainingTypeMustBePartial, declaration.GetLocation(), declaration.Identifier.ValueText);
+                return null;
+            }
+
+            container = declaration.Parent;
+        }
+
+        if (container is not BaseNamespaceDeclarationSyntax)
+        {
+            Report(context, Descriptors.TypeMustHaveNamespace, records[0].GetLocation(), type.Name);
+            return null;
+        }
+
+        return records;
+    }
+
+    /// <summary>
+    /// 校验主构造函数形状：恰好一个名为 <c>Value</c>、非可空、且类型受支持的参数。
+    /// </summary>
+    /// <returns>全部通过时返回基元类型符号；否则已上报诊断并返回 <see langword="null"/>。</returns>
+    private static ITypeSymbol? ValidatePrimaryConstructor(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        RecordDeclarationSyntax[] records)
+    {
+        // 主构造函数最多出现在一段声明中，以该段为准。
+        var primaryConstructor = records.FirstOrDefault(record => record.ParameterList is not null) ?? records[0];
+
+        if (primaryConstructor.ParameterList is not { Parameters: [var parameter] })
+        {
+            Report(context, Descriptors.TypeMustHaveSingleParameterPrimaryConstructor, primaryConstructor.GetLocation(), type.Name);
+            return null;
+        }
+
+        if (parameter.Type is NullableTypeSyntax)
+        {
+            Report(context, Descriptors.ParameterCannotBeNullable, parameter.Type.GetLocation(), parameter.Type);
+            return null;
+        }
+
+        if (parameter.Identifier.ValueText != "Value")
+        {
+            Report(context, Descriptors.ParameterNameMustBeValue, parameter.Identifier.GetLocation(), parameter.Identifier.ValueText);
+            return null;
+        }
+
+        // 不能用 type.Constructors[0]：顺序不保证主构造在前，越界会抛 AD0001 吞掉该类型的全部诊断。
+        // GetSingleParameterType 按「单参数且类型不是自身」过滤，顺带跳过 record 合成的拷贝构造。
+        var constructorParameterType = GetSingleParameterType(type);
+
+        if (constructorParameterType is null || !SupportedPrimitiveTypes.IsSupported(constructorParameterType))
+        {
+            // 第二个实参说明「缺什么」：用户视角只有一件事 —— 我这个基元为什么不行。
+            // 对 bool 这类既非内置也不满足自定义契约的类型，它同样给出具体缺失项。
+            Report(
+                context,
+                Descriptors.ParameterTypeIsInvalid,
+                parameter.Type!.GetLocation(),
+                parameter.Type,
+                constructorParameterType is null
+                    ? "It is not a supported primitive type."
+                    : SupportedPrimitiveTypes.DescribeMissingContracts(constructorParameterType));
+
+            return null;
+        }
+
+        return constructorParameterType;
     }
 
     /// <summary>
@@ -370,18 +417,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 取强类型 Id 的基元类型，即唯一一个「单参数、且参数类型不是自身」的实例构造函数所带的参数类型。
     /// </summary>
     private static ITypeSymbol? GetSingleParameterType(INamedTypeSymbol type)
-    {
-        foreach (var constructor in type.InstanceConstructors)
-        {
-            if (constructor.Parameters is [var parameter]
-                && !SymbolEqualityComparer.Default.Equals(parameter.Type, type))
-            {
-                return parameter.Type;
-            }
-        }
-
-        return null;
-    }
+        => StronglyTypedIdInfo.GetSingleParameterType(type);
 
     /// <summary>
     /// 检测「配了归一化或验证器、但类型对外可见」的组合，提示约束可被直接构造绕过（STIA0014）。
@@ -494,6 +530,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     private static PrimitiveTextKind GetPrimitiveTextKind(ITypeSymbol primitiveType)
     {
         if (primitiveType.TypeKind == TypeKind.Enum)
+        {
+            return PrimitiveTextKind.Freeform;
+        }
+
+        // 自定义基元没有可枚举的文本文法，与 string / enum 同待遇：任何前缀都可能与之重叠，只能靠文档说明。
+        // 必须排在按名字归类之前 —— 用户自定义的 MyNs.Guid 会被下面的 "Guid" 分支误判成十六进制。
+        if (SupportedPrimitiveTypes.IsCustomPrimitive(primitiveType))
         {
             return PrimitiveTextKind.Freeform;
         }
@@ -745,6 +788,11 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         (IntegrationFlags.AspNetCoreMvc, "Microsoft.AspNetCore.Mvc", "AspNetCoreMvc"),
         (IntegrationFlags.MessagePack, "MessagePack", "MessagePack"),
         (IntegrationFlags.MongoDb, "MongoDB.Bson", "MongoDb"),
+        // 门控与生成器一致：HotChocolate 的 scalar 基类在 HotChocolate.Types，装配入口在
+        // HotChocolate.Execution；引用前者必然带上后者，故只查前者。
+        (IntegrationFlags.HotChocolate, "HotChocolate.Types", "HotChocolate"),
+        // 同上：特性在 protobuf-net.Core、Serializer 在 protobuf-net，引用后者必然带上前者。
+        (IntegrationFlags.Protobuf, "protobuf-net", "Protobuf"),
     ];
 
     /// <summary>
@@ -899,50 +947,26 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
-    /// </summary>
-    private static string? GetValidatorName(INamedTypeSymbol type)
-        => AttributeReader.GetString(
-            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
-            StronglyTypedIdInfo.ValidatorArgumentName);
-
-    /// <summary>
     /// 取生效的验证器方法名：优先逐类型 <c>Validator</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.Validator</c>。
     /// </summary>
     private static string? GetEffectiveValidatorName(INamedTypeSymbol type, IAssemblySymbol assembly)
-        => GetValidatorName(type) ?? GetAssemblyDefaultValidator(assembly);
+        => AttributeReader.GetValidatorName(type) ?? GetAssemblyDefaultValidator(assembly);
 
     /// <inheritdoc cref="StronglyTypedIdInfo.GetAssemblyDefaultValidator"/>
     private static string? GetAssemblyDefaultValidator(IAssemblySymbol assembly)
         => StronglyTypedIdInfo.GetAssemblyDefaultValidator(assembly);
 
     /// <summary>
-    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
-    /// </summary>
-    private static string? GetNormalizerName(INamedTypeSymbol type)
-        => AttributeReader.GetString(
-            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
-            StronglyTypedIdInfo.NormalizerArgumentName);
-
-    /// <summary>
     /// 取生效的归一化方法名：优先逐类型 <c>Normalizer</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.Normalizer</c>。
     /// </summary>
     private static string? GetEffectiveNormalizerName(INamedTypeSymbol type, IAssemblySymbol assembly)
-        => GetNormalizerName(type) ?? StronglyTypedIdInfo.GetAssemblyDefaultNormalizer(assembly);
-
-    /// <summary>
-    /// 读取 <c>[StronglyTypedId]</c> 上 <c>ExceptionType</c> 命名实参的类型；未指定时为 <see langword="null"/>。
-    /// </summary>
-    private static ITypeSymbol? GetExceptionType(INamedTypeSymbol type)
-        => AttributeReader.GetType(
-            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
-            StronglyTypedIdInfo.ExceptionTypeArgumentName);
+        => AttributeReader.GetNormalizerName(type) ?? StronglyTypedIdInfo.GetAssemblyDefaultNormalizer(assembly);
 
     /// <summary>
     /// 取生效的异常类型：优先逐类型 <c>ExceptionType</c>，其次回退到装配级 <c>StronglyTypedIdDefaults.ExceptionType</c>。
     /// </summary>
     private static ITypeSymbol? GetEffectiveExceptionType(INamedTypeSymbol type, IAssemblySymbol assembly)
-        => GetExceptionType(type) ?? StronglyTypedIdInfo.GetAssemblyDefaultExceptionTypeSymbol(assembly);
+        => AttributeReader.GetExceptionType(type) ?? StronglyTypedIdInfo.GetAssemblyDefaultExceptionTypeSymbol(assembly);
 
     /// <summary>
     /// 判断类型是否由 <c>[StronglyTypedId]</c> 标记。

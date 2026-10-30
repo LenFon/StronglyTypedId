@@ -14,7 +14,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
     /// <summary>
     /// 解析文本时使用的不变文化。
     /// </summary>
-    private const string InvariantCulture = "global::System.Globalization.CultureInfo.InvariantCulture";
+    private const string InvariantCulture = GeneratedCode.InvariantCulture;
 
     /// <summary>
     /// 序列化器体内语句的缩进（产物中为 8 空格）。
@@ -48,19 +48,13 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
-        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
-        var ambiguousNames = stronglyTypedIds
-            .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToImmutableHashSet(StringComparer.Ordinal);
+        var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
 
         var registrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var serializerName = GetSerializerName(idInfo, ambiguousNames.Contains(idInfo.Name));
+            var serializerName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "BsonSerializer");
 
             var serializerCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
@@ -79,7 +73,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-            context.AddSource($"{idInfo.HintName}.MongoDb.g.cs", GeneratedCode.NormalizeLineEndings(serializerCode));
+            GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.MongoDb.g.cs", serializerCode);
 
             registrations.Append($"\n{_registrationIndent}global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(new {serializerName}());");
         }
@@ -158,7 +152,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-        context.AddSource("StronglyTypedIds.MongoDb.g.cs", GeneratedCode.NormalizeLineEndings(registrationCode));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.MongoDb.g.cs", registrationCode);
     }
 
     /// <summary>
@@ -259,8 +253,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
             // 枚举基元在此追加已定义性校验：TryCreate 只跑用户配的 Validator，而 BSON 对未定义数值
             // （999）照常读出，不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
             // STJ、Newtonsoft 路径都已收紧，这里对齐）。
-            var enumValidity = idInfo.GetEnumValidityCondition("value");
-            lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id){(enumValidity is null ? string.Empty : $" && {enumValidity}")})");
+            lines.Add(_nestedIndent + $"if ({idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName)})");
             lines.Add(_nestedIndent + "{");
             lines.Add(_nestedIndent + "    return id;");
             lines.Add(_nestedIndent + "}");
@@ -316,12 +309,4 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
             ? null
             : $"global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(typeof({primitiveTypeName}), {serializerExpression});";
     }
-
-    /// <summary>
-    /// 取序列化器的类名，消歧规则与 Dapper 的处理器一致。
-    /// </summary>
-    private static string GetSerializerName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
-        => requiresNamespaceQualifier
-            ? $"{idInfo.HintName.Replace('.', '_')}BsonSerializer"
-            : $"{idInfo.EscapedName}BsonSerializer";
 }

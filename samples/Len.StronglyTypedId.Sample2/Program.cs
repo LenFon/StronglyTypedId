@@ -5,10 +5,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Minimal API 不需要额外的绑定代码：路由 / 查询参数经 IParsable<T> 绑定。
 // 路由约束 {id:OrderId} 复用 MVC 集成生成的 RouteOptions 注册，所以这里只注册路由。
-builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddRouting(options => options.AddStronglyTypedIds());
 
 // ASP.NET Core OpenAPI（≥ 9.0.0）：把每个 Id 映射到其基元的 schema。
-builder.Services.AddOpenApi(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddOpenApi(options => options.AddStronglyTypedIds());
 
 var app = builder.Build();
 

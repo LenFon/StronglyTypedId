@@ -91,7 +91,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 
         var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
-        context.AddSource($"{idInfo.HintName}.SystemTextJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.SystemTextJson.g.cs", code);
     }
 
     /// <summary>
@@ -106,7 +106,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                     // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现（CS1501），
                     // 且其无参 ToString() 与文化无关。
                     ? "primitiveId.ToString()"
-                    : "primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
+                    // 自定义基元未必实现 IFormattable，故由 PrimitiveTextExpression 决定用哪个重载。
+                    : idInfo.PrimitiveTextExpression;
 
     /// <summary>
     /// 生成 <c>WriteAsPropertyName</c> 的方法体（不含外层大括号）。
@@ -157,6 +158,19 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             // 用 TryParse 而非 Parse：文本不是合法数字时 Parse 抛的 FormatException 同样会穿透转换器。
             AppendDirectRead(builder, idInfo, indent, "string?", "text", "reader.GetString()");
             builder.Append(indent).Append("if (text is null || !global::System.Numerics.BigInteger.TryParse(text, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var value))").Append('\n');
+            builder.Append(indent).Append("{").Append('\n');
+            builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+            builder.Append(indent).Append("}").Append('\n');
+
+            return;
+        }
+
+        if (idInfo.IsCustomPrimitive)
+        {
+            // 自定义基元交给 JsonSerializer 会按公开属性写出、读回 default，故与 BigInteger 同样走规范文本。
+            // 契约要求基元暴露公开静态的 TryParse(string, IFormatProvider, out TSelf)（见 STIA0008）。
+            AppendDirectRead(builder, idInfo, indent, "string?", "text", "reader.GetString()");
+            builder.Append(indent).Append("if (text is null || !").Append(idInfo.GetPrimitiveTextTryParseCondition("text", "value")).Append(')').Append('\n');
             builder.Append(indent).Append("{").Append('\n');
             builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
             builder.Append(indent).Append("}").Append('\n');
@@ -224,14 +238,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <param name="assignmentPrefix">赋值目标前缀：<c>return </c> 或 <c>result = </c>。</param>
     private static void AppendCreateFromValue(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string assignmentPrefix)
     {
-        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.EscapedName).Append(".TryCreate(value, out var id)");
-
-        if (idInfo.GetEnumValidityCondition("value") is { } validity)
-        {
-            builder.Append(" && ").Append(validity);
-        }
-
-        builder.Append('\n');
+        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.GetTryCreateCondition(idInfo.EscapedName)).Append('\n');
         builder.Append(indent).Append("    ? id").Append('\n');
         builder.Append(indent).Append("    : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
     }
@@ -351,8 +358,8 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         // 直写不了的少数类型（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char）仍委托给 JsonSerializer。
         var writeValue = idInfo.HasPrefix
             ? "writer.WriteStringValue(value.ToString());"
-            : idInfo.IsBigIntegerPrimitive
-                ? "writer.WriteStringValue(primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture));"
+            : idInfo.RequiresTextSerialization
+                ? $"writer.WriteStringValue({idInfo.PrimitiveTextExpression});"
                 : PrimitiveJsonIo.TryGetWriteExpression(idInfo)
                     ?? "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
 
@@ -407,14 +414,11 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
             builder.Append($"            if (global::System.Enum.TryParse<{idInfo.PrimitiveIdTypeName}>(propertyName, ignoreCase: true, out var val)").Append('\n');
 
-            if (!idInfo.IsFlagsEnum)
+            // 已定义性校验与 Id.TryParse、Dapper 等入口共用同一份判据：普通枚举查 IsDefined，
+            // [Flags] 查「不许出现未定义的位」。
+            if (idInfo.GetEnumValidityCondition("val") is { } validity)
             {
-                builder.Append($"                && global::System.Enum.IsDefined(typeof({idInfo.PrimitiveIdTypeName}), val)").Append('\n');
-            }
-            else if (idInfo.FlagsEnumUndefinedBitsMask is { } undefinedBits)
-            {
-                // [Flags] 的位组合合法，但未定义的位不合法；掩码与 Id.TryParse 用的是同一份。
-                builder.Append($"                && (unchecked((ulong)val) & {GeneratedCode.UndefinedBitsLiteral(undefinedBits)}) == 0UL").Append('\n');
+                builder.Append($"                && {validity}").Append('\n');
             }
 
             builder.Append($"                && {idInfo.EscapedName}.TryCreate(val, out var id))").Append('\n');

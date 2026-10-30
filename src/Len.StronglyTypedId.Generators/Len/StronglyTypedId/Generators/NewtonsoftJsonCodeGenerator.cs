@@ -62,7 +62,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         var code = header + GeneratedCode.NestInContainingTypes(idInfo, declaration);
 
         // 嵌套包装按 \n 逐行拼接，与字面量相接会得到混排行尾，故统一行尾。
-        context.AddSource($"{idInfo.HintName}.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.NewtonsoftJson.g.cs", code);
     }
 
     /// <summary>
@@ -165,16 +165,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// 已定义性校验（见 <see cref="StronglyTypedIdInfo.GetEnumValidityCondition"/>）。
     /// </summary>
     internal static void AppendTryCreateArm(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string typeReference)
-    {
-        builder.Append(indent).Append("{ } value when ").Append(typeReference).Append(".TryCreate(value, out var id)");
-
-        if (idInfo.GetEnumValidityCondition("value") is { } validity)
-        {
-            builder.Append(" && ").Append(validity);
-        }
-
-        builder.Append(" => id,").Append('\n');
-    }
+        => builder.Append(indent).Append("{ } value when ").Append(idInfo.GetTryCreateCondition(typeReference)).Append(" => id,").Append('\n');
 
     /// <summary>
     /// 取 <c>WriteJson</c> 成员形参表之后的方法体。
@@ -185,11 +176,11 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
 
         // 有前缀时写出规范文本形（字符串），无前缀时写出基元值本身。
         // Newtonsoft 不认识 Int128 / UInt128 / Half / DateOnly / TimeOnly，按值写会抛 JsonWriterException，
-        // 故这几个类型同样写规范文本。
+        // 故这几个类型同样写规范文本；自定义基元同理（按值写会退化成按公开属性的对象形态）。
         var writeValue = idInfo.HasPrefix
             ? "writer.WriteValue(value.ToString());"
             : idInfo.IsNewtonsoftTextPrimitive
-                ? "writer.WriteValue(primitiveId.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture));"
+                ? $"writer.WriteValue({idInfo.PrimitiveTextExpression});"
                 : "writer.WriteValue(primitiveId);";
 
         builder.Append('\n');

@@ -32,6 +32,23 @@ internal static class GeneratedCode
             : code;
 
     /// <summary>
+    /// 把生成好的源码按统一行尾写入编译单元，hint 名即产物文件名。
+    /// </summary>
+    /// <remarks>
+    /// 各生成器都走这一条路径，行尾归一化不会漏掉某一处。
+    /// </remarks>
+    public static void AddGeneratedSource(SourceProductionContext context, string hintName, string code)
+        => context.AddSource(hintName, NormalizeLineEndings(code));
+
+    /// <summary>
+    /// 生成代码里引用不变文化的完整表达式。
+    /// </summary>
+    /// <remarks>
+    /// 解析与格式化一律与区域性无关，各集成生成器共用同一份文本，避免逐处手写而漂移。
+    /// </remarks>
+    public const string InvariantCulture = "global::System.Globalization.CultureInfo.InvariantCulture";
+
+    /// <summary>
     /// 各生成器产出的源文件统一文件头：<c>// &lt;auto-generated /&gt;</c> 注释、命名空间声明与
     /// <c>#nullable enable</c>，并以两个空行收尾，便于直接拼接类型声明块。
     /// </summary>

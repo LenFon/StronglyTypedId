@@ -8,7 +8,7 @@ namespace Len.StronglyTypedId.Generators;
 internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 {
     /// <summary>
-    /// <c>ApplyTo</c> 方法体内语句的缩进（产物中为 8 空格）。
+    /// <c>AddStronglyTypedIds</c> 方法体内语句的缩进（产物中为 8 空格）。
     /// </summary>
     private static readonly string _registrationIndent = new(' ', 8);
 
@@ -32,20 +32,26 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 
         // 同名 Id 会生成进同一个 StronglyTypedIds 类并撞 CS0102；仅在确实重名时才用「命名空间_类型名」消歧，
         // 以免改动无冲突场景下既有的转换器类名。
-        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
-        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
-        var ambiguousNames = stronglyTypedIds
-            .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToImmutableHashSet(StringComparer.Ordinal);
+        var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
 
         var registrations = new StringBuilder();
         var modelBuilderRegistrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var converterName = GetConverterName(idInfo, ambiguousNames.Contains(idInfo.Name));
+            var converterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "Converter");
+
+            // 自定义基元的 provider 类型必须是数据库认得的类型。直接用基元本身会让 EF 报
+            // 「The '<Primitive>' property could not be mapped because the database provider does not support
+            // this type」—— 数据库不认识用户自定义的 CLR 类型。故与 JSON / 二进制 / Dapper 同一口径，
+            // 落库的是规范文本（string）。内置基元的产物逐字节不变。
+            var providerType = idInfo.IsCustomPrimitive ? "string" : idInfo.PrimitiveIdTypeName;
+            var toProvider = idInfo.IsCustomPrimitive
+                ? idInfo.GetPrimitiveTextExpression("v.Value")
+                : "v.Value";
+            var fromProvider = idInfo.IsCustomPrimitive
+                ? $"{idInfo.FullyQualifiedName}.Create({idInfo.PrimitiveIdTypeName}.Parse(val, global::System.Globalization.CultureInfo.InvariantCulture))"
+                : $"{idInfo.FullyQualifiedName}.Create(val)";
 
             var converterCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
@@ -53,14 +59,14 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
-                    class {{converterName}} : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<{{idInfo.FullyQualifiedName}}, {{idInfo.PrimitiveIdTypeName}}>
+                    class {{converterName}} : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<{{idInfo.FullyQualifiedName}}, {{providerType}}>
                     {
                         /// <summary>
                         /// 默认构造函数。
                         /// </summary>
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
-                        public {{converterName}}() : base(v => v.Value, val => {{idInfo.FullyQualifiedName}}.Create(val))
+                        public {{converterName}}() : base(v => {{toProvider}}, val => {{fromProvider}})
                         {
                         }
 
@@ -97,7 +103,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-            context.AddSource($"{idInfo.HintName}.EntityFrameworkCore.g.cs", GeneratedCode.NormalizeLineEndings(converterCode));
+            GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.EntityFrameworkCore.g.cs", converterCode);
 
             registrations.Append($"\n{_registrationIndent}{converterName}.ApplyTo(configurationBuilder);");
             modelBuilderRegistrations.Append($"\n{_registrationIndent}{converterName}.ApplyTo(modelBuilder);");
@@ -110,10 +116,12 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 /// 通过约定在 Entity Framework Core 中启用强类型 Id。
                 /// </summary>
                 /// <param name="configurationBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder"/></param>
+                /// <returns>同一个 <paramref name="configurationBuilder"/>，便于链式调用。</returns>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
-                public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
+                public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
                 {{{registrations}}
+                    return configurationBuilder;
                 }
 
                 /// <summary>
@@ -121,22 +129,16 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
                 /// 上下文未重写 <c>ConfigureConventions</c> 时在 <c>OnModelCreating</c> 末尾调用，只扫描已加入模型的实体类型。
                 /// </summary>
                 /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
+                /// <returns>同一个 <paramref name="modelBuilder"/>，便于链式调用。</returns>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(EfCoreCodeGenerator), version)}}
-                public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)
+                public static global::Microsoft.EntityFrameworkCore.ModelBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)
                 {{{modelBuilderRegistrations}}
+                    return modelBuilder;
                 }
             }
             """;
 
-        context.AddSource("StronglyTypedIds.EntityFrameworkCore.g.cs", GeneratedCode.NormalizeLineEndings(registrationCode));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.EntityFrameworkCore.g.cs", registrationCode);
     }
-
-    /// <summary>
-    /// 取转换器的类名。
-    /// </summary>
-    private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
-        => requiresNamespaceQualifier
-            ? $"{idInfo.HintName.Replace('.', '_')}Converter"
-            : $"{idInfo.EscapedName}Converter";
 }

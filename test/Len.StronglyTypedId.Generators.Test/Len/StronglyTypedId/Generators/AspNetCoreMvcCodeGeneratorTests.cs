@@ -122,7 +122,7 @@ public class AspNetCoreMvcCodeGeneratorTests
 
         var generated = GetMvcGeneratedCode(code);
 
-        generated.Should().Contain("public static void ApplyTo(global::Microsoft.AspNetCore.Mvc.MvcOptions options)")
+        generated.Should().Contain("public static global::Microsoft.AspNetCore.Mvc.MvcOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Mvc.MvcOptions options)")
             .And.Contain("options.ModelBinderProviders.Insert(0, new StronglyTypedIdModelBinderProvider());");
     }
 
@@ -140,7 +140,7 @@ public class AspNetCoreMvcCodeGeneratorTests
 
         var generated = GetMvcGeneratedCode(code);
 
-        generated.Should().Contain("public static void ApplyTo(global::Microsoft.AspNetCore.Routing.RouteOptions options)")
+        generated.Should().Contain("public static global::Microsoft.AspNetCore.Routing.RouteOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Routing.RouteOptions options)")
             .And.Contain("options.ConstraintMap[\"OrderId\"] = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdRouteConstraint<global::Len.StronglyTypedId.OrderId>);");
     }
 

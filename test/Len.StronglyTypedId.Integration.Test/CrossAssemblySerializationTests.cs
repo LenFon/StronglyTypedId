@@ -60,7 +60,7 @@ public class CrossAssemblySerializationTests
         var settings = CreateSettings();
         var countAfterFirst = settings.Converters.Count;
 
-        settings.AddStronglyTypedId();
+        settings.AddStronglyTypedIds();
 
         settings.Converters.Should().HaveCount(countAfterFirst, "重复调用不得让转换器列表增长");
     }
@@ -69,7 +69,7 @@ public class CrossAssemblySerializationTests
     {
         var settings = new JsonSerializerSettings();
 
-        settings.AddStronglyTypedId();
+        settings.AddStronglyTypedIds();
 
         return settings;
     }

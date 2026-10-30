@@ -15,7 +15,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
     /// <summary>
     /// 解析文本时使用的不变文化。二进制载荷与区域性无关，退回文本形时也必须按不变文化读写。
     /// </summary>
-    private const string InvariantCulture = "global::System.Globalization.CultureInfo.InvariantCulture";
+    private const string InvariantCulture = GeneratedCode.InvariantCulture;
 
     /// <summary>
     /// <c>GetFormatterWithVerify&lt;T&gt;</c> 所在的静态类。
@@ -59,19 +59,13 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
-        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
-        var ambiguousNames = stronglyTypedIds
-            .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToImmutableHashSet(StringComparer.Ordinal);
+        var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
 
         var registrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var formatterName = GetFormatterName(idInfo, ambiguousNames.Contains(idInfo.Name));
+            var formatterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "MessagePackFormatter");
 
             var formatterCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
@@ -90,7 +84,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-            context.AddSource($"{idInfo.HintName}.MessagePack.g.cs", GeneratedCode.NormalizeLineEndings(formatterCode));
+            GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.MessagePack.g.cs", formatterCode);
 
             registrations.Append($"\n{_registrationIndent}new {formatterName}(),");
         }
@@ -129,7 +123,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
                     /// </remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(MessagePackCodeGenerator), version)}}
-                    public static global::MessagePack.MessagePackSerializerOptions ApplyTo(global::MessagePack.MessagePackSerializerOptions options) =>
+                    public static global::MessagePack.MessagePackSerializerOptions AddStronglyTypedIds(this global::MessagePack.MessagePackSerializerOptions options) =>
                         options.WithResolver(global::MessagePack.Resolvers.CompositeResolver.Create(
                             new global::MessagePack.Formatters.IMessagePackFormatter[]
                             {{{registrations}}
@@ -138,7 +132,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
                 }
                 """;
 
-        context.AddSource("StronglyTypedIds.MessagePack.g.cs", GeneratedCode.NormalizeLineEndings(registrationCode));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.MessagePack.g.cs", registrationCode);
     }
 
     /// <summary>
@@ -235,8 +229,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
             // 枚举基元在此追加已定义性校验：TryCreate 只跑用户配的 Validator，而 MessagePack 对未定义数值
             // （999）照常读出，不补这一道就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条、
             // STJ、Newtonsoft 路径都已收紧，这里对齐）。
-            var enumValidity = idInfo.GetEnumValidityCondition("value");
-            lines.Add(_nestedIndent + $"if ({idInfo.FullyQualifiedName}.TryCreate(value, out var id){(enumValidity is null ? string.Empty : $" && {enumValidity}")})");
+            lines.Add(_nestedIndent + $"if ({idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName)})");
             lines.Add(_nestedIndent + "{");
             lines.Add(_nestedIndent + "    return id;");
             lines.Add(_nestedIndent + "}");
@@ -248,12 +241,4 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 
         return string.Join("\n", lines);
     }
-
-    /// <summary>
-    /// 取格式化器的类名，消歧规则与 Dapper 的处理器一致。
-    /// </summary>
-    private static string GetFormatterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
-        => requiresNamespaceQualifier
-            ? $"{idInfo.HintName.Replace('.', '_')}MessagePackFormatter"
-            : $"{idInfo.EscapedName}MessagePackFormatter";
 }

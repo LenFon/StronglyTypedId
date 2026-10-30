@@ -36,31 +36,37 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 /// 在 ASP.NET Core MVC 模型绑定中启用强类型 Id。
                 /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.Mvc.MvcOptions"/>.</param>
+                /// <returns>同一个 <paramref name="options"/>，便于链式调用。</returns>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
-                public static void ApplyTo(global::Microsoft.AspNetCore.Mvc.MvcOptions options)
+                public static global::Microsoft.AspNetCore.Mvc.MvcOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Mvc.MvcOptions options)
                 {
                     // 幂等：重复调用时不再插入，避免 provider 列表增长。
                     foreach (var provider in options.ModelBinderProviders)
                     {
                         if (provider is StronglyTypedIdModelBinderProvider)
                         {
-                            return;
+                            return options;
                         }
                     }
 
                     options.ModelBinderProviders.Insert(0, new StronglyTypedIdModelBinderProvider());
+
+                    return options;
                 }
 
                 /// <summary>
                 /// 把强类型 Id 用作 ASP.NET Core 路由约束。
                 /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.Routing.RouteOptions"/>.</param>
+                /// <returns>同一个 <paramref name="options"/>，便于链式调用。</returns>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
-                public static void ApplyTo(global::Microsoft.AspNetCore.Routing.RouteOptions options)
+                public static global::Microsoft.AspNetCore.Routing.RouteOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Routing.RouteOptions options)
                 {
             {{string.Join("\n", constraintRegistrations)}}
+
+                    return options;
                 }
 
                 /// <summary>
@@ -175,6 +181,6 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.AspNetCoreMvc.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.AspNetCoreMvc.g.cs", code);
     }
 }

@@ -12,7 +12,7 @@ namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
 /// <see cref="SwaggerCodeGenerator"/> 的单元测试：覆盖 V1 / V2 两条 OpenApi 模式分支、
-/// <see cref="SwaggerCodeGenerator.CreateOpenApiSchema"/> 的全部基元类型分支（含默认分支），以及多 Id 生成的 MapType 连接。
+/// <see cref="SwaggerCodeGenerator.CreateOpenApiSchema"/> 的全部基元类型分支（含默认分支），以及多 Id 生成的 schema 表。
 /// </summary>
 public class SwaggerCodeGeneratorTests
 {
@@ -33,9 +33,8 @@ public class SwaggerCodeGeneratorTests
             typeof(StronglyTypedIdAttribute).Assembly,
             typeof(System.Text.Json.JsonSerializer).Assembly,
             typeof(Newtonsoft.Json.JsonSerializer).Assembly,
-            // SwaggerGenOptions.MapType<T> 所在的命名空间由 Abstractions 提供；不预置的话它未必已被
-            // 加载进 AppDomain，合成编译里就会出现「使用了不存在的 using」的假阳性。
-            typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly,
+            // 产物里的 TryAdd 是 System.Collections.Generic 上的扩展方法，需要该程序集在引用集里。
+            typeof(System.Collections.Generic.Dictionary<,>).Assembly,
             // 操作过滤器要读 ApiDescription（OperationFilterContext.ApiDescription 的类型）。
             // 真实项目里它经 ASP.NET Core 框架引用传递进来，引用 Swashbuckle 必然带上它。
             typeof(Microsoft.AspNetCore.Mvc.ApiExplorer.ApiDescription).Assembly,
@@ -153,7 +152,7 @@ public class SwaggerCodeGeneratorTests
             : $$"""new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "{{openApiType}}", Format = "{{format}}" }""";
 
         generated.Should().Contain(
-            $$"""options.MapType<global::Len.StronglyTypedId.OrderId>(() => {{schema}});""");
+            $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = () => {{schema}},""");
     }
 
     /// <summary>
@@ -175,11 +174,11 @@ public class SwaggerCodeGeneratorTests
 
         GetSwaggerGeneratedCode(code, Swagger6Reference)
             .Should().Contain(
-                """options.MapType<global::Len.StronglyTypedId.StatusId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "integer" });""");
+                """[typeof(global::Len.StronglyTypedId.StatusId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "integer" },""");
     }
 
     [Fact]
-    public void Swagger_V1_Should_GenerateMultipleMapTypeCalls_ForMultipleIds()
+    public void Swagger_V1_Should_GenerateSchemaEntryForEveryId()
     {
         var code = """
             using System;
@@ -195,14 +194,14 @@ public class SwaggerCodeGeneratorTests
 
         var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
 
-        generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
-        generated.Should().Contain("options.MapType<global::Len.StronglyTypedId.ProductId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" });");
-        // 两个调用之间应有空行分隔（string.Join 的分隔符）。断言跨到第二个调用，
-        // 否则首个调用前面的换行也能满足它，等于什么都没锁。
-        // 先把行尾归一化成 \n：产物行尾随检出（CRLF / LF）而定，而跨行断言里的「;\n」在 CRLF 产物中并不成立。
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" },");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" },");
+        // 两个条目之间应有换行分隔（string.Join 的分隔符）。断言跨到第二个条目，
+        // 否则首个条目前面的换行也能满足它，等于什么都没锁。
+        // 先把行尾归一化成 \n：产物行尾随检出（CRLF / LF）而定，而跨行断言里的「,\n」在 CRLF 产物中并不成立。
         generated.Replace("\r\n", "\n")
             .Should().Contain(
-                ";\n        }\n\n        if (!schemaMappings.ContainsKey(typeof(global::Len.StronglyTypedId.ProductId)))");
+                ",\n            [typeof(global::Len.StronglyTypedId.ProductId)]");
     }
 
     /// <summary>
@@ -223,7 +222,7 @@ public class SwaggerCodeGeneratorTests
         var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
 
         generated.Should().Contain(
-            """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" });""");
+            """[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" },""");
     }
 
     /// <summary>
@@ -252,7 +251,7 @@ public class SwaggerCodeGeneratorTests
             SyntheticAssembly.GetOrCreate("Swashbuckle.AspNetCore.SwaggerGen", swaggerGenVersion));
 
         generated.Should().Contain(
-            """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" });""");
+            """[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" },""");
     }
 
     #endregion
@@ -276,7 +275,7 @@ public class SwaggerCodeGeneratorTests
             SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
-            "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.Integer, Format = \"int32\" });");
+            "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.Integer, Format = \"int32\" },");
     }
 
     [Fact]
@@ -299,7 +298,7 @@ public class SwaggerCodeGeneratorTests
             SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
-            "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" });");
+            "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" },");
     }
 
     [Fact]
@@ -319,7 +318,7 @@ public class SwaggerCodeGeneratorTests
             SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
-            "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String });");
+            "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String },");
     }
 
     #endregion
@@ -327,15 +326,15 @@ public class SwaggerCodeGeneratorTests
     #region 消费者可编译性：生成文件必须自带扩展方法所需的 using
 
     /// <summary>
-    /// 生成文件顶部声明的 <c>using Microsoft.Extensions.DependencyInjection;</c>。
+    /// 生成文件顶部声明的 <c>using System.Collections.Generic;</c>（<c>TryAdd</c> 是它的扩展方法）。
     /// </summary>
-    private const string DependencyInjectionUsing = "using Microsoft.Extensions.DependencyInjection;";
+    private const string GenericCollectionsUsing = "using System.Collections.Generic;";
 
     /// <summary>
-    /// 回归用例：Swagger 产物自带 <c>using Microsoft.Extensions.DependencyInjection;</c>。
+    /// 回归用例：Swagger 产物自带 <c>using System.Collections.Generic;</c>。
     /// </summary>
     [Fact]
-    public void Swagger_Should_DeclareDependencyInjectionUsing()
+    public void Swagger_Should_DeclareGenericCollectionsUsing()
     {
         var code = """
             using System;
@@ -348,14 +347,14 @@ public class SwaggerCodeGeneratorTests
 
         var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
 
-        generated.Should().Contain(DependencyInjectionUsing);
+        generated.Should().Contain(GenericCollectionsUsing);
     }
 
     /// <summary>
-    /// 回归用例：Swagger 产物在「隐式 using 不含 DependencyInjection 的消费者」里必须能编译。
+    /// 回归用例：Swagger 产物在「隐式 using 不含 System.Collections.Generic 的消费者」里必须能编译。
     /// </summary>
     [Fact]
-    public void Swagger_Should_Compile_WhenConsumerHasNoImplicitDependencyInjectionUsing()
+    public void Swagger_Should_Compile_WhenConsumerHasNoImplicitGenericCollectionsUsing()
     {
         var code = """
             using System;
@@ -413,7 +412,7 @@ public class SwaggerCodeGeneratorTests
         var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
 
         generated.Should().Contain(
-            """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string" });""");
+            """[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string" },""");
     }
 
     [Fact]
@@ -434,7 +433,7 @@ public class SwaggerCodeGeneratorTests
             SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"));
 
         generated.Should().Contain(
-            "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String });");
+            "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String },");
     }
 
     #endregion
@@ -459,7 +458,7 @@ public class SwaggerCodeGeneratorTests
 
         GetSwaggerGeneratedCode(code, Swagger6Reference)
             .Should().Contain(
-                """options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "object", Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.Models.OpenApiSchema> { ["value"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" } }, Required = new global::System.Collections.Generic.HashSet<string> { "value" } });""");
+                """[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "object", Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.Models.OpenApiSchema> { ["value"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" } }, Required = new global::System.Collections.Generic.HashSet<string> { "value" } },""");
     }
 
     /// <summary>
@@ -502,7 +501,7 @@ public class SwaggerCodeGeneratorTests
                 Swagger6Reference,
                 SyntheticAssembly.GetOrCreate("Microsoft.OpenApi", "2.0.0.0"))
             .Should().Contain(
-                "options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.Object, Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.IOpenApiSchema> { [\"value\"] = new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" } }, Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } });");
+                "[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.Object, Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.IOpenApiSchema> { [\"value\"] = new global::Microsoft.OpenApi.OpenApiSchema { Type = global::Microsoft.OpenApi.JsonSchemaType.String, Format = \"uuid\" } }, Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } },");
     }
 
     /// <summary>
@@ -550,10 +549,10 @@ public class SwaggerCodeGeneratorTests
     /// 注册入口的方法体此前用制表符缩进，且左大括号后带一个尾随空格，与其余生成物的 4 空格风格不一致。
     /// </summary>
     /// <remarks>
-    /// 断言里带上换行与空白：只匹配 <c>options.MapType&lt;...&gt;(</c> 的子串对缩进完全免疫。
+    /// 断言里带上换行与空白：只匹配 <c>TryAdd</c> 的子串对缩进完全免疫。
     /// </remarks>
     [Fact]
-    public void Swagger_ApplyTo_Should_UseSpacesForIndentation()
+    public void Swagger_AddStronglyTypedIds_Should_UseSpacesForIndentation()
     {
         var code = """
             using System;
@@ -567,9 +566,9 @@ public class SwaggerCodeGeneratorTests
         GetSwaggerGeneratedCode(code, Swagger6Reference).Replace("\r\n", "\n")
             .Should().Contain(
                 "\n    {\n        var schemaMappings = options.SchemaGeneratorOptions.CustomTypeMappings;\n"
-                + "\n        if (!schemaMappings.ContainsKey(typeof(global::Len.StronglyTypedId.OrderId)))\n"
+                + "\n        foreach (var schemaMapping in StronglyTypedIdOperationFilter.Schemas)\n"
                 + "        {\n"
-                + "            options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });\n"
+                + "            schemaMappings.TryAdd(schemaMapping.Key, schemaMapping.Value);\n"
                 + "        }")
             .And.NotContain("\t")
             .And.NotContain("    { \n");
@@ -611,8 +610,8 @@ public class SwaggerCodeGeneratorTests
         var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
 
         generated.Should()
-            .Contain("_schemas.TryGetValue(parameterDescription.Type, out var factory)")
-            .And.NotContain("_schemas.TryGetValue(parameterDescription.ModelMetadata");
+            .Contain("Schemas.TryGetValue(parameterDescription.Type, out var factory)")
+            .And.NotContain("Schemas.TryGetValue(parameterDescription.ModelMetadata");
     }
 
     /// <summary>
@@ -628,7 +627,7 @@ public class SwaggerCodeGeneratorTests
     }
 
     /// <summary>
-    /// 注册必须幂等：重复调用 <c>ApplyTo</c> 不该让过滤器列表增长。
+    /// 注册必须幂等：重复调用 <c>AddStronglyTypedIds</c> 不该让过滤器列表增长。
     /// </summary>
     [Fact]
     public void SwaggerOperationFilter_Should_BeRegisteredIdempotently()
@@ -638,12 +637,12 @@ public class SwaggerCodeGeneratorTests
         generated.Should()
             .Contain("if (filter is StronglyTypedIdOperationFilter)")
             .And.Contain("generatorOptions.OperationFilters.Add(new StronglyTypedIdOperationFilter());")
-            // 幂等检查只能「跳过注册」，不能提前返回，否则第二次调用 ApplyTo 会把 MapType 一起跳过。
+            // 幂等检查只能「跳过注册」，不能提前返回，否则第二次调用 AddStronglyTypedIds 会把 schema 注册一起跳过。
             .And.NotContain("return;\n                    }\n\n                    generatorOptions");
     }
 
     /// <summary>
-    /// schema 表按 Id 类型登记，值与 <c>MapType</c> 用的是同一份口径（类型 / format / 是否对象形态）。
+    /// schema 表按 Id 类型登记，值与注册入口用的是同一份口径（类型 / format / 是否对象形态）。
     /// </summary>
     /// <remarks>
     /// 表里存的是工厂而不是现成的 schema：每个参数拿到的必须是自己的实例。

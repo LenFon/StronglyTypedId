@@ -1,4 +1,4 @@
-﻿// G2：集成运行时验证。在真实包引用下直接调用生成产物 StronglyTypedIds.ApplyTo，
+﻿// G2：集成运行时验证。在真实包引用下直接调用生成产物的各集成入口，
 // 断言各集成（EF Core / Dapper / Swagger / 内置 OpenApi / MVC）的产物可执行且行为正确，
 // 而非仅靠文本契约（CodeGeneratorModuleGateTests 已锁定文本形态，本文件补运行时语义）。
 using System.Data;
@@ -15,18 +15,18 @@ namespace Len.StronglyTypedId.Generators;
 /// <summary>
 /// 生成的 <c>StronglyTypedIds</c> 是 <c>internal static partial class</c>（本编译单元内可见），各集成产物按引用的包被门控生成。
 /// 本测试工程引用了 EF Core、Dapper、Swashbuckle、Microsoft.AspNetCore.OpenApi 与 ASP.NET Core 框架，
-/// 使 5 个集成生成器全部触发，故 5 组 <c>ApplyTo</c> 都在本编译里可见。
+/// 使 5 个集成生成器全部触发，故 5 组 <c>AddStronglyTypedIds</c> 都在本编译里可见。
 /// </summary>
 public class IntegrationRuntimeTests
 {
     #region Dapper：SqlMapper.TypeHandler 真实注册 + 往返
 
     [Fact]
-    public void Dapper_ApplyTo_RegistersTypeHandlersAndRoundTrips()
+    public void Dapper_AddStronglyTypedIds_RegistersTypeHandlersAndRoundTrips()
     {
         // 带参重载是为源码兼容保留的转发：Dapper 的注册是进程级全局的，connection 不参与。
-        // 传 null 即可，ApplyTo 不对 connection 解引用。
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
+        // 传 null 即可，AddStronglyTypedIds 不对 connection 解引用。
+        ((System.Data.IDbConnection?)null!).AddStronglyTypedIds();
 
         // 验证生成的 IntegrationGuidIdTypeHandler（internal 嵌套类）可实例化且 SetValue/Parse 往返正确。
         var handlerType = typeof(Len.StronglyTypedId.StronglyTypedIds)
@@ -57,7 +57,7 @@ public class IntegrationRuntimeTests
     [Fact]
     public void Dapper_SetValue_WritesPrimitive_ForReferenceTypeId()
     {
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
+        ((System.Data.IDbConnection?)null!).AddStronglyTypedIds();
 
         var handlerType = typeof(Len.StronglyTypedId.StronglyTypedIds)
             .Assembly
@@ -87,17 +87,17 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
-    /// 重复调用 <c>ApplyTo</c> 必须幂等。Dapper 的 <c>AddTypeHandler</c> 是按类型赋值而不是追加，
+    /// 重复调用 <c>AddStronglyTypedIds</c> 必须幂等。Dapper 的 <c>AddTypeHandler</c> 是按类型赋值而不是追加，
     /// 所以第二次调用只会把处理器换成等价的新实例：不抛异常，注册表也不膨胀。
     /// 这正是「每个连接注册一次」这种误用能长期不被发现的原因，它不报错，只是白做功。
     /// </summary>
     [Fact]
-    public void Dapper_ApplyTo_IsIdempotent()
+    public void Dapper_AddStronglyTypedIds_IsIdempotent()
     {
         // 无参重载是推荐写法；带参重载保留兼容，两者指向同一份进程级注册。
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo((System.Data.IDbConnection?)null!);
+        Len.StronglyTypedId.StronglyTypedIds.AddStronglyTypedIds();
+        Len.StronglyTypedId.StronglyTypedIds.AddStronglyTypedIds();
+        ((System.Data.IDbConnection?)null!).AddStronglyTypedIds();
 
         Dapper.SqlMapper.HasTypeHandler(typeof(IntegrationGuidId)).Should().BeTrue("值类型 Id 的处理器必须仍在册");
         Dapper.SqlMapper.HasTypeHandler(typeof(IntegrationReferenceId)).Should().BeTrue("引用类型 Id 的处理器必须仍在册");
@@ -119,7 +119,7 @@ public class IntegrationRuntimeTests
     [Fact]
     public void Dapper_Parse_AcceptsProviderShapedValues_ForNonStringPrimitives()
     {
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+        Len.StronglyTypedId.StronglyTypedIds.AddStronglyTypedIds();
 
         // 枚举：SQLite 的 INTEGER 列一律返回 long；部分驱动把枚举列当文本返回。
         GetDapperHandler<SampleStatusId>().Parse(1L)
@@ -155,7 +155,7 @@ public class IntegrationRuntimeTests
     [Fact]
     public void Dapper_Parse_RejectsUndefinedEnumValues_OnEveryPath()
     {
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+        Len.StronglyTypedId.StronglyTypedIds.AddStronglyTypedIds();
 
         var status = GetDapperHandler<SampleStatusId>();
 
@@ -194,7 +194,7 @@ public class IntegrationRuntimeTests
     [Fact]
     public void Dapper_RoundTrips_NonStringPrimitives_ThroughSqlite()
     {
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo();
+        Len.StronglyTypedId.StronglyTypedIds.AddStronglyTypedIds();
 
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
         connection.Open();
@@ -267,12 +267,12 @@ public class IntegrationRuntimeTests
     #region Swagger：MapType 注册入口可执行
 
     [Fact]
-    public void Swagger_ApplyTo_RegistersMapTypeForGuidId()
+    public void Swagger_AddStronglyTypedIds_RegistersMapTypeForGuidId()
     {
         var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
 
-        // 生成器产物的 ApplyTo(SwaggerGenOptions) 必须可调用且不抛。
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        // 生成器产物的 AddStronglyTypedIds(SwaggerGenOptions) 必须可调用且不抛。
+        options.AddStronglyTypedIds();
 
         options.Should().NotBeNull();
     }
@@ -283,11 +283,11 @@ public class IntegrationRuntimeTests
     /// 「Id → 基元 schema」的实际结果，而不是只断言「调用不抛」。
     /// </summary>
     [Fact]
-    public void Swagger_ApplyTo_MapsGuidIdToUuidSchema()
+    public void Swagger_AddStronglyTypedIds_MapsGuidIdToUuidSchema()
     {
         var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
 
         options.SchemaGeneratorOptions.CustomTypeMappings.Should().ContainKey(typeof(IntegrationGuidId));
 
@@ -302,11 +302,11 @@ public class IntegrationRuntimeTests
     /// 已经不是合法的 uuid，继续标 <c>format: uuid</c> 会让生成的客户端按 uuid 校验而全部失败。
     /// </summary>
     [Fact]
-    public void Swagger_ApplyTo_MapsPrefixedIdToPlainStringSchema()
+    public void Swagger_AddStronglyTypedIds_MapsPrefixedIdToPlainStringSchema()
     {
         var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
 
         options.SchemaGeneratorOptions.CustomTypeMappings.Should().ContainKey(typeof(PrefixedIntegrationGuidId));
 
@@ -321,11 +321,11 @@ public class IntegrationRuntimeTests
     /// 否则生成的客户端会按裸字符串收发，与服务端实际报文不符。
     /// </summary>
     [Fact]
-    public void Swagger_ApplyTo_MapsObjectShapeIdToObjectSchema()
+    public void Swagger_AddStronglyTypedIds_MapsObjectShapeIdToObjectSchema()
     {
         var options = new Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
 
         options.SchemaGeneratorOptions.CustomTypeMappings.Should().ContainKey(typeof(ObjectShapeIntegrationGuidId));
 
@@ -362,20 +362,20 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
-    /// 8.0 包引用下也不能留下 <c>ApplyTo(OpenApiOptions)</c> 重载：8.0 里没有 <c>OpenApiOptions</c>，
+    /// 8.0 包引用下也不能留下 <c>AddStronglyTypedIds(OpenApiOptions)</c> 重载：8.0 里没有 <c>OpenApiOptions</c>，
     /// 一旦生成就是消费者侧的 CS0246。按参数类型名判定，避免直接引用该类型。
     /// </summary>
     [Fact]
-    public void AspNetCoreOpenApi_Should_NotExposeApplyToOverload_WhenPackageVersionIsEight()
+    public void AspNetCoreOpenApi_Should_NotExposeAddStronglyTypedIdsOverload_WhenPackageVersionIsEight()
     {
         var openApiOverloads = typeof(Len.StronglyTypedId.StronglyTypedIds)
             .GetMethods()
-            .Where(method => method.Name == "ApplyTo")
+            .Where(method => method.Name == "AddStronglyTypedIds")
             .Where(method => method.GetParameters().Any(parameter =>
                 parameter.ParameterType.Name.Contains("OpenApiOptions", StringComparison.Ordinal)))
             .ToArray();
 
-        openApiOverloads.Should().BeEmpty("8.0 包引用下不应生成 ApplyTo(OpenApiOptions)，否则消费者编译会 CS0246");
+        openApiOverloads.Should().BeEmpty("8.0 包引用下不应生成 AddStronglyTypedIds(OpenApiOptions)，否则消费者编译会 CS0246");
     }
 
     #endregion
@@ -383,23 +383,23 @@ public class IntegrationRuntimeTests
     #region MVC：ModelBinderProvider 与 RouteConstraint 注册入口可执行
 
     [Fact]
-    public void Mvc_ApplyTo_RegistersModelBinderProviderAndRouteConstraints()
+    public void Mvc_AddStronglyTypedIds_RegistersModelBinderProviderAndRouteConstraints()
     {
         var mvcOptions = new Microsoft.AspNetCore.Mvc.MvcOptions();
 
-        // 生成器产物 ApplyTo(MvcOptions)：插入 ModelBinderProvider。
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+        // 生成器产物 AddStronglyTypedIds(MvcOptions)：插入 ModelBinderProvider。
+        mvcOptions.AddStronglyTypedIds();
 
         mvcOptions.ModelBinderProviders.Should().Contain(p => p.GetType().Name == "StronglyTypedIdModelBinderProvider",
-            "ApplyTo(MvcOptions) 必须插入生成的模型绑定器 provider");
+            "AddStronglyTypedIds(MvcOptions) 必须插入生成的模型绑定器 provider");
 
         var routeOptions = new Microsoft.AspNetCore.Routing.RouteOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(routeOptions);
+        routeOptions.AddStronglyTypedIds();
 
         // 路由约束注册表里应有 IntegrationGuidId 对应的约束（按短名入 ConstraintMap）。
         routeOptions.ConstraintMap.Should().ContainKey("IntegrationGuidId",
-            "ApplyTo(RouteOptions) 必须把每个 Id 注册为路由约束");
+            "AddStronglyTypedIds(RouteOptions) 必须把每个 Id 注册为路由约束");
 
         var constraint = (Microsoft.AspNetCore.Routing.IRouteConstraint)Activator.CreateInstance(
             routeOptions.ConstraintMap["IntegrationGuidId"])!;
@@ -425,22 +425,22 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
-    /// <c>ApplyTo(MvcOptions)</c> 必须幂等：启动代码里重复调用（多个模块各自注册、或配置被复用）时，
+    /// <c>AddStronglyTypedIds(MvcOptions)</c> 必须幂等：启动代码里重复调用（多个模块各自注册、或配置被复用）时，
     /// 每次 <c>Insert</c> 一个新实例会让 provider 列表无限增长，绑定器也被反复重建。
     /// </summary>
     [Fact]
-    public void Mvc_ApplyTo_Should_BeIdempotent()
+    public void Mvc_AddStronglyTypedIds_Should_BeIdempotent()
     {
         var mvcOptions = new Microsoft.AspNetCore.Mvc.MvcOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+        mvcOptions.AddStronglyTypedIds();
         var afterFirst = mvcOptions.ModelBinderProviders.Count;
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+        mvcOptions.AddStronglyTypedIds();
+        mvcOptions.AddStronglyTypedIds();
 
         mvcOptions.ModelBinderProviders.Count.Should().Be(afterFirst,
-            "重复调用 ApplyTo 不能再叠加 provider");
+            "重复调用 AddStronglyTypedIds 不能再叠加 provider");
         mvcOptions.ModelBinderProviders
             .Count(p => p.GetType().Name == "StronglyTypedIdModelBinderProvider")
             .Should().Be(1, "生成的 provider 至多存在一个");
@@ -459,7 +459,7 @@ public class IntegrationRuntimeTests
     {
         var mvcOptions = new Microsoft.AspNetCore.Mvc.MvcOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(mvcOptions);
+        mvcOptions.AddStronglyTypedIds();
 
         var metadataProvider = new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider();
         var services = new ServiceCollection().AddLogging().BuildServiceProvider();
@@ -535,19 +535,19 @@ public class IntegrationRuntimeTests
     #region System.Text.Json / Newtonsoft.Json 全局注册入口：真实注册 + 往返
 
     /// <summary>
-    /// <c>StronglyTypedIds.ApplyTo(JsonSerializerOptions)</c> 必须把每个 Id 的内嵌转换器挂到 <c>options.Converters</c>
+    /// <c>options.AddStronglyTypedIds()</c> 必须把每个 Id 的内嵌转换器挂到 <c>options.Converters</c>
     /// 上，且挂上之后序列化 / 反序列化往返正确。
     /// </summary>
     [Fact]
-    public void SystemTextJson_ApplyTo_RegistersConvertersAndRoundTrips()
+    public void SystemTextJson_AddStronglyTypedIds_RegistersConvertersAndRoundTrips()
     {
         var options = new System.Text.Json.JsonSerializerOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
 
         options.Converters.Should().Contain(
             converter => converter is System.Text.Json.Serialization.JsonConverter<IntegrationGuidId>,
-            "ApplyTo 必须把 IntegrationGuidId 的内嵌 STJ 转换器挂到 options.Converters");
+            "AddStronglyTypedIds 必须把 IntegrationGuidId 的内嵌 STJ 转换器挂到 options.Converters");
 
         var id = IntegrationGuidId.Create(Guid.NewGuid());
 
@@ -558,7 +558,7 @@ public class IntegrationRuntimeTests
     }
 
     /// <summary>
-    /// <c>settings.AddStronglyTypedId()</c> 必须把每个 Id 的内嵌转换器挂到 <c>settings.Converters</c> 上，且挂上之后 Newtonsoft
+    /// <c>settings.AddStronglyTypedIds()</c> 必须把每个 Id 的内嵌转换器挂到 <c>settings.Converters</c> 上，且挂上之后 Newtonsoft
     /// 往返正确。
     /// </summary>
     [Fact]
@@ -566,11 +566,11 @@ public class IntegrationRuntimeTests
     {
         var settings = new Newtonsoft.Json.JsonSerializerSettings();
 
-        settings.AddStronglyTypedId();
+        settings.AddStronglyTypedIds();
 
         settings.Converters.Should().Contain(
             converter => converter.CanConvert(typeof(IntegrationGuidId)),
-            "AddStronglyTypedId 必须把 IntegrationGuidId 的内嵌 Newtonsoft 转换器挂到 settings.Converters");
+            "AddStronglyTypedIds 必须把 IntegrationGuidId 的内嵌 Newtonsoft 转换器挂到 settings.Converters");
 
         var id = IntegrationGuidId.Create(Guid.NewGuid());
 
@@ -582,7 +582,7 @@ public class IntegrationRuntimeTests
 
     /// <summary>
     /// 泛型容器里的 Id 是 JSON 支持唯一的缺口：转换器类照常生成，但 <c>[JsonConverter]</c> 特性引用不了含类型参数的
-    /// 转换器（CS0416），<c>AddStronglyTypedId()</c> 也会跳过它（开放泛型不能作类型实参）。因此默认序列化退化成
+    /// 转换器（CS0416），<c>AddStronglyTypedIds()</c> 也会跳过它（开放泛型不能作类型实参）。因此默认序列化退化成
     /// record 结构，只有按闭合类型手动挂上生成的转换器才回到基元形态。这条用例锁定该行为与可行的绕法。
     /// </summary>
     [Fact]
@@ -685,7 +685,7 @@ public class IntegrationRuntimeTests
     {
         var routeOptions = new Microsoft.AspNetCore.Routing.RouteOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(routeOptions);
+        routeOptions.AddStronglyTypedIds();
 
         routeOptions.ConstraintMap.Should().ContainKey("PrefixedIntegrationGuidId");
 
@@ -746,11 +746,11 @@ public class IntegrationRuntimeTests
     /// 前缀贯通 STJ 全局注册入口：序列化带前缀、反序列化剥离。
     /// </summary>
     [Fact]
-    public void Prefix_Should_FlowThroughSystemTextJsonApplyTo()
+    public void Prefix_Should_FlowThroughSystemTextJsonAddStronglyTypedIds()
     {
         var options = new System.Text.Json.JsonSerializerOptions();
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
 
         var id = PrefixedIntegrationGuidId.Create(Guid.NewGuid());
 
@@ -772,22 +772,22 @@ public class IntegrationRuntimeTests
     public void JsonRegistrations_AreIdempotent()
     {
         var options = new System.Text.Json.JsonSerializerOptions();
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
         var afterFirst = options.Converters.Count;
         afterFirst.Should().BeGreaterThan(0, "前置条件：必须真的注册了转换器");
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
-        options.Converters.Count.Should().Be(afterFirst, "重复调用 ApplyTo 不得让转换器列表增长");
+        options.AddStronglyTypedIds();
+        options.AddStronglyTypedIds();
+        options.Converters.Count.Should().Be(afterFirst, "重复调用 AddStronglyTypedIds 不得让转换器列表增长");
 
         var settings = new Newtonsoft.Json.JsonSerializerSettings();
-        settings.AddStronglyTypedId();
+        settings.AddStronglyTypedIds();
         var njAfterFirst = settings.Converters.Count;
         njAfterFirst.Should().BeGreaterThan(0, "前置条件：必须真的注册了转换器");
 
-        settings.AddStronglyTypedId();
-        settings.AddStronglyTypedId();
-        settings.Converters.Count.Should().Be(njAfterFirst, "重复调用 AddStronglyTypedId 不得让转换器列表增长");
+        settings.AddStronglyTypedIds();
+        settings.AddStronglyTypedIds();
+        settings.Converters.Count.Should().Be(njAfterFirst, "重复调用 AddStronglyTypedIds 不得让转换器列表增长");
     }
 
     /// <summary>
@@ -798,13 +798,13 @@ public class IntegrationRuntimeTests
     /// 幂等实现必须在「已注册」时直接跳过，而不是先清空或重建列表。
     /// </remarks>
     [Fact]
-    public void SystemTextJsonApplyTo_PreservesUserConverters_AndSurvivesFrozenOptions()
+    public void SystemTextJsonAddStronglyTypedIds_PreservesUserConverters_AndSurvivesFrozenOptions()
     {
         var options = new System.Text.Json.JsonSerializerOptions();
         var userConverter = new System.Text.Json.Serialization.JsonStringEnumConverter();
         options.Converters.Add(userConverter);
 
-        Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
         options.Converters[0].Should().BeSameAs(userConverter, "用户自己的转换器必须保持在原位");
 
         // 触发冻结：此后 options 只读。
@@ -812,7 +812,7 @@ public class IntegrationRuntimeTests
         var frozenCount = options.Converters.Count;
 
         // 冻结后重复注册不得抛异常，全部转换器都已注册，实现应当直接跳过。
-        var act = () => Len.StronglyTypedId.StronglyTypedIds.ApplyTo(options);
+        var act = () => options.AddStronglyTypedIds();
         act.Should().NotThrow("已注册时不应触碰已冻结的集合");
         options.Converters.Count.Should().Be(frozenCount);
     }

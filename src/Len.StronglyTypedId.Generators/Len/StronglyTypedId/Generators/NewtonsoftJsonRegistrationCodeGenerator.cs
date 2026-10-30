@@ -5,7 +5,7 @@
 /// </summary>
 /// <remarks>
 /// 承担两件事：为「声明程序集没有引用 Newtonsoft.Json」的外部 Id 生成顶层转换器，以及生成
-/// <c>AddStronglyTypedId</c> 注册入口。
+/// <c>AddStronglyTypedIds</c> 注册入口。
 /// <para>
 /// 需要顶层转换器的原因见 <see cref="StronglyTypedIdInfo.RequiresExternalNewtonsoftJsonConverter"/>：
 /// 内嵌转换器只能生成在声明 Id 的程序集里，消费方补一份会撞 CS0426。
@@ -40,7 +40,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         }
 
         // 顶层转换器只在外部 Id 之间需要消歧：内嵌版嵌在各自 Id 内部，与顶层版不同层，不会撞名。
-        var ambiguousNames = GetAmbiguousNames(externalIds);
+        var ambiguousNames = IntegrationNaming.GetAmbiguousNames(externalIds);
 
         var registrations = stronglyTypedIds
             .Select(idInfo =>
@@ -48,7 +48,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 // 有内嵌版的注册内嵌版（声明程序集自己就带转换器）；没有的注册消费方补出来的顶层版，
                 // 否则那个 Id 在 Newtonsoft 下会被写成对象形态，而 System.Text.Json 写的是字符串。
                 var converterType = idInfo.RequiresExternalNewtonsoftJsonConverter
-                    ? $"global::Len.StronglyTypedId.StronglyTypedIds.{GetConverterName(idInfo, ambiguousNames.Contains(idInfo.Name))}"
+                    ? $"global::Len.StronglyTypedId.StronglyTypedIds.{IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "NewtonsoftJsonConverter")}"
                     : $"{idInfo.FullyQualifiedName}.NewtonsoftJsonConverter";
 
                 return $$"""
@@ -69,7 +69,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 /// <param name="settings"><see cref="global::Newtonsoft.Json.JsonSerializerSettings"/>.</param>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(NewtonsoftJsonRegistrationCodeGenerator), version)}}
-                public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)
+                public static void AddStronglyTypedIds(this global::Newtonsoft.Json.JsonSerializerSettings settings)
                 {
                     // 幂等：先收集已注册的转换器类型，重复调用时列表不增长。
                     var registered = new global::System.Collections.Generic.HashSet<global::System.Type>();
@@ -84,7 +84,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
             }
             """;
 
-        context.AddSource("StronglyTypedIds.NewtonsoftJson.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.NewtonsoftJson.g.cs", code);
     }
 
     /// <summary>
@@ -97,11 +97,11 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
             return;
         }
 
-        var ambiguousNames = GetAmbiguousNames(externalIds);
+        var ambiguousNames = IntegrationNaming.GetAmbiguousNames(externalIds);
 
         foreach (var idInfo in externalIds)
         {
-            var converterName = GetConverterName(idInfo, ambiguousNames.Contains(idInfo.Name));
+            var converterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "NewtonsoftJsonConverter");
 
             var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
@@ -138,28 +138,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 }
                 """;
 
-            context.AddSource($"{idInfo.HintName}.NewtonsoftJsonExternal.g.cs", GeneratedCode.NormalizeLineEndings(code));
+            GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.NewtonsoftJsonExternal.g.cs", code);
         }
     }
-
-    /// <summary>
-    /// 取在多个 Id 之间重名的短名集合。
-    /// </summary>
-    /// <remarks>
-    /// 分组键用 Name 而非 EscapedName：这里只比是否重名，名字不落进生成代码，两者又是 1:1 映射。
-    /// </remarks>
-    private static ImmutableHashSet<string> GetAmbiguousNames(List<StronglyTypedIdInfo> stronglyTypedIds)
-        => stronglyTypedIds
-            .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToImmutableHashSet(StringComparer.Ordinal);
-
-    /// <summary>
-    /// 取顶层转换器的类名，消歧规则与 EF Core 转换器、Dapper 处理器一致。
-    /// </summary>
-    private static string GetConverterName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
-        => requiresNamespaceQualifier
-            ? $"{idInfo.HintName.Replace('.', '_')}NewtonsoftJsonConverter"
-            : $"{idInfo.EscapedName}NewtonsoftJsonConverter";
 }

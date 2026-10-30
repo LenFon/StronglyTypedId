@@ -472,7 +472,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
-        var validatorName = GetValidatorName(typeSymbol);
+        var validatorName = AttributeReader.GetValidatorName(typeSymbol);
         var primitiveType = GetPrimitiveParameterType(recordDeclaration, semanticModel, token);
 
         if (validatorName is null || primitiveType is null)
@@ -508,7 +508,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             return context.Document;
         }
 
-        var normalizerName = GetNormalizerName(typeSymbol);
+        var normalizerName = AttributeReader.GetNormalizerName(typeSymbol);
         var primitiveType = GetPrimitiveParameterType(recordDeclaration, semanticModel, token);
 
         if (normalizerName is null || primitiveType is null)
@@ -522,22 +522,6 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             ? await RemoveNamedArgumentAsync(context, diagnostic, token)
             : GenerateMethodStub(context.Document, root, recordDeclaration, $"private static {typeDisplay} {normalizerName}({typeDisplay} value) => value;", token);
     }
-
-    /// <summary>
-    /// 取 <c>[StronglyTypedId(Validator = …)]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
-    /// </summary>
-    private static string? GetValidatorName(INamedTypeSymbol type)
-        => AttributeReader.GetString(
-            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
-            StronglyTypedIdInfo.ValidatorArgumentName);
-
-    /// <summary>
-    /// 取 <c>[StronglyTypedId(Normalizer = …)]</c> 上 <c>Normalizer</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
-    /// </summary>
-    private static string? GetNormalizerName(INamedTypeSymbol type)
-        => AttributeReader.GetString(
-            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
-            StronglyTypedIdInfo.NormalizerArgumentName);
 
     /// <summary>
     /// 取主构造函数唯一参数的类型（即基元 Id 类型），作为验证器桩方法的参数类型。

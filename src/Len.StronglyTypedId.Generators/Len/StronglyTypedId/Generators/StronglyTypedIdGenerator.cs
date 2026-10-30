@@ -42,15 +42,20 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         // 各集成生成器是否启用，只由是否引用了对应程序集决定（见 _generatorCatalog）。
         context.RegisterSourceOutput(idsAndModules, GenerateCoreCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateEfCoreCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateSwaggerCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateDapperCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateAspNetCoreOpenApiCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateAspNetCoreMvcCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateSystemTextJsonRegistrationCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateNewtonsoftJsonRegistrationCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateMessagePackCode);
-        context.RegisterSourceOutput(discoveredIdsAndModules, GenerateMongoDbCode);
+
+        // 集成生成器逐个登记：程序集名与启用判据都取自同一张登记表，新增集成只需加一行登记，
+        // 不必再同步维护一个硬编码程序集名的方法（两处漏一处就会静默不生成）。
+        foreach (var registration in _generatorCatalog)
+        {
+            if (registration.IsCore)
+            {
+                continue;
+            }
+
+            context.RegisterSourceOutput(
+                discoveredIdsAndModules,
+                (context, args) => GenerateIntegrationCode(context, args, registration));
+        }
     }
 
     private static bool CouldBeStronglyTypedId(SyntaxNode syntaxNode, CancellationToken _)
@@ -130,65 +135,20 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         }
     }
 
-    private static void GenerateEfCoreCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "Microsoft.EntityFrameworkCore.dll");
-
-    private static void GenerateSwaggerCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "Swashbuckle.AspNetCore.SwaggerGen.dll");
-
-    private static void GenerateDapperCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "Dapper.dll");
-
-    private static void GenerateAspNetCoreOpenApiCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "Microsoft.AspNetCore.OpenApi.dll");
-
-    private static void GenerateAspNetCoreMvcCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "Microsoft.AspNetCore.Mvc.dll");
-
-    private static void GenerateSystemTextJsonRegistrationCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "System.Text.Json.dll");
-
-    private static void GenerateNewtonsoftJsonRegistrationCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "Newtonsoft.Json.dll");
-
-    private static void GenerateMessagePackCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "MessagePack.dll");
-
-    private static void GenerateMongoDbCode(
-        SourceProductionContext context,
-        (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args)
-        => GenerateIntegrationCode(context, args, "MongoDB.Bson.dll");
-
     /// <summary>
-    /// 按登记名取当前编译引用下已启用的集成生成器并执行；未启用时什么也不做。
+    /// 按登记项取当前编译引用下已启用的集成生成器并执行；未启用时什么也不做。
     /// </summary>
     private static void GenerateIntegrationCode(
         SourceProductionContext context,
         (DiscoveredIds DiscoveredIds, ImmutableArray<ModuleInfo> Modules) args,
-        string assemblyName)
+        CodeGeneratorRegistration registration)
     {
-        var generator = GetIntegrationGenerator(args.Modules, assemblyName);
-
-        if (generator is not null)
+        if (!registration.IsEnabled(args.Modules))
         {
-            RunGuarded(generator, args.DiscoveredIds, args.Modules, context);
+            return;
         }
+
+        RunGuarded(registration.IntegrationGenerator!, args.DiscoveredIds, args.Modules, context);
     }
 
     /// <summary>
@@ -260,8 +220,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             SystemTextJsonCodeGenerator.Instance,
             new DocText("`System.Text.Json` is referenced", "引用了 `System.Text.Json`"),
             new DocText(
-                "Nested `SystemTextJsonConverter` + `[JsonConverter]`, plus `StronglyTypedIds.ApplyTo(JsonSerializerOptions)`",
-                "嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)`"),
+                "Nested `SystemTextJsonConverter` + `[JsonConverter]`, plus `AddStronglyTypedIds()` on `JsonSerializerOptions` and `WithStronglyTypedIds()` for source-generated contexts",
+                "嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性，以及 `JsonSerializerOptions` 上的 `AddStronglyTypedIds()` 与供源生成 context 使用的 `WithStronglyTypedIds()`"),
             new DocText(
                 "`…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`",
                 "`…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`")),
@@ -271,8 +231,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             NewtonsoftJsonCodeGenerator.Instance,
             new DocText("`Newtonsoft.Json` ≥ 13.0.0 is referenced", "引用了 `Newtonsoft.Json` ≥ 13.0.0"),
             new DocText(
-                "Nested `NewtonsoftJsonConverter` + `[JsonConverter]`, plus `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)`",
-                "嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)`"),
+                "Nested `NewtonsoftJsonConverter` + `[JsonConverter]`, plus `AddStronglyTypedIds()` on `JsonSerializerSettings`",
+                "嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性，以及 `JsonSerializerSettings` 上的 `AddStronglyTypedIds()`"),
             new DocText(
                 "`…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`",
                 "`…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`")),
@@ -285,8 +245,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced",
                 "引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0"),
             new DocText(
-                "Nested `{TypeName}Converter`, plus `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` and `StronglyTypedIds.ApplyTo(ModelBuilder)`",
-                "嵌套 `{TypeName}Converter`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)`"),
+                "Nested `{TypeName}Converter`, plus `AddStronglyTypedIds()` on `ModelConfigurationBuilder` and `ModelBuilder`",
+                "嵌套 `{TypeName}Converter`，以及 `ModelConfigurationBuilder` 与 `ModelBuilder` 上的 `AddStronglyTypedIds()`"),
             new DocText(
                 "`…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs`",
                 "`…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs`")),
@@ -296,8 +256,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             SwaggerCodeGenerator.Instance,
             new DocText("`Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced", "引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0"),
             new DocText(
-                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)`",
-                "`StronglyTypedIds.ApplyTo(SwaggerGenOptions)`"),
+                "`AddStronglyTypedIds()` on `SwaggerGenOptions`",
+                "`SwaggerGenOptions` 上的 `AddStronglyTypedIds()`"),
             new DocText("`StronglyTypedIds.Swagger.g.cs`", "`StronglyTypedIds.Swagger.g.cs`")),
         new CodeGeneratorRegistration(
             "Dapper.dll",
@@ -305,8 +265,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             DapperCodeGenerator.Instance,
             new DocText("`Dapper` ≥ 2.0.0 is referenced", "引用了 `Dapper` ≥ 2.0.0"),
             new DocText(
-                "Nested `{TypeName}TypeHandler`, plus `StronglyTypedIds.ApplyTo()`",
-                "嵌套 `{TypeName}TypeHandler`，以及 `StronglyTypedIds.ApplyTo()`"),
+                "Nested `{TypeName}TypeHandler`, plus `AddStronglyTypedIds()` (also on `IDbConnection`)",
+                "嵌套 `{TypeName}TypeHandler`，以及 `AddStronglyTypedIds()`（`IDbConnection` 上也有一个）"),
             new DocText(
                 "`…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`",
                 "`…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`")),
@@ -316,8 +276,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             MessagePackCodeGenerator.Instance,
             new DocText("`MessagePack` ≥ 2.0.0 is referenced", "引用了 `MessagePack` ≥ 2.0.0"),
             new DocText(
-                "`{TypeName}MessagePackFormatter`, plus `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)`",
-                "`{TypeName}MessagePackFormatter`，以及 `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)`"),
+                "`{TypeName}MessagePackFormatter`, plus `AddStronglyTypedIds()` on `MessagePackSerializerOptions`",
+                "`{TypeName}MessagePackFormatter`，以及 `MessagePackSerializerOptions` 上的 `AddStronglyTypedIds()`"),
             new DocText(
                 "`…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`",
                 "`…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`")),
@@ -333,13 +293,35 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`",
                 "`…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`")),
         new CodeGeneratorRegistration(
+            "HotChocolate.Types.dll",
+            static modules => modules.HasModule("HotChocolate.Types.dll", 13),
+            HotChocolateCodeGenerator.Instance,
+            new DocText("`HotChocolate` ≥ 13.0.0 is referenced", "引用了 `HotChocolate` ≥ 13.0.0"),
+            new DocText(
+                "`{TypeName}HotChocolateType` scalar, plus `AddStronglyTypedIds()` on `IRequestExecutorBuilder`",
+                "`{TypeName}HotChocolateType` scalar，以及 `IRequestExecutorBuilder` 上的 `AddStronglyTypedIds()`"),
+            new DocText(
+                "`…HotChocolate.g.cs`, `StronglyTypedIds.HotChocolate.g.cs`",
+                "`…HotChocolate.g.cs`, `StronglyTypedIds.HotChocolate.g.cs`")),
+        // protobuf-net 把特性放在 protobuf-net.Core、Serializer 放在 protobuf-net；两者由同一个包引入，
+        // 引用后者必然带上前者，故只查 protobuf-net。核心生成器：surrogate 只能靠特性声明。
+        new CodeGeneratorRegistration(
+            "protobuf-net.dll",
+            static modules => modules.HasModule("protobuf-net.dll", 3),
+            ProtobufCodeGenerator.Instance,
+            new DocText("`protobuf-net` ≥ 3.0.0 is referenced", "引用了 `protobuf-net` ≥ 3.0.0"),
+            new DocText(
+                "`[ProtoContract(Surrogate = …)]` on the id plus a nested `{TypeName}Surrogate` with conversion operators",
+                "Id 上的 `[ProtoContract(Surrogate = …)]`，以及带转换运算符的嵌套 `{TypeName}Surrogate`"),
+            new DocText("`…Protobuf.g.cs`", "`…Protobuf.g.cs`")),
+        new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.OpenApi.dll",
             static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
             AspNetCoreOpenApiCodeGenerator.Instance,
             new DocText("`Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced", "引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0"),
             new DocText(
-                "`StronglyTypedIds.ApplyTo(OpenApiOptions)`",
-                "`StronglyTypedIds.ApplyTo(OpenApiOptions)`"),
+                "`AddStronglyTypedIds()` on `OpenApiOptions`",
+                "`OpenApiOptions` 上的 `AddStronglyTypedIds()`"),
             new DocText(
                 "`StronglyTypedIds.AspNetCoreOpenApi.g.cs`",
                 "`StronglyTypedIds.AspNetCoreOpenApi.g.cs`")),
@@ -355,8 +337,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade)",
                 "引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面）"),
             new DocText(
-                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)` (also powers Minimal API route constraints)",
-                "`StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)`（同时支撑 Minimal API 的路由约束）"),
+                "`AddStronglyTypedIds()` on `MvcOptions` and `RouteOptions` (also powers Minimal API route constraints)",
+                "`MvcOptions` 与 `RouteOptions` 上的 `AddStronglyTypedIds()`（同时支撑 Minimal API 的路由约束）"),
             new DocText(
                 "`StronglyTypedIds.AspNetCoreMvc.g.cs`",
                 "`StronglyTypedIds.AspNetCoreMvc.g.cs`")),
@@ -458,22 +440,6 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             .OrderBy(static registration => registration.CoreGenerator!.Order)
             .Select(static registration => registration.CoreGenerator!)];
 
-    /// <summary>
-    /// 按登记名取当前编译引用下已启用的集成生成器；未启用时返回 <see langword="null"/>。
-    /// </summary>
-    private static IIntegrationCodeGenerator? GetIntegrationGenerator(ImmutableArray<ModuleInfo> modules, string assemblyName)
-    {
-        foreach (var registration in _generatorCatalog)
-        {
-            if (registration.AssemblyName == assemblyName && !registration.IsCore && registration.IsEnabled(modules))
-            {
-                return registration.IntegrationGenerator;
-            }
-        }
-
-        return null;
-    }
-
     private static StronglyTypedIdInfo? GetStronglyTypedIdInfoOrNull(GeneratorAttributeSyntaxContext context, CancellationToken _)
     {
         if (context.TargetSymbol is not INamedTypeSymbol symbol)
@@ -484,7 +450,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         // 不能用 Constructors[0]：没有主构造函数的 record 会把合成的拷贝构造排在首位，于是参数类型
         // 绑到 record 自身，IsSupported 返回 false，生成器静默不产出任何代码。改为遍历实例构造、
         // 跳过参数类型等于自身的那个，与分析器 GetSingleParameterType 同一套判据。
-        var ctorArgType = GetSingleParameterType(symbol);
+        // 可空引用类型参数不生成任何代码，由分析器的 ParameterCannotBeNullable 报错。
+        var ctorArgType = StronglyTypedIdInfo.GetSingleParameterType(symbol, skipNullableAnnotated: true);
 
         if (ctorArgType is null)
         {
@@ -492,36 +459,9 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         }
 
         var assembly = context.SemanticModel.Compilation.Assembly;
-        var defaultValidator = StronglyTypedIdInfo.GetAssemblyDefaultValidator(assembly);
-        var defaultNormalizer = StronglyTypedIdInfo.GetAssemblyDefaultNormalizer(assembly);
-        var defaultExceptionType = StronglyTypedIdInfo.GetAssemblyDefaultExceptionType(assembly);
-        var defaultIntegrations = StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(assembly);
-        var defaultRedact = StronglyTypedIdInfo.GetAssemblyDefaultRedactValidationMessage(assembly);
 
         return SupportedPrimitiveTypes.IsSupported(ctorArgType)
-            ? new StronglyTypedIdInfo(symbol, defaultValidator, defaultNormalizer, defaultExceptionType, defaultIntegrations, defaultRedact)
+            ? new StronglyTypedIdInfo(symbol, StronglyTypedIdDefaults.Read(assembly))
             : null;
-    }
-
-    /// <summary>
-    /// 取强类型 Id 的基元类型，即唯一一个「单参数、且参数类型不是自身」的实例构造函数所带的参数类型。
-    /// </summary>
-    /// <remarks>
-    /// 跳过参数类型等于自身的构造，是为了滤掉 record 合成的拷贝构造，也顺带覆盖了用户手写的单参数构造
-    /// 排在主构造之前的情况。可空引用类型返回 <see langword="null"/>，由分析器的 <c>ParameterCannotBeNullable</c> 报错。
-    /// </remarks>
-    private static ITypeSymbol? GetSingleParameterType(INamedTypeSymbol type)
-    {
-        foreach (var constructor in type.InstanceConstructors)
-        {
-            if (constructor.Parameters is [var parameter]
-                && parameter.NullableAnnotation != NullableAnnotation.Annotated
-                && !SymbolEqualityComparer.Default.Equals(parameter.Type, type))
-            {
-                return parameter.Type;
-            }
-        }
-
-        return null;
     }
 }

@@ -11,7 +11,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     /// 生成代码里引用不变文化的完整表达式。数据库里的值与区域性无关，转换与解析一律走不变文化，
     /// 否则「服务器区域设置为 de-DE」这类环境会让 <c>1.5</c> 之类的值解析失败。
     /// </summary>
-    private const string InvariantCulture = "global::System.Globalization.CultureInfo.InvariantCulture";
+    private const string InvariantCulture = GeneratedCode.InvariantCulture;
 
     /// <summary>
     /// <c>Parse</c> 方法体的缩进（产物中为 8 空格，与声明同列）。
@@ -29,7 +29,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
     private static readonly string _parseNestedIndent = new(' ', 16);
 
     /// <summary>
-    /// <c>ApplyTo</c> 方法体内语句的缩进（产物中为 8 空格）。
+    /// <c>AddStronglyTypedIds</c> 方法体内语句的缩进（产物中为 8 空格）。
     /// </summary>
     private static readonly string _registrationIndent = new(' ', 8);
 
@@ -52,19 +52,13 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // 分组键用 Name 而非 EscapedName：这里比的是「是否重名」，名字不落进生成代码；
-        // 且两者是 1:1 映射（仅保留关键字差一个 @ 前缀），分组结果本来完全相同。
-        var ambiguousNames = stronglyTypedIds
-            .GroupBy(idInfo => idInfo.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToImmutableHashSet(StringComparer.Ordinal);
+        var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
 
         var registrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var handlerName = GetHandlerName(idInfo, ambiguousNames.Contains(idInfo.Name));
+            var handlerName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "TypeHandler");
 
             // 基类签名是 SetValue(IDbDataParameter, T?) / Parse(object) → T。值类型 T 的可空标注会被擦除，
             // 引用类型 T 必须照抄 T?，否则 CS8765。Parse 返回非可空 T，引用类型 Id 遇 NULL 时用 default! 表态。
@@ -72,11 +66,16 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                 ? $"{idInfo.FullyQualifiedName}? value"
                 : $"{idInfo.FullyQualifiedName} value";
 
-            // 两条分支都必须写出基元值：DbParameter.Value 只接受驱动认识的类型，
+            // 两条分支都必须写出驱动认识的类型：DbParameter.Value 只接受驱动认识的 CLR 类型，
             // 直接塞 Id 包装对象会让 SqlClient / Sqlite 在绑定时抛「No mapping exists」。
+            // 自定义基元同样不被驱动认识，故写它的规范文本（与 JSON / 二进制集成的口径一致）。
+            var valueExpression = idInfo.IsCustomPrimitive
+                ? idInfo.GetPrimitiveTextExpression("value.Value")
+                : "value.Value";
+
             var setValueBody = idInfo.TypeKindSuffix is null
-                ? "parameter.Value = value is null ? (object)global::System.DBNull.Value : value.Value;"
-                : "parameter.Value = value.Value;";
+                ? $"parameter.Value = value is null ? (object)global::System.DBNull.Value : {valueExpression};"
+                : $"parameter.Value = {valueExpression};";
 
             var handlerCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
@@ -101,7 +100,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-            context.AddSource($"{idInfo.HintName}.Dapper.g.cs", GeneratedCode.NormalizeLineEndings(handlerCode));
+            GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.Dapper.g.cs", handlerCode);
 
             registrations.Append($"\n{_registrationIndent}global::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
         }
@@ -116,7 +115,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                     /// 再次调用会用等价实例替换各处理器。</remarks>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(DapperCodeGenerator), version)}}
-                    public static void ApplyTo()
+                    public static void AddStronglyTypedIds()
                     {{{registrations}}
                     }
 
@@ -125,13 +124,19 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
                     /// </summary>
                     /// <param name="connection">忽略。Dapper 的类型处理器是全局注册而非按连接注册，
                     /// 因此该参数没有可作用的对象；保留它只为源码兼容。</param>
+                    /// <returns>同一个 <paramref name="connection"/>，便于链式调用。</returns>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(DapperCodeGenerator), version)}}
-                    public static void ApplyTo(global::System.Data.IDbConnection connection) => ApplyTo();
+                    public static global::System.Data.IDbConnection AddStronglyTypedIds(this global::System.Data.IDbConnection connection)
+                    {
+                        AddStronglyTypedIds();
+
+                        return connection;
+                    }
                 }
                 """;
 
-        context.AddSource("StronglyTypedIds.Dapper.g.cs", GeneratedCode.NormalizeLineEndings(registrationCode));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.Dapper.g.cs", registrationCode);
     }
 
     /// <summary>
@@ -320,6 +325,13 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
 
         var primitiveShortName = StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName);
 
+        // 自定义基元一律走文本入口：短名分派按 CLR 名匹配，用户自定义的 MyNs.Guid 会被误判成
+        // System.Guid 而生成 Convert.ToGuid（不存在）。契约保证它暴露公开静态的 Parse(string, provider)。
+        if (idInfo.IsCustomPrimitive)
+        {
+            return $"{idInfo.PrimitiveIdTypeName}.Parse(global::System.Convert.ToString(value, {InvariantCulture})!, {InvariantCulture})";
+        }
+
         // 其余基元分两类：System.Convert 上有对应 ToXxx 的走转换（保留 DateTime 的 Tick 精度、
         // 数值的溢出检查），没有的（Guid / DateTimeOffset / TimeSpan / DateOnly / TimeOnly / Int128 /
         // UInt128 / Half / BigInteger）只能经 IParsable<TSelf> 的文本入口还原。
@@ -358,12 +370,4 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             ? null
             : $"global::System.Convert.{convertMethodName}(value, {InvariantCulture})";
     }
-
-    /// <summary>
-    /// 取类型处理器的类名，消歧规则与 EF Core 转换器一致。
-    /// </summary>
-    private static string GetHandlerName(StronglyTypedIdInfo idInfo, bool requiresNamespaceQualifier)
-        => requiresNamespaceQualifier
-            ? $"{idInfo.HintName.Replace('.', '_')}TypeHandler"
-            : $"{idInfo.EscapedName}TypeHandler";
 }

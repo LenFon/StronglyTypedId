@@ -23,7 +23,7 @@ internal static class SystemTextJsonDemo
         Demo.Section("System.Text.Json：显式注册到自定义 options");
 
         var options = new JsonSerializerOptions();
-        StronglyTypedIds.ApplyTo(options);
+        options.AddStronglyTypedIds();
         Demo.Line($"options.Converters.Count          -> {options.Converters.Count}");
     }
 }

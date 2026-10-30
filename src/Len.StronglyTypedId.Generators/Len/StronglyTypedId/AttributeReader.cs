@@ -108,17 +108,30 @@ internal static class AttributeReader
             : null;
 
     /// <summary>
-    /// 判断枚举型命名实参是否等于指定底层值。
-    /// </summary>
-    internal static bool GetEnumFlag(AttributeData? attribute, string argumentName, int value)
-        => GetNamedArgument(attribute, argumentName) is { Value: int actual } && actual == value;
-
-    /// <summary>
     /// 取枚举型命名实参的底层值；未指定或类型不符时为 <see langword="null"/>。
     /// </summary>
     /// <remarks>
-    /// 与 <see cref="GetEnumFlag"/> 的区别是能区分「未指定」（<see langword="null"/>）与「指定为 0」。
+    /// 返回可空值而非直接比对：未指定时是 <see langword="null"/>，与「指定为 0」可区分。
+    /// 程序集级默认值依赖这一点才能被逐类型双向覆盖（枚举型），而 <see cref="bool"/> 型做不到。
     /// </remarks>
     internal static int? GetEnumValue(AttributeData? attribute, string argumentName)
         => GetNamedArgument(attribute, argumentName) is { Value: int value } ? value : null;
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Validator</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    internal static string? GetValidatorName(INamedTypeSymbol type)
+        => GetString(Find(type, StronglyTypedIdAttributeName), StronglyTypedIdInfo.ValidatorArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 命名实参的方法名；未指定时为 <see langword="null"/>。
+    /// </summary>
+    internal static string? GetNormalizerName(INamedTypeSymbol type)
+        => GetString(Find(type, StronglyTypedIdAttributeName), StronglyTypedIdInfo.NormalizerArgumentName);
+
+    /// <summary>
+    /// 读取 <c>[StronglyTypedId]</c> 上 <c>ExceptionType</c> 命名实参的类型；未指定时为 <see langword="null"/>。
+    /// </summary>
+    internal static ITypeSymbol? GetExceptionType(INamedTypeSymbol type)
+        => GetType(Find(type, StronglyTypedIdAttributeName), StronglyTypedIdInfo.ExceptionTypeArgumentName);
 }

@@ -7,8 +7,6 @@ namespace Len.StronglyTypedId.Generators;
 /// </summary>
 internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
 {
-    private const string OpenApiAssemblyName = "Microsoft.OpenApi.dll";
-
     internal static readonly IIntegrationCodeGenerator Instance = new AspNetCoreOpenApiCodeGenerator();
 
     public int Order { get; } = 6;
@@ -19,14 +17,14 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
+        var useOpenApiV2 = OpenApiSchemaNames.UsesVersion2(modules);
 
         var schemaEntries = discoveredIds.ExternalFor(IntegrationFlags.AspNetCoreOpenApi)
             .Select(idInfo =>
             {
                 var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
 
-                return $"            [typeof({idInfo.FullyQualifiedName})] = ({GetTypeLiteral(type, useOpenApiV2)}, {GetFormatLiteral(format)}, {(idInfo.IsObjectJsonShape ? "true" : "false")}),";
+                return $"            [typeof({idInfo.FullyQualifiedName})] = ({OpenApiSchemaNames.TypeLiteral(type, useOpenApiV2)}, {OpenApiSchemaNames.FormatLiteral(format)}, {(idInfo.IsObjectJsonShape ? "true" : "false")}),";
             })
             .ToArray();
 
@@ -36,23 +34,15 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        var schemaTypeName = useOpenApiV2
-            ? "global::Microsoft.OpenApi.OpenApiSchema"
-            : "global::Microsoft.OpenApi.Models.OpenApiSchema";
+        var schemaTypeName = OpenApiSchemaNames.ConcreteSchemaType(useOpenApiV2);
 
-        var schemaTypeValueType = useOpenApiV2
-            ? "global::Microsoft.OpenApi.JsonSchemaType"
-            : "string";
+        var schemaTypeValueType = OpenApiSchemaNames.SchemaTypeValueType(useOpenApiV2);
 
         // JsonShape.Object 的线上报文是 {"value": <基元>}。框架按 JsonTypeInfo 构建的 schema 认不出自定义转换器，
         // 只会留下空 schema，故这里显式写入对象形态；2.x 的 Properties 值是 IOpenApiSchema 接口（泛型不变）。
-        var objectTypeLiteral = useOpenApiV2
-            ? "global::Microsoft.OpenApi.JsonSchemaType.Object"
-            : "\"object\"";
+        var objectTypeLiteral = OpenApiSchemaNames.ObjectTypeLiteral(useOpenApiV2);
 
-        var propertyValueType = useOpenApiV2
-            ? "global::Microsoft.OpenApi.IOpenApiSchema"
-            : schemaTypeName;
+        var propertyValueType = OpenApiSchemaNames.SchemaInterfaceType(useOpenApiV2);
 
         var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
@@ -109,39 +99,18 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                 /// 在内置 OpenAPI 中启用强类型 Id。
                 /// </summary>
                 /// <param name="options"><see cref="global::Microsoft.AspNetCore.OpenApi.OpenApiOptions"/>.</param>
+                /// <returns>同一个 <paramref name="options"/>，便于链式调用。</returns>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreOpenApiCodeGenerator), version)}}
-                public static void ApplyTo(global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options) =>
+                public static global::Microsoft.AspNetCore.OpenApi.OpenApiOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options)
+                {
                     options.AddSchemaTransformer(new StronglyTypedIdOpenApiSchemaTransformer());
+
+                    return options;
+                }
             }
             """;
 
-        context.AddSource("StronglyTypedIds.AspNetCoreOpenApi.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.AspNetCoreOpenApi.g.cs", code);
     }
-
-    /// <summary>
-    /// 判断当前编译引用的是否为 Microsoft.OpenApi 2.x。
-    /// </summary>
-    private static bool UsesMicrosoftOpenApiV2(ImmutableArray<ModuleInfo> modules)
-        => modules.HasModule(OpenApiAssemblyName, 2);
-
-    /// <summary>
-    /// 取 OpenAPI <c>schema.Type</c> 的字面量。
-    /// </summary>
-    private static string GetTypeLiteral(string type, bool useOpenApiV2)
-        => useOpenApiV2
-            ? type switch
-            {
-                PrimitiveIdSchemaMap.String => "global::Microsoft.OpenApi.JsonSchemaType.String",
-                PrimitiveIdSchemaMap.Integer => "global::Microsoft.OpenApi.JsonSchemaType.Integer",
-                PrimitiveIdSchemaMap.Number => "global::Microsoft.OpenApi.JsonSchemaType.Number",
-                _ => "global::Microsoft.OpenApi.JsonSchemaType.String",
-            }
-            : "\"" + type + "\"";
-
-    /// <summary>
-    /// 取 OpenAPI <c>schema.Format</c> 的字面量；无特定格式时为 <c>null</c>。
-    /// </summary>
-    private static string GetFormatLiteral(string? format)
-        => format is null ? "null" : "\"" + format + "\"";
 }

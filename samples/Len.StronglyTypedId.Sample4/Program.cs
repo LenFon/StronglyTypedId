@@ -4,14 +4,14 @@ using Len.StronglyTypedId.Domain;
 var builder = WebApplication.CreateBuilder(args);
 
 // 路由约束 {id:OrderId} 复用 MVC 集成生成的 RouteOptions 注册。
-builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddRouting(options => options.AddStronglyTypedIds());
 
 builder.Services.AddEndpointsApiExplorer();
 
 // 8.0 线没有内置的文档生成器，AddOpenApi / MapOpenApi / IOpenApiSchemaTransformer 都是 9.0.0 才引入的，
-// 所以这里没有 StronglyTypedIds.ApplyTo(OpenApiOptions) 可调，文档由 Swashbuckle 产出，
-// Id 的 schema 映射走 ApplyTo(SwaggerGenOptions)。
-builder.Services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
+// 所以这里没有 OpenApiOptions 上的 AddStronglyTypedIds() 可调，文档由 Swashbuckle 产出，
+// Id 的 schema 映射走 AddStronglyTypedIds()。
+builder.Services.AddSwaggerGen(options => options.AddStronglyTypedIds());
 
 var app = builder.Build();
 

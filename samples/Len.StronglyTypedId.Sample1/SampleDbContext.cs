@@ -9,7 +9,7 @@ public class SampleDbContext(DbContextOptions<SampleDbContext> options) : DbCont
     {
         base.ConfigureConventions(configurationBuilder);
 
-        StronglyTypedIds.ApplyTo(configurationBuilder);
+        configurationBuilder.AddStronglyTypedIds();
 
         configurationBuilder.Properties<UserId>().HaveMaxLength(100);
     }

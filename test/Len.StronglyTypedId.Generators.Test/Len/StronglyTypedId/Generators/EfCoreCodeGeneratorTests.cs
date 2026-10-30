@@ -57,10 +57,12 @@ public class EfCoreCodeGeneratorTests
 
         // 显式按文件路径补 EF Core 主包 + Abstractions（宿主 bin 里的真实 dll）：
         // 确保 ModelConfigurationBuilder / ValueConverter / ModelBuilder 全部可解析。
+        // 走缓存而非直接 CreateFromFile：每个用例都要打开这两个 PE 文件并解析元数据头，9 个用例累积起来
+        // 是这组用例的主要开销。
         var efCoreReferences = new[]
         {
-            MetadataReference.CreateFromFile(_efCoreMainDll),
-            MetadataReference.CreateFromFile(_efCoreAbstractionsDll),
+            AssemblyReferenceCache.FromFile(_efCoreMainDll),
+            AssemblyReferenceCache.FromFile(_efCoreAbstractionsDll),
         };
 
         // 去重：同一文件已被 AppDomain 引用时不要重复喂（Roslyn 允许同名重复，但去重更稳）。
@@ -176,17 +178,17 @@ public class EfCoreCodeGeneratorTests
     }
 
     [Fact]
-    public void EfCore_Should_RegisterApplyToForBothEntries()
+    public void EfCore_Should_RegisterAddStronglyTypedIdsForBothEntries()
     {
         var generated = GetGeneratedCode(EfCoreSource);
 
         var registration = generated["StronglyTypedIds.EntityFrameworkCore.g.cs"];
 
         registration.Should().Contain(
-            "public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)")
+            "public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)")
             .And.Contain("OrderIdConverter.ApplyTo(configurationBuilder);")
             .And.Contain(
-            "public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
+            "public static global::Microsoft.EntityFrameworkCore.ModelBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
             .And.Contain("OrderIdConverter.ApplyTo(modelBuilder);");
     }
 
@@ -197,13 +199,13 @@ public class EfCoreCodeGeneratorTests
     /// 断言里带上换行与空白：<c>Contain(...)</c> 这类子串匹配对缩进完全免疫，正是该缺陷此前没被发现的原因。
     /// </remarks>
     [Fact]
-    public void EfCore_ApplyTo_Should_UseSpacesForIndentation()
+    public void EfCore_AddStronglyTypedIds_Should_UseSpacesForIndentation()
     {
         var generated = GetGeneratedCode(EfCoreSource);
 
         generated["StronglyTypedIds.EntityFrameworkCore.g.cs"].Replace("\r\n", "\n")
-            .Should().Contain("\n    {\n        OrderIdConverter.ApplyTo(configurationBuilder);\n    }")
-            .And.Contain("\n    {\n        OrderIdConverter.ApplyTo(modelBuilder);\n    }")
+            .Should().Contain("\n    {\n        OrderIdConverter.ApplyTo(configurationBuilder);\n        return configurationBuilder;\n    }")
+            .And.Contain("\n    {\n        OrderIdConverter.ApplyTo(modelBuilder);\n        return modelBuilder;\n    }")
             .And.NotContain("\t");
     }
 

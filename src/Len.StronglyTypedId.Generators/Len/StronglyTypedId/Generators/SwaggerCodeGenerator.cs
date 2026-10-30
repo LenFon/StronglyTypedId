@@ -5,13 +5,6 @@
 /// </summary>
 internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 {
-    private const string OpenApiAssemblyName = "Microsoft.OpenApi.dll";
-
-    /// <summary>
-    /// <c>ApplyTo</c> 方法体内语句的缩进（产物中为 8 空格）。
-    /// </summary>
-    private static readonly string _registrationIndent = new(' ', 8);
-
     internal static readonly IIntegrationCodeGenerator Instance = new SwaggerCodeGenerator();
 
     public int Order { get; } = 4;
@@ -22,7 +15,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var useOpenApiV2 = UsesMicrosoftOpenApiV2(modules);
+        var useOpenApiV2 = OpenApiSchemaNames.UsesVersion2(modules);
 
         var swaggerIds = discoveredIds.ExternalFor(IntegrationFlags.Swagger).ToList();
 
@@ -32,20 +25,9 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             return;
         }
 
-        // MapType 底层是 Add，同一类型注册两次会抛「重复键」，而 ApplyTo 必须幂等（调用方常在多个模块各调一次）。
-        // 守卫走 CustomTypeMappings：已存在的类型不覆盖，使用者自己注册的那份保持有效。
-        // MapType<T> 是该命名空间下的扩展方法，缺 using 会 CS1061；注册语句经插值洞注入，故每行自带绝对缩进。
-        var guardedRegistrations = string.Join("\n\n", swaggerIds.Select(idInfo =>
-            _registrationIndent + "if (!schemaMappings.ContainsKey(typeof(" + idInfo.FullyQualifiedName + ")))"
-            + "\n"
-            + _registrationIndent + "{"
-            + "\n"
-            + _registrationIndent + "    options.MapType<" + idInfo.FullyQualifiedName + ">(() => " + CreateOpenApiSchema(idInfo, useOpenApiV2) + ");"
-            + "\n"
-            + _registrationIndent + "}"));
-
-        // 操作过滤器补的是 Minimal API 的参数：框架把实现了 IParsable 的参数按 string 报给 ApiExplorer，
-        // Swashbuckle 据此生成 schema，MapType 对这类参数无从下手（详见 StronglyTypedIdOperationFilter 的说明）。
+        // MapType 底层是往 CustomTypeMappings 里 Add，同一类型注册两次会抛「重复键」，而
+        // AddStronglyTypedIds 必须幂等（调用方常在多个模块各调一次）。这里改用 TryAdd：已存在的键
+        // 保持原样，使用者自己注册的那份继续有效，重复调用也不增长。
         // 表里存的是工厂而不是现成的 schema：每个参数拿到的必须是自己的实例，共用同一个可变对象，
         // 一旦框架给它补了描述信息，所有参数都会跟着变。
         var schemaEntries = swaggerIds
@@ -54,20 +36,24 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 
         var schemaTable = string.Join("\n", schemaEntries);
 
-        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by SwaggerGenOptions.MapType<T>, an extension method declared in this namespace.\nusing Microsoft.Extensions.DependencyInjection;") + $$"""
+        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by IDictionary<TKey, TValue>.TryAdd, an extension method declared in this namespace.\nusing System.Collections.Generic;") + $$"""
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
                 /// 在 Swagger 中启用强类型 Id。
                 /// </summary>
                 /// <param name="options"><see cref="global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions"/></param>
+                /// <returns>同一个 <paramref name="options"/>，便于链式调用。</returns>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(SwaggerCodeGenerator), version)}}
-                public static void ApplyTo(global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions options)
+                public static global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions AddStronglyTypedIds(this global::Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions options)
                 {
                     var schemaMappings = options.SchemaGeneratorOptions.CustomTypeMappings;
 
-            {{guardedRegistrations}}
+                    foreach (var schemaMapping in StronglyTypedIdOperationFilter.Schemas)
+                    {
+                        schemaMappings.TryAdd(schemaMapping.Key, schemaMapping.Value);
+                    }
 
                     // Minimal API 的参数另需补一次 schema：MapType 只影响按类型登记的组件 schema，
                     // 而框架已经把 IParsable 参数的 ModelMetadata 换成了 string。
@@ -89,6 +75,8 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                     {
                         generatorOptions.OperationFilters.Add(new StronglyTypedIdOperationFilter());
                     }
+
+                    return options;
                 }
 
                 /// <summary>
@@ -100,7 +88,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                 /// </remarks>
                 private sealed class StronglyTypedIdOperationFilter : global::Swashbuckle.AspNetCore.SwaggerGen.IOperationFilter
                 {
-                    private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, global::System.Func<{{GetOpenApiSchemaTypeName(useOpenApiV2)}}>> _schemas = new()
+                    internal static readonly global::System.Collections.Generic.Dictionary<global::System.Type, global::System.Func<{{OpenApiSchemaNames.SchemaInterfaceType(useOpenApiV2)}}>> Schemas = new()
                     {
             {{schemaTable}}
                     };
@@ -108,7 +96,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(SwaggerCodeGenerator), version)}}
-                    public void Apply({{GetOpenApiOperationTypeName(useOpenApiV2)}} operation, global::Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
+                    public void Apply({{OpenApiSchemaNames.OperationType(useOpenApiV2)}} operation, global::Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
                     {
                         if (operation.Parameters is null || operation.Parameters.Count == 0)
                         {
@@ -117,7 +105,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 
                         foreach (var parameterDescription in context.ApiDescription.ParameterDescriptions)
                         {
-                            if (!_schemas.TryGetValue(parameterDescription.Type, out var factory))
+                            if (!Schemas.TryGetValue(parameterDescription.Type, out var factory))
                             {
                                 continue;
                             }
@@ -143,7 +131,7 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                     /// Microsoft.OpenApi 2.x 通过 <c>IOpenApiParameter</c> 暴露参数，其成员全为只读，schema 只能写在具体的
                     /// <c>OpenApiParameter</c> 上；1.x 直接给出具体类型。
                     /// </remarks>
-                    private static void ApplySchema({{GetOpenApiParameterTypeName(useOpenApiV2)}} parameter, {{GetOpenApiSchemaTypeName(useOpenApiV2)}} schema)
+                    private static void ApplySchema({{OpenApiSchemaNames.ParameterType(useOpenApiV2)}} parameter, {{OpenApiSchemaNames.SchemaInterfaceType(useOpenApiV2)}} schema)
                     {
             {{GetApplySchemaBody(useOpenApiV2)}}
                     }
@@ -151,14 +139,8 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             }
             """;
 
-        context.AddSource("StronglyTypedIds.Swagger.g.cs", GeneratedCode.NormalizeLineEndings(code));
+        GeneratedCode.AddGeneratedSource(context, "StronglyTypedIds.Swagger.g.cs", code);
     }
-
-    /// <summary>
-    /// 判断当前编译引用的是否为 Microsoft.OpenApi 2.x。
-    /// </summary>
-    private static bool UsesMicrosoftOpenApiV2(ImmutableArray<ModuleInfo> modules)
-        => modules.HasModule(OpenApiAssemblyName, 2);
 
     /// <summary>
     /// 按 Microsoft.OpenApi 主版本生成 <c>OpenApiSchema</c> 初始化表达式。
@@ -168,14 +150,12 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// </remarks>
     private static string CreateOpenApiSchema(StronglyTypedIdInfo idInfo, bool useOpenApiV2)
     {
-        var schemaTypeName = useOpenApiV2
-            ? "global::Microsoft.OpenApi.OpenApiSchema"
-            : "global::Microsoft.OpenApi.Models.OpenApiSchema";
+        var schemaTypeName = OpenApiSchemaNames.ConcreteSchemaType(useOpenApiV2);
 
         var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
 
         // 1.x 的 Type 是字符串字面量；2.x 的 Type 是 Microsoft.OpenApi.JsonSchemaType 枚举。
-        var typeExpression = GetTypeExpression(type, useOpenApiV2);
+        var typeExpression = OpenApiSchemaNames.TypeLiteral(type, useOpenApiV2);
 
         var primitiveSchema = format is null
             ? $$"""new {{schemaTypeName}} { Type = {{typeExpression}} }"""
@@ -188,36 +168,14 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 
         // JsonShape.Object 的线上报文是 {"value": <基元>}，schema 必须照着写，否则生成的客户端按裸基元收发。
         // 2.x 的 Properties 值是 IOpenApiSchema（接口），不能用 Dictionary<string, OpenApiSchema> 顶替，泛型不变。
-        var propertyValueType = useOpenApiV2
-            ? "global::Microsoft.OpenApi.IOpenApiSchema"
-            : schemaTypeName;
+        var propertyValueType = OpenApiSchemaNames.SchemaInterfaceType(useOpenApiV2);
 
-        var objectTypeExpression = useOpenApiV2
-            ? "global::Microsoft.OpenApi.JsonSchemaType.Object"
-            : "\"object\"";
+        var objectTypeExpression = OpenApiSchemaNames.ObjectTypeLiteral(useOpenApiV2);
 
         return $"new {schemaTypeName} {{ Type = {objectTypeExpression}, "
             + $"Properties = new global::System.Collections.Generic.Dictionary<string, {propertyValueType}> {{ [\"value\"] = {primitiveSchema} }}, "
             + "Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } }";
     }
-
-    /// <summary>
-    /// 取 <c>OpenApiOperation</c> 的类型名：1.x 在 <c>Microsoft.OpenApi.Models</c> 下，2.x 提到了
-    /// <c>Microsoft.OpenApi</c> 根命名空间。
-    /// </summary>
-    private static string GetOpenApiOperationTypeName(bool useOpenApiV2)
-        => useOpenApiV2
-            ? "global::Microsoft.OpenApi.OpenApiOperation"
-            : "global::Microsoft.OpenApi.Models.OpenApiOperation";
-
-    /// <summary>
-    /// 取参数的类型名：1.x 的 <c>OpenApiOperation.Parameters</c> 里装的是具体类，2.x 换成了接口
-    /// <c>IOpenApiParameter</c>。
-    /// </summary>
-    private static string GetOpenApiParameterTypeName(bool useOpenApiV2)
-        => useOpenApiV2
-            ? "global::Microsoft.OpenApi.IOpenApiParameter"
-            : "global::Microsoft.OpenApi.Models.OpenApiParameter";
 
     /// <summary>
     /// 取「把 schema 写到参数上」的方法体。
@@ -233,27 +191,4 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
                 + "                concreteParameter.Schema = schema;\n"
                 + "            }"
             : "            parameter.Schema = schema;";
-
-    /// <summary>
-    /// 取 schema 的类型名：1.x 的 <c>OpenApiParameter.Schema</c> 是具体类，2.x 换成了接口
-    /// <c>IOpenApiSchema</c>，工厂的返回类型必须与之一致。
-    /// </summary>
-    private static string GetOpenApiSchemaTypeName(bool useOpenApiV2)
-        => useOpenApiV2
-            ? "global::Microsoft.OpenApi.IOpenApiSchema"
-            : "global::Microsoft.OpenApi.Models.OpenApiSchema";
-
-    /// <summary>
-    /// 取 OpenAPI <c>schema.Type</c> 的表达式。
-    /// </summary>
-    private static string GetTypeExpression(string type, bool useOpenApiV2)
-        => useOpenApiV2
-            ? type switch
-            {
-                PrimitiveIdSchemaMap.String => "global::Microsoft.OpenApi.JsonSchemaType.String",
-                PrimitiveIdSchemaMap.Integer => "global::Microsoft.OpenApi.JsonSchemaType.Integer",
-                PrimitiveIdSchemaMap.Number => "global::Microsoft.OpenApi.JsonSchemaType.Number",
-                _ => "global::Microsoft.OpenApi.JsonSchemaType.String",
-            }
-            : "\"" + type + "\"";
 }
