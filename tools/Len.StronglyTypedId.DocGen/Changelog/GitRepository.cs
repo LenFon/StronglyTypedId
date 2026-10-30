@@ -79,7 +79,7 @@ internal static class GitRepository
             return output;
         }
 
-        var message = $"`git {string.Join(' ', arguments)}` 执行失败；请确认当前目录是 git 仓库，且已拉取 tag（CI 需 fetch-depth: 0）。";
+        var message = $"`git {string.Join(' ', arguments)}` 执行失败；请确认当前目录是 git 仓库，且已拉取 tag（`git fetch --tags`）。";
 
         throw new InvalidOperationException(
             string.IsNullOrWhiteSpace(error)

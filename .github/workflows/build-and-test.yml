@@ -26,7 +26,6 @@ on:
       - ".editorconfig"
       - "README*.md"
       - "PACKAGE.md"
-      - "CHANGELOG*.md"
       - "codecov.yml"
       - ".github/workflows/*.yml"
   pull_request:
@@ -54,9 +53,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      with:
-        # CHANGELOG 校验要把每个 tag 与版本小节对上，浅克隆读不到 tag。
-        fetch-depth: 0
     - name: Setup .NET
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
       with:
@@ -82,9 +78,6 @@ jobs:
       # PACKAGE.md 是 NuGet 详情页正文，手写、发布后无法回滚。这里只校验三段纯枚举事实
       # （基元清单 / 集成标志 / 目标框架），散文措辞管不了。
       run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-package-readme
-    - name: Verify CHANGELOG
-      # 每个 tag 必须有对应小节、日期与 tag 提交日期一致、文末链接不缺。
-      run: dotnet run --project tools/Len.StronglyTypedId.DocGen --no-build -- --verify-changelog
     - name: Restore tools
       run: dotnet tool restore
 

@@ -11,7 +11,7 @@ namespace Len.StronglyTypedId.DocGen;
 /// <code>
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen                          # 重新生成 README 与 docs 里的表格
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify              # CI 门禁：文档与源码不一致则退出码 1
-/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-changelog    # CI 门禁：tag 与两份 CHANGELOG 的小节对不上则退出码 1
+/// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-changelog    # 本地检查：tag 与两份 CHANGELOG 的小节对不上则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-package-readme  # CI 门禁：PACKAGE.md 与源码不一致则退出码 1
 /// dotnet run --project tools/Len.StronglyTypedId.DocGen -- --draft-changelog     # 打印 [Unreleased] 草稿（按 Conventional Commits 分类）
 /// </code>

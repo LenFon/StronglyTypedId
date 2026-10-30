@@ -4,7 +4,7 @@ namespace Len.StronglyTypedId.DocGen.Changelog;
 /// <c>CHANGELOG.md</c> 与 <c>CHANGELOG.zh-CN.md</c> 的结构校验：每个 tag 都有小节、日期与 tag 提交日期一致、链接定义齐全。
 /// </summary>
 /// <remarks>
-/// 只校验可机械判定的部分；两份文件各自独立校验，中文版漏了某个版本小节同样会让 CI 失败。
+/// 只校验可机械判定的部分；两份文件各自独立校验，中文版漏了某个版本小节同样会报错。
 /// </remarks>
 internal static class ChangelogVerifier
 {
@@ -22,7 +22,7 @@ internal static class ChangelogVerifier
 
         if (tags.Count == 0)
         {
-            Console.WriteLine("CHANGELOG.md: 仓库里读不到任何 tag —— 浅克隆下无法校验，请在 CI 里用 fetch-depth: 0。");
+            Console.WriteLine("CHANGELOG.md: 仓库里读不到任何 tag —— 浅克隆下无法校验，请先 `git fetch --tags`。");
 
             return 1;
         }

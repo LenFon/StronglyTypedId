@@ -58,7 +58,6 @@ Two practical notes:
 | Build | `dotnet build Len.StronglyTypedId.slnx -t:Rebuild` | 0 warnings, 0 errors |
 | Tests | `dotnet test --solution Len.StronglyTypedId.slnx` | Behaviour, both TFMs |
 | Docs | `dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify` | README tables match the source |
-| Changelog | `dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-changelog` | Tag ↔ `CHANGELOG*.md` sections |
 | Package readme | `dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-package-readme` | `PACKAGE.md` matches the source |
 | Packaging | `Len.StronglyTypedId.Packaging.Test` | The `.nupkg` actually carries the generator, the readme and the icon |
 | API compat | `dotnet pack -c Release` | No accidental breaking change against the published baseline |

@@ -22,8 +22,7 @@
 		-->
 		<PackageIcon>icon.png</PackageIcon>
 		<!--
-		  指向 CHANGELOG 而不是内联文本：内联要每次发版手工同步，而 CHANGELOG 已由 DocGen 的 verify-changelog
-		  门禁守着（tag 与两份 CHANGELOG 的小节必须对得上），指向它等于复用了那道门禁。
+		  指向 CHANGELOG 而不是内联文本：内联要每次发版手工同步，指向它只需维护一处。
 		-->
 		<PackageReleaseNotes>See https://github.com/lenfon/StronglyTypedId/blob/main/CHANGELOG.md</PackageReleaseNotes>
 		<!--

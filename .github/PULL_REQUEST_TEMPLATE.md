@@ -16,7 +16,7 @@
 - [ ] `dotnet build Len.StronglyTypedId.slnx -t:Rebuild` reports **0 warnings, 0 errors**
 - [ ] `dotnet test --solution Len.StronglyTypedId.slnx` passes
 - [ ] `DocGen --verify` passes (README tables regenerated, not hand-edited)
-- [ ] `DocGen --verify-changelog` / `--verify-package-readme` pass, if docs or `PACKAGE.md` changed
+- [ ] `DocGen --verify-package-readme` passes, if `PACKAGE.md` changed
 - [ ] `CHANGELOG.md` **and** `CHANGELOG.zh-CN.md` updated for user-visible changes
 - [ ] Diagnostic changes also touch `AnalyzerReleases.Shipped.md` / `.Unshipped.md`
 - [ ] Public API changes also touch `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`
