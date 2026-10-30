@@ -43,8 +43,9 @@
 		<StronglyTypedIdPackageValidationBaseline>1.3.0-preview.5</StronglyTypedIdPackageValidationBaseline>
 		<!--
 		  新包（如 Testing）在基线版本里并不存在，挂基线只会让 pack 去 nuget.org 找一个从未发布过的包而失败。
-		  这类项目在自己的 csproj 里把 StronglyTypedIdPackageValidationBaseline 置空即可退出跨版本比对，
-		  包内一致性校验仍然生效。
+		  这类项目在自己的 csproj 里设 DisablePackageBaselineValidation=true 退出跨版本比对，包内一致性校验仍然生效。
+		  不要改成「把 StronglyTypedIdPackageValidationBaseline 置空」：下面那条 PackageValidationBaselineVersion
+		  在本文件导入时就已经算好，csproj 主体再清空已经晚了，版本号 ≥ 基线时照样会去下载不存在的包（NU1101）。
 		-->
 		<PackageValidationBaselineVersion Condition="'$(PackageValidationBaselineVersion)' == '' and '$(StronglyTypedIdPackageValidationBaseline)' != '' and $([MSBuild]::VersionGreaterThanOrEquals('$(Version)', '$(StronglyTypedIdPackageValidationBaseline)'))">$(StronglyTypedIdPackageValidationBaseline)</PackageValidationBaselineVersion>
 		<!--

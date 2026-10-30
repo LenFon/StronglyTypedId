@@ -8,8 +8,13 @@
 		<PackageReadmeFile>TESTING.md</PackageReadmeFile>
 		<Description>AutoFixture integration for Len.StronglyTypedId: fills strongly typed ids as constructor parameters and properties so fixture.Create&lt;T&gt;() just works.</Description>
 		<PackageTags>len;id;strongly-typed;testing;autofixture;fixture;DDD</PackageTags>
-		<!-- 本包在 1.3.0-preview.5 基线里不存在，退出跨版本比对（包内一致性校验保留）。 -->
-		<StronglyTypedIdPackageValidationBaseline></StronglyTypedIdPackageValidationBaseline>
+		<!--
+		  本包在 1.3.0-preview.5 基线里不存在，退出跨版本比对（包内一致性校验保留）。
+		  必须用 SDK 自己的 DisablePackageBaselineValidation：common.props 在导入时就用
+		  StronglyTypedIdPackageValidationBaseline 算出了 PackageValidationBaselineVersion，csproj 主体
+		  再清空那个属性已经晚了 —— 版本号一旦 ≥ 基线，还原阶段就会去下载一个从未发布过的同名包（NU1101）。
+		-->
+		<DisablePackageBaselineValidation>true</DisablePackageBaselineValidation>
 	</PropertyGroup>
 
 	<ItemGroup>
