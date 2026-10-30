@@ -298,31 +298,32 @@ public static class Verify
     }
 
     /// <summary>
+    /// 分析器 / CodeFix 用例共用的 net8.0 引用程序集集。
+    /// </summary>
+    /// <remarks>
+    /// 必须复用同一个实例：<see cref="ReferenceAssemblies"/> 把解析结果缓存在实例字段里，每次新建都会把
+    /// 约 160 个引用程序集重新打开、解析元数据并建 <see cref="MetadataReference"/> —— 单次约 80ms，
+    /// 而本工程有 170 多个分析器 / CodeFix 用例，重复解析占了它们近一半墙钟。
+    /// 该类型是不可变的（配置走 <c>With*</c> 返回新实例），跨用例共享安全。
+    /// </remarks>
+    private static readonly ReferenceAssemblies _referenceAssemblies = new(
+        "net8.0",
+        new PackageIdentity("Microsoft.NETCore.App.Ref", "8.0.0"),
+        Path.Combine("ref", "net8.0"));
+
+    /// <summary>
+    /// 被测运行时程序集的 net8.0 构建产物引用，同样只解析一次。
+    /// </summary>
+    private static readonly MetadataReference _runtimeReference = ResolveRuntimeReference();
+
+    /// <summary>
     /// 分析器测试与 CodeFix 测试共用的默认配置：关闭编译器诊断、固定 net8.0 引用程序集集、附加被测程序集。
     /// </summary>
     private static void ApplyDefaults(AnalyzerTest<DefaultVerifier> test)
     {
         test.CompilerDiagnostics = CompilerDiagnostics.None;
-        test.ReferenceAssemblies = new ReferenceAssemblies(
-            "net8.0",
-            new PackageIdentity("Microsoft.NETCore.App.Ref", "8.0.0"),
-            Path.Combine("ref", "net8.0"));
-
-        // 引用程序集固定在 net8.0，故附加的运行时程序集也必须取 net8.0 构建的那一份。
-        // 在 net10.0 宿主里取 typeof(...).Assembly 会指向 net10.0 产物，版本错位使命名实参无法绑定（被静默丢弃），验证器相关诊断在 net10.0 下零产出。
-        var runtimeAssembly = typeof(StronglyTypedIdAttribute).Assembly;
-        var net8Location = runtimeAssembly.Location.Replace(
-            $"{Path.DirectorySeparatorChar}net10.0{Path.DirectorySeparatorChar}",
-            $"{Path.DirectorySeparatorChar}net8.0{Path.DirectorySeparatorChar}");
-
-        if (File.Exists(net8Location))
-        {
-            test.TestState.AdditionalReferences.Add(AssemblyReferenceCache.FromFile(net8Location));
-        }
-        else
-        {
-            test.TestState.AdditionalReferences.Add(runtimeAssembly);
-        }
+        test.ReferenceAssemblies = _referenceAssemblies;
+        test.TestState.AdditionalReferences.Add(_runtimeReference);
 
         // STIA0014 默认关闭，但 Roslyn 测试框架默认仍会报告被抑制的诊断，不显式登记会让「public + Validator」的既有用例凭空多出一条。
         // 需要验证该规则的用例走 VerifyAnalyzerWithEditorConfigAsync，那里会用 EnableOptInDiagnostics 把它从禁用清单里摘掉。
@@ -332,6 +333,26 @@ public static class Verify
         // 需要验证这两条规则的用例走 VerifyAnalyzerWithStyleHintsAsync。
         test.DisabledDiagnostics.Add(Descriptors.TypeNameShouldEndWithIdId);
         test.DisabledDiagnostics.Add(Descriptors.DuplicatePrimitiveTypeId);
+    }
+
+    /// <summary>
+    /// 解析被测运行时程序集的 net8.0 构建产物引用。
+    /// </summary>
+    /// <remarks>
+    /// 引用程序集固定在 net8.0，故附加的运行时程序集也必须取 net8.0 构建的那一份。
+    /// 在 net10.0 宿主里取 <c>typeof(...).Assembly</c> 会指向 net10.0 产物，版本错位使命名实参无法绑定
+    /// （被静默丢弃），验证器相关诊断在 net10.0 下零产出。
+    /// </remarks>
+    private static MetadataReference ResolveRuntimeReference()
+    {
+        var runtimeAssembly = typeof(StronglyTypedIdAttribute).Assembly;
+        var net8Location = runtimeAssembly.Location.Replace(
+            $"{Path.DirectorySeparatorChar}net10.0{Path.DirectorySeparatorChar}",
+            $"{Path.DirectorySeparatorChar}net8.0{Path.DirectorySeparatorChar}");
+
+        return File.Exists(net8Location)
+            ? AssemblyReferenceCache.FromFile(net8Location)
+            : AssemblyReferenceCache.FromAssembly(runtimeAssembly);
     }
 
     /// <summary>

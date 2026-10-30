@@ -6,18 +6,22 @@ using Xunit;
 namespace Len.StronglyTypedId;
 
 /// <summary>
-/// 把两个可发布项目各打一次包，供全部包内容断言共享。
+/// 把 <c>src/</c> 下五个可发布项目各打一次包，供全部包内容断言共享。
 /// </summary>
 public sealed class PackedPackagesFixture : IAsyncLifetime
 {
     /// <summary>
     /// 本地占位版本号（与 <c>version.props</c> 一致），显式钉住以保证断言确定。
     /// </summary>
-    private const string PackageVersion = "1.0.0";
+    /// <remarks>
+    /// 消费工程端到端用例要按这个版本写 <c>PackageReference</c>，故对外可见。
+    /// </remarks>
+    internal const string PackageVersion = "1.0.0";
 
     private const string GeneratorsProject = "src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj";
     private const string MainProject = "src/Len.StronglyTypedId/Len.StronglyTypedId.csproj";
     private const string TestingProject = "src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj";
+    private const string TestingAutoFixtureProject = "src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj";
     private const string TestingBogusProject = "src/Len.StronglyTypedId.Testing.Bogus/Len.StronglyTypedId.Testing.Bogus.csproj";
 
     /// <summary>
@@ -35,7 +39,7 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     public string RepositoryRoot { get; private set; } = string.Empty;
 
     /// <summary>
-    /// 两个包落地的目录（临时目录，按输入指纹隔离）。
+    /// 五个包落地的目录（临时目录，按输入指纹隔离）。
     /// </summary>
     public string OutputDirectory { get; private set; } = string.Empty;
 
@@ -46,13 +50,12 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
     public string SymbolsPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.{PackageVersion}.snupkg");
 
     /// <summary>
-    /// 测试辅助包的产物路径。
+    /// 核心测试辅助包的产物路径。
     /// </summary>
-    /// <remarks>
-    /// 这两个包尚未打开 <c>IsPackable</c>（尚未发布），打包时用 <c>-p:IsPackable=true</c> 临时打开：
-    /// 依赖声明的验证不能等到它们真的发布那天才做。
-    /// </remarks>
     public string TestingPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Testing.{PackageVersion}.nupkg");
+
+    /// <inheritdoc cref="TestingPackagePath"/>
+    public string TestingAutoFixturePackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Testing.AutoFixture.{PackageVersion}.nupkg");
 
     /// <inheritdoc cref="TestingPackagePath"/>
     public string TestingBogusPackagePath => Path.Combine(OutputDirectory, $"Len.StronglyTypedId.Testing.Bogus.{PackageVersion}.nupkg");
@@ -81,19 +84,21 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
         await PackAsync(GeneratorsProject).ConfigureAwait(false);
         await PackAsync(MainProject).ConfigureAwait(false);
         await PackAsync(TestingProject).ConfigureAwait(false);
+        await PackAsync(TestingAutoFixtureProject).ConfigureAwait(false);
         await PackAsync(TestingBogusProject).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     /// <summary>
-    /// 三个包是否都已落地（锁内复查：另一个 TFM 可能刚刚打完）。
+    /// 五个包是否都已落地（锁内复查：另一个 TFM 可能刚刚打完）。
     /// </summary>
     private bool HasAllPackages()
         => File.Exists(GeneratorsPackagePath)
             && File.Exists(MainPackagePath)
             && File.Exists(SymbolsPackagePath)
             && File.Exists(TestingPackagePath)
+            && File.Exists(TestingAutoFixturePackagePath)
             && File.Exists(TestingBogusPackagePath);
 
     /// <summary>
@@ -170,8 +175,6 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
             $"-p:Version={PackageVersion}",
             "-p:GeneratePackageOnBuild=false",
             "-p:EnablePackageValidation=false",
-            // 测试辅助包尚未发布（IsPackable 默认关闭），临时打开才能验证它们的依赖声明。
-            "-p:IsPackable=true",
             "--nologo",
         };
 
@@ -249,14 +252,26 @@ public sealed class PackedPackagesFixture : IAsyncLifetime
         return ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private static string ResolveDotNetHost()
+    /// <summary>
+    /// 解析 <c>dotnet</c> 可执行文件路径。
+    /// </summary>
+    /// <remarks>
+    /// 供消费工程端到端用例复用：它们同样要嵌套调用 <c>dotnet build</c>。
+    /// </remarks>
+    internal static string ResolveDotNetHost()
     {
         var host = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
 
         return string.IsNullOrEmpty(host) ? "dotnet" : host;
     }
 
-    private static async Task<(int ExitCode, string Output)> RunProcessAsync(
+    /// <summary>
+    /// 运行一个子进程并收集合并后的输出。
+    /// </summary>
+    /// <remarks>
+    /// 供消费工程端到端用例复用：它们同样要嵌套调用 <c>dotnet build</c>。
+    /// </remarks>
+    internal static async Task<(int ExitCode, string Output)> RunProcessAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string workingDirectory)

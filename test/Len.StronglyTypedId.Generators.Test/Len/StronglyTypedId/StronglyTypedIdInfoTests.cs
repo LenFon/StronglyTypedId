@@ -813,6 +813,106 @@ public class StronglyTypedIdInfoTests
         info.HintName.Should().MatchRegex("^[0-9A-Za-z_.]+$");
     }
 
+    /// <summary>
+    /// 包含类型的可访问性必须原样复现：嵌套在私有类型里的 Id，其重开声明也必须是 <c>private</c>，
+    /// 否则 partial 段的可访问性冲突（CS0262）。
+    /// </summary>
+    [Theory]
+    [InlineData("private", "private")]
+    [InlineData("internal", "internal")]
+    [InlineData("protected internal", "protected internal")]
+    [InlineData("private protected", "private protected")]
+    public void Info_Should_ReproduceContainingTypeAccessibility(string modifier, string expected)
+    {
+        var type = GetTypeSymbol(
+            $$"""
+            namespace Referenced;
+
+            public partial class Host
+            {
+                {{modifier}} partial class Container
+                {
+                    public partial record struct OrderId(int Value);
+                }
+            }
+            """,
+            "Referenced.Host+Container+OrderId");
+
+        new StronglyTypedIdInfo(type).ContainingTypeDeclarations
+            .Should().Contain($"{expected} partial class Container");
+    }
+
+    #endregion
+
+    #region GetSingleParameterType：无单参数构造 / 跳过可空标注 / 跳过拷贝构造
+
+    /// <summary>
+    /// 没有单参数构造函数时返回 <see langword="null"/>：调用方据此判定「不是强类型 Id 声明」，
+    /// 而不是抛异常中断整个生成阶段。
+    /// </summary>
+    [Fact]
+    public void GetSingleParameterType_Should_ReturnNull_WhenNoSingleParameterConstructor()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public class Plain
+            {
+                public Plain(int number, string tag)
+                {
+                    Number = number;
+                    Tag = tag;
+                }
+
+                public int Number { get; }
+
+                public string Tag { get; }
+            }
+            """,
+            "Referenced.Plain");
+
+        StronglyTypedIdInfo.GetSingleParameterType(type).Should().BeNull();
+    }
+
+    /// <summary>
+    /// <c>skipNullableAnnotated: true</c> 时跳过可空参数：可空基元由分析器报 STIA0007，
+    /// 生成器不产出任何代码。
+    /// </summary>
+    [Fact]
+    public void GetSingleParameterType_Should_SkipNullableAnnotated_WhenRequested()
+    {
+        var type = GetTypeSymbol(
+            """
+            #nullable enable
+
+            namespace Referenced;
+
+            public partial record struct OrderId(int? Value);
+            """,
+            "Referenced.OrderId");
+
+        StronglyTypedIdInfo.GetSingleParameterType(type, skipNullableAnnotated: true).Should().BeNull();
+        StronglyTypedIdInfo.GetSingleParameterType(type).Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// 参数类型等于自身（record 合成的拷贝构造）必须跳过，否则会把 Id 自身误判成基元。
+    /// </summary>
+    [Fact]
+    public void GetSingleParameterType_Should_SkipCopyConstructor()
+    {
+        var type = GetTypeSymbol(
+            """
+            namespace Referenced;
+
+            public record TaggedId(int Number, string Tag);
+            """,
+            "Referenced.TaggedId");
+
+        StronglyTypedIdInfo.GetSingleParameterType(type).Should().BeNull();
+    }
+
     #endregion
 
     #region 辅助

@@ -112,5 +112,20 @@ public class LocalizedStringTests
         localized.ToString(CultureInfo.GetCultureInfo("zh-CN")).Should().Contain("其余参数将被移除");
     }
 
+    /// <summary>
+    /// 同一区域性重复取文案必须命中缓存并返回相同结果：缓存键用区域性名，
+    /// 大小写不同的区域性名（<c>zh-CN</c> / <c>zh-cn</c>）应视为同一条目。
+    /// </summary>
+    [Fact]
+    public void ToString_Should_ReturnSameText_ForCultureNameCasingVariants()
+    {
+        var localized = new LocalizedString("TypeMustBePartialTitle");
+
+        var upper = localized.ToString(CultureInfo.GetCultureInfo("zh-CN"));
+        var lower = localized.ToString(CultureInfo.GetCultureInfo("zh-cn"));
+
+        lower.Should().Be(upper);
+    }
+
     #endregion
 }

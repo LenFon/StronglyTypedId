@@ -367,3 +367,5 @@ docs/_site/
 docs/.jekyll-cache/
 docs/.jekyll-metadata
 docs/Gemfile.lock
+# Snapshot test failure artifacts (baselines are committed; .received.txt is transient)
+*.received.txt

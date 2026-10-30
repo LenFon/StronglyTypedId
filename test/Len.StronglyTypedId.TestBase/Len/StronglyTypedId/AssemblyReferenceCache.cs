@@ -19,6 +19,21 @@ public static class AssemblyReferenceCache
         = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 按程序集缓存 <see cref="TryResolveReference"/> 的结果（含 <c>null</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 生成器用例每次构造合成编译都会遍历整个 AppDomain 的程序集；解析一个程序集要走
+    /// <see cref="File.Exists(string)"/> 与 TPA 列表扫描，几百个用例 × 上百个程序集累积起来是秒级开销，
+    /// 而同一进程内程序集的解析结果不会变。缓存 null 同样重要：解析不出来的程序集占相当比例。
+    /// </remarks>
+    private static readonly ConcurrentDictionary<Assembly, MetadataReference?> _resolvedByAssembly = new();
+
+    /// <summary>
+    /// 受信平台程序集（TPA）的文件名 → 完整路径索引，进程内只建一次。
+    /// </summary>
+    private static readonly Lazy<Dictionary<string, string>> _trustedPlatformAssemblies = new(BuildTrustedPlatformAssemblies);
+
+    /// <summary>
     /// 取得指定路径程序集的引用；同一路径在整轮测试中只解析一次。
     /// </summary>
     public static MetadataReference FromFile(string location)
@@ -39,9 +54,12 @@ public static class AssemblyReferenceCache
     /// <remarks>
     /// net10.0 测试宿主下，部分程序集的 <see cref="Assembly.Location"/> 为空串、<see cref="Assembly.GetName"/> 为 «Unknown»。
     /// 兜底链：① Location；② 模块完全限定名；③ 受信平台程序集（TPA）列表按文件名匹配；④ 测试输出目录下的模块名。
-    /// 任一环节文件不存在即返回 <c>null</c>，由调用方跳过。
+    /// 任一环节文件不存在即返回 <c>null</c>，由调用方跳过。结果按程序集缓存，见 <see cref="_resolvedByAssembly"/>。
     /// </remarks>
     public static MetadataReference? TryResolveReference(Assembly assembly)
+        => _resolvedByAssembly.GetOrAdd(assembly, static target => ResolveReference(target));
+
+    private static MetadataReference? ResolveReference(Assembly assembly)
     {
         if (!string.IsNullOrEmpty(assembly.Location) && File.Exists(assembly.Location))
         {
@@ -89,21 +107,36 @@ public static class AssemblyReferenceCache
     /// </summary>
     private static string? ResolveFromTrustedPlatformAssemblies(string fileName)
     {
+        var index = _trustedPlatformAssemblies.Value;
+
+        return index.TryGetValue(fileName, out var path)
+            || index.TryGetValue(Path.GetFileNameWithoutExtension(fileName), out path)
+            ? path
+            : null;
+    }
+
+    /// <summary>
+    /// 把 <c>TRUSTED_PLATFORM_ASSEMBLIES</c> 拆成「文件名 → 路径」与「无扩展名 → 路径」两张表。
+    /// </summary>
+    /// <remarks>
+    /// 原先每次调用都 <c>Split</c> 一遍整条 TPA 串（约 200 项）并逐项 <c>Path.GetFileName</c>，
+    /// 而它在每个程序集的解析里最多被调用两次。建一次索引后单次查找降为字典命中。
+    /// </remarks>
+    private static Dictionary<string, string> BuildTrustedPlatformAssemblies()
+    {
+        var index = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is not string trustedPlatformAssemblies)
         {
-            return null;
+            return index;
         }
 
-        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
         foreach (var path in trustedPlatformAssemblies.Split(Path.PathSeparator))
         {
-            if (string.Equals(Path.GetFileName(path), fileName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(Path.GetFileNameWithoutExtension(path), fileNameWithoutExtension, StringComparison.OrdinalIgnoreCase))
-            {
-                return path;
-            }
+            index.TryAdd(Path.GetFileName(path), path);
+            index.TryAdd(Path.GetFileNameWithoutExtension(path), path);
         }
 
-        return null;
+        return index;
     }
 }

@@ -68,4 +68,31 @@ public class AutoFixtureIntegrationTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    /// <summary>
+    /// 无参构造走默认生成器：直接 <c>fixture.Customize(new StronglyTypedIdCustomization())</c>
+    /// 与 <c>WithStronglyTypedIds()</c> 等价，两条入口都不能漏。
+    /// </summary>
+    [Fact]
+    public void Customization_Should_UseDefaultGenerator_WhenConstructedWithoutArguments()
+    {
+        var fixture = new Fixture().Customize(new StronglyTypedIdCustomization());
+
+        fixture.Create<GuidId>().Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
+    /// 自定义项必须插在列表最前面：AutoFixture 按顺序取第一个能处理的 builder，
+    /// 排在后面就会被构造函数策略抢先，从而绕过 <c>Create</c> 与验证器。
+    /// </summary>
+    [Fact]
+    public void Customization_Should_BeInsertedBeforeDefaultBuilders()
+    {
+        var fixture = new Fixture();
+        var customization = new StronglyTypedIdCustomization(new AnyIdGenerator(new AnyIdOptions { Seed = 7 }));
+
+        customization.Customize(fixture);
+
+        fixture.Customizations[0].Should().BeOfType<StronglyTypedIdSpecimenBuilder>();
+    }
 }
