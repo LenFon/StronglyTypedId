@@ -300,6 +300,12 @@ dotnet_diagnostic.CA1870.severity = warning
 # RS0016 / RS0017（公开 API 必须落在 PublicAPI.*.txt）已在
 # src/Len.StronglyTypedId/Len.StronglyTypedId.csproj 里升为错误，此处不重复声明。
 
+# IDE0059（不需要的赋值）：默认只是 Info，在 VS 里是灰色提示、不进错误列表，
+# 于是「`out var x` 声明了却从不读取」「局部变量赋了值又立刻被覆盖」这类残留
+# 会一直攒着。提升为 error，让它们必须在提交前处理掉。
+# 处理方式二选一：确实不需要结果时把 `out var x` 改成 `out _`；需要结果时补上断言。
+dotnet_diagnostic.IDE0059.severity = error
+
 # IDE0058（永远不会使用表达式值）：本仓库整体忽略。
 # 触发它的两类写法都是「语句式 API」，丢弃返回值正是其设计，不是漏用了值：
 #   - FluentAssertions 的 `x.Should().Be(y);`（测试断言链，占绝大多数）
