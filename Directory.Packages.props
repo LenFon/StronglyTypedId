@@ -6,7 +6,7 @@
 
 	<!-- 打包 / 源码链接（common.props 引用） -->
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.402" />
+		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.403" />
 	</ItemGroup>
 
 	<!-- src：编译器层扩展与运行时库 -->
@@ -39,7 +39,7 @@
 		     TrySerialize / TryDeserialize / ParseLiteral）在 13 与 14 之间没有变化，但 14 改了
 		     AddGraphQLServer 的装配入口，故门控钉在 13。
 		-->
-		<PackageVersion Include="HotChocolate.AspNetCore" Version="13.9.14" />
+		<PackageVersion Include="HotChocolate.AspNetCore" Version="16.7.3" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.4" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" Version="1.1.4" />
@@ -49,7 +49,7 @@
 		     两者不在同一条补丁线上：Sqlite 走 10.x（Microsoft.Data.Sqlite 10 可在 net8.0 上运行），EF Core 固定在
 		     8.0.x。这是 dependabot 单独升级 Sqlite 的结果，集成测试与 SampleIntegrations 均已验证可共存。
 		-->
-		<PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+		<PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.14" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.32" />
 		<!--
 		     内存服务器：让 Swagger 回归跑真实的 ASP.NET Core 管道。缺口出在框架与 Swashbuckle 的交界处，
@@ -63,17 +63,17 @@
 		     所以那边仍然必需；MessagePack 3.x 已能原生编码三者，本库继续用文本形只是为了与 2.x 时代的载荷兼容。
 		-->
 		<PackageVersion Include="MessagePack" Version="3.1.12" />
-		<PackageVersion Include="MongoDB.Bson" Version="3.12.0" />
+		<PackageVersion Include="MongoDB.Bson" Version="3.13.0" />
 		<!--
 		     protobuf-net：surrogate 契约的端到端证据。3.x 把特性拆到 protobuf-net.Core、Serializer 留在
 		     protobuf-net，两者由同一个包引入。门控查后者（引用它必然带上前者）。
 		-->
-		<PackageVersion Include="protobuf-net" Version="3.2.30" />
+		<PackageVersion Include="protobuf-net" Version="3.4.40" />
 		<!--
 		     ULID：第三方自定义基元的端到端证据。Cysharp 的 Ulid 同时实现 IParsable<Ulid>、IComparable<Ulid>
 		     与非泛型 IComparable，正好满足自定义基元契约 —— 本库不需要为它加任何代码。
 		-->
-		<PackageVersion Include="Ulid" Version="1.3.4" />
+		<PackageVersion Include="Ulid" Version="1.4.1" />
 		<PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.9.0" />
 		<!--
@@ -103,8 +103,8 @@
 		     配置绑定演示：SampleConsole 用内存配置源演示 TypeConverter 对 binder 的作用。
 		     8.0.0 是 8.0 线的首发版，8.0.x 没有 8.0.32 这个补丁号（EF Core 的补丁号与它不同步）。
 		-->
-		<PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
-		<PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.14" />
+		<PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.14" />
 		<PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0" />
 	</ItemGroup>
 </Project>
