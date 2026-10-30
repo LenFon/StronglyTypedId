@@ -12,8 +12,77 @@ change set rather than reproducing every commit.
 
 ## [Unreleased]
 
+The next release: custom primitives (including ULID), protobuf-net and GraphQL integrations, a debugger
+proxy on every id, and a long tail of serialization and analyzer fixes. Several changes are breaking —
+they are marked **Breaking** under **Changed**.
+
 ### Added
 
+- **Future plans page.** New `docs/roadmap.md` (English and Chinese) — states that there is nothing planned
+  at the moment, because every direction on the roadmap has shipped. It is linked from the documentation
+  index and both READMEs.
+- **Feature index page.** New `docs/features-index.md` (English and Chinese), one row per feature with
+  its runnable sample and the page that explains it. The table is rendered by DocGen from the generator's
+  own registration table and verified on every build: a missing sample file or a stale documentation
+  anchor fails `--verify` instead of leaving a row behind. Integration rows are not maintained by hand —
+  adding an integration to the generator registration table adds its row automatically, so "the
+  integration shipped but its sample did not" cannot happen again.
+- **protobuf-net integration.** When `protobuf-net` ≥ 3.0.0 is referenced, every id declared in the
+  current compilation gets `[ProtoContract(Surrogate = typeof(...))]` plus a nested `{TypeName}Surrogate`
+  carrying the primitive in a single `[ProtoMember(1)]` field. There is no registration call — the
+  surrogate is discovered from the attribute, so `Serializer.Serialize(order)` just works. The payload is
+  the primitive value itself, matching MessagePack and BSON; `Int128`, `UInt128`, `Half`, `DateTimeOffset`,
+  `BigInteger` and custom primitives have no native protobuf representation and are stored as their
+  canonical text (`DateTimeOffset` uses the `"O"` format, because the default one drops sub-second ticks).
+  A payload rejected by the id's `Validator` throws `ProtoBuf.ProtoException` rather than letting
+  `ArgumentException` escape. **Ids from a referenced assembly get no surrogate** — the attribute can only
+  be applied to a type declared in the same compilation; add one by hand there if you need it. A runtime
+  `RuntimeTypeModel` registration would have covered them, but it throws
+  *"The type cannot be changed once a serializer has been generated"* if the type was serialised first,
+  which is not something generated code can control.
+- **ULID works with no code of its own.** Cysharp's `Ulid` implements `IParsable<Ulid>`,
+  `IComparable<Ulid>` and the non-generic `IComparable`, so it already satisfies the custom-primitive
+  contract — reference the package and declare `[StronglyTypedId] public partial record struct
+  OrderId(Ulid Value);`. Its canonical text is the 26-character Crockford Base32 form, so JSON,
+  Newtonsoft.Json, MessagePack, BSON, EF Core and Dapper all store that string. Note that ULIDs generated
+  within the same millisecond are ordered only by their random component, which is not monotonic.
+- **Custom primitives.** A type of your own can now be the wrapped primitive. It must implement
+  `IParsable<TSelf>` and `IComparable<TSelf>` with itself as the type argument, implement the non-generic
+  `System.IComparable` (the actual constraint on `TPrimitiveId`, which `IComparable<T>` does not imply),
+  and expose public static `Parse` / `TryParse` — explicit interface implementations do not count, because
+  the generated code calls them by type name. The built-in list is unchanged and its output is
+  byte-for-byte identical; a type that fails the contract is rejected by `STIA0008`, whose message now
+  names the missing members. `System.Uri` is excluded on purpose: its equality ignores the fragment and
+  normalizes case and the default port, so two different URIs would collapse into one id.
+  Every serialization path — System.Text.Json, Newtonsoft.Json, MessagePack, BSON and Dapper — writes the
+  primitive's canonical text and reads it back through the primitive's own `TryParse`, so a custom type is
+  never serialized as its public properties (which would read back `default`). Dapper's `SetValue` writes
+  that same text, because a driver does not recognize a custom CLR type. Named instances of a custom
+  primitive are validated at run time rather than at compile time (the generator cannot execute your
+  `Parse`); a bad value throws an `InvalidOperationException` naming the instance and the id type, and
+  `Len.StronglyTypedId.Testing` gains `StronglyTypedIdConformance.AssertAllInstancesValid(assembly)` to
+  report every broken instance at once.
+- **A debugger proxy for every generated id.** Expanding an id in the debugger used to show the record's
+  own members, which for a single-property id is just `Value` — and for a prefixed id, only the bare
+  primitive, with no sign of the prefix. Each id now carries `[DebuggerTypeProxy]` pointing at a private
+  nested `{TypeName}DebugView` that exposes `Value` (the raw primitive) and `Text` (the canonical text
+  form, prefix included). `[DebuggerDisplay]` still supplies the collapsed one-line summary. The proxy is
+  private, so nothing is added to the public API surface, and it costs nothing at run time — the debugger
+  constructs it only when you expand the variable. Ids declared inside a generic container get neither the
+  attribute nor the proxy class: an attribute argument may not reference a type that carries the
+  container's type parameter (CS0416), the same reason `[JsonConverter]` is skipped there.
+- **GraphQL integration (HotChocolate).** When `HotChocolate` ≥ 13.0.0 is referenced, every strongly typed
+  id gets a `ScalarType<TId>`, and `AddStronglyTypedIds()` — an extension on `IRequestExecutorBuilder`,
+  the same shape as `AddGraphQLServer()` — registers them all.
+  The representation follows the JSON form, so an id is not written one way over REST and another over
+  GraphQL: text primitives and prefixed ids are GraphQL `String`, integers and enums are `Int` (enums by
+  underlying value, not member name), and floating points are `Float`. The entry point is idempotent and
+  binds each scalar with `BindRuntimeType` — `AddType` alone leaves HotChocolate free to infer the id as an
+  object type, and the schema then fails to build. Input accepts both literals and variables, and the
+  variable path handles `System.Text.Json.JsonElement` as well as `string`, because a real HTTP request
+  hands the scalar the former. Parse failures throw `SerializationException` rather than `FormatException`,
+  so the client gets a located GraphQL error instead of `Unexpected Execution Error`. A runnable example
+  lives in `samples/Len.StronglyTypedId.SampleGraphQL`.
 - `Len.StronglyTypedId.Testing.Bogus`: a new adapter package that teaches Bogus to create strongly typed
   ids. `new Faker<Order>().WithStronglyTypedIds()` registers Bogus' own `RuleForType` rules for every id
   type, so `faker.Generate()` fills id-typed members instead of leaving them at their default value —
@@ -69,9 +138,18 @@ change set rather than reproducing every commit.
   `PrefixReadMode` chooses between accepting a bare value (`Lenient`) and rejecting it (`Strict`).
 - `JsonShape` selects the serialized shape: the bare primitive (`Primitive`) or
   `{ "value": ... }` (`Object`).
-- Registration entry points for System.Text.Json (`StronglyTypedIds.ApplyTo(JsonSerializerOptions)`) and
-  Newtonsoft.Json (`settings.AddStronglyTypedId()`), for callers that configure converters explicitly
+- Registration entry points for System.Text.Json (`options.AddStronglyTypedIds()`) and
+  Newtonsoft.Json (`settings.AddStronglyTypedIds()`), for callers that configure converters explicitly
   instead of relying on the generated `[JsonConverter]` attribute.
+- `WithStronglyTypedIds()` — keeps ids in their string shape when serialization goes through a
+  source-generated `JsonSerializerContext`. A context in `JsonSourceGenerationMode.Metadata` (the mode
+  recommended for AOT) writes a type it has metadata for by its properties, ignoring the
+  `[JsonConverter]` attribute, so the same id came out as `{"Value":"…"}` from the context and `"…"` from
+  reflection. The method combines an id-only `IJsonTypeInfoResolver` in front of your context:
+  `TypeInfoResolver = AppJsonContext.Default.WithStronglyTypedIds()`. The resolver builds each
+  `JsonTypeInfo` from the generated converter through `JsonMetadataServices`, so it is reflection-free and
+  works under Native AOT. It is independent of `AddStronglyTypedIds` — use whichever matches how you configure
+  serialization.
 - A refactoring provider that turns an existing `record` into a strongly typed id.
 - `Integrations` — narrows which integration code an id gets. It is a **filter, not a switch**: it can only
   remove integrations whose packages are already referenced. `None` suppresses every integration while
@@ -81,7 +159,7 @@ change set rather than reproducing every commit.
   `TypeConverter` is deliberately not part of the mask. Requesting an integration whose assembly is not
   referenced is reported as `STIA0019`.
 - MessagePack and MongoDB BSON integrations — a generated `IMessagePackFormatter<TId>` /
-  `IBsonSerializer<TId>`, wired up by `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` and
+  `IBsonSerializer<TId>`, wired up by `MessagePackSerializerOptions.AddStronglyTypedIds()` and
   `StronglyTypedIds.RegisterBsonSerializers()`. Both write the primitive value itself: the text prefix
   belongs to the text form (`ToString()` / JSON) and never reaches the payload.
 - `[StronglyTypedIdInstance]` declares named static instances — `Unknown`, `Unspecified`, `System` —
@@ -100,7 +178,9 @@ change set rather than reproducing every commit.
   (a value that is not a valid primitive value) and `STIA0022` (a name that is not PascalCase, `Info`).
 - Runnable samples: `SampleConsole` (guided tour of the whole surface), `SampleIntegrations`
   (EF Core + Dapper against in-memory SQLite), `Sample1` (MVC + Swashbuckle 6 + Newtonsoft.Json),
-  `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x).
+  `Sample2` (Minimal API + built-in OpenAPI), `Sample3` (MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x),
+  `Sample4` (Minimal API on `Microsoft.AspNetCore.OpenApi` 8.0.0, where the built-in schema transformer is
+  unavailable) and `SampleGraphQL` (HotChocolate scalar, literal and variable paths).
 - Code fixes for `STIA0019`, `STIA0024`, `STIA0020` and `STIA0021`. `STIA0019` / `STIA0024` (a requested
   integration whose assembly is missing, or a mask bit that names nothing) now offer a fix that removes
   the `Integrations` argument; `STIA0020` / `STIA0021` (a `[StronglyTypedIdInstance]` with an unusable
@@ -110,9 +190,53 @@ change set rather than reproducing every commit.
 - `STIA0015` — the id naming convention is now configurable. Set `dotnet_diagnostic.STIA0015.suffix` in
   `.editorconfig` to check a different trailing token (e.g. `Key`); the suggestion and the message use the
   configured suffix. The default remains `Id`.
+- `StronglyTypedIdDefaults` gained `JsonShape`, `TypeConverter` and `PrefixReadMode`, so an assembly that
+  makes one choice everywhere no longer repeats it on every id. `JsonShape` and `PrefixReadMode` are enums,
+  so a per-type value overrides the assembly default in **both** directions — including an explicit
+  `JsonShape.Primitive` / `PrefixReadMode.Lenient` under an assembly default of the other value.
+  `TypeConverter` is a `bool`, so it stays one-way: the assembly default can turn it on, a per-type
+  `false` cannot turn it off (same rule as `RedactValidationMessage`). Ids declared in a referenced
+  assembly honour **their own** assembly defaults, so a library's choice travels to its consumers.
+  `Prefix` is deliberately not available at assembly level — `STIA0023` would fire for almost every id.
+- **Configuration binding is now documented and covered by regression tests.**
+  `Microsoft.Extensions.Configuration` converts a string to a property's type through `TypeDescriptor`, so
+  an id needs `TypeConverter = true` to be bindable — and without it the binder fails *silently*: object
+  binding leaves the property at `default` (for a `Guid`-backed id, `00000000-0000-0000-0000-000000000000`)
+  even though the configuration holds a real value, while the scalar overloads throw a
+  `NullReferenceException` from inside the binder. `docs/declaration.md` gained a "Configuration binding"
+  section and `docs/troubleshooting.md` a symptom entry; `ConfigurationBindingTests` pins both the working
+  path (value types, reference types, prefixed ids, scalar and object overloads, `Bind` onto an existing
+  instance) and the silent-`default` failure, on net8.0 and net10.0. No generated code changed.
 
 ### Changed
 
+- **Breaking:** every integration entry point is now `AddStronglyTypedIds(...)` on the object being
+  configured, instead of `StronglyTypedIds.ApplyTo(...)`. The old shape read as a static helper call and
+  did not chain; the new one matches the host framework's own conventions (`AddControllers`,
+  `AddSwaggerGen`, `AddOpenApi`, `AddGraphQLServer`), so a registration reads as
+  `options.AddStronglyTypedIds()` and returns the same instance for chaining. Concretely:
+  `JsonSerializerOptions`, `JsonSerializerSettings`, `ModelConfigurationBuilder`, `ModelBuilder`,
+  `SwaggerGenOptions`, `OpenApiOptions`, `MvcOptions`, `RouteOptions` and `MessagePackSerializerOptions`
+  all gained an extension method; `MessagePackSerializerOptions` still returns a **new** instance, because
+  it is immutable. Dapper's parameterless entry point is now `StronglyTypedIds.AddStronglyTypedIds()`
+  (it has no receiver to extend), and `AddStronglyTypedIds(IDbConnection)` remains for source
+  compatibility. `RegisterBsonSerializers()` is unchanged. The internal `{TypeName}Converter.ApplyTo(...)`
+  helpers that the EF Core entry points call are implementation details and keep their names. Update call
+  sites by replacing `StronglyTypedIds.ApplyTo(x)` with `x.AddStronglyTypedIds()`.
+- **Id discovery no longer walks type trees.** Finding ids in a referenced assembly used to enumerate
+  every type in it — `System.Private.CoreLib` alone contributes tens of thousands — and the result was
+  recomputed for every compilation. The generator now reads the assembly's metadata and scans the
+  `InterfaceImplementations` table, and caches the result per module MVID, so a referenced assembly is
+  scanned once and reused across later compilations in the same process. Measured on the benchmark
+  reference set: allocations per generator run fell from 5.55 MB to 1.55 MB (−72%) and elapsed time from
+  14.12 ms to 6.55 ms (−54%). Only `CompilationReference`s (in-memory compilations with no metadata
+  image) still walk symbols. Discovery semantics are unchanged — the two paths are asserted to agree.
+- **Seeded id generation is now reproducible across .NET versions and platforms.** `Any.Id<T>(seed)` and
+  `AnyIdOptions.Seed` used to hand the seed to `Random`, whose algorithm is an implementation detail and
+  may change between releases, so a "reproducible" sequence was only reproducible on one runtime. The
+  value source is now a built-in SplitMix64. Golden-file and snapshot tests can assert on exact values.
+  **Values produced by an existing seed will change** — re-record any snapshot that pinned them. Without
+  a seed the generator is still clock-seeded and non-reproducible.
 - The generated type declaration no longer carries a `/// <summary>` comment. It restated what the
   declaration already says, and it was the only doc comment in the file that did not come from
   `/// <inheritdoc/>`, so it read as noise in every generated file.
@@ -133,9 +257,9 @@ change set rather than reproducing every commit.
   matching what `ToString()` writes. A `null` provider used to mean the current culture, so
   `Parse(id.ToString())` silently produced wrong values under e.g. `de-DE` (`"1.5"` → `15`). An
   explicitly passed provider is still honoured.
-- Dapper registration gained a parameterless `StronglyTypedIds.ApplyTo()`. Dapper keeps type handlers in a
+- Dapper registration gained a parameterless `StronglyTypedIds.AddStronglyTypedIds()`. Dapper keeps type handlers in a
   process-wide registry, so the `IDbConnection` argument never had anything to scope to; the existing
-  `ApplyTo(IDbConnection)` overload is kept for source compatibility and now forwards to the new one.
+  `AddStronglyTypedIds(IDbConnection)` overload is kept for source compatibility and now forwards to the new one.
   Calling either more than once stays harmless — Dapper replaces the handler for a type instead of
   appending, so the registry does not grow.
 - The README reference tables (primitive types, integrations, diagnostics) are generated from the
@@ -145,6 +269,17 @@ change set rather than reproducing every commit.
 - Build: `.editorconfig` + `Directory.Build.props` pin a zero-warning baseline (IDE/CA/xUnit rules
   promoted to warnings), package validation runs on `dotnet pack`, and CI gained a Native AOT smoke
   test, package-content assertions, a generator allocation gate and coverage thresholds.
+- Test suite: the analyzer / code-fix harness now reuses one `ReferenceAssemblies` instance instead of
+  constructing a fresh one per test. `ReferenceAssemblies` caches its resolved metadata references in
+  instance fields, so the old code re-opened and re-parsed roughly 160 reference assemblies for every
+  one of the ~170 analyzer and code-fix cases. Assembly-to-reference resolution is likewise cached per
+  `Assembly` (including negative results), and the trusted-platform-assembly list is indexed once
+  instead of being split and scanned on every lookup. The generator test project's wall time dropped
+  from ~13.7 s to ~4.2 s on a 24-core machine (−69%), and from ~15 s to ~6.6 s when pinned to four
+  cores. `xunit.runner.json` now uses 10 parallel threads, the measured plateau for the new profile.
+- Test dependency: `FluentAssertions` is pinned to **7.2.0**, the last MIT-licensed release. Version 8.0
+  moved to a commercial Xceed licence that is free only for non-commercial use, which an MIT-licensed
+  library cannot take on as a test dependency. Dependabot is configured to reject major upgrades of it.
 - `STIA0011` now also reports target-typed `new(...)` and `default` / `default(T)` construction, not
   just `new Xxx(...)`, and its default severity was raised from `Info` to `Warning` so that bypassing
   a validator shows up in build output and CI. It also fires for ids that only declare a `Normalizer`,
@@ -174,12 +309,28 @@ change set rather than reproducing every commit.
 
 ### Fixed
 
+- **The testing packages crashed on ids declared in a generic container.** Such an id (for example
+  `Box<T>.BoxedId`) surfaces as an open generic, so both `AnyIdGenerator.Create(Type)` and the Bogus
+  adapter's auto-discovery called `MakeGenericMethod` on it and threw *"Late bound operations cannot be
+  performed on types or methods for which ContainsGenericParameters is true"* — a message that gives no
+  hint that the id lives in a generic container. `AnyIdGenerator.Create` now throws `ArgumentException`
+  with the reason and the alternative; Bogus auto-discovery silently skips open generics (an id inside a
+  generic container never appears as a property of a concrete type anyway) and only errors when one is
+  passed explicitly; the AutoFixture specimen builder now returns `NoSpecimen` so later builders decide.
+  Closed generic-container ids such as `Box<int>.BoxedId` keep working.
+- **EF Core could not map an id backed by a custom primitive.** The generated
+  `ValueConverter<TId, TPrimitive>` used the primitive itself as the provider type, and a database provider
+  does not know a user-defined CLR type — the model failed to build with *"The 'Ulid' property 'Order.Id'
+  could not be mapped because the database provider does not support this type"*. Custom primitives now
+  convert to `string` (their canonical text), matching what JSON, MessagePack, BSON and Dapper already
+  store. Ids backed by a built-in primitive are unaffected and their generated code is byte-for-byte
+  identical.
 - The `Swashbuckle` integration now also restores the schema of strongly typed ids used as **Minimal API**
   parameters. `ApiExplorer` describes an `IParsable` parameter as `string` — the framework sees a type that
   parses from text — so `MapType`, which is keyed on the CLR type, never applied to route or query
   parameters: they came out as a bare `type: string` with no `format`, while the same id in a request body
   carried `type: string, format: uuid`. A generated operation filter now looks the parameter up by its
-  declared type and puts the schema back. `ApplyTo` stays idempotent, and the `MapType` registrations are
+  declared type and puts the schema back. `AddStronglyTypedIds` stays idempotent, and the `MapType` registrations are
   guarded so that calling it twice no longer throws `An item with the same key has already been added`.
 - The `System.Text.Json` converter no longer delegates the primitive to `JsonSerializer`. It used to call
   `JsonSerializer.Serialize(writer, primitiveId, options)` / `Deserialize<T>(ref reader, options)`, which
@@ -199,7 +350,7 @@ change set rather than reproducing every commit.
   declares the id — a consumer adding one of its own hits `CS0426` — so such an id ended up with no
   Newtonsoft converter at all, and was written as an object (`{"Value":"…"}`) while `System.Text.Json`
   wrote a string. The same data in two shapes, with no compiler warning and no exception at runtime. The
-  host app now gets a top-level converter for those ids, registered through `AddStronglyTypedId`. The
+  host app now gets a top-level converter for those ids, registered through `AddStronglyTypedIds`. The
   nested converter and its `[JsonConverter]` attribute are kept, so an assembly that does reference
   Newtonsoft is unaffected.
 - `STIA0016` (duplicate primitive type) no longer degrades to O(N²). The namespace grouping was recomputed
@@ -266,7 +417,7 @@ change set rather than reproducing every commit.
   came out flush left while the block-bodied one (used with `Normalizer`) was fine. Cosmetic only — the
   code compiled either way — but every generated file looked broken in the editor.
 - Three more generated blocks are indented consistently. The `CompareValues` helper on a reference-type
-  id sat at 20 spaces while its siblings were at 4, and the EF Core / Swagger `ApplyTo` bodies were
+  id sat at 20 spaces while its siblings were at 4, and the EF Core / Swagger `AddStronglyTypedIds` bodies were
   indented with tabs (Swagger's opening brace also carried a trailing space) while every other generated
   line uses four spaces. Cosmetic only — the code compiled either way.
 - An enum-backed id used as a `Dictionary` key ignored `JsonSerializerOptions.DictionaryKeyPolicy`, so a
@@ -300,7 +451,7 @@ change set rather than reproducing every commit.
   already correct.
 - Ids declared inside a generic container no longer emit `[JsonConverter(typeof(...))]`, which is
   illegal in an attribute argument (CS0416). The converter type is still generated and can be
-  registered manually for a closed instantiation, and `AddStronglyTypedId` / `ApplyTo` skip such ids
+  registered manually for a closed instantiation, and `AddStronglyTypedIds` skips such ids
   for the same reason (an open generic type cannot be passed as a type argument). The README previously
   claimed both serializers worked out of the box; it now documents the manual registration
   (`new Outer<int>.InnerId.SystemTextJsonConverter()`).
@@ -308,7 +459,7 @@ change set rather than reproducing every commit.
   reference the JSON library, removing CS0426 in consumer projects.
 - The EF Core, Dapper, Swagger, MVC and OpenAPI generators no longer emit an empty `StronglyTypedIds`
   registration class when there is nothing to register. Previously an assembly with no eligible ids
-  still got a `StronglyTypedIds.*.g.cs` whose `ApplyTo` did nothing; now the file is skipped, matching
+  still got a `StronglyTypedIds.*.g.cs` whose `AddStronglyTypedIds` did nothing; now the file is skipped, matching
   what the JSON registration entry points already did.
 - Dapper type handlers now override the non-nullable `SqlMapper.TypeHandler<TId>` signatures
   (`SetValue(IDbDataParameter, TId)` and `Parse(object?)`). The previous `TId?` signatures resolved to
@@ -331,13 +482,15 @@ change set rather than reproducing every commit.
   every `STIA` diagnostic for that type. It now scans the instance constructors for the single-parameter
   one, skipping the compiler-synthesised copy constructor.
 - A missing embedded localization resource no longer throws from the descriptor message-rendering path.
+  The loader returns an empty table and the text falls back to the resource key, so a packaging mistake
+  degrades the wording instead of crashing the analyzer.
 - MessagePack and MongoDB BSON integrations now work under Native AOT for every primitive, not just the
   id wrapper. Two gaps surfaced when the AOT smoke test first ran in CI: MessagePack's AOT-safe resolver
   chain contains no enum resolver at all (the IL-emitting `DynamicEnumResolver` is excluded when dynamic
   code is unavailable), so an enum-backed id could not even be serialized; and BSON's
   `PrimitiveSerializationProvider` creates `Int32Serializer`, `EnumSerializer<T>` and friends via
   `Activator`, which throws `MissingMethodException` under AOT once the constructors are trimmed.
-  `ApplyTo` now adds a `GenericEnumFormatter<TEnum>` for each distinct enum primitive (same underlying
+  `AddStronglyTypedIds` now adds a `GenericEnumFormatter<TEnum>` for each distinct enum primitive (same underlying
   numeric payload as the dynamic resolver, so the wire format is unchanged), and `RegisterBsonSerializers`
   pre-registers default-configured serializers for every binary-path primitive — `Guid` stays excluded,
   because since driver 3.0 it has no global default and the app must choose the representation.
@@ -347,8 +500,6 @@ change set rather than reproducing every commit.
   first use — where the driver would create them through reflection, which throws
   `MissingMethodException` under Native AOT. The registered instances are the same types the driver would
   have created, so behavior is unchanged; an existing registration for one of them is kept.
-  The loader returns an empty table and the text falls back to the resource key, so a packaging mistake
-  degrades the wording instead of crashing the analyzer.
 - The comparison operators on a reference-type id (`partial record`) no longer throw
   `NullReferenceException` when the left operand is `null`. They dereferenced `left.Value` unconditionally,
   while the same type's `CompareTo` already treated `null` as the smallest value; the operators now share
@@ -391,7 +542,7 @@ change set rather than reproducing every commit.
   semantically and only removed when it binds to `Len.StronglyTypedId.StronglyTypedIdAttribute`; a name
   that resolves to no attribute at all (shadowed by a namespace of the same name) still counts, so the
   refactoring keeps working in that case.
-- `StronglyTypedIds.ApplyTo(MvcOptions)` is now idempotent. It inserted a fresh
+- `AddStronglyTypedIds(MvcOptions)` is now idempotent. It inserted a fresh
   `StronglyTypedIdModelBinderProvider` on every call, so startup code that registered it from several
   modules — or a configuration callback that ran twice — left duplicate providers in
   `ModelBinderProviders`, each rebuilding the binder on every request. It now returns early when the

@@ -96,4 +96,31 @@ public class BogusIntegrationTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    /// <summary>
+    /// 自动发现会看到泛型容器里的开放泛型 Id（<c>Box&lt;T&gt;.BoxedId</c>），它无法闭合。
+    /// 适配必须静默跳过，而不是让 <c>MakeGenericMethod</c> 抛「not fully instantiated」。
+    /// </summary>
+    [Fact]
+    public void Faker_Should_SkipOpenGenericIds_WhenDiscovering()
+    {
+        var faker = new Faker<BogusOrder>().WithStronglyTypedIds();
+
+        var order = faker.Generate();
+
+        order.Id.Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
+    /// 显式传入开放泛型时报错：调用方显然以为它会被填上，静默跳过只会让属性停在默认值。
+    /// </summary>
+    [Fact]
+    public void Faker_Should_RejectExplicitOpenGenericIdType()
+    {
+        var openType = typeof(Box<>).GetNestedType(nameof(Box<int>.BoxedId))!;
+
+        var act = () => new Faker<BogusOrder>().WithStronglyTypedIds(null, openType);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("idTypes");
+    }
 }

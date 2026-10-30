@@ -199,12 +199,13 @@ public class StronglyTypedIdAnalyzerIntegrationTests
 
             namespace Len.StronglyTypedId.Tests;
 
-            [StronglyTypedId(Integrations = (StronglyTypedIdIntegrations)2048)]
+            [StronglyTypedId(Integrations = (StronglyTypedIdIntegrations)1048576)]
             public partial record struct OrderId(Guid Value);
             """";
+        // 掩码上限取 IntegrationFlags.All 而非字面量：新增集成时这条用例不必跟着改。
         var expected = Verify.Diagnostic(Descriptors.UnknownIntegration)
-            .WithArguments("OrderId", 2048, 1022)
-            .WithSpan(5, 18, 5, 66);
+            .WithArguments("OrderId", 1048576, IntegrationFlags.All)
+            .WithSpan(5, 18, 5, 69);
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
@@ -217,7 +218,7 @@ public class StronglyTypedIdAnalyzerIntegrationTests
         var code = """"
             using System;
 
-            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Integrations = (Len.StronglyTypedId.StronglyTypedIdIntegrations)2048)]
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Integrations = (Len.StronglyTypedId.StronglyTypedIdIntegrations)1048576)]
 
             namespace Len.StronglyTypedId.Tests;
 
@@ -225,8 +226,8 @@ public class StronglyTypedIdAnalyzerIntegrationTests
             public partial record struct OrderId(Guid Value);
             """";
         var expected = Verify.Diagnostic(Descriptors.UnknownIntegration)
-            .WithArguments("TestProject", 2048, 1022)
-            .WithSpan(3, 12, 3, 125);
+            .WithArguments("TestProject", 1048576, IntegrationFlags.All)
+            .WithSpan(3, 12, 3, 128);
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 

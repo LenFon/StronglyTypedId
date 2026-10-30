@@ -115,8 +115,20 @@ internal static class InstanceValueEmitter
             }
         }
 
-        return containingNamespace == "System.Numerics" && namedType.Name == "BigInteger"
-            && TryEmitBigIntegerLike(text, "global::System.Numerics.BigInteger", isSigned: true, out expression);
+        if (containingNamespace == "System.Numerics" && namedType.Name == "BigInteger")
+        {
+            return TryEmitBigIntegerLike(text, "global::System.Numerics.BigInteger", isSigned: true, out expression);
+        }
+
+        // 自定义基元：生成器跑在 netstandard2.0 上，无法执行用户的 Parse，故编译期不做值校验，
+        // 只把原文搬进产物，由运行期 Parse 还原（见 RenderInstancesBlock 的 CreateInstance 包装）。
+        if (SupportedPrimitiveTypes.IsCustomPrimitive(namedType))
+        {
+            expression = $"{namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.Parse({SymbolDisplay.FormatLiteral(text, quote: true)}, {Invariant})";
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -396,7 +408,7 @@ internal static class InstanceValueEmitter
             return false;
         }
 
-        var width = StronglyTypedIdInfo.GetIntegralBitWidth(underlying.SpecialType);
+        var width = EnumBitMath.GetIntegralBitWidth(underlying.SpecialType);
 
         if (width == 0)
         {
@@ -411,7 +423,7 @@ internal static class InstanceValueEmitter
         {
             if (member is IFieldSymbol { HasConstantValue: true, ConstantValue: { } constant } field)
             {
-                members[field.Name] = StronglyTypedIdInfo.ToBits(constant) & widthMask;
+                members[field.Name] = EnumBitMath.ToBits(constant) & widthMask;
             }
         }
 
@@ -443,10 +455,10 @@ internal static class InstanceValueEmitter
 
         bits &= widthMask;
 
-        if (StronglyTypedIdInfo.HasFlagsAttribute(namedEnum))
+        if (EnumBitMath.HasFlagsAttribute(namedEnum))
         {
             // 位组合本身就是合法取值，只要求不出现未定义的位。
-            if (StronglyTypedIdInfo.GetFlagsEnumUndefinedBitsMask(namedEnum) is { } undefinedBits
+            if (EnumBitMath.GetUndefinedBitsMask(namedEnum) is { } undefinedBits
                 && (bits & undefinedBits) != 0)
             {
                 return false;

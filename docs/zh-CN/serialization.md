@@ -91,15 +91,14 @@ Id 无法表示 `null`，因此两种转换器都会拒绝该 token，而不是�
 | `System.Text.Json` | `JsonException` |
 | `Newtonsoft.Json` | `JsonSerializationException` |
 
-这一点很重要，因为两个库的转换器契约都是以该异常表述的：用 `catch (JsonException)` 包住反序列化的
-调用方，会把「载荷格式不对」和「领域规则不满足」当作同一类失败处理；也不会收到一个它无从预期的
-`ArgumentException`。生成代码为此改走 `TryCreate` 并自行抛出框架异常——字典键那条路径本来就是这么做的。
+这正是两个库为「转换失败」约定的异常：用 `catch (JsonException)` 包住反序列化的调用方，会把「载荷格式
+不对」和「领域规则不满足」当作同一类失败处理，也不会收到一个它无从预期的 `ArgumentException`。
 
 以 `BigInteger` 为基元的 Id 按文本读入载荷，因此「载荷不是数字」也按同一方式报告——抛 `JsonException`，
 而不是 `BigInteger.Parse` 原本会抛的 `FormatException`。
 
-EF Core 的 `ValueConverter` 有意保留 `Create`：从数据库行物化实体属于数据完整性边界，那里用
-`ArgumentException` 比套一层 ORM 专属异常更能说明问题。
+EF Core 是例外：它的 `ValueConverter` 调用 `Create`，被拒绝的值以 `ArgumentException` 呈现。从数据库行
+物化实体属于数据完整性边界，那里用 `ArgumentException` 比套一层 ORM 专属异常更能说明问题。
 
 ## JSON 形态
 
@@ -165,23 +164,24 @@ OrderId.TryParse("3f2c…", null, out _);       // false
 > **启用后属破坏性变更。** 对数字、枚举与日期基元，JSON 表示会由 JSON number 变为 JSON string，
 > 因为带前缀的形态是文本。数据库存储不受影响。不设置 `Prefix` 时，生成代码与之前逐字节一致。
 
-空前缀或纯空白前缀按「未设置」处理，并报 `STIA0013`。
+空前缀按「未设置」处理，且不报任何诊断——生成代码与不写 `Prefix` 逐字符相同。纯空白前缀同样按「未设置」
+处理，但会报 `STIA0013`，因为它几乎必然是笔误。
 
 ## 显式注册
 
 `[JsonConverter]` 特性覆盖了常见情形，但当你传入自己的 `JsonSerializerOptions` / `JsonSerializerSettings`
-并希望把本库的转换器一并挂上时，该特性不会被采纳。为此，两个序列化器都在生成的 `StronglyTypedIds` 类上
-提供了注册入口，与其他集成生成的 `ApplyTo` 家族平行——那些集成（含 MessagePack、MongoDB BSON 这两种
+并希望把本库的转换器一并挂上时，该特性不会被采纳。为此，两个序列化器都提供了注册入口，与其他集成生成的
+`AddStronglyTypedIds` 家族平行——那些集成（含 MessagePack、MongoDB BSON 这两种
 二进制格式，注册方式相同）见[集成](integrations.md)：
 
 ```csharp
 // System.Text.Json
 var options = new JsonSerializerOptions();
-StronglyTypedIds.ApplyTo(options);          // 把每个 Id 的转换器加入 options.Converters
+options.AddStronglyTypedIds();               // 把每个 Id 的转换器加入 options.Converters
 
 // Newtonsoft.Json
 var settings = new JsonSerializerSettings();
-settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 settings.Converters
+settings.AddStronglyTypedIds();              // 把每个 Id 的转换器加入 settings.Converters
 ```
 
 每个入口只在引用了对应序列化器、且编译中至少声明了一个 Id 时才生成。
@@ -190,6 +190,29 @@ settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 s
 增长；你自己添加的转换器保持原位。在 `System.Text.Json` 下这也意味着 options 被使用过之后再调一次是空操作，
 而不是抛 `InvalidOperationException`——`JsonSerializerOptions` 一经使用即冻结，而入口在全部已注册时根本不触碰
 集合。
+
+### 源生成的 `JsonSerializerContext`
+
+`AddStronglyTypedIds` 把转换器注册进 `options.Converters`，但源生成的 context 对被要求产出元数据的类型并不查这个
+列表。在 `JsonSourceGenerationMode.Metadata`（AOT 的推荐模式）下，context 按属性写出 Id，于是同一个 Id
+经 context 是 `{"Value":"…"}`、经反射式序列化是 `"…"`。
+
+用 `WithStronglyTypedIds()` 包一层，两者就一致了：
+
+```csharp
+var options = new JsonSerializerOptions
+{
+    TypeInfoResolver = AppJsonContext.Default.WithStronglyTypedIds(),
+};
+```
+
+该方法把一个只认 Id 的 `IJsonTypeInfoResolver` 放到你的 context 之前。顺序是关键：
+`JsonTypeInfoResolver.Combine` 取第一个返回非 null `JsonTypeInfo` 的 resolver，而 context 对 Id 也会返回
+一份。Id 以外的类型原样落到 context。每个 `JsonTypeInfo` 都由生成的转换器构造，零反射，在 Native AOT
+下同样可用。
+
+`AddStronglyTypedIds` 与 `WithStronglyTypedIds()` 互不依赖：配置 `options.Converters` 时用 `AddStronglyTypedIds`，把
+`TypeInfoResolver` 设成 context 时用 `WithStronglyTypedIds()`。两个都设没有副作用。
 
 ### Id 声明在别的程序集时
 
@@ -201,12 +224,12 @@ settings.AddStronglyTypedId();              // 把每个 Id 的转换器加入 s
   Newtonsoft 转换器：内嵌转换器只能生成在声明 Id 的那个程序集里，消费方补一份会撞 `CS0426`（类型已存在）。
 
   消费方（引用了 Newtonsoft 的宿主应用）会为这类 Id 自动生成一份**顶层**转换器并注册进
-  `AddStronglyTypedId`。但 Newtonsoft 的 `[JsonConverter]` 特性优先级高于
+  `AddStronglyTypedIds`。但 Newtonsoft 的 `[JsonConverter]` 特性优先级高于
   `JsonSerializerSettings.Converters`，而特性只能加在类型上——所以**跨程序集时必须调用
-  `AddStronglyTypedId`**，否则那个 Id 会被写成对象形态（`{"Value":"…"}`），而 `System.Text.Json` 写的是
+  `AddStronglyTypedIds`**，否则那个 Id 会被写成对象形态（`{"Value":"…"}`），而 `System.Text.Json` 写的是
   字符串：同一份数据两种表示，编译无警告、运行不抛异常。
 
   领域层与宿主应用都引用 Newtonsoft 时，声明程序集里的内嵌转换器会随类型一起生效（特性优先），
-  `AddStronglyTypedId` 可有可无。
+  `AddStronglyTypedIds` 可有可无。
 
 [<- 返回目录](index.md) · [English](../serialization.md)

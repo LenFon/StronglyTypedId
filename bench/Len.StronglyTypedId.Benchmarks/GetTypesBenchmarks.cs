@@ -3,10 +3,11 @@
 namespace Len.StronglyTypedId.Benchmarks;
 
 /// <summary>
-/// 单个引用程序集的<b>全量递归类型枚举</b>成本，<see cref="ModuleInfo.GetTypes"/> 就是这段代码。
+/// 单个引用程序集的<b>Id 发现</b>成本：<see cref="ModuleInfo.GetStronglyTypedIdTypes"/> 就是这段代码。
 /// </summary>
 /// <remarks>
 /// 被测程序集取引用集里类型最多的前几个，它们是 Discover 的成本构成单元。
+/// 改造后这条路径走元数据扫描（<see cref="MetadataIdScanner"/>），不再遍历符号树。
 /// </remarks>
 [MemoryDiagnoser]
 public class GetTypesBenchmarks
@@ -33,10 +34,10 @@ public class GetTypesBenchmarks
         var compilation = ConsumerScenario.CreateCompilation(ConsumerScenario.References, ConsumerScenario.CreateSyntaxTrees());
         _module = ConsumerScenario.ResolveModules(compilation).Single(module => module.Name == AssemblyName);
 
-        // 预热：本组量的是「同一编译内的重复枚举」，不是首次符号实现。后者见 ColdDiscoverBenchmarks。
-        _module.GetTypes();
+        // 预热：本组量的是「同一编译内的重复调用」，不是首次符号实现。后者见 ColdDiscoverBenchmarks。
+        _module.GetStronglyTypedIdTypes();
     }
 
     [Benchmark]
-    public int GetTypes() => _module.GetTypes().Length;
+    public int GetStronglyTypedIdTypes() => _module.GetStronglyTypedIdTypes().Length;
 }

@@ -11,7 +11,13 @@
 
 	<ItemGroup>
 		<PackageReference Include="AutoFixture" />
+		<PackageReference Include="Bogus" />
+		<!-- 配置绑定演示：binder 走 TypeDescriptor，只有开了 TypeConverter 的 Id 才能被绑定。 -->
+		<PackageReference Include="Microsoft.Extensions.Configuration" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
 		<PackageReference Include="Newtonsoft.Json" />
+		<!-- 第三方自定义基元的示例：ULID 满足自定义基元契约，本库零改动即可用。 -->
+		<PackageReference Include="Ulid" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -19,6 +25,7 @@
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing\Len.StronglyTypedId.Testing.csproj" />
 		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing.AutoFixture\Len.StronglyTypedId.Testing.AutoFixture.csproj" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Testing.Bogus\Len.StronglyTypedId.Testing.Bogus.csproj" />
 	</ItemGroup>
 
 </Project>

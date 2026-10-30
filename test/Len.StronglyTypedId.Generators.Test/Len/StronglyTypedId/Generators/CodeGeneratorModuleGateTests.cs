@@ -144,7 +144,7 @@ public class CodeGeneratorModuleGateTests
     }
 
     [Fact]
-    public void Dapper_Should_GenerateTypeHandlerAndApplyTo()
+    public void Dapper_Should_GenerateTypeHandlerAndAddStronglyTypedIds()
     {
         var generated = RunGenerator(
             IdSource,
@@ -156,8 +156,8 @@ public class CodeGeneratorModuleGateTests
             .And.Contain("public override global::Len.StronglyTypedId.OrderId Parse(object? value)");
 
         generated["StronglyTypedIds.Dapper.g.cs"]
-            .Should().Contain("public static void ApplyTo()")
-            .And.Contain("public static void ApplyTo(global::System.Data.IDbConnection connection) => ApplyTo();")
+            .Should().Contain("public static void AddStronglyTypedIds()")
+            .And.Contain("public static global::System.Data.IDbConnection AddStronglyTypedIds(this global::System.Data.IDbConnection connection)")
             .And.Contain("global::Dapper.SqlMapper.AddTypeHandler");
     }
 
@@ -238,7 +238,7 @@ public class CodeGeneratorModuleGateTests
     /// 注册入口的方法体此前用制表符缩进，与其余生成物的 4 空格风格不一致。
     /// </summary>
     [Fact]
-    public void Dapper_ApplyTo_Should_UseSpacesForIndentation()
+    public void Dapper_AddStronglyTypedIds_Should_UseSpacesForIndentation()
     {
         var generated = RunGenerator(
             IdSource,
@@ -333,7 +333,7 @@ public class CodeGeneratorModuleGateTests
     }
 
     [Fact]
-    public void MessagePack_Should_GenerateFormatterAndApplyTo()
+    public void MessagePack_Should_GenerateFormatterAndAddStronglyTypedIds()
     {
         var generated = RunGenerator(
             IdSource,
@@ -346,14 +346,14 @@ public class CodeGeneratorModuleGateTests
             .And.Contain("public global::Len.StronglyTypedId.OrderId Deserialize(");
 
         generated["StronglyTypedIds.MessagePack.g.cs"]
-            .Should().Contain("public static global::MessagePack.MessagePackSerializerOptions ApplyTo(global::MessagePack.MessagePackSerializerOptions options)")
+            .Should().Contain("public static global::MessagePack.MessagePackSerializerOptions AddStronglyTypedIds(this global::MessagePack.MessagePackSerializerOptions options)")
             .And.Contain("options.WithResolver(global::MessagePack.Resolvers.CompositeResolver.Create(")
             .And.Contain("new OrderIdMessagePackFormatter(),")
             .And.Contain("new global::MessagePack.IFormatterResolver[] { options.Resolver }));");
     }
 
     /// <summary>
-    /// 枚举基元必须由 <c>ApplyTo</c> 显式注册零反射格式化器：MessagePack 在 AOT（AvoidDynamicCode）下的
+    /// 枚举基元必须由 <c>AddStronglyTypedIds</c> 显式注册零反射格式化器：MessagePack 在 AOT（AvoidDynamicCode）下的
     /// StandardResolver 链不含任何枚举 resolver，不注册则枚举 Id 的值通道在 Native AOT 下直接抛
     /// 「formatter not found」（CI aot job 实证）。
     /// </summary>
@@ -735,7 +735,7 @@ public class CodeGeneratorModuleGateTests
 
         generated["StronglyTypedIds.AspNetCoreOpenApi.g.cs"]
             .Should().Contain("class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer")
-            .And.Contain("public static void ApplyTo(global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options)")
+            .And.Contain("public static global::Microsoft.AspNetCore.OpenApi.OpenApiOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options)")
             .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
     }
 
@@ -764,7 +764,7 @@ public class CodeGeneratorModuleGateTests
     }
 
     [Fact]
-    public void AspNetCoreMvc_Should_GenerateProviderAndApplyTo()
+    public void AspNetCoreMvc_Should_GenerateProviderAndAddStronglyTypedIds()
     {
         var generated = RunGenerator(
             IdSource,
@@ -772,9 +772,9 @@ public class CodeGeneratorModuleGateTests
 
         var code = generated["StronglyTypedIds.AspNetCoreMvc.g.cs"];
 
-        code.Should().Contain("public static void ApplyTo(global::Microsoft.AspNetCore.Mvc.MvcOptions options)")
+        code.Should().Contain("public static global::Microsoft.AspNetCore.Mvc.MvcOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Mvc.MvcOptions options)")
             .And.Contain("options.ModelBinderProviders.Insert(0, new StronglyTypedIdModelBinderProvider());")
-            .And.Contain("public static void ApplyTo(global::Microsoft.AspNetCore.Routing.RouteOptions options)")
+            .And.Contain("public static global::Microsoft.AspNetCore.Routing.RouteOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Routing.RouteOptions options)")
             .And.Contain("options.ConstraintMap[\"OrderId\"] = typeof(global::Len.StronglyTypedId.StronglyTypedIds.StronglyTypedIdRouteConstraint<global::Len.StronglyTypedId.OrderId>);")
             .And.Contain("private sealed class StronglyTypedIdModelBinderProvider")
             .And.Contain("private sealed class StronglyTypedIdModelBinder<TId>")
@@ -787,10 +787,10 @@ public class CodeGeneratorModuleGateTests
 
     /// <summary>
     /// STJ 侧此前只有逐 Id 的 <c>[JsonConverter]</c>，没有与 EF / Swagger / Dapper / MVC / 内置 OpenAPI 对称的
-    /// <c>ApplyTo</c>。本用例锁住聚合入口的存在与内容：注册的必须是各 Id 内嵌的转换器实例。
+    /// <c>AddStronglyTypedIds</c>。本用例锁住聚合入口的存在与内容：注册的必须是各 Id 内嵌的转换器实例。
     /// </summary>
     [Fact]
-    public void SystemTextJsonRegistration_Should_GenerateApplyTo()
+    public void SystemTextJsonRegistration_Should_GenerateAddStronglyTypedIds()
     {
         var generated = RunGenerator(IdSource);
 
@@ -798,13 +798,81 @@ public class CodeGeneratorModuleGateTests
 
         generated["StronglyTypedIds.SystemTextJson.g.cs"]
             .Should().Contain("internal static partial class StronglyTypedIds")
-            .And.Contain("public static void ApplyTo(global::System.Text.Json.JsonSerializerOptions options)")
+            .And.Contain("public static global::System.Text.Json.JsonSerializerOptions AddStronglyTypedIds(this global::System.Text.Json.JsonSerializerOptions options)")
             .And.Contain("if (registered.Add(typeof(global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter)))")
             .And.Contain("options.Converters.Add(new global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter());");
     }
 
     /// <summary>
-    /// Newtonsoft 侧的入口沿用 <c>sample1</c> 里曾被注释掉的 <c>AddStronglyTypedId()</c> 形态： <c>JsonSerializerSettings</c>
+    /// 源生成的 <c>JsonSerializerContext</c> 对本次编译声明的类型走 fast-path，不取 <c>[JsonConverter]</c>，
+    /// 于是 Id 被写成 <c>{"Value":…}</c>。注册入口旁必须同时产出 resolver，让调用方一行对齐形态。
+    /// </summary>
+    [Fact]
+    public void SystemTextJsonRegistration_Should_GenerateJsonTypeInfoResolver()
+    {
+        var generated = RunGenerator(IdSource);
+
+        generated["StronglyTypedIds.SystemTextJson.g.cs"]
+            .Should().Contain("internal sealed class StronglyTypedIdJsonTypeInfoResolver")
+            .And.Contain("global::System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver")
+            .And.Contain("public static StronglyTypedIdJsonTypeInfoResolver Instance { get; } = new();")
+            .And.Contain("if (type == typeof(global::Len.StronglyTypedId.OrderId))")
+            .And.Contain("JsonMetadataServices.CreateValueInfo<global::Len.StronglyTypedId.OrderId>(")
+            .And.Contain("new global::Len.StronglyTypedId.OrderId.SystemTextJsonConverter());");
+    }
+
+    /// <summary>
+    /// 组合顺序必须是「Id resolver 在前、context 在后」：<c>Combine</c> 取第一个返回非 null 的 resolver，
+    /// 而 context 对 Id 也会返回一份对象形态的 <c>JsonTypeInfo</c>。顺序写反等于没修。
+    /// </summary>
+    [Fact]
+    public void SystemTextJsonRegistration_Should_PutResolverBeforeContext()
+    {
+        var generated = RunGenerator(IdSource);
+
+        generated["StronglyTypedIds.SystemTextJson.g.cs"]
+            .Should().Contain("public static global::System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver WithStronglyTypedIds(")
+            .And.Contain("this global::System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver resolver)")
+            .And.Contain("JsonTypeInfoResolver.Combine(")
+            .And.Contain("StronglyTypedIdJsonTypeInfoResolver.Instance,")
+            .And.Contain("resolver);");
+    }
+
+    /// <summary>
+    /// resolver 只认强类型 Id，其余类型必须返回 <see langword="null"/> 交给组合中的下一个 resolver，
+    /// 否则会把 context 的职责抢走。
+    /// </summary>
+    [Fact]
+    public void SystemTextJsonRegistration_Should_ReturnNull_ForUnknownTypes()
+    {
+        var generated = RunGenerator(IdSource);
+
+        var code = generated["StronglyTypedIds.SystemTextJson.g.cs"];
+        var getTypeInfoStart = code.IndexOf("public global::System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(", StringComparison.Ordinal);
+
+        getTypeInfoStart.Should().BeGreaterThan(-1);
+        code[getTypeInfoStart..].Should().Contain("return null;");
+    }
+
+    /// <summary>
+    /// 引用程序集里的 Id 若没有内嵌 <c>SystemTextJsonConverter</c>，resolver 也必须跳过它，
+    /// 否则 <c>new X.SystemTextJsonConverter()</c> 会在消费者编译里 CS0426。
+    /// </summary>
+    [Fact]
+    public void SystemTextJsonRegistration_Should_SkipResolverEntry_WhenReferencedIdHasNoConverter()
+    {
+        var generated = RunGenerator(
+            IdSource,
+            CreateReferencedAssembly("AlreadyGenerated", ReferencedIdWithoutConvertersSource));
+
+        var code = generated["StronglyTypedIds.SystemTextJson.g.cs"];
+
+        code.Should().Contain("CreateValueInfo<global::Len.StronglyTypedId.OrderId>")
+            .And.NotContain("LegacyOrderId");
+    }
+
+    /// <summary>
+    /// Newtonsoft 侧的入口沿用 <c>sample1</c> 里曾被注释掉的 <c>AddStronglyTypedIds()</c> 形态： <c>JsonSerializerSettings</c>
     /// 上的扩展方法。
     /// </summary>
     [Fact]
@@ -818,7 +886,7 @@ public class CodeGeneratorModuleGateTests
 
         generated["StronglyTypedIds.NewtonsoftJson.g.cs"]
             .Should().Contain("internal static partial class StronglyTypedIds")
-            .And.Contain("public static void AddStronglyTypedId(this global::Newtonsoft.Json.JsonSerializerSettings settings)")
+            .And.Contain("public static void AddStronglyTypedIds(this global::Newtonsoft.Json.JsonSerializerSettings settings)")
             .And.Contain("if (registered.Add(typeof(global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter)))")
             .And.Contain("settings.Converters.Add(new global::Len.StronglyTypedId.OrderId.NewtonsoftJsonConverter());");
     }
@@ -888,6 +956,22 @@ public class CodeGeneratorModuleGateTests
 
         generated.Keys.Should().NotContain("StronglyTypedIds.SystemTextJson.g.cs");
         generated.Keys.Should().NotContain("StronglyTypedIds.NewtonsoftJson.g.cs");
+    }
+
+    /// <summary>
+    /// 内置 OpenAPI 与 MVC 的注册入口同样在「一个 Id 都没有」时不产出：
+    /// 空注册入口没有任何作用，<c>Integrations = None</c> 时必须连这个文件也不产出。
+    /// </summary>
+    [Fact]
+    public void OpenApiAndMvcRegistrations_Should_NotGenerate_WhenNoIds()
+    {
+        var generated = RunGenerator(
+            NoIdSource,
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.OpenApi", "9.0.0.0"),
+            SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.Mvc", "8.0.0.0"));
+
+        generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreOpenApi.g.cs");
+        generated.Keys.Should().NotContain("StronglyTypedIds.AspNetCoreMvc.g.cs");
     }
 
     #endregion

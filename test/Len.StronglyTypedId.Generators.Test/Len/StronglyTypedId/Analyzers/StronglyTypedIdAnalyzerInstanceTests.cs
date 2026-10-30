@@ -345,8 +345,12 @@ public class StronglyTypedIdAnalyzerInstanceTests
     };
 
     /// <summary>
-    /// 回归用例：STIA0007 / STIA0008 的文案必须保留 <c>{0}</c> 占位符。
+    /// 回归用例：STIA0007 / STIA0008 的文案必须保留占位符。
     /// </summary>
+    /// <remarks>
+    /// STIA0008 自 N12 起有两个占位符：<c>{0}</c> 是参数类型，<c>{1}</c> 说明缺了哪些契约。
+    /// 多传一个实参对只有一个占位符的 STIA0007 无害，故两条规则共用这一份断言。
+    /// </remarks>
     [Theory]
     [MemberData(nameof(ParameterDiagnostics))]
     public void Diagnostic_MessageFormat_Should_ContainArgument(string diagnosticId, string argument)
@@ -356,7 +360,8 @@ public class StronglyTypedIdAnalyzerInstanceTests
         var message = string.Format(
             CultureInfo.InvariantCulture,
             descriptor.MessageFormat.ToString(),
-            argument);
+            argument,
+            "It is not a struct or class.");
 
         message.Should().Contain(argument);
     }

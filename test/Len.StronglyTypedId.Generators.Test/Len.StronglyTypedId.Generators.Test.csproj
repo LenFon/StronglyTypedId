@@ -17,6 +17,11 @@
 		<!-- 生成器快照测试需引用 EF Core 与 Swashbuckle，才能使 EfCoreCodeGenerator / SwaggerCodeGenerator 被触发。 -->
 		<PackageReference Include="Microsoft.EntityFrameworkCore" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+		<!--
+		     protobuf-net：ProtobufCodeGenerator 的产物里含 [ProtoContract] 特性，而合成程序集只有占位类型、
+		     提供不了该特性，故必须引用真实程序集才能让生成器层用例编译通过。
+		-->
+		<PackageReference Include="protobuf-net" />
 		<!-- ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」的消费者画像下可被触发，
 		     并为 MVC / 路由集成提供可编译的命名空间和类型（MvcOptions / IModelBinder / IRouteConstraint 等）。 -->
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -34,8 +39,9 @@
 	<ItemGroup>
 		<!--
 		  并发上限：本工程绝大多数用例都在跑 Roslyn 合成编译，属于内存带宽密集型。
-		  实测（24 核）并发 4/6/8/10/12/24 路的墙钟分别为 16.3/14.6/14.1/15.0/15.0/16.1 秒 ——
-		  8 路最优，再往上 GC 与元数据导入争抢会把单测成本抬高数倍（串行总耗时从 39s 膨胀到 130s）。
+		  实测（24 核，net10.0 腿，854 个用例）并发 8/10/12/16/24 路的墙钟约为
+		  4.2/4.1/4.1/4.3/5.0 秒 —— 10~12 路是平台区，再往上 GC 与元数据导入争抢会把墙钟抬起来。
+		  取 10 而非 12：12 路的抖动明显更大（最差一次 5.0s），10 路稳定在 4.1s 附近。
 		-->
 		<None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>

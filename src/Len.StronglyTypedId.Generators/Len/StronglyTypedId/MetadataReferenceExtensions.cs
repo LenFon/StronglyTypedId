@@ -20,6 +20,8 @@ internal static class MetadataReferenceExtensions
         if (metadataReference is PortableExecutableReference portable
             && portable.GetMetadata() is AssemblyMetadata assemblyMetadata)
         {
+            // 每个模块各扫一次：多模块程序集里各模块的 Id 集合不同，合并后分派会让
+            // GetTypeByMetadataName 在错误的模块上重复解析。扫描结果按 MVID 缓存，重复调用不重算。
             var identities = new List<ModuleIdentity>();
 
             foreach (var module in assemblyMetadata.GetModules())
@@ -40,7 +42,11 @@ internal static class MetadataReferenceExtensions
                     continue;
                 }
 
-                identities.Add(new ModuleIdentity(module.Name, version, metadataReference));
+                identities.Add(new ModuleIdentity(
+                    module.Name,
+                    version,
+                    metadataReference,
+                    MetadataIdScanner.GetStronglyTypedIdNames(module)));
             }
 
             return identities;

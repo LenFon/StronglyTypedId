@@ -28,7 +28,7 @@ covered, plus `enum`.
 ## Reproducible values
 
 ```csharp
-// Same seed ⇒ same value for a given runtime version.
+// Same seed ⇒ same value on any .NET version and platform.
 OrderId first = Any.Id<OrderId>(seed: 42);
 OrderId again = Any.Id<OrderId>(seed: 42);   // equal to first
 
@@ -40,9 +40,10 @@ var any = new AnyIdGenerator(new AnyIdOptions { Seed = 42, StringLength = 12 });
 CustomerId customerId = any.Id<CustomerId>();
 ```
 
-Reproducibility is guaranteed for a given runtime version only: the algorithm behind `Random` is an
-implementation detail and may change between .NET releases. Pin the runtime in CI if you assert on
-exact values.
+Reproducibility is guaranteed across .NET versions and platforms: the value source is a built-in
+SplitMix64 rather than `Random`, whose algorithm is an implementation detail that may change between
+releases. Golden-file and snapshot tests can therefore assert on exact values. Without a seed the
+generator is seeded from the clock, as before.
 
 ## Ids with a validator
 

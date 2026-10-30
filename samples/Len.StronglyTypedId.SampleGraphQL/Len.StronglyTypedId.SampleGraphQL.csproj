@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<OutputType>Exe</OutputType>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+		     GraphQL 集成：scalar 与注册入口都在「引用了才有」的门控之下，示例必须真的引用 HotChocolate，
+		     否则 HotChocolateCodeGenerator 不会触发。用 AspNetCore 元包是因为 AddGraphQLServer 的
+		     IServiceCollection 重载只在它里面（控制台宿主也靠它装配）。
+		-->
+		<PackageReference Include="HotChocolate.AspNetCore" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+	</ItemGroup>
+
+</Project>

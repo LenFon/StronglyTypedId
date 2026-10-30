@@ -29,7 +29,7 @@ public class DiscoveryBenchmarks
 
         foreach (var module in _modules)
         {
-            _typeCache[module] = module.GetTypes();
+            _typeCache[module] = module.GetStronglyTypedIdTypes();
         }
 
         var discovered = Discover().Count();
@@ -59,7 +59,7 @@ public class DiscoveryBenchmarks
     public int Discover_FiveCalls() => Enumerable.Range(0, 5).Sum(_ => Discover().Count());
 
     /// <summary>
-    /// 反事实（另一条未采纳的路）：把每个模块的类型表缓存下来，同一次运行内的后续 Discover
+    /// 反事实（另一条未采纳的路）：把每个模块的 Id 表缓存下来，同一次运行内的后续 Discover
     /// 只付查到缓存的成本。
     /// </summary>
     /// <remarks>
@@ -77,22 +77,22 @@ public class DiscoveryBenchmarks
         => StronglyTypedIdDiscovery.Discover(_declaredIds, _modules);
 
     /// <summary>
-    /// 复刻 <see cref="StronglyTypedIdDiscovery.Discover"/> 的管道，只把「取类型表」换成缓存版本。
+    /// 复刻 <see cref="StronglyTypedIdDiscovery.Discover"/> 的管道，只把「取 Id 表」换成缓存版本。
     /// 管道必须与产品代码保持一致，否则反事实不再等价，<see cref="Setup"/> 会校验两者结果相同。
     /// </summary>
     private IEnumerable<StronglyTypedIdInfo> DiscoverWithCache()
         => _modules
-            .SelectMany(module => GetTypes(module))
-            .Where(type => type.Interfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface))
+            // 用 lambda 而非方法组：ImmutableArray<T> 是结构体，方法组转换不允许「装箱到接口」的返回类型变化。
+            .SelectMany(module => GetStronglyTypedIdTypes(module))
             .Select(type => new StronglyTypedIdInfo(type))
             .Union(_declaredIds)
             .Distinct();
 
-    private ImmutableArray<ITypeSymbol> GetTypes(ModuleInfo module)
+    private ImmutableArray<ITypeSymbol> GetStronglyTypedIdTypes(ModuleInfo module)
     {
         if (!_typeCache.TryGetValue(module, out var types))
         {
-            types = module.GetTypes();
+            types = module.GetStronglyTypedIdTypes();
             _typeCache[module] = types;
         }
 

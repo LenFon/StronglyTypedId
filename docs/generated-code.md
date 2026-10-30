@@ -20,6 +20,8 @@ declaration is never modified. **Which** files appear depends on what the compil
 | `Dapper` ≥ 2.0.0 is referenced                                                                                     | `…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`                           |
 | `MessagePack` ≥ 2.0.0 is referenced                                                                                | `…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`                 |
 | `MongoDB.Bson` ≥ 3.0.0 is referenced                                                                               | `…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`                         |
+| `HotChocolate` ≥ 13.0.0 is referenced                                                                              | `…HotChocolate.g.cs`, `StronglyTypedIds.HotChocolate.g.cs`               |
+| `protobuf-net` ≥ 3.0.0 is referenced                                                                               | `…Protobuf.g.cs`                                                         |
 | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced                                                               | `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                |
 | `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `StronglyTypedIds.AspNetCoreMvc.g.cs`                                    |
 <!-- END GENERATED:generated-files -->
@@ -43,6 +45,13 @@ carries the same inventory without the file names, as a one-glance list.
   Together they provide `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
 - A `[DebuggerDisplay("{Value}")]` attribute, so the debugger shows the wrapped value rather than the
   record's expanded form.
+- A `[DebuggerTypeProxy]` attribute pointing at a private nested `{TypeName}DebugView`, which changes what
+  the debugger shows when you expand the id: `Value` (the raw primitive) and `Text` (the canonical text
+  form, including any `Prefix`). `DebuggerDisplay` only covers the collapsed one-line summary, so a
+  prefixed id otherwise looks like its bare primitive value in the debugger. The proxy is private and is
+  not part of the API surface; ids declared inside a generic container get neither the attribute nor the
+  proxy class, because an attribute argument may not reference a type that carries the container's type
+  parameter (CS0416).
 - A static `Create(TPrimitiveId value)` factory. With a `Validator` configured it refuses an unacceptable
   value by throwing `ArgumentException` — `The value '…' is not a valid OrderId.` — or the `ExceptionType`
   you pointed it at, so an invalid id cannot be constructed through it.
@@ -82,6 +91,8 @@ carries the same inventory without the file names, as a one-glance list.
   invariant culture, `ConvertTo` runs `ToString()`, and converting a `null` id to `string` yields `null`.
   A value that is not a string — including `null` — is rejected with `NotSupportedException`.
 
+<a id="enum-backed-ids"></a>
+
 ## Enum-backed ids
 
 Enum-backed ids keep `IComparable<TSelf>`, `IParsable<TSelf>` and `ISpanParsable<TSelf>` (parsing uses
@@ -101,11 +112,15 @@ for `[Flags]` enums, and member names are matched **case-sensitively**. So `" 1 
 `1` is a defined member, and `"Read, Write"` parses on a flags enum; `ToString()` is what writes the
 canonical member name.
 
+<a id="the-integration-entry-point"></a>
+
 ## The integration entry point
 
 The integration entry points are emitted into a single generated class —
-`internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so both
-`ApplyTo` overloads live side by side no matter how many ids the project declares. Add
-`using Len.StronglyTypedId;` (already required for the attribute itself) to call them.
+`internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so every
+`AddStronglyTypedIds` overload lives side by side no matter how many ids the project declares. Add
+`using Len.StronglyTypedId;` (already required for the attribute itself) to call them. MongoDB is the one
+exception to the `AddStronglyTypedIds` naming: its entry point is `RegisterBsonSerializers()`, because the
+BSON registry is keyed by type rather than by an options object.
 
 [<- Back to the index](index.md) · [中文](zh-CN/generated-code.md)

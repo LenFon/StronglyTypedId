@@ -79,7 +79,7 @@ public class StronglyTypedIdDiscoveryTests
     public void Discover_Should_Deduplicate_WhenSameIdIsBothDeclaredAndReferenced()
     {
         var module = CreateModule("AlreadyGenerated", GeneratedOrderIdSource);
-        var type = module.GetTypes().Single(candidate => candidate.Name == "OrderId");
+        var type = module.GetStronglyTypedIdTypes().Single(candidate => candidate.Name == "OrderId");
         var declared = new StronglyTypedIdInfo(type);
 
         var discovered = StronglyTypedIdDiscovery.Discover([declared], [module]).ToList();
@@ -96,7 +96,7 @@ public class StronglyTypedIdDiscoveryTests
         var referenced = CreateModule("AlreadyGenerated", GeneratedOrderIdSource);
         var declaredModule = CreateModule("DeclaredElsewhere", GeneratedProductIdSource);
         var declared = new StronglyTypedIdInfo(
-            declaredModule.GetTypes().Single(candidate => candidate.Name == "ProductId"));
+            declaredModule.GetStronglyTypedIdTypes().Single(candidate => candidate.Name == "ProductId"));
 
         var discovered = StronglyTypedIdDiscovery.Discover([declared], [referenced]).ToList();
 

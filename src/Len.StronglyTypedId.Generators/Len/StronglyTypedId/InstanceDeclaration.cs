@@ -68,6 +68,18 @@ internal readonly struct InstanceDeclaration
     ];
 
     /// <summary>
+    /// 仅自定义基元的 Id 才会产出的成员名。
+    /// </summary>
+    /// <remarks>
+    /// 单独成表是为了不给内置基元制造「本来不存在的撞名」：<c>CreateInstance</c> 只在自定义基元的类型上生成，
+    /// 内置基元上叫这个名字的实例此前一直合法，不该因为新能力而突然报错。
+    /// </remarks>
+    private static readonly string[] _customPrimitiveReservedNames =
+    [
+        "CreateInstance",
+    ];
+
+    /// <summary>
     /// 仅引用类型 Id 才会产出的成员名。
     /// </summary>
     /// <remarks>
@@ -142,7 +154,7 @@ internal readonly struct InstanceDeclaration
                 continue;
             }
 
-            if (IsReservedName(type, name))
+            if (IsReservedName(type, name, primitiveType))
             {
                 builder.Add(new InstanceDeclaration(name, value, null, InstanceIssue.CollidingName));
                 continue;
@@ -167,11 +179,13 @@ internal readonly struct InstanceDeclaration
     /// 与类型同名触发 CS0542，与既有成员同名触发 CS0102；保留名清单覆盖生成器稍后才产出的成员。
     /// 必须滤掉生成器自己产出的命名实例字段，否则每条实例都会撞上自己刚生成的字段。
     /// </remarks>
-    private static bool IsReservedName(INamedTypeSymbol type, string name)
+    private static bool IsReservedName(INamedTypeSymbol type, string name, ITypeSymbol primitiveType)
         => name == type.Name
             || name == type.Name + "TypeConverter"
+            || name == type.Name + "DebugView"
             || Array.IndexOf(_reservedNames, name) >= 0
             || (type.IsReferenceType && Array.IndexOf(_referenceTypeReservedNames, name) >= 0)
+            || (SupportedPrimitiveTypes.IsCustomPrimitive(primitiveType) && Array.IndexOf(_customPrimitiveReservedNames, name) >= 0)
             || type.GetMembers(name).Any(member => !IsGeneratedInstanceField(member));
 
     /// <summary>

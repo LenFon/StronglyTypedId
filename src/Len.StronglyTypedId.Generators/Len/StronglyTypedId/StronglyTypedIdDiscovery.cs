@@ -16,13 +16,13 @@ internal static class StronglyTypedIdDiscovery
         ImmutableArray<StronglyTypedIdInfo> declaredInfos,
         ImmutableArray<ModuleInfo> modules)
         => modules
-            .SelectMany(module => module.GetTypes())
-            .Where(type => type.Interfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface))
-            // 外部 Id 的集成开关取自它自己声明程序集的默认值：库作者写了 Integrations = None，
-            // 消费者就不该再为它生成集成代码。逐类型特性由构造函数自行读取。
+            .SelectMany(module => module.GetStronglyTypedIdTypes())
+            // 外部 Id 的默认值取自它自己声明程序集的默认值：库作者写了 Integrations = None，
+            // 消费者就不该再为它生成集成代码；JsonShape / TypeConverter / PrefixReadMode 同理，
+            // 否则同一个 Id 在声明方与消费方两侧的序列化契约会不一致。逐类型特性由构造函数自行读取。
             .Select(type => new StronglyTypedIdInfo(
                 type,
-                defaultIntegrations: StronglyTypedIdInfo.GetAssemblyDefaultIntegrations(type.ContainingAssembly)))
+                StronglyTypedIdDefaults.Read(type.ContainingAssembly)))
             .Union(declaredInfos)
             .Distinct();
 }

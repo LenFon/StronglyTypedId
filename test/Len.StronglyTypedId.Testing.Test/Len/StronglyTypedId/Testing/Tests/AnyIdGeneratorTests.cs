@@ -248,6 +248,48 @@ public class AnyIdGeneratorTests
     [Fact]
     public void Id_WithSameSeed_Should_ReturnSameValue() => Any.Id<GuidId>(seed: 7).Should().Be(Any.Id<GuidId>(seed: 7));
 
+    /// <summary>
+    /// 种子序列必须跨运行时版本、跨平台一致：快照测试与黄金文件依赖这一点。
+    /// </summary>
+    /// <remarks>
+    /// 断言的是**写死的字面值**而非「两次调用相等」——后者在 <see cref="Random"/> 时代也成立，
+    /// 但换个 .NET 版本就变。这里的期望值由 SplitMix64 的定义算出，任何实现漂移都会让它变红。
+    /// </remarks>
+    [Fact]
+    public void Id_WithSeed_Should_ProduceRuntimeIndependentSequence()
+    {
+        var ids = Any.Ids<GuidId>(2, seed: 42);
+
+        ids[0].Value.Should().Be(Guid.Parse("b266f103-e333-28ef-529f-0f1357675247"));
+        ids[1].Value.Should().Be(Guid.Parse("0e4ae394-e1ff-581c-f223-48245a58bc09"));
+    }
+
+    /// <summary>
+    /// 同一个种子在 <c>Any.Id</c> 与显式 <see cref="AnyIdGenerator"/> 上产出相同值：
+    /// 两条入口共用同一套取值逻辑，不能各走各的。
+    /// </summary>
+    [Fact]
+    public void Seed_Should_BehaveIdentically_AcrossEntryPoints()
+    {
+        var viaStatic = Any.Id<GuidId>(seed: 42);
+        var viaInstance = new AnyIdGenerator(new AnyIdOptions { Seed = 42 }).Id<GuidId>();
+
+        viaInstance.Should().Be(viaStatic);
+    }
+
+    /// <summary>
+    /// 相邻种子必须产出不相关的序列。种子若直接当状态，前几个输出会高度相关，
+    /// 而测试里连号种子很常见。
+    /// </summary>
+    [Fact]
+    public void AdjacentSeeds_Should_ProduceUnrelatedValues()
+    {
+        var first = Any.Ids<GuidId>(5, seed: 1).Select(id => id.Value).ToArray();
+        var second = Any.Ids<GuidId>(5, seed: 2).Select(id => id.Value).ToArray();
+
+        first.Should().NotIntersectWith(second);
+    }
+
     [Fact]
     public void StringLength_Should_BeHonored()
     {
@@ -463,6 +505,36 @@ public class AnyIdGeneratorTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    /// <summary>
+    /// 泛型容器里的 Id 以开放泛型暴露，无法闭合构造。报错必须说清原因，
+    /// 而不是把反射的「not fully instantiated」原样抛给调用方。
+    /// </summary>
+    [Fact]
+    public void Create_Should_RejectOpenGenericIdType_WithActionableMessage()
+    {
+        var generator = new AnyIdGenerator();
+        var openType = typeof(Box<>).GetNestedType(nameof(Box<int>.BoxedId))!;
+
+        var act = () => generator.Create(openType);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("idType")
+            .WithMessage("*open generic*");
+    }
+
+    /// <summary>
+    /// 闭合后的泛型容器 Id 照常可用：限制只针对开放泛型。
+    /// </summary>
+    [Fact]
+    public void Create_Should_AcceptClosedGenericContainerId()
+    {
+        var generator = new AnyIdGenerator();
+
+        var id = (Box<int>.BoxedId)generator.Create(typeof(Box<int>.BoxedId));
+
+        id.Value.Should().NotBe(Guid.Empty);
+    }
+
     [Theory]
     [InlineData(0, 100)]
     [InlineData(8, 0)]
@@ -491,6 +563,37 @@ public class AnyIdGeneratorTests
         var generator = new AnyIdGenerator(new AnyIdOptions { PrimitiveValueFactory = _ => null });
 
         generator.Id<GuidId>().Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
+    /// 自定义基元没有内置生成规则，且调用方没提供工厂时，必须给出可操作的提示，
+    /// 而不是让 <c>Type.GetTypeCode</c> 落到默认分支后抛一个看不出原因的异常。
+    /// </summary>
+    [Fact]
+    public void Id_Should_ThrowHelpfulError_ForCustomPrimitiveWithoutFactory()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 1 });
+
+        var act = () => generator.Create(typeof(EmailId));
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*Email*")
+            .WithMessage("*PrimitiveValueFactory*");
+    }
+
+    /// <summary>
+    /// 提供了工厂时，自定义基元照常生成。
+    /// </summary>
+    [Fact]
+    public void Id_Should_UseFactory_ForCustomPrimitive()
+    {
+        var email = new Email("a@b.c");
+        var generator = new AnyIdGenerator(new AnyIdOptions
+        {
+            PrimitiveValueFactory = type => type == typeof(Email) ? email : null,
+        });
+
+        generator.Id<EmailId>().Value.Should().Be(email);
     }
 
     [Fact]

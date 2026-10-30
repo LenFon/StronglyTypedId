@@ -209,6 +209,352 @@ public class SupportedPrimitiveTypesTests
 
     #endregion
 
+    #region 自定义基元（N12）
+
+    /// <summary>
+    /// 满足契约的自定义类型是合法基元，且 <see cref="SupportedPrimitiveTypes.IsCustomPrimitive"/> 为真。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnTrue_ForCustomPrimitive()
+    {
+        var type = GetCustomPrimitiveType();
+
+        SupportedPrimitiveTypes.IsSupported(type).Should().BeTrue();
+        SupportedPrimitiveTypes.IsCustomPrimitive(type).Should().BeTrue();
+        SupportedPrimitiveTypes.IsBuiltIn((INamedTypeSymbol)type).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 内置基元与枚举不得被当成自定义基元：它们由前两段判定接管，产物走各自既有的分支。
+    /// </summary>
+    [Theory]
+    [InlineData("System.Guid")]
+    [InlineData("System.Int32")]
+    [InlineData("System.String")]
+    public void IsCustomPrimitive_Should_ReturnFalse_ForBuiltInPrimitive(string metadataName)
+    {
+        var type = _emptyCompilation.GetTypeByMetadataName(metadataName);
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.IsCustomPrimitive(type!).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 只实现泛型 <c>IComparable&lt;T&gt;</c> 不够：<c>IStronglyTypedId&lt;,&gt;</c> 的约束是非泛型
+    /// <c>IComparable</c>，缺了它会 CS0315。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnFalse_WhenNonGenericComparableMissing()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public readonly record struct NoNonGeneric(string Value) : IParsable<NoNonGeneric>, IComparable<NoNonGeneric>
+            {
+                public static NoNonGeneric Parse(string s, IFormatProvider? provider) => new(s);
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out NoNonGeneric result)
+                {
+                    result = new NoNonGeneric(s ?? string.Empty);
+                    return s is not null;
+                }
+
+                public int CompareTo(NoNonGeneric other) => 0;
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.NoNonGeneric");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeFalse();
+        SupportedPrimitiveTypes.DescribeMissingContracts(type!).Should().Contain("non-generic `System.IComparable`");
+    }
+
+    /// <summary>
+    /// 显式接口实现的 <c>Parse</c> 按类型名直呼会 CS1501，故不算满足契约。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnFalse_WhenParseIsExplicitImplementation()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public readonly record struct ExplicitImpl(string Value)
+                : IParsable<ExplicitImpl>, IComparable<ExplicitImpl>, IComparable
+            {
+                static ExplicitImpl IParsable<ExplicitImpl>.Parse(string s, IFormatProvider? provider) => new(s);
+
+                static bool IParsable<ExplicitImpl>.TryParse(string? s, IFormatProvider? provider, out ExplicitImpl result)
+                {
+                    result = new ExplicitImpl(s ?? string.Empty);
+                    return s is not null;
+                }
+
+                public int CompareTo(ExplicitImpl other) => 0;
+
+                public int CompareTo(object? obj) => 0;
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.ExplicitImpl");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeFalse();
+        SupportedPrimitiveTypes.DescribeMissingContracts(type!).Should().Contain("does not expose `public static ExplicitImpl Parse");
+    }
+
+    /// <summary>
+    /// <c>System.Uri</c> 满足契约但相等语义与 Id 冲突，必须显式排除并给出专门解释。
+    /// </summary>
+    /// <remarks>
+    /// 在源码里声明一个同名类型不够：判定按 <c>System.Uri</c> 的完整显示名匹配，必须真的引用到 BCL 类型。
+    /// <c>System.Uri</c> 在 <c>System.Private.Uri.dll</c> 而非 CoreLib，故单独构造一份带该引用的编译。
+    /// </remarks>
+    [Fact]
+    public void IsSupported_Should_ReturnFalse_ForUri()
+    {
+        var compilation = CSharpCompilation.Create(
+            "ProbeUri",
+            [CSharpSyntaxTree.ParseText("namespace Probe { public class Marker { } }")],
+            [
+                AssemblyReferenceCache.FromAssembly(typeof(object).Assembly),
+                AssemblyReferenceCache.FromAssembly(typeof(Uri).Assembly),
+            ],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var type = compilation.GetTypeByMetadataName("System.Uri");
+
+        type.Should().NotBeNull("测试前提：System.Uri 必须能被解析成符号");
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeFalse();
+        SupportedPrimitiveTypes.DescribeMissingContracts(type!).Should().StartWith("System.Uri is not supported");
+    }
+
+    /// <summary>
+    /// 开放泛型无法在生成代码里写 <c>TPrimitive.Parse(...)</c>。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnFalse_ForOpenGenericCustomPrimitive()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public readonly record struct Box<T>(T Value)
+                : IParsable<Box<T>>, IComparable<Box<T>>, IComparable
+                where T : notnull
+            {
+                public static Box<T> Parse(string s, IFormatProvider? provider) => new(default!);
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out Box<T> result)
+                {
+                    result = new Box<T>(default!);
+                    return true;
+                }
+
+                public int CompareTo(Box<T> other) => 0;
+
+                public int CompareTo(object? obj) => 0;
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Box`1");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 抽象类无法实例化，不算合法基元。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnFalse_ForAbstractCustomPrimitive()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public abstract record class Base(string Value)
+                : IParsable<Base>, IComparable<Base>, IComparable
+            {
+                public static Base Parse(string s, IFormatProvider? provider) => throw new NotSupportedException();
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out Base result)
+                {
+                    result = null!;
+                    return false;
+                }
+
+                public int CompareTo(Base other) => 0;
+
+                public int CompareTo(object? obj) => 0;
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Base");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeFalse();
+        SupportedPrimitiveTypes.DescribeMissingContracts(type!).Should().Be("It is abstract or static.");
+    }
+
+    /// <summary>
+    /// 派生类不满足「类型实参就是自身」：<c>AllInterfaces</c> 里是 <c>IParsable&lt;Base&gt;</c>，
+    /// 按它生成会让 <c>Derived.Parse</c> 返回 <c>Base</c> 而编译不过。
+    /// </summary>
+    [Fact]
+    public void IsSupported_Should_ReturnFalse_ForDerivedCustomPrimitive()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public record class Base(string Value) : IParsable<Base>, IComparable<Base>, IComparable
+            {
+                public static Base Parse(string s, IFormatProvider? provider) => new(s);
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out Base result)
+                {
+                    result = new Base(s ?? string.Empty);
+                    return s is not null;
+                }
+
+                public int CompareTo(Base other) => 0;
+
+                public int CompareTo(object? obj) => 0;
+            }
+
+            public record class Derived(string Value) : Base(Value);
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Derived");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.IsSupported(type!).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 非具名类型（数组）没有可描述的契约缺口，返回空串而不是抛异常：
+    /// 这条路径跑在 STIA0008 的消息渲染上。
+    /// </summary>
+    [Fact]
+    public void DescribeMissingContracts_Should_ReturnEmpty_ForNonNamedType()
+    {
+        var arrayType = _emptyCompilation.CreateArrayTypeSymbol(_emptyCompilation.GetSpecialType(SpecialType.System_Int32));
+
+        SupportedPrimitiveTypes.DescribeMissingContracts(arrayType).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 开放泛型无法在生成代码里写 <c>TPrimitive.Parse(...)</c>，必须给出专门说明。
+    /// </summary>
+    [Fact]
+    public void DescribeMissingContracts_Should_ExplainOpenGeneric()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public readonly record struct Box<T>(T Value)
+                : IParsable<Box<T>>, IComparable<Box<T>>, IComparable
+                where T : notnull
+            {
+                public static Box<T> Parse(string s, IFormatProvider? provider) => new(default!);
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out Box<T> result)
+                {
+                    result = new Box<T>(default!);
+                    return true;
+                }
+
+                public int CompareTo(Box<T> other) => 0;
+
+                public int CompareTo(object? obj) => 0;
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Box`1");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.DescribeMissingContracts(type!).Should().Be("It is an open generic type.");
+    }
+
+    /// <summary>
+    /// <c>Nullable&lt;T&gt;</c> 不能作为基元。它带类型参数，因此先命中「开放泛型」那条判据 ——
+    /// 两条判据的结论都是「不支持」，只是文案不同。这里锁住实际文案，避免日后调整判据顺序时无人察觉。
+    /// </summary>
+    [Fact]
+    public void DescribeMissingContracts_Should_RejectNullable()
+    {
+        var nullable = _emptyCompilation.GetSpecialType(SpecialType.System_Nullable_T)
+            .Construct(_emptyCompilation.GetSpecialType(SpecialType.System_Int32));
+
+        SupportedPrimitiveTypes.IsSupported(nullable).Should().BeFalse();
+        SupportedPrimitiveTypes.DescribeMissingContracts(nullable).Should().Be("It is an open generic type.");
+    }
+
+    /// <summary>
+    /// 非 struct / class（接口、枚举、委托）不属于可承载的基元形状。
+    /// </summary>
+    [Fact]
+    public void DescribeMissingContracts_Should_ExplainNonStructOrClass()
+    {
+        var compilation = CreateCompilation("""
+            namespace Probe;
+
+            public interface IMarker
+            {
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.IMarker");
+
+        type.Should().NotBeNull();
+        SupportedPrimitiveTypes.DescribeMissingContracts(type!).Should().Be("It is not a struct or class.");
+    }
+
+    /// <summary>
+    /// 取测试用的自定义基元类型符号。
+    /// </summary>
+    private static ITypeSymbol GetCustomPrimitiveType()
+    {
+        var compilation = CreateCompilation("""
+            using System;
+
+            namespace Probe;
+
+            public readonly record struct Email(string Value) : IParsable<Email>, IComparable<Email>, IComparable
+            {
+                public static Email Parse(string s, IFormatProvider? provider) => new(s);
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out Email result)
+                {
+                    result = new Email(s ?? string.Empty);
+                    return s is not null;
+                }
+
+                public int CompareTo(Email other) => string.CompareOrdinal(Value, other.Value);
+
+                public int CompareTo(object? obj) => obj is Email other ? CompareTo(other) : throw new ArgumentException();
+            }
+            """);
+
+        var type = compilation.GetTypeByMetadataName("Probe.Email");
+
+        type.Should().NotBeNull("测试前提：自定义基元必须能被解析成符号");
+
+        return type!;
+    }
+
+    #endregion
+
     #region 辅助
 
     private static readonly CSharpCompilation _emptyCompilation = CreateCompilation("namespace Probe { public class Marker { } }");

@@ -344,4 +344,204 @@ public class GeneratedMemberTests
     }
 
     #endregion
+
+    #region [DebuggerTypeProxy]
+
+    /// <summary>
+    /// 每个生成的 Id 都带 <c>[DebuggerTypeProxy]</c>，且指向真实存在的私有嵌套代理类。
+    /// 代理类名拼错只会在调试器里静默失效（不报错、不显示），故必须在这里锚定。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_PointAtExistingNestedProxy()
+    {
+        Type[] idTypes =
+        [
+            typeof(GuidId),
+            typeof(Int32Id),
+            typeof(StringId),
+            typeof(GuidIdV2),
+            typeof(PrefixedGuidId),
+            typeof(ConvertibleGuidId),
+        ];
+
+        foreach (var idType in idTypes)
+        {
+            var attribute = idType.GetCustomAttribute<DebuggerTypeProxyAttribute>();
+
+            attribute.Should().NotBeNull($"{idType.Name} 应当带 [DebuggerTypeProxy]");
+
+            var proxyType = idType.GetNestedType($"{idType.Name}DebugView", BindingFlags.NonPublic);
+
+            proxyType.Should().NotBeNull($"{idType.Name} 应当生成嵌套的 {idType.Name}DebugView");
+            proxyType!.IsNestedPrivate.Should().BeTrue("代理类只供调试器使用，不应进入 API 面");
+            proxyType.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .Should().ContainSingle("调试器要求代理类有一个接收目标类型实例的公开构造函数");
+        }
+    }
+
+    /// <summary>
+    /// 代理视图暴露裸基元值与规范文本形；文本形带前缀，这正是 <c>[DebuggerDisplay("{Value}")]</c> 看不到的信息。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_ExposePrimitiveAndText()
+    {
+        var proxy = CreateDebugView(typeof(PrefixedGuidId), PrefixedGuidId.Create(_value));
+
+        ReadProperty(proxy, "Value").Should().Be(_value);
+        ReadProperty(proxy, "Text").Should().Be("ord_" + CanonicalText);
+    }
+
+    /// <summary>
+    /// 引用类型 Id 可以是 <see langword="null"/>，而调试器在 null 上同样会构造代理：
+    /// 构造函数与成员都必须容忍 null，否则展开一个空引用会抛 <see cref="NullReferenceException"/>。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_TolerateNull_ForReferenceTypeId()
+    {
+        var proxy = CreateDebugView(typeof(GuidIdV2), null);
+
+        ReadProperty(proxy, "Value").Should().BeNull();
+        ReadProperty(proxy, "Text").Should().Be("<null>");
+    }
+
+    /// <summary>
+    /// 特性里的 <c>typeof(...)</c> 实参必须能解析回同一个嵌套类型。只比对名字不够：
+    /// 嵌套 Id 的代理挂在包含类型链下，拼错一层（<c>Ns.OrderIdDebugView</c> 而非
+    /// <c>Ns.Aggregate.OrderId.OrderIdDebugView</c>）同样编译不过，但若写成字符串形式则可能静默失效。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_ResolveToTheNestedType()
+    {
+        Type[] idTypes =
+        [
+            typeof(GuidId),
+            typeof(OrderAggregate.OrderId),
+            typeof(ShipmentBatch.BatchId),
+            typeof(Inventory.SkuId),
+            typeof(ReadonlyGuidId),
+            typeof(SampleStatusId),
+        ];
+
+        foreach (var idType in idTypes)
+        {
+            var attribute = idType.GetCustomAttribute<DebuggerTypeProxyAttribute>()!;
+            var expected = idType.GetNestedType($"{idType.Name}DebugView", BindingFlags.NonPublic);
+
+            Type.GetType(attribute.ProxyTypeName!).Should().BeSameAs(expected, $"{idType.FullName} 的代理类型必须可解析");
+        }
+    }
+
+    /// <summary>
+    /// 代理类与 <c>TypeConverter</c> 同形：<see langword="private"/> 且 <see langword="sealed"/>，
+    /// 不参与继承、也不构成 API 面。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_BePrivateAndSealed()
+    {
+        var proxyType = typeof(GuidId).GetNestedType("GuidIdDebugView", BindingFlags.NonPublic)!;
+
+        proxyType.IsNestedPrivate.Should().BeTrue();
+        proxyType.IsSealed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// 代理只暴露 <c>Value</c> 与 <c>Text</c> 两个公开成员。调试器会显示代理的全部公开成员，
+    /// 多出来的成员（例如把 <c>_id</c> 误写成公开字段）会直接出现在变量窗口里。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_ExposeOnlyValueAndText()
+    {
+        var proxyType = typeof(GuidId).GetNestedType("GuidIdDebugView", BindingFlags.NonPublic)!;
+
+        proxyType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .Should().BeEquivalentTo(["Value", "Text"]);
+
+        proxyType.GetFields(BindingFlags.Public | BindingFlags.Instance).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 值类型 Id 的代理成员不可空：<c>Value</c> 就是基元本身，<c>Text</c> 恒有值。
+    /// 若照搬引用类型的可空写法，调试器里会多出无意义的 <c>null</c> 分支。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_UseNonNullableMembers_ForValueTypeId()
+    {
+        var proxyType = typeof(GuidId).GetNestedType("GuidIdDebugView", BindingFlags.NonPublic)!;
+
+        proxyType.GetProperty("Value")!.PropertyType.Should().Be<Guid>();
+        proxyType.GetProperty("Text")!.PropertyType.Should().Be<string>();
+    }
+
+    /// <summary>
+    /// 引用类型 Id 的代理成员可空：<c>null</c> 实例上 <c>Value</c> 只能是 <c>null</c>。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_UseNullableValue_ForReferenceTypeId()
+    {
+        var proxyType = typeof(GuidIdV2).GetNestedType("GuidIdV2DebugView", BindingFlags.NonPublic)!;
+
+        proxyType.GetProperty("Value")!.PropertyType.Should().Be<Guid?>();
+    }
+
+    /// <summary>
+    /// 代理的 <c>Text</c> 必须与 <c>Id.ToString()</c> 完全一致——它是「规范文本形」在调试器里的投影，
+    /// 两者一旦分叉，调试时看到的就是一个不存在的值。逐基元覆盖各条 <c>ToString</c> 分支。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Text_Should_MatchToString_AcrossPrimitiveShapes()
+    {
+        var cases = new (Type IdType, object Id)[]
+        {
+            (typeof(GuidId), GuidId.Create(_value)),
+            (typeof(Int32Id), Int32Id.Create(42)),
+            (typeof(StringId), StringId.Create("abc")),
+            (typeof(CharId), CharId.Create('x')),
+            (typeof(SampleStatusId), SampleStatusId.Create(SampleStatus.Suspended)),
+            (typeof(SampleAccessId), SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write)),
+            (typeof(DecimalId), DecimalId.Create(1.5m)),
+            (typeof(DateOnlyId), DateOnlyId.Create(new DateOnly(2026, 10, 27))),
+            (typeof(PrefixedGuidId), PrefixedGuidId.Create(_value)),
+            (typeof(PrefixedStringId), PrefixedStringId.Create("abc")),
+            (typeof(OrderAggregate.OrderId), OrderAggregate.OrderId.Create(_value)),
+            (typeof(ReadonlyGuidId), ReadonlyGuidId.Create(_value)),
+        };
+
+        foreach (var (idType, id) in cases)
+        {
+            var proxy = CreateDebugView(idType, id);
+
+            ReadProperty(proxy, "Text").Should().Be(id.ToString(), $"{idType.Name} 的代理文本必须等于 ToString()");
+            ReadProperty(proxy, "Value").Should().Be(idType.GetProperty("Value")!.GetValue(id), $"{idType.Name} 的代理 Value 必须等于裸基元值");
+        }
+    }
+
+    /// <summary>
+    /// 代理的 <c>Value</c> 是裸基元值，不带前缀——前缀只属于文本形。
+    /// 这条把「Value 与 Text 各司其职」钉死，避免有人把前缀拼进 <c>Value</c>。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Value_Should_StayUnprefixed()
+    {
+        var proxy = CreateDebugView(typeof(PrefixedGuidId), PrefixedGuidId.Create(_value));
+
+        ReadProperty(proxy, "Value").Should().Be(_value);
+        ReadProperty(proxy, "Text").As<string>().Should().StartWith("ord_");
+    }
+
+    /// <summary>
+    /// 通过反射构造代理实例：代理类是 private 的，正常代码无法直接 <c>new</c>。
+    /// </summary>
+    private static object CreateDebugView(Type idType, object? id)
+    {
+        var proxyType = idType.GetNestedType($"{idType.Name}DebugView", BindingFlags.NonPublic)!;
+        var constructor = proxyType.GetConstructors(BindingFlags.Public | BindingFlags.Instance).Single();
+
+        return constructor.Invoke([id]);
+    }
+
+    private static object? ReadProperty(object proxy, string name)
+        => proxy.GetType().GetProperty(name)!.GetValue(proxy);
+
+    #endregion
 }

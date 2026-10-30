@@ -1,4 +1,4 @@
-﻿namespace Len.StronglyTypedId;
+namespace Len.StronglyTypedId;
 
 /// <summary>
 /// 描述一个被引用程序集（模块），用于按程序集名与主版本号决定启用哪些代码生成器。
@@ -15,12 +15,17 @@ internal sealed record ModuleInfo
     /// </summary>
     private const string RuntimeAssemblyName = "Len.StronglyTypedId";
 
-    public ModuleInfo(string name, Version version, IAssemblySymbol? assemblySymbol)
+    public ModuleInfo(
+        string name,
+        Version version,
+        IAssemblySymbol? assemblySymbol,
+        ImmutableArray<string>? stronglyTypedIdNames = null)
     {
         Name = name;
         Version = version;
         Assembly = assemblySymbol;
         MayDeclareIds = CanDeclareIds(assemblySymbol);
+        _stronglyTypedIdNames = stronglyTypedIdNames;
     }
 
     public string Name { get; }
@@ -34,12 +39,27 @@ internal sealed record ModuleInfo
     /// </summary>
     public bool MayDeclareIds { get; }
 
-    // 类型表在同一编译里稳定，发现阶段要遍历各模块的类型树；实例级懒缓存让重复的 GetTypes 调用
+    /// <summary>
+    /// 元数据侧预先算出的强类型 Id 元数据名；<see langword="null"/> 表示需要回退到符号树遍历。
+    /// </summary>
+    /// <remarks>
+    /// 只有 <see cref="CompilationReference"/> 拿不到元数据（它是内存里的编译，不是镜像），才回退。
+    /// 其余情形一律走这里，避免每次编译都重走一遍引用程序集的类型树。
+    /// </remarks>
+    private readonly ImmutableArray<string>? _stronglyTypedIdNames;
+
+    // 类型表在同一编译里稳定，发现阶段要遍历各模块的类型树；实例级懒缓存让重复的调用
     // 复用已算好的表，不必重走一遍类型树。
     // 注意 record 合成的 Equals 会比较缓存字段：「已填充」与「为空」的两个实例不相等；增量管线用 ModuleInfo.Comparer 不受影响，别处直接用默认相等性会踩坑。
     private ImmutableArray<ITypeSymbol>? _typesCache;
 
-    public ImmutableArray<ITypeSymbol> GetTypes()
+    /// <summary>
+    /// 取该模块里实现了 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 的类型。
+    /// </summary>
+    /// <remarks>
+    /// 只返回 Id 类型而非全部类型：调用方（发现阶段）要的正是这个子集，返回全集只会让它再筛一遍。
+    /// </remarks>
+    public ImmutableArray<ITypeSymbol> GetStronglyTypedIdTypes()
     {
         if (Assembly is null)
         {
@@ -60,8 +80,47 @@ internal sealed record ModuleInfo
             return _typesCache.Value;
         }
 
+        _typesCache = _stronglyTypedIdNames is { } names
+            ? ResolveByMetadataName(names)
+            : ScanSymbolTree();
+
+        return _typesCache.Value;
+    }
+
+    /// <summary>
+    /// 按元数据名逐个解析类型符号。名字来自 <see cref="MetadataIdScanner"/>，已确认实现了接口。
+    /// </summary>
+    /// <remarks>
+    /// 解析不到（名字歧义、或引用程序集与元数据不是同一份）时静默跳过：漏一个 Id 的代价是少生成一份集成代码，
+    /// 而抛异常会让整个生成器降级成 STIA0012，把真正原因盖掉。
+    /// </remarks>
+    private ImmutableArray<ITypeSymbol> ResolveByMetadataName(ImmutableArray<string> names)
+    {
+        if (names.IsDefaultOrEmpty)
+        {
+            return [];
+        }
+
+        var typeSymbols = new List<ITypeSymbol>(names.Length);
+
+        foreach (var name in names)
+        {
+            if (Assembly!.GetTypeByMetadataName(name) is { } type)
+            {
+                typeSymbols.Add(type);
+            }
+        }
+
+        return [.. typeSymbols];
+    }
+
+    /// <summary>
+    /// 回退路径：遍历整棵类型树并按接口筛选。仅 <see cref="CompilationReference"/> 会走到这里。
+    /// </summary>
+    private ImmutableArray<ITypeSymbol> ScanSymbolTree()
+    {
         var typeSymbols = new List<ITypeSymbol>();
-        var stack = new Stack<INamespaceOrTypeSymbol>(Assembly.GlobalNamespace.GetMembers());
+        var stack = new Stack<INamespaceOrTypeSymbol>(Assembly!.GlobalNamespace.GetMembers());
 
         while (stack.Count > 0)
         {
@@ -72,15 +131,14 @@ internal sealed record ModuleInfo
                 stack.Push(member);
             }
 
-            if (namespaceOrTypeSymbol is ITypeSymbol typeSymbol)
+            if (namespaceOrTypeSymbol is ITypeSymbol typeSymbol
+                && typeSymbol.Interfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface))
             {
                 typeSymbols.Add(typeSymbol);
             }
         }
 
-        _typesCache = [.. typeSymbols];
-
-        return _typesCache.Value;
+        return [.. typeSymbols];
     }
 
     /// <summary>

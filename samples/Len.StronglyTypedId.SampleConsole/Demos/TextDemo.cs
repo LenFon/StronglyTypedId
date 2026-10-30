@@ -24,6 +24,20 @@ internal static class TextDemo
         Demo.Line($"TryParse(\"sku_ABC\")                -> {SkuId.TryParse("sku_ABC", CultureInfo.InvariantCulture, out _)}");
         Demo.Line($"TryParse(\"ABC\")                    -> {SkuId.TryParse("ABC", CultureInfo.InvariantCulture, out _)}");
 
+        Demo.Section("前缀 + 格式化：前缀贯穿 ToString(format) 与 TryFormat");
+
+        // 前缀属于规范文本形，因此格式化路径不会退化成裸基元：数字格式只作用于基元，前缀照旧保留。
+        Demo.Line($"ToString()                        -> {invoice}");
+        Demo.Line($"ToString(\"D6\")                    -> {invoice.ToString("D6", CultureInfo.InvariantCulture)}");
+        Demo.Line($"ToString(\"N\")                     -> {invoice.ToString("N", CultureInfo.InvariantCulture)}");
+
+        Span<char> formatted = stackalloc char[32];
+
+        if (invoice.TryFormat(formatted, out var formattedWritten, "D6", CultureInfo.InvariantCulture))
+        {
+            Demo.Line($"TryFormat(\"D6\")                   -> {new string(formatted[..formattedWritten])}");
+        }
+
         Demo.Section("JSON 形状：JsonShape.Object");
 
         var ticket = TicketId.Create(Guid.Parse("11111111-2222-3333-4444-555555555555"));

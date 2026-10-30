@@ -26,12 +26,16 @@ title: 已知限制
 
 ## 只支持列出的基元类型
 
-不支持任意自定义类型 —— 这份清单是封闭的，见
+内置清单是封闭的，见
 [支持的基元类型](https://github.com/LenFon/StronglyTypedId/blob/main/README.zh-CN.md#supported-primitive-types)。
+但它可以扩展：你自己写的类型只要实现 `IParsable<TSelf>`、`IComparable<TSelf>` 与非泛型 `IComparable`，
+并暴露公开静态的 `Parse` / `TryParse`，就会被接受 —— 见
+[自定义基元](https://github.com/LenFon/StronglyTypedId/blob/main/README.zh-CN.md#custom-primitives)。
+不满足该契约的类型由 `STIA0008` 拒绝。
 
-`Uri` 是被刻意排除的：`Uri.Equals` 忽略 fragment，并对大小写与默认端口做归一化，于是两个不同的 URI
-会比较相等、静默塌成同一个 Id —— 而这正是强类型 Id 要防的那类 bug。请把这类值包进受支持的基元
-（通常是 `string`），在验证器里校验格式：
+`Uri` 即使满足契约也不支持：`Uri.Equals` 忽略 fragment，并对大小写与默认端口做归一化，于是两个
+不同的 URI 会比较相等、静默塌成同一个 Id —— 而这正是强类型 Id 要防的那类 bug。请把这类值包进受支持的
+基元（通常是 `string`），在验证器里校验格式：
 
 ```csharp
 [StronglyTypedId(Validator = nameof(Validate))]
@@ -58,8 +62,11 @@ public partial record struct ResourceUri(string Value)
 ## 泛型容器里的 Id 拿不到「外部引用类」集成
 
 `Outer<T>.InnerId` 本身会生成，但无法自动接线：特性实参不能引用携带容器类型参数的转换器（CS0416），
-因此 `[JsonConverter]` 无法生成；`ApplyTo` / `AddStronglyTypedId` 入口也会跳过它，因为开放泛型不能作为
+因此 `[JsonConverter]` 无法生成；`AddStronglyTypedIds` 入口也会跳过它，因为开放泛型不能作为
 类型实参传入。转换器类本身是生成的 —— 请为你实际使用的闭合类型手工注册，见
 [嵌套类型](declaration.md#nested-types)。
+
+`[DebuggerTypeProxy]` 出于同样的原因被跳过，而且与转换器不同，它的代理类也不生成：代理类是私有的，
+没有手工接线的可能，调试器里展开该 Id 时只会显示 record 自己的成员。
 
 [<- 返回目录](index.md) · [English](../limitations.md)

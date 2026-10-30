@@ -121,6 +121,7 @@ public class StronglyTypedIdGeneratorTests
             public partial class Container
             {
                 [global::System.Diagnostics.DebuggerDisplay("{Value}")]
+                [global::System.Diagnostics.DebuggerTypeProxy(typeof(global::Len.StronglyTypedId.Container.OrderId.OrderIdDebugView))]
                 partial record struct OrderId :
             """);
 
@@ -300,6 +301,7 @@ public class StronglyTypedIdGeneratorTests
             #nullable enable
 
             [global::System.Diagnostics.DebuggerDisplay("{Value}")]
+            [global::System.Diagnostics.DebuggerTypeProxy(typeof(global::Len.StronglyTypedId.OrderId.OrderIdDebugView))]
             partial {{record}} OrderId :
                 global::Len.StronglyTypedId.IStronglyTypedId<OrderId, global::System.Guid>,
                 global::System.IParsable<OrderId>,
@@ -713,6 +715,49 @@ public class StronglyTypedIdGeneratorTests
 
             [StronglyTypedId]
             file partial record struct OrderId(Guid Value);
+            """";
+
+        GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 包含类型是 file 局部类型时同样不生成：生成的 partial 段写在另一个文件里，
+    /// 无法引用 file 局部的容器，产物必然编译不过（CS9051）。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenContainingTypeIsFileLocal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            file partial class Container
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 包含类型不是 partial 时同样不生成：无法把生成的成员并进该类型（CS0260）。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenContainingTypeIsNotPartial()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public class Container
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
             """";
 
         GetGeneratedCode(code).Should().BeEmpty();
@@ -1256,7 +1301,7 @@ public class StronglyTypedIdGeneratorTests
     [Theory]
     [InlineData("record struct")]
     [InlineData("record")]
-    public void EfCore_Should_GenerateModelBuilderApplyTo_WhenReferenced(string record)
+    public void EfCore_Should_GenerateModelBuilderAddStronglyTypedIds_WhenReferenced(string record)
     {
         var template = """
             using System;
@@ -1281,7 +1326,7 @@ public class StronglyTypedIdGeneratorTests
         converter.Should().Contain("property.SetValueConverter(new OrderIdConverter());");
 
         generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
-            .Should().Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
+            .Should().Contain("public static global::Microsoft.EntityFrameworkCore.ModelBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
             .And.Contain("OrderIdConverter.ApplyTo(modelBuilder);");
     }
 
@@ -1341,7 +1386,7 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：门控只看是否引用 EF Core，不再看源码里有没有 <c>ConfigureConventions</c> 重写。
     /// 否则「context 只用 <c>OnModelCreating</c>」这一最常见形态反而拿不到任何产物，而那正是
-    /// <c>ApplyTo(ModelBuilder)</c> 存在的意义。
+    /// <c>AddStronglyTypedIds(ModelBuilder)</c> 存在的意义。
     /// </summary>
     [Fact]
     public void EfCore_Should_Generate_WhenNoConfigureConventions()
@@ -1366,8 +1411,8 @@ public class StronglyTypedIdGeneratorTests
         generated.Should().ContainKey("Len.StronglyTypedId.OrderId.EntityFrameworkCore.g.cs");
 
         generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
-            .Should().Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
-            .And.Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)");
+            .Should().Contain("public static global::Microsoft.EntityFrameworkCore.ModelBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
+            .And.Contain("public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)");
     }
 
     /// <summary>
@@ -1466,7 +1511,7 @@ public class StronglyTypedIdGeneratorTests
     }
 
     [Fact]
-    public void Swagger_Should_GenerateMapType_ForNestedId()
+    public void Swagger_Should_GenerateSchemaEntry_ForNestedId()
     {
         var code = """
             using System;
@@ -1485,13 +1530,13 @@ public class StronglyTypedIdGeneratorTests
 
         generated.Should().ContainKey("StronglyTypedIds.Swagger.g.cs");
         generated["StronglyTypedIds.Swagger.g.cs"]
-            .Should().Contain("options.MapType<global::Len.StronglyTypedId.Sales.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
+            .Should().Contain("[typeof(global::Len.StronglyTypedId.Sales.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" },");
     }
 
     [Theory]
     [InlineData("record struct")]
     [InlineData("record")]
-    public void Swagger_Should_GenerateMapType_ForGuid(string record)
+    public void Swagger_Should_GenerateSchemaEntry_ForGuid(string record)
     {
         var code = $""""
             using System;
@@ -1506,11 +1551,11 @@ public class StronglyTypedIdGeneratorTests
 
         generated.Should().ContainKey("StronglyTypedIds.Swagger.g.cs");
         generated["StronglyTypedIds.Swagger.g.cs"]
-            .Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" });");
+            .Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"string\", Format = \"uuid\" },");
     }
 
     [Fact]
-    public void Swagger_Should_GenerateMapType_ForInt()
+    public void Swagger_Should_GenerateSchemaEntry_ForInt()
     {
         var code = """
             using System;
@@ -1524,7 +1569,7 @@ public class StronglyTypedIdGeneratorTests
         var generated = GetGeneratedCodeByHint(code, typeof(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions));
 
         generated["StronglyTypedIds.Swagger.g.cs"]
-            .Should().Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(() => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" });");
+            .Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = () => new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = \"integer\", Format = \"int32\" },");
     }
 
     [Fact]
@@ -3033,10 +3078,10 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
-    /// Swagger 侧同理：引用程序集里已生成的强类型 Id 也要注册 <c>MapType</c>。
+    /// Swagger 侧同理：引用程序集里已生成的强类型 Id 也要进 schema 表。
     /// </summary>
     [Fact]
-    public void Swagger_Should_IncludeMapType_ForIdsDeclaredInReferencedAssembly()
+    public void Swagger_Should_IncludeSchemaEntry_ForIdsDeclaredInReferencedAssembly()
     {
         var generated = GetGeneratedCodeByHint(
             IdSource,
@@ -3047,8 +3092,8 @@ public class StronglyTypedIdGeneratorTests
             ]);
 
         generated["StronglyTypedIds.Swagger.g.cs"]
-            .Should().Contain("options.MapType<global::Referenced.Domain.LegacyId>(")
-            .And.Contain("options.MapType<global::Len.StronglyTypedId.OrderId>(");
+            .Should().Contain("[typeof(global::Referenced.Domain.LegacyId)] = () =>")
+            .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = () =>");
     }
 
     /// <summary>
@@ -3314,6 +3359,340 @@ public class StronglyTypedIdGeneratorTests
             .And.NotContain("[global::System.Text.Json.Serialization.JsonConverter(");
         newtonsoftJson.Should().Contain("public class NewtonsoftJsonConverter")
             .And.NotContain("[global::Newtonsoft.Json.JsonConverter(");
+    }
+
+    /// <summary>
+    /// 泛型容器里的 Id 同样不能挂 <c>[DebuggerTypeProxy]</c>（特性实参含类型参数 → CS0416），
+    /// 代理类本身也不发射：它是 private 的，没有手动接线的可能，留着只会是死代码。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_BeSkipped_WhenIdIsInGenericContainer()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should().NotContain("DebuggerTypeProxy")
+            .And.NotContain("OrderIdDebugView");
+
+        // 特性被跳过不等于产物不可编译：容器与 Id 仍要能正常编译。
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 代理视图的文本形必须带前缀：<c>[DebuggerDisplay("{Value}")]</c> 只显示裸基元值，
+    /// 带前缀的 Id 在调试器里看不出自己的规范文本形。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_ExposePrefixedText_WhenIdHasPrefix()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Prefix = "ord_")]
+            public partial record struct OrderId(Guid Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should()
+            .Contain("[global::System.Diagnostics.DebuggerTypeProxy(typeof(global::Len.StronglyTypedId.OrderId.OrderIdDebugView))]")
+            .And.Contain("private sealed class OrderIdDebugView")
+            .And.Contain("public global::System.Guid Value => _id.Value;")
+            .And.Contain("public string Text => _id.ToString();");
+    }
+
+    /// <summary>
+    /// 命名实例与代理类同名时会被判为撞名（<c>STIA0020</c>），而不是生成出两个同名嵌套类型。
+    /// </summary>
+    [Fact]
+    public async Task InstanceName_Should_CollideWithDebugView()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("OrderIdDebugView", "7")]
+            public partial record struct OrderId(int Value);
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
+
+        generatorDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+        outputCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        var analyzerDiagnostics = await outputCompilation
+            .WithAnalyzers([new StronglyTypedIdAnalyzer()])
+            .GetAnalyzerDiagnosticsAsync();
+
+        analyzerDiagnostics.Should().Contain(d => d.Id == Descriptors.InvalidInstanceNameId);
+    }
+
+    /// <summary>
+    /// 引用类型 Id 的代理成员必须可空：调试器会在 <see langword="null"/> 实例上构造代理，
+    /// 不可空字段会触发 CS8618 / 运行期 <see cref="NullReferenceException"/>。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_UseNullableMembers_ForReferenceTypeId()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record OrderId :"));
+
+        core.Should()
+            .Contain("private readonly OrderId? _id;")
+            .And.Contain("public OrderIdDebugView(OrderId? id) => _id = id;")
+            .And.Contain("public global::System.Guid? Value => _id?.Value;")
+            .And.Contain("public string Text => _id?.ToString() ?? \"<null>\";");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 值类型 Id 的代理成员不可空，且直接取 <c>_id.Value</c>。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_UseNonNullableMembers_ForValueTypeId()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should()
+            .Contain("private readonly OrderId _id;")
+            .And.Contain("public OrderIdDebugView(OrderId id) => _id = id;")
+            .And.Contain("public global::System.Guid Value => _id.Value;")
+            .And.Contain("public string Text => _id.ToString();")
+            .And.NotContain("_id?");
+    }
+
+    /// <summary>
+    /// 嵌套 Id 的代理特性必须指向包含类型链下的真实类型，而不是「命名空间 + Id 名」拼出来的幻影。
+    /// 与 <c>TypeConverter</c> 的同类缺陷同源（曾生成 <c>global::Ns.NestedId.NestedIdTypeConverter</c> → CS0246）。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_PointAtNestedProxy_WhenIdIsNested()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Aggregate
+            {
+                [StronglyTypedId]
+                public partial record struct NestedId(Guid Value);
+            }
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct NestedId :"));
+
+        core.Should()
+            .Contain("[global::System.Diagnostics.DebuggerTypeProxy(typeof(global::Len.StronglyTypedId.Aggregate.NestedId.NestedIdDebugView))]")
+            .And.Contain("private sealed class NestedIdDebugView");
+
+        // 文本断言不足以证明可用：拼错的 typeof 只会在消费者侧炸成 CS0246，必须真的编译一遍。
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 代理类必须带 <c>[CompilerGenerated]</c> 与 <c>[GeneratedCode]</c>，与其余生成成员一致：
+    /// 否则代码覆盖率与静态分析会把它当成手写代码。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_CarryGeneratedCodeAttributes()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        // 逐行断言，避免依赖产物使用 CRLF 还是 LF。
+        var lines = core.Split('\n').Select(line => line.TrimEnd('\r')).ToList();
+        var classIndex = lines.FindIndex(line => line == "    private sealed class OrderIdDebugView");
+
+        classIndex.Should().BeGreaterThan(1, "代理类必须存在");
+        lines[classIndex - 1].Should().Be($"    [global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"StronglyTypedIdCodeGenerator\", \"{_generatorVersion}\")]");
+        lines[classIndex - 2].Should().Be("    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]");
+    }
+
+    /// <summary>
+    /// 代理类必须排在类型体的最后，且不与 <c>TypeConverter</c> 的生成顺序打架：
+    /// 两者同时开启时都要出现，且各自完整。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_CoexistWithTypeConverter()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(TypeConverter = true)]
+            public partial record struct OrderId(Guid Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should()
+            .Contain("public sealed class OrderIdTypeConverter : global::System.ComponentModel.TypeConverter")
+            .And.Contain("private sealed class OrderIdDebugView")
+            .And.Contain("[global::System.ComponentModel.TypeConverter(typeof(global::Len.StronglyTypedId.OrderId.OrderIdTypeConverter))]")
+            .And.Contain("[global::System.Diagnostics.DebuggerTypeProxy(typeof(global::Len.StronglyTypedId.OrderId.OrderIdDebugView))]");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 代理类对每种基元都发射，且 <c>Value</c> 的类型就是该基元——包括 <c>string</c>（引用基元）、
+    /// 枚举、<c>char</c> 与 <c>BigInteger</c> 这些走特殊分支的类型。
+    /// </summary>
+    [Theory]
+    [InlineData("Guid", "global::System.Guid")]
+    [InlineData("int", "int")]
+    [InlineData("string", "string")]
+    [InlineData("char", "char")]
+    [InlineData("decimal", "decimal")]
+    [InlineData("DateOnly", "global::System.DateOnly")]
+    [InlineData("System.Numerics.BigInteger", "global::System.Numerics.BigInteger")]
+    [InlineData("SampleStatus", "global::Len.StronglyTypedId.SampleStatus")]
+    public void DebuggerTypeProxy_Should_BeEmitted_ForEveryPrimitiveShape(string primitive, string expectedValueType)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public enum SampleStatus { Active, Suspended }
+
+            [StronglyTypedId]
+            public partial record struct OrderId({{primitive}} Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should()
+            .Contain("[global::System.Diagnostics.DebuggerTypeProxy(typeof(global::Len.StronglyTypedId.OrderId.OrderIdDebugView))]")
+            .And.Contain($"public {expectedValueType} Value => _id.Value;");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// <c>readonly record struct</c> 的代理同样正常：代理是独立的嵌套类型，不受 <c>readonly</c> 影响，
+    /// 但生成的 partial 段必须保持 <c>readonly</c> 才能与用户声明合并。
+    /// </summary>
+    [Fact]
+    public void DebuggerTypeProxy_Should_Work_ForReadonlyRecordStruct()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public readonly partial record struct OrderId(Guid Value);
+            """;
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should()
+            .Contain("readonly partial record struct OrderId :")
+            .And.Contain("private sealed class OrderIdDebugView");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 代理类名与 Id 自身同名会触发 CS0542，与既有成员同名会触发 CS0102。
+    /// 这里验证保留名检查真的覆盖了 <c>{TypeName}DebugView</c> 这一条：撞名的实例被跳过（不生成字段），
+    /// 由 <c>STIA0020</c> 报出来，而不是让产物编译失败。
+    /// </summary>
+    [Theory]
+    [InlineData("OrderIdDebugView")]
+    [InlineData("OrderIdTypeConverter")]
+    [InlineData("OrderId")]
+    public async Task InstanceName_Should_BeRejected_WhenItCollidesWithGeneratedNestedType(string name)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("{{name}}", "7")]
+            public partial record struct OrderId(int Value);
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
+
+        // 撞名的实例被跳过，因此产物本身仍可编译。
+        generatorDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+        outputCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        var core = outputCompilation.SyntaxTrees
+            .Skip(1)
+            .Select(tree => tree.ToString())
+            .Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should().NotContain($"public static readonly OrderId {name}");
+
+        var analyzerDiagnostics = await outputCompilation
+            .WithAnalyzers([new StronglyTypedIdAnalyzer()])
+            .GetAnalyzerDiagnosticsAsync();
+
+        analyzerDiagnostics.Should().Contain(d => d.Id == Descriptors.InvalidInstanceNameId);
     }
 
     /// <summary>

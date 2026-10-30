@@ -20,6 +20,8 @@ title: 生成产物
 | 引用了 `Dapper` ≥ 2.0.0                                                                                  | `…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`                           |
 | 引用了 `MessagePack` ≥ 2.0.0                                                                             | `…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`                 |
 | 引用了 `MongoDB.Bson` ≥ 3.0.0                                                                            | `…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`                         |
+| 引用了 `HotChocolate` ≥ 13.0.0                                                                           | `…HotChocolate.g.cs`, `StronglyTypedIds.HotChocolate.g.cs`               |
+| 引用了 `protobuf-net` ≥ 3.0.0                                                                            | `…Protobuf.g.cs`                                                         |
 | 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                                            | `StronglyTypedIds.AspNetCoreOpenApi.g.cs`                                |
 | 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.AspNetCoreMvc.g.cs`                                    |
 <!-- END GENERATED:generated-files -->
@@ -41,6 +43,10 @@ title: 生成产物
   `Guid` 自 .NET 10 起才实现后者；`BigInteger` 虽然实现了它却被排除，因为它的 `TryParse` 是显式接口
   实现，按类型名调用会 `CS1501`。两者共同提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
 - `[DebuggerDisplay("{Value}")]` 特性，调试器里直接显示被包装的值，而不是 record 展开后的形态。
+- `[DebuggerTypeProxy]` 特性，指向一个私有嵌套的 `{TypeName}DebugView`，改变调试器**展开**该 Id 时显示的
+  内容：`Value`（裸基元值）与 `Text`（规范文本形，含 `Prefix`）。`DebuggerDisplay` 只覆盖折叠时那一行摘要，
+  因此带前缀的 Id 在调试器里原本只看得到裸基元值。代理类是私有的，不构成 API 面；声明在泛型容器里的 Id
+  两者都不生成——特性实参不能引用携带容器类型参数的类型（CS0416）。
 - 静态的 `Create(TPrimitiveId value)` 工厂。配置了 `Validator` 时，它拒绝不合法的值——抛
   `ArgumentException`（`The value '…' is not a valid OrderId.`）或你指定的 `ExceptionType`——
   因此经它无法构造出非法 Id。
@@ -95,7 +101,7 @@ title: 生成产物
 ## 集成入口
 
 各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
-`internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，两个 `ApplyTo`
+`internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，各个 `AddStronglyTypedIds`
 重载都并存于该类中。调用它们需要 `using Len.StronglyTypedId;`（声明特性时通常已经有了）。
 
 [<- 返回目录](index.md) · [English](../generated-code.md)

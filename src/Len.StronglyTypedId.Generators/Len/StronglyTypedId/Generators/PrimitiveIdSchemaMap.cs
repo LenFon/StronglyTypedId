@@ -42,6 +42,13 @@ internal static class PrimitiveIdSchemaMap
             return (Integer, null);
         }
 
+        // 自定义基元的 JSON 形是规范文本（见 StronglyTypedIdInfo.IsCustomPrimitive），故对外是裸 string。
+        // 不能落到下面的短名 switch：用户自定义的 MyNs.Guid 会被误判成 uuid。
+        if (idInfo.IsCustomPrimitive)
+        {
+            return (String, null);
+        }
+
         return StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
         {
             "Guid" => (String, "uuid"),

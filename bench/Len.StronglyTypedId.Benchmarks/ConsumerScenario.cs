@@ -109,16 +109,47 @@ internal static class ConsumerScenario
     /// 引用集里类型最多的前 <paramref name="count"/> 个程序集，用来把「成本集中在哪几个程序集」
     /// 直接排进结果表，而不必在参数里硬编码程序集名（名随框架版本变化，硬编码会过期）。
     /// </summary>
+    /// <remarks>
+    /// 类型数直接读元数据表：产品代码已不再枚举符号树，为了排序去实现一遍符号反而会污染基准。
+    /// </remarks>
     public static IEnumerable<string> LargestAssemblies(int count)
-    {
-        var compilation = CreateCompilation(References, CreateSyntaxTrees());
-
-        return ResolveModules(compilation)
-            .Select(module => (module.Name, Count: module.GetTypes().Length))
+        => References
+            .SelectMany(reference => reference.GetModuleIdentities())
+            .Select(identity => (identity.Name, Count: CountTypeDefinitions(identity.MetadataReference)))
             .OrderByDescending(entry => entry.Count)
             .ThenBy(entry => entry.Name, StringComparer.Ordinal)
             .Take(count)
             .Select(entry => entry.Name);
+
+    /// <summary>
+    /// 读元数据里的类型定义数，作为「这个程序集有多大」的度量。
+    /// </summary>
+    private static int CountTypeDefinitions(MetadataReference reference)
+    {
+        if (reference is not PortableExecutableReference portable
+            || portable.GetMetadata() is not AssemblyMetadata metadata)
+        {
+            return 0;
+        }
+
+        var total = 0;
+
+        foreach (var module in metadata.GetModules())
+        {
+            try
+            {
+                total += module.GetMetadataReader().TypeDefinitions.Count;
+            }
+            catch (BadImageFormatException)
+            {
+                // 与产品代码同一口径：无清单的模块按「没有类型」处理。
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        return total;
     }
 
     /// <summary>

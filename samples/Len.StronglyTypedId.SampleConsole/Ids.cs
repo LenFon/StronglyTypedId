@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Len.StronglyTypedId.SampleConsole;
 
 // 最常见的三种基元：Guid / int / string。
@@ -122,3 +124,68 @@ public partial record struct RedactedEmailId(string Value)
 {
     private static bool IsEmail(string value) => value.Contains('@');
 }
+
+// 引用类型 Id（record class）：可以为 null，default 是空引用而不是全零值。
+// 比较运算符把 null 视为最小，JSON 的 null 也能往返。
+[StronglyTypedId]
+public partial record SessionId(Guid Value);
+
+// 自定义基元：只要实现 IParsable<TSelf>、IComparable<TSelf> 与非泛型 IComparable，
+// 并暴露公开静态的 Parse / TryParse，就能直接当基元用，本库不需要为它加任何代码。
+// 它的规范文本是 "USD 12.50" 这样的字符串，因此所有文本路径（JSON、ToString、字典键）都写这个形态。
+public readonly record struct Money(decimal Amount, string Currency)
+    : IParsable<Money>, IComparable<Money>, IComparable
+{
+    public static Money Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid Money.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out Money result)
+    {
+        var parts = s?.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts is { Length: 2 }
+            && decimal.TryParse(parts[1], NumberStyles.Number, provider ?? CultureInfo.InvariantCulture, out var amount))
+        {
+            result = new Money(amount, parts[0]);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public int CompareTo(Money other)
+    {
+        var byCurrency = string.CompareOrdinal(Currency, other.Currency);
+
+        return byCurrency != 0 ? byCurrency : Amount.CompareTo(other.Amount);
+    }
+
+    public int CompareTo(object? obj)
+        => obj is Money other ? CompareTo(other) : throw new ArgumentException("Not a Money value.", nameof(obj));
+
+    public override string ToString() => $"{Currency} {Amount.ToString(CultureInfo.InvariantCulture)}";
+}
+
+[StronglyTypedId]
+public partial record struct MoneyId(Money Value);
+
+// 第三方自定义基元：ULID 满足同一份契约（IParsable + IComparable + 非泛型 IComparable），
+// 本库对它零改动 —— 引用 Ulid 包、声明一行即可。规范文本是 26 字符的 Crockford Base32。
+[StronglyTypedId]
+public partial record struct UlidId(Ulid Value);
+
+// 带前缀的 ULID：文本形是 "ord_" + 26 字符。
+[StronglyTypedId(Prefix = "ord_")]
+public partial record struct PrefixedUlidId(Ulid Value);
+
+// ULID 的命名实例：值在运行期经 Ulid.Parse 还原（生成器跑在 netstandard2.0 上，无法执行它）。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Nil", "00000000000000000000000000")]
+public partial record struct InstanceUlidId(Ulid Value);
+
+// 集成白名单：只保留两个 JSON 序列化器，其余集成（EF Core / Swagger / MessagePack……）都不生成。
+// 与 None 的区别是「精确列出要什么」，适合宿主引了一堆包、但某个 Id 只想参与其中几类的场景。
+// 注意白名单是过滤器：列出未引用其包的集成会报 STIA0019，不会静默失效。
+[StronglyTypedId(Integrations = StronglyTypedIdIntegrations.SystemTextJson | StronglyTypedIdIntegrations.NewtonsoftJson)]
+public partial record struct WhitelistedId(Guid Value);

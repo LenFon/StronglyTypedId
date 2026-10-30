@@ -31,10 +31,16 @@ Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.ExceptionType.get -> System
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.ExceptionType.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Integrations.get -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Integrations.set -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.JsonShape.get -> Len.StronglyTypedId.JsonShape
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.JsonShape.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.get -> string?
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.set -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.PrefixReadMode.get -> Len.StronglyTypedId.PrefixReadMode
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.PrefixReadMode.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.RedactValidationMessage.get -> bool
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.RedactValidationMessage.set -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.TypeConverter.get -> bool
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.TypeConverter.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.get -> string?
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Validator.set -> void
 Len.StronglyTypedId.StronglyTypedIdInstanceAttribute
@@ -42,15 +48,17 @@ Len.StronglyTypedId.StronglyTypedIdInstanceAttribute.StronglyTypedIdInstanceAttr
 Len.StronglyTypedId.StronglyTypedIdInstanceAttribute.Name.get -> string!
 Len.StronglyTypedId.StronglyTypedIdInstanceAttribute.Value.get -> string!
 Len.StronglyTypedId.StronglyTypedIdIntegrations
-Len.StronglyTypedId.StronglyTypedIdIntegrations.All = Len.StronglyTypedId.StronglyTypedIdIntegrations.EntityFrameworkCore | Len.StronglyTypedId.StronglyTypedIdIntegrations.Dapper | Len.StronglyTypedId.StronglyTypedIdIntegrations.SystemTextJson | Len.StronglyTypedId.StronglyTypedIdIntegrations.NewtonsoftJson | Len.StronglyTypedId.StronglyTypedIdIntegrations.Swagger | Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreOpenApi | Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreMvc | Len.StronglyTypedId.StronglyTypedIdIntegrations.MessagePack | Len.StronglyTypedId.StronglyTypedIdIntegrations.MongoDb -> Len.StronglyTypedId.StronglyTypedIdIntegrations
+Len.StronglyTypedId.StronglyTypedIdIntegrations.All = Len.StronglyTypedId.StronglyTypedIdIntegrations.EntityFrameworkCore | Len.StronglyTypedId.StronglyTypedIdIntegrations.Dapper | Len.StronglyTypedId.StronglyTypedIdIntegrations.SystemTextJson | Len.StronglyTypedId.StronglyTypedIdIntegrations.NewtonsoftJson | Len.StronglyTypedId.StronglyTypedIdIntegrations.Swagger | Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreOpenApi | Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreMvc | Len.StronglyTypedId.StronglyTypedIdIntegrations.MessagePack | Len.StronglyTypedId.StronglyTypedIdIntegrations.MongoDb | Len.StronglyTypedId.StronglyTypedIdIntegrations.HotChocolate | Len.StronglyTypedId.StronglyTypedIdIntegrations.Protobuf -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreMvc = 128 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.AspNetCoreOpenApi = 64 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.Dapper = 4 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.Default = 0 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.EntityFrameworkCore = 2 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
+Len.StronglyTypedId.StronglyTypedIdIntegrations.HotChocolate = 1024 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.MessagePack = 256 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.MongoDb = 512 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.NewtonsoftJson = 16 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.None = 1 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
+Len.StronglyTypedId.StronglyTypedIdIntegrations.Protobuf = 2048 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.Swagger = 32 -> Len.StronglyTypedId.StronglyTypedIdIntegrations
 Len.StronglyTypedId.StronglyTypedIdIntegrations.SystemTextJson = 8 -> Len.StronglyTypedId.StronglyTypedIdIntegrations

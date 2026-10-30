@@ -44,6 +44,22 @@ public static class FakerExtensions
         {
             ArgumentNullException.ThrowIfNull(idType);
 
+            // 开放泛型（如 Box<T>.BoxedId）无法闭合，MakeGenericMethod 会抛「not fully instantiated」。
+            // 自动发现时静默跳过：泛型容器里的 Id 本来就不会作为某个具体类型的属性出现；
+            // 显式传入时报错，因为那说明调用方以为它会被填上。
+            if (idType.ContainsGenericParameters)
+            {
+                if (idTypes is null or { Length: 0 })
+                {
+                    continue;
+                }
+
+                throw new ArgumentException(
+                    $"'{idType}' is an open generic type, so Bogus cannot create it. "
+                    + "Pass a closed type such as Box<int>.BoxedId instead.",
+                    nameof(idTypes));
+            }
+
             RegisterTypeRule(faker, idType, effectiveGenerator);
         }
 

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<Import Project="..\..\test.props" />
+	<PropertyGroup>
+		<!-- 与其余测试工程同一组目标框架：生成器与运行时库的两个 TFM 都要被这条回归覆盖。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+		     HotChocolate 集成：本工程必须真的引用它，HotChocolateCodeGenerator 才会被门控触发。
+		     用 AspNetCore 元包而非 HotChocolate 元包：AddGraphQLServer 的 IServiceCollection 重载只在
+		     AspNetCore 包里，控制台 / 测试宿主都靠它装配。
+		-->
+		<PackageReference Include="HotChocolate.AspNetCore" />
+		<PackageReference Include="FluentAssertions" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+		     生成器只作为分析器参与本工程的源码生成，不进编译引用：生成器程序集带的是 Roslyn 5.9 的
+		     System.Collections.Immutable / System.Reflection.Metadata，与 net8.0 引用集里的版本冲突
+		     （实测 MSB3277）。
+		-->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+	</ItemGroup>
+
+</Project>

@@ -5,7 +5,7 @@ namespace Len.StronglyTypedId.Testing;
 /// <summary>
 /// 为生成器支持的每种基元类型产出合理的值。
 /// </summary>
-internal sealed class PrimitiveValueFactory(Random random, int stringLength, Func<Type, object?>? customFactory, bool includeBoundaryValues)
+internal sealed class PrimitiveValueFactory(DeterministicRandom random, int stringLength, Func<Type, object?>? customFactory, bool includeBoundaryValues)
 {
     /// <summary>
     /// 默认字符集：字母 + 数字 + 常见分隔符。只给字母数字会让「字符集约束」型验证器（邮箱、路径、复合编码）
@@ -72,8 +72,8 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
         _ when type == typeof(DateOnly) => DateOnly.FromDateTime(CreateDateTime()),
         _ when type == typeof(TimeOnly) => new TimeOnly(random.NextInt64(0, TimeOnly.MaxValue.Ticks)),
         _ => throw new NotSupportedException(
-            $"'{type}' is not a supported strongly typed id primitive. "
-            + $"Provide a value through {nameof(AnyIdOptions)}.{nameof(AnyIdOptions.PrimitiveValueFactory)}."),
+            $"'{type}' is not a built-in strongly typed id primitive. "
+            + $"Custom primitives need a factory: provide one through {nameof(AnyIdOptions)}.{nameof(AnyIdOptions.PrimitiveValueFactory)}."),
     };
 
     /// <summary>
@@ -88,7 +88,7 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
             : ordinary();
 
     /// <summary>
-    /// <see cref="Random.Next(int, int)"/> 的上界是独占的，直接调用永远取不到 <see cref="int.MaxValue"/>，
+    /// <see cref="DeterministicRandom.Next(int, int)"/> 的上界是独占的，直接调用永远取不到 <see cref="int.MaxValue"/>，
     /// 而它正是 <c>ToString</c> 位数最长、<c>Parse</c> 溢出检测的临界点。改用 64 位区间 +1 再收窄。
     /// </summary>
     private int NextInt32() => (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1);
@@ -121,7 +121,7 @@ internal sealed class PrimitiveValueFactory(Random random, int stringLength, Fun
     private double CreateDouble() => ((random.NextDouble() * 2) - 1) * 1_000_000;
 
     /// <summary>
-    /// 取满 64 位无符号区间。<c>Random.NextInt64()</c> 的无参重载只覆盖 <c>[0, long.MaxValue)</c>（63 位），
+    /// 取满 64 位无符号区间。<see cref="DeterministicRandom.NextInt64()"/> 只覆盖有符号区间（63 位有效），
     /// 直接转型会让 <c>ulong</c> / <c>UInt128</c> 的上半区与 <c>Int128</c> 的负数区永不出现，故取两次低 32 位拼满。
     /// 不写成位移或运算：符号扩展后的按位或会触发 CS0675。
     /// </summary>

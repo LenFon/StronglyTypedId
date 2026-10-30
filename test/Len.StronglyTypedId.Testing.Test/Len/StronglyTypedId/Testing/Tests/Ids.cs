@@ -88,6 +88,15 @@ public enum Color
 }
 
 /// <summary>
+/// 自定义基元：没有内置生成规则，必须由调用方提供工厂。
+/// </summary>
+/// <remarks>
+/// 基元类型 <c>Email</c> 由 <c>StronglyTypedIdConformanceTests</c> 声明（同一命名空间），此处只补 Id。
+/// </remarks>
+[StronglyTypedId]
+public partial record struct EmailId(Email Value);
+
+/// <summary>
 /// 验证器只接受正数，随机值约有一半会被拒，用来验证重试路径。
 /// </summary>
 [StronglyTypedId(Validator = nameof(IsPositive))]
@@ -165,4 +174,14 @@ public sealed class BogusOrder
 public sealed class BogusPositiveOrder
 {
     public PositiveIntId Id { get; set; } = default!;
+}
+
+/// <summary>
+/// 泛型容器里的 Id：自动发现会看到开放泛型 <c>Box&lt;T&gt;.BoxedId</c>，它无法被闭合构造。
+/// 适配包必须跳过它，而不是让 <c>MakeGenericMethod</c> 抛「not fully instantiated」。
+/// </summary>
+public partial class Box<T>
+{
+    [StronglyTypedId]
+    public partial record struct BoxedId(Guid Value);
 }

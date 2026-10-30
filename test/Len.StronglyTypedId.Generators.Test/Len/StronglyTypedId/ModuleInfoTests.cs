@@ -83,28 +83,28 @@ public class ModuleInfoTests
 
     #endregion
 
-    #region GetTypes：Assembly 为 null 的模块不产出类型
+    #region GetStronglyTypedIdTypes：Assembly 为 null 的模块不产出类型
 
     [Fact]
-    public void GetTypes_Should_ReturnEmpty_WhenAssemblyIsNull()
+    public void GetStronglyTypedIdTypes_Should_ReturnEmpty_WhenAssemblyIsNull()
     {
         // PE 引用未登记进编译时 Assembly 为 null（见 MetadataReferenceExtensionsTests），
         // 此时不能抛异常，而应按「该模块没有可枚举的类型」处理。
         var module = CreateModule("Unregistered.dll", "1.0.0.0");
 
         module.Assembly.Should().BeNull();
-        module.GetTypes().Should().BeEmpty();
+        module.GetStronglyTypedIdTypes().Should().BeEmpty();
     }
 
     /// <summary>
-    /// 正向对照：确保上一条用例的「空」是 Assembly 为 null 造成的，而不是 GetTypes 恒为空。
+    /// 正向对照：确保上一条用例的「空」是 Assembly 为 null 造成的，而不是恒为空。
     /// </summary>
     [Fact]
-    public void GetTypes_Should_EnumerateTypes_WhenAssemblyIsPresent()
+    public void GetStronglyTypedIdTypes_Should_EnumerateIds_WhenAssemblyIsPresent()
     {
         var module = ResolveModule("ReferencedAssembly", referencesRuntime: true);
 
-        module.GetTypes().Select(type => type.Name).Should().Contain(["OrderId", "ProductId"]);
+        module.GetStronglyTypedIdTypes().Select(type => type.Name).Should().Contain(["OrderId", "ProductId"]);
     }
 
     /// <summary>
@@ -112,12 +112,24 @@ public class ModuleInfoTests
     /// 不必遍历整棵类型树（<c>System.Private.CoreLib</c> 就有上万个类型）。
     /// </summary>
     [Fact]
-    public void GetTypes_Should_ReturnEmpty_WhenModuleCannotDeclareIds()
+    public void GetStronglyTypedIdTypes_Should_ReturnEmpty_WhenModuleCannotDeclareIds()
     {
         var module = ResolveModule("UnrelatedAssembly", referencesRuntime: false);
 
         module.MayDeclareIds.Should().BeFalse();
-        module.GetTypes().Should().BeEmpty();
+        module.GetStronglyTypedIdTypes().Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 只返回 Id 类型，不返回同程序集里的普通类型：调用方要的正是这个子集。
+    /// </summary>
+    [Fact]
+    public void GetStronglyTypedIdTypes_Should_ExcludeNonIdTypes()
+    {
+        var module = ResolveModule("MixedAssembly", referencesRuntime: true);
+
+        module.GetStronglyTypedIdTypes().Select(type => type.Name)
+            .Should().NotContain("PlainClass");
     }
 
     #endregion
@@ -210,6 +222,10 @@ public class ModuleInfoTests
     /// 按生产路径造一个模块：源码程序集（<see cref="CompilationReference"/>）经
     /// <see cref="ModuleIdentity.ResolveAssembly"/> 解析，从而覆盖 <see cref="ModuleInfo.MayDeclareIds"/> 的推导。
     /// </summary>
+    /// <remarks>
+    /// 源码里放两个真正实现 <c>IStronglyTypedId&lt;,&gt;</c> 的类型，外加一个普通类型：
+    /// 前者验证「能发现」，后者验证「只返回 Id 类型」。
+    /// </remarks>
     private static ModuleInfo ResolveModule(string assemblyName, bool referencesRuntime)
     {
         MetadataReference[] references = referencesRuntime
@@ -218,13 +234,75 @@ public class ModuleInfoTests
 
         var compilation = CSharpCompilation.Create(
             assemblyName,
-            [CSharpSyntaxTree.ParseText("namespace Sample { public class OrderId { } public class ProductId { } }")],
+            [CSharpSyntaxTree.ParseText(referencesRuntime ? IdSource : PlainSource)],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         return new ModuleIdentity($"{assemblyName}.dll", new Version(1, 0), compilation.ToMetadataReference())
             .ResolveAssembly(compilation);
     }
+
+    private const string PlainSource = """
+        namespace Sample;
+
+        public class OrderId
+        {
+        }
+
+        public class ProductId
+        {
+        }
+        """;
+
+    private const string IdSource = """
+        namespace Sample;
+
+        public readonly record struct OrderId(global::System.Guid Value)
+            : global::Len.StronglyTypedId.IStronglyTypedId<OrderId, global::System.Guid>
+        {
+            public static OrderId Create(global::System.Guid value) => new(value);
+
+            public static OrderId Parse(string value, global::System.IFormatProvider? provider)
+                => new(global::System.Guid.Parse(value, provider));
+
+            public static bool TryParse(string? value, global::System.IFormatProvider? provider, out OrderId result)
+            {
+                if (global::System.Guid.TryParse(value, provider, out var primitive))
+                {
+                    result = new(primitive);
+                    return true;
+                }
+
+                result = default;
+                return false;
+            }
+        }
+
+        public readonly record struct ProductId(int Value)
+            : global::Len.StronglyTypedId.IStronglyTypedId<ProductId, int>
+        {
+            public static ProductId Create(int value) => new(value);
+
+            public static ProductId Parse(string value, global::System.IFormatProvider? provider)
+                => new(int.Parse(value, provider));
+
+            public static bool TryParse(string? value, global::System.IFormatProvider? provider, out ProductId result)
+            {
+                if (int.TryParse(value, provider, out var primitive))
+                {
+                    result = new(primitive);
+                    return true;
+                }
+
+                result = default;
+                return false;
+            }
+        }
+
+        public class PlainClass
+        {
+        }
+        """;
 
     #endregion
 }

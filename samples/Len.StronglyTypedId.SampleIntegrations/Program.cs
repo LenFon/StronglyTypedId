@@ -7,6 +7,7 @@ public static class Program
         await EfCoreDemo.RunAsync();
         await DapperDemo.RunAsync();
         BinarySerializationDemo.Run();
+        ProtobufDemo.Run();
 
         Demo.End();
     }

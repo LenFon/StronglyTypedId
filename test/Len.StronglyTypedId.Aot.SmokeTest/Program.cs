@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using MessagePack;
 using MongoDB.Bson;
 using MongoDB.Bson.IO;
@@ -63,6 +64,7 @@ public static class Program
         Check(failures, "Prefix (lenient)", PrefixLenient);
         Check(failures, "System.Text.Json value", JsonValue);
         Check(failures, "System.Text.Json property name", JsonPropertyName);
+        Check(failures, "System.Text.Json via source-generated context", JsonViaSourceGeneratedContext);
         Check(failures, "MessagePack value + enum", MessagePackValue);
         Check(failures, "MongoDB.Bson value + enum", BsonValue);
 
@@ -213,12 +215,58 @@ public static class Program
         Expect(failures, key == id, "STJ ReadAsPropertyName round-trip");
     }
 
+    /// <summary>
+    /// 源生成的 <c>JsonSerializerContext</c> 路径：AOT 下这是唯一可用的序列化方式。
+    /// </summary>
+    /// <remarks>
+    /// 源生成器对本次编译声明的类型走 fast-path，不取 <c>[JsonConverter]</c>，Id 会被写成
+    /// <c>{"Value":…}</c>。挂上 <c>WithStronglyTypedIds()</c> 后必须与反射式序列化同形。
+    /// </remarks>
+    private static void JsonViaSourceGeneratedContext(List<string> failures)
+    {
+        var options = new JsonSerializerOptions
+        {
+            TypeInfoResolver = SmokeTestJsonContext.Default.WithStronglyTypedIds(),
+        };
+
+        // 走 JsonTypeInfo 重载而非 JsonSerializer.Serialize(value, options)：后者带 RequiresUnreferencedCode /
+        // RequiresDynamicCode，本工程要求零警告。GetTypeInfo 本身是 AOT 安全入口，且仍会经过 resolver。
+        var productTypeInfo = (JsonTypeInfo<AotProductId>)options.GetTypeInfo(typeof(AotProductId));
+        var product = AotProductId.Create(1234);
+        var productJson = JsonSerializer.Serialize(product, productTypeInfo);
+        Expect(failures, productJson == "1234", $"STJ context write (actual: \"{productJson}\")");
+        Expect(failures, JsonSerializer.Deserialize(productJson, productTypeInfo) == product, "STJ context round-trip");
+
+        // 前缀必须贯穿文本路径。
+        var guid = Guid.NewGuid();
+        var prefixed = AotPrefixedId.Create(guid);
+        var prefixedTypeInfo = (JsonTypeInfo<AotPrefixedId>)options.GetTypeInfo(typeof(AotPrefixedId));
+        var prefixedJson = JsonSerializer.Serialize(prefixed, prefixedTypeInfo);
+        Expect(failures, prefixedJson == $"\"ord_{guid:D}\"", $"STJ context prefixed write (actual: {prefixedJson})");
+
+        // 验证器拒绝的值经反序列化必须抛 JsonException，而不是让 ArgumentException 穿透。
+        var orderTypeInfo = (JsonTypeInfo<AotOrderId>)options.GetTypeInfo(typeof(AotOrderId));
+        try
+        {
+            JsonSerializer.Deserialize("\"00000000-0000-0000-0000-000000000000\"", orderTypeInfo);
+            failures.Add("STJ context should reject Guid.Empty for AotOrderId");
+        }
+        catch (JsonException)
+        {
+            // 预期。
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"STJ context invalid value threw {ex.GetType().Name}, expected JsonException");
+        }
+    }
+
     private static void MessagePackValue(List<string> failures)
     {
-        // ApplyTo 把本工程全部 Id 的格式化器聚合成一个显式解析器（无反射），正好覆盖 AOT 场景。
-        var options = StronglyTypedIds.ApplyTo(MessagePackSerializerOptions.Standard);
+        // AddStronglyTypedIds 把本工程全部 Id 的格式化器聚合成一个显式解析器（无反射），正好覆盖 AOT 场景。
+        var options = MessagePackSerializerOptions.Standard.AddStronglyTypedIds();
 
-        // AOT 前提自检：枚举基元必须命中 ApplyTo 显式注册的零反射格式化器。MessagePack 在 AOT 下的
+        // AOT 前提自检：枚举基元必须命中 AddStronglyTypedIds 显式注册的零反射格式化器。MessagePack 在 AOT 下的
         // StandardResolver 链里没有任何枚举 resolver（DynamicEnumResolver 走 IL Emit，被排除），
         // 一旦这里拿到的不是 GenericEnumFormatter，AOT 二进制上就会抛「formatter not found」。
         var enumFormatter = options.Resolver.GetFormatter<AotStatus>();

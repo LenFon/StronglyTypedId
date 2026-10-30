@@ -2,8 +2,8 @@
   "Scenario": "GeneratorRunBenchmarks.FullRun",
   "RuntimeVersion": "10.0.12",
   "MeasuredRuns": 10,
-  "AllocatedBytesPerRun": 5553424,
-  "ElapsedMillisecondsPerRun": 14.117,
+  "AllocatedBytesPerRun": 1553608,
+  "ElapsedMillisecondsPerRun": 6.596,
   "AllocatedBytesTolerance": 0.1,
   "ElapsedTolerance": 9
 }

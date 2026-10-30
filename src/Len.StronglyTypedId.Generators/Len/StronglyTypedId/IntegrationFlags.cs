@@ -64,9 +64,19 @@ internal static class IntegrationFlags
     internal const int MongoDb = 1 << 9;
 
     /// <summary>
+    /// HotChocolate（GraphQL）集成。
+    /// </summary>
+    internal const int HotChocolate = 1 << 10;
+
+    /// <summary>
+    /// protobuf-net 集成。
+    /// </summary>
+    internal const int Protobuf = 1 << 11;
+
+    /// <summary>
     /// 全部集成，等价于「引用了就生成」。
     /// </summary>
-    internal const int All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb;
+    internal const int All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb | HotChocolate | Protobuf;
 
     /// <summary>
     /// 把特性上的原始值规范成掩码：未指定返回 <see langword="null"/>，显式 <c>Default</c> 归一为

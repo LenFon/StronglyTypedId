@@ -40,4 +40,34 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     /// 就会覆盖本设置。若本属性已关闭集成、而某个 Id 需要恢复，请写 <see cref="StronglyTypedIdIntegrations.All"/>。
     /// </remarks>
     public StronglyTypedIdIntegrations Integrations { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 默认采用的 JSON 形态。默认为 <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>。
+    /// </summary>
+    /// <remarks>
+    /// 逐类型的 <see cref="StronglyTypedIdAttribute.JsonShape"/> 显式写了就覆盖本设置，包括显式写回
+    /// <see cref="Len.StronglyTypedId.JsonShape.Primitive"/>。整库统一对象形态时用本属性，不必逐个 Id 重复。
+    /// </remarks>
+    public JsonShape JsonShape { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 默认是否生成 <see cref="System.ComponentModel.TypeConverter"/>。
+    /// 默认为 <see langword="false"/>。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="RedactValidationMessage"/> 一样只能单向打开：本属性打开后，单个 Id 无法再关回去。
+    /// 原因是特性属性是 <see cref="bool"/>，未写与写了 <see langword="false"/> 在元数据里无法区分。
+    /// </remarks>
+    public bool TypeConverter { get; set; }
+
+    /// <summary>
+    /// 获取或设置本程序集内强类型 Id 配置了 <see cref="StronglyTypedIdAttribute.Prefix"/> 时默认的读回方式。
+    /// 默认为 <see cref="Len.StronglyTypedId.PrefixReadMode.Lenient"/>。
+    /// </summary>
+    /// <remarks>
+    /// 逐类型的 <see cref="StronglyTypedIdAttribute.PrefixReadMode"/> 显式写了就覆盖本设置。
+    /// 本属性只决定读回策略，不提供默认前缀：程序集级前缀会让多个 Id 共用同一前缀并触发
+    /// <c>STIA0023</c>，故刻意不提供。
+    /// </remarks>
+    public PrefixReadMode PrefixReadMode { get; set; }
 }

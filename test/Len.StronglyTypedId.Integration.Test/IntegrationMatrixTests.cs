@@ -164,7 +164,10 @@ public class IntegrationMatrixTests
             .Select(type => (
                 IdType: type.BaseType!.GetGenericArguments()[0],
                 PrimitiveType: PrimitiveOf(type.BaseType!.GetGenericArguments()[0]),
-                Handler: Activator.CreateInstance(type)!));
+                Handler: Activator.CreateInstance(type)!))
+            // 自定义基元不在本矩阵的职责内：这里锁的是「24 种内置基元 × 驱动返回的各种 CLR 形状」，
+            // 样本值表按内置基元建立。自定义基元由 CustomPrimitiveIntegrationTests 单独覆盖。
+            .Where(handler => IntegrationSampleValues.ByPrimitive.ContainsKey(handler.PrimitiveType));
 
     /// <summary>
     /// 本编译里生成的全部 EF Core 转换器：<c>StronglyTypedIds</c> 下继承
@@ -177,8 +180,11 @@ public class IntegrationMatrixTests
                 && baseType.GetGenericTypeDefinition() == typeof(ValueConverter<,>))
             .Select(type => (
                 IdType: type.BaseType!.GetGenericArguments()[0],
-                PrimitiveType: type.BaseType!.GetGenericArguments()[1],
-                Converter: (ValueConverter)Activator.CreateInstance(type)!));
+                // provider 类型对自定义基元是 string，故基元类型必须从 Id 的接口读，不能取泛型实参。
+                PrimitiveType: PrimitiveOf(type.BaseType!.GetGenericArguments()[0]),
+                Converter: (ValueConverter)Activator.CreateInstance(type)!))
+            // 同 DapperHandlers：自定义基元由 CustomPrimitiveIntegrationTests 覆盖。
+            .Where(converter => IntegrationSampleValues.ByPrimitive.ContainsKey(converter.PrimitiveType));
 
     /// <summary>
     /// 从 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 读出基元类型。

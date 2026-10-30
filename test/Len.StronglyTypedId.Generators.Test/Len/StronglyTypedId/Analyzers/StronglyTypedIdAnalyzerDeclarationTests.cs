@@ -291,7 +291,7 @@ public class StronglyTypedIdAnalyzerDeclarationTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
-            .WithSpan(6, 38, 6, 42).WithArguments("bool");
+            .WithSpan(6, 38, 6, 42).WithArguments("bool", "It does not expose `public static Boolean Parse(string, IFormatProvider)`, does not expose `public static bool TryParse(string, IFormatProvider, out Boolean)`.");
 
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
@@ -318,7 +318,7 @@ public class StronglyTypedIdAnalyzerDeclarationTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
-            .WithSpan(11, 42, 11, 57).WithArguments("Probe.Fake.Guid");
+            .WithSpan(11, 42, 11, 57).WithArguments("Probe.Fake.Guid", "It does not implement `IParsable<Guid>`, does not implement `IComparable<Guid>`, does not implement non-generic `System.IComparable`, does not expose `public static Guid Parse(string, IFormatProvider)`, does not expose `public static bool TryParse(string, IFormatProvider, out Guid)`.");
 
         await Verify.VerifyAnalyzerAsync(code, expected);
     }

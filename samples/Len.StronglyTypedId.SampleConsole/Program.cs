@@ -16,8 +16,16 @@ public static class Program
         IntegrationsDemo.Run();
         SystemTextJsonDemo.Run();
         NewtonsoftJsonDemo.Run();
+        JsonEdgeCasesDemo.Run();
+        SourceGeneratedJsonDemo.Run();
+        PrimitiveMatrixDemo.Run();
+        StringPrimitiveDemo.Run();
+        ReferenceTypeDemo.Run();
+        CustomPrimitiveDemo.Run();
+        ConfigurationBindingDemo.Run();
         StructureDemo.Run();
         ReflectionDemo.Run();
+        DebuggerViewDemo.Run();
         TestingDemo.Run();
 
         Demo.End();

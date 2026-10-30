@@ -12,7 +12,7 @@
 	<ItemGroup>
 		<!--
 		     集成包引用：使 Dapper / AspNetCoreOpenApi / EfCore / Swagger / AspNetCoreMvc 五个 CodeGenerator 在本
-		     工程编译里被门控触发，生成 StronglyTypedIds 的集成 ApplyTo 产物。
+		     工程编译里被门控触发，生成 StronglyTypedIds 的集成 AddStronglyTypedIds 产物。
 		-->
 		<PackageReference Include="Dapper" />
 		<!-- 真实 SQLite：Dapper 的读取路径只有在驱动返回「非基元 CLR 类型」时才会暴露转换缺陷，
@@ -24,8 +24,18 @@
 		<!-- 二进制序列化集成：使 MessagePackCodeGenerator / MongoDbCodeGenerator 在本编译里被门控触发。 -->
 		<PackageReference Include="MessagePack" />
 		<PackageReference Include="MongoDB.Bson" />
+		<!--
+		     protobuf-net：使 ProtobufCodeGenerator 在本编译里被门控触发，并让 surrogate 往返可执行。
+		     它是核心生成器（surrogate 只能靠特性声明），产物直接挂在 Id 上。
+		-->
+		<PackageReference Include="protobuf-net" />
 		<!-- 测试断言库。 -->
 		<PackageReference Include="FluentAssertions" />
+		<!--
+		     ULID：第三方自定义基元的端到端证据。它满足 IParsable + IComparable 契约，本库零改动即可用；
+		     这里引用它是为了让「零改动」这句话有可执行的证据，而不是文档里的一句断言。
+		-->
+		<PackageReference Include="Ulid" />
 		<!--
 		     显式钉定 Roslyn 版本（5.9.0），与生成器/CodeFix 程序集一致。TestBase 经 ProjectReference 传递引入
 		     Analyzer.Testing 1.1.4，其最低依赖 Microsoft.CodeAnalysis.Common / Workspaces.Common 1.0.1 只有

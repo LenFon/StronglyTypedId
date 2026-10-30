@@ -1,4 +1,6 @@
-﻿namespace Len.StronglyTypedId;
+﻿using System.Globalization;
+
+namespace Len.StronglyTypedId;
 
 [StronglyTypedId]
 public partial record struct GuidId(Guid Value);
@@ -389,3 +391,92 @@ public partial record struct RejectedInstanceInt32Id(int Value)
 {
     private static bool Validate(int value) => value > 0;
 }
+
+// N12：自定义基元。Money 满足全部可选能力（IParsable + IComparable + IFormattable + span 接口），
+// 用于验证「能力探测对自定义类型同样生效」—— 它会拿到 ToString(format, provider)、TryFormat 与 UTF-8 重载。
+// 非泛型 IComparable 是 IStronglyTypedId<,> 对 TPrimitiveId 的实际约束，必须显式实现。
+public readonly record struct Money(decimal Amount)
+    : IParsable<Money>,
+      IComparable<Money>,
+      IComparable,
+      IFormattable,
+      ISpanFormattable,
+      IUtf8SpanFormattable
+{
+    public static Money Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid Money.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out Money result)
+    {
+        if (decimal.TryParse(s, NumberStyles.Number, provider ?? CultureInfo.InvariantCulture, out var amount))
+        {
+            result = new Money(amount);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public int CompareTo(Money other) => Amount.CompareTo(other.Amount);
+
+    public int CompareTo(object? obj) => obj is Money other ? CompareTo(other) : throw new ArgumentException("Object is not a Money.", nameof(obj));
+
+    public override string ToString() => Amount.ToString(CultureInfo.InvariantCulture);
+
+    public string ToString(string? format, IFormatProvider? formatProvider) => Amount.ToString(format, formatProvider);
+
+    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+        => Amount.TryFormat(destination, out charsWritten, format, provider);
+
+    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+        => Amount.TryFormat(utf8Destination, out bytesWritten, format, provider);
+}
+
+// N12：只满足最低契约（IParsable + IComparable，无 IFormattable / 无 span 接口）。
+// 它验证「能力探测」不会因为自定义基元就一律透出格式化成员 —— 否则产物会 CS0535。
+public readonly record struct Slug(string Value) : IParsable<Slug>, IComparable<Slug>, IComparable
+{
+    public static Slug Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid Slug.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out Slug result)
+    {
+        if (!string.IsNullOrEmpty(s))
+        {
+            result = new Slug(s);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public int CompareTo(Slug other) => string.CompareOrdinal(Value, other.Value);
+
+    public int CompareTo(object? obj) => obj is Slug other ? CompareTo(other) : throw new ArgumentException("Object is not a Slug.", nameof(obj));
+
+    public override string ToString() => Value;
+}
+
+[StronglyTypedId]
+public partial record struct MoneyId(Money Value);
+
+// 对象形态：值同样是基元的规范文本，不是它的公开属性。
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeMoneyId(Money Value);
+
+[StronglyTypedId]
+public partial record struct SlugId(Slug Value);
+
+// 自定义基元的命名实例：值只能在运行期校验，故生成 CreateInstance 包装。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Zero", "0")]
+[StronglyTypedIdInstance("Ten", "10.5")]
+public partial record struct MoneyInstanceId(Money Value);
+
+// 值写错的自定义基元实例：静态构造抛 TypeInitializationException，内层是带实例名的 InvalidOperationException。
+// 单独成类型，避免污染上面那个正常类型。
+[StronglyTypedId]
+[StronglyTypedIdInstance("Broken", "not-a-money")]
+public partial record struct BrokenMoneyInstanceId(Money Value);

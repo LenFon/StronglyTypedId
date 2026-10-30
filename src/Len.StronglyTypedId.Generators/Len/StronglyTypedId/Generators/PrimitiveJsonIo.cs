@@ -22,7 +22,7 @@ internal static class PrimitiveJsonIo
     /// <c>JsonSerializer.Serialize</c>，调用方需另作处理。
     /// </returns>
     public static string? TryGetWriteExpression(StronglyTypedIdInfo idInfo)
-        => idInfo.IsEnum ? GetEnumWriteExpression(idInfo) : GetWriteExpressionByShortName(idInfo);
+        => idInfo.IsCustomPrimitive ? null : idInfo.IsEnum ? GetEnumWriteExpression(idInfo) : GetWriteExpressionByShortName(idInfo);
 
     /// <summary>
     /// 按基元短名取写侧表达式。
@@ -60,7 +60,7 @@ internal static class PrimitiveJsonIo
     /// <c>JsonSerializer.Deserialize</c>，调用方需另作处理。
     /// </returns>
     public static string? TryGetReadExpression(StronglyTypedIdInfo idInfo)
-        => idInfo.IsEnum ? GetEnumReadExpression(idInfo) : GetReadExpressionByShortName(idInfo);
+        => idInfo.IsCustomPrimitive ? null : idInfo.IsEnum ? GetEnumReadExpression(idInfo) : GetReadExpressionByShortName(idInfo);
 
     /// <summary>
     /// 按基元短名取读侧表达式。

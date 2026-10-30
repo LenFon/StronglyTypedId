@@ -11,8 +11,59 @@
 
 ## [未发布]
 
+下一个版本：自定义基元（含 ULID）、protobuf-net 与 GraphQL 集成、每个 Id 的调试器代理，以及一长串
+序列化与分析器修复。其中数处为破坏性变更，「变更」一节已逐条标注。
+
 ### 新增
 
+- **未来规划页。** 新增 `docs/roadmap.md`（中英双语）—— 说明当前暂无规划，因为路线图上的方向已全部交付。
+  本页从文档索引与两份 README 链入。
+- **功能索引页。** 新增 `docs/features-index.md`（中英双语），一行一个功能点，给出它的可运行示例与
+  讲解页面。表格由 DocGen 从生成器登记表渲染，并在构建时逐条校验示例文件与文档锚点是否真实存在——
+  任何一项缺失都会让 `--verify` 直接失败。集成行不手工维护：新增集成时只要在生成器登记表里补一行，
+  索引表自动多出一行，因此不会重演「集成进了仓库、示例却漏了」这类遗漏。
+- **protobuf-net 集成。** 引用 `protobuf-net` ≥ 3.0.0 时，本次编译声明的每个 Id 都会得到
+  `[ProtoContract(Surrogate = typeof(...))]`，以及一个把基元装进单个 `[ProtoMember(1)]` 字段的嵌套
+  `{TypeName}Surrogate`。没有任何注册调用 —— surrogate 由特性发现，`Serializer.Serialize(order)` 直接可用。
+  载荷是基元值本身，与 MessagePack、BSON 一致；`Int128`、`UInt128`、`Half`、`DateTimeOffset`、`BigInteger`
+  与自定义基元没有原生 protobuf 表示，改存规范文本（`DateTimeOffset` 用 `"O"` 格式，默认格式会丢掉亚秒）。
+  被 Id 的 `Validator` 拒绝的载荷抛 `ProtoBuf.ProtoException`，不让 `ArgumentException` 穿透。
+  **引用程序集里的 Id 拿不到 surrogate** —— 特性只能加在同一编译声明的类型上；需要的话请在那一边手工补。
+  运行时 `RuntimeTypeModel` 注册本可覆盖它们，但类型若已被序列化过就会抛
+  *"The type cannot be changed once a serializer has been generated"*，这不是生成代码能控制的。
+- **ULID 不需要任何专门代码。** Cysharp 的 `Ulid` 实现了 `IParsable<Ulid>`、`IComparable<Ulid>` 与非泛型
+  `IComparable`，已经满足自定义基元契约 —— 引用包、声明
+  `[StronglyTypedId] public partial record struct OrderId(Ulid Value);` 即可。它的规范文本是 26 字符的
+  Crockford Base32，因此 JSON、Newtonsoft.Json、MessagePack、BSON、EF Core 与 Dapper 存的都是这个字符串。
+  注意同一毫秒内生成的 ULID 只按随机部分排序，而随机部分不保证单调。
+- **自定义基元。** 你自己写的类型现在可以作为被包装的基元。它必须实现 `IParsable<TSelf>` 与
+  `IComparable<TSelf>`（类型实参为自身）、实现非泛型 `System.IComparable`（这才是 `TPrimitiveId` 的
+  实际约束，`IComparable<T>` 并不蕴含它），并暴露公开静态的 `Parse` / `TryParse` —— 显式接口实现不算，
+  因为生成代码按类型名直呼它们。内置清单不变、产物逐字节一致；不满足契约的类型由 `STIA0008` 拒绝，
+  消息里会点名缺了哪些成员。`System.Uri` 被刻意排除：它的相等性忽略 fragment、归一化大小写与默认端口，
+  两个不同的 URI 会塌缩成同一个 Id。
+  所有序列化路径 —— System.Text.Json、Newtonsoft.Json、MessagePack、BSON 与 Dapper —— 写的都是基元的
+  规范文本，并经基元自己的 `TryParse` 读回，因此自定义类型绝不会被按公开属性序列化（那会读回
+  `default`）。Dapper 的 `SetValue` 写的也是同一份文本，因为驱动不认识自定义 CLR 类型。自定义基元的
+  命名实例在运行期而非编译期校验（生成器无法执行你的 `Parse`）；值写错时抛出的
+  `InvalidOperationException` 会带上实例名与 Id 类型名，`Len.StronglyTypedId.Testing` 新增
+  `StronglyTypedIdConformance.AssertAllInstancesValid(assembly)`，一次报出全部坏实例。
+- **每个生成的 Id 都带调试器代理。** 在调试器里展开一个 Id，原本看到的是 record 自己的成员——对单属性
+  Id 来说就是 `Value`；带前缀的 Id 更是只看得到裸基元值，前缀完全不可见。现在每个 Id 都带
+  `[DebuggerTypeProxy]`，指向私有嵌套的 `{TypeName}DebugView`，暴露 `Value`（裸基元值）与 `Text`
+  （规范文本形，含前缀）。折叠时那一行摘要仍由 `[DebuggerDisplay]` 提供。代理类是私有的，不新增任何
+  公开 API 面，运行期也没有开销——调试器只在你展开变量时才构造它。声明在泛型容器里的 Id 两者都不生成：
+  特性实参不能引用携带容器类型参数的类型（CS0416），与 `[JsonConverter]` 被跳过的原因相同。
+- **GraphQL 集成（HotChocolate）。** 引用 `HotChocolate` ≥ 13.0.0 时，每个强类型 Id 都会得到一个
+  `ScalarType<TId>`，并由 `AddStronglyTypedIds()` 统一注册——它是 `IRequestExecutorBuilder` 上的扩展方法，
+  与 `AddGraphQLServer()` 同形。表示口径与 JSON
+  一致，因此同一个 Id 不会在 REST 与 GraphQL 两侧出现两种形态：文本基元与带前缀的 Id 是 GraphQL
+  `String`，整数与枚举是 `Int`（枚举按底层数值，不按成员名），浮点是 `Float`。入口幂等，并用
+  `BindRuntimeType` 绑定每个 scalar —— 只 `AddType` 会让 HotChocolate 把 Id 推断成对象类型，schema 构建
+  随之失败。输入同时支持字面量与变量，变量路径既处理 `string` 也处理
+  `System.Text.Json.JsonElement`，因为真实 HTTP 请求交给 scalar 的是后者。解析失败抛
+  `SerializationException` 而不是 `FormatException`，客户端拿到的是带位置的 GraphQL 错误，而不是
+  `Unexpected Execution Error`。可运行示例见 `samples/Len.StronglyTypedId.SampleGraphQL`。
 - `Len.StronglyTypedId.Testing.Bogus`：新增的适配包，让 Bogus 能造强类型 Id。
   `new Faker<Order>().WithStronglyTypedIds()` 会为每个 Id 类型登记 Bogus 自己的 `RuleForType` 规则，
   于是 `faker.Generate()` 会把 Id 类型的成员填上，而不是留在默认值上 —— 且**不报任何错**：Bogus 造不出
@@ -53,9 +104,16 @@
 - 文本前缀：`Prefix` 在 `ToString` 中写入固定前缀、在 `Parse` 中将其剥离；`PrefixReadMode` 选择
   接受裸值（`Lenient`）还是拒绝裸值（`Strict`）。
 - `JsonShape` 选择序列化形态：裸基元（`Primitive`）或 `{ "value": ... }`（`Object`）。
-- System.Text.Json（`StronglyTypedIds.ApplyTo(JsonSerializerOptions)`）与 Newtonsoft.Json
-  （`settings.AddStronglyTypedId()`）的注册入口，供显式配置转换器、不依赖生成的 `[JsonConverter]`
+- System.Text.Json（`options.AddStronglyTypedIds()`）与 Newtonsoft.Json
+  （`settings.AddStronglyTypedIds()`）的注册入口，供显式配置转换器、不依赖生成的 `[JsonConverter]`
   特性的调用方使用。
+- `WithStronglyTypedIds()` —— 序列化走源生成的 `JsonSerializerContext` 时，让 Id 保持字符串形态。
+  `JsonSourceGenerationMode.Metadata`（AOT 的推荐模式）下，context 对有元数据的类型按属性写出、不取
+  `[JsonConverter]` 特性，于是同一个 Id 经 context 是 `{"Value":"…"}`、经反射式序列化是 `"…"`。该方法把
+  一个只认 Id 的 `IJsonTypeInfoResolver` 组合到 context 之前：
+  `TypeInfoResolver = AppJsonContext.Default.WithStronglyTypedIds()`。每个 `JsonTypeInfo` 由生成的转换器
+  经 `JsonMetadataServices` 构造，零反射，Native AOT 下同样可用。它与 `AddStronglyTypedIds` 互不依赖，按配置方式
+  二选一即可。
 - 把现有 `record` 转成强类型 Id 的重构（refactoring）提供程序。
 - `Integrations` —— 收窄单个 Id 生成哪些集成代码。它是**过滤器**而非开关：只能在「已引用对应包」的
   基础上做减法。`None` 关掉全部集成但保留核心实现，`Dapper | SystemTextJson` 只保留这两类，`All`
@@ -64,7 +122,7 @@
   **它自己所在程序集**的默认值。`TypeConverter` 有意不在掩码内。请求了未引用程序集的集成时报告
   `STIA0019`。
 - MessagePack 与 MongoDB BSON 集成 —— 生成 `IMessagePackFormatter<TId>` / `IBsonSerializer<TId>`，分别由
-  `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` 与 `StronglyTypedIds.RegisterBsonSerializers()`
+  `MessagePackSerializerOptions.AddStronglyTypedIds()` 与 `StronglyTypedIds.RegisterBsonSerializers()`
   接上。两者写入的都是基元值本身：文本前缀属于文本形（`ToString()` / JSON），不会进入载荷。
 - `[StronglyTypedIdInstance]` 声明命名静态实例（`Unknown` / `Unspecified` / `System` 之类），生成为
   `public static readonly` 字段。值以基元的不变文化文本形书写，在编译期校验并翻译成字面量，再经
@@ -79,16 +137,52 @@
   `STIA0021`（值不是该基元的合法取值）与 `STIA0022`（名字不是 PascalCase，`Info` 级别）。
 - 可运行的示例：`SampleConsole`（全功能导览）、`SampleIntegrations`（EF Core + Dapper 跑内存
   SQLite）、`Sample1`（MVC + Swashbuckle 6 + Newtonsoft.Json）、`Sample2`（Minimal API + 内置
-  OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）。
+  OpenAPI）、`Sample3`（MVC + Swashbuckle 10 / Microsoft.OpenApi 2.x）、`Sample4`（Minimal API +
+  `Microsoft.AspNetCore.OpenApi` 8.0.0，内置 schema 转换器尚不可用的版本线）与 `SampleGraphQL`
+  （HotChocolate scalar，字面量与变量两条路径）。
 - `STIA0019`、`STIA0024`、`STIA0020`、`STIA0021` 的代码修复。`STIA0019` / `STIA0024`（请求了未引用程序集的集成，
   或掩码位不对应任何集成）现在提供「删掉 `Integrations` 实参」的修复；`STIA0020` / `STIA0021`（名字不合法或取值
   无法解析的 `[StronglyTypedIdInstance]`）提供「删掉整条特性」的修复。`STIA0022`（非 PascalCase 的实例名）仍不提供——
   改名要牵动所有引用点，单文件修复无法安全完成。附带代码修复的规则由此从 26 条中的 17 条增至 21 条。
 - `STIA0015` —— Id 命名约定现在可配置。在 `.editorconfig` 里设置 `dotnet_diagnostic.STIA0015.suffix` 即可检查
   不同的后缀词（例如 `Key`），建议名与提示消息都会使用配置的后缀。默认值仍是 `Id`。
+- `StronglyTypedIdDefaults` 新增 `JsonShape`、`TypeConverter`、`PrefixReadMode`：整个程序集共用一种选择时，
+  不必在每个 Id 上重复书写。`JsonShape` 与 `PrefixReadMode` 是枚举，逐类型可以**双向**覆盖程序集默认值
+  —— 包括在程序集默认 `Object` / `Strict` 时显式写 `JsonShape.Primitive` / `PrefixReadMode.Lenient`。
+  `TypeConverter` 是 `bool`，故仍是单向：程序集默认能打开，逐类型写 `false` 关不回去（与
+  `RedactValidationMessage` 同一规则）。引用程序集里的 Id 尊重**它自己**声明程序集的默认值，于是库作者
+  的选择会随依赖链传到消费者。`Prefix` 刻意不提供程序集级默认值 —— 否则 `STIA0023` 会对几乎每个 Id 报错。
+- **配置绑定现在有文档与回归用例。** `Microsoft.Extensions.Configuration` 通过 `TypeDescriptor` 把字符串
+  转成属性的类型，因此 Id 必须开 `TypeConverter = true` 才能被绑定 —— 不开时 binder 是**静默**失败的：
+  对象绑定把属性留在 `default`（`Guid` 基元的 Id 即 `00000000-0000-0000-0000-000000000000`），哪怕配置里
+  写着一个真实的值；标量重载则从 binder 内部抛 `NullReferenceException`。`docs/declaration.md` 新增
+  「配置绑定」一节，`docs/troubleshooting.md` 新增对应症状条目；`ConfigurationBindingTests` 同时钉住可用
+  路径（值类型、引用类型、带前缀的 Id、标量与对象两种重载、`Bind` 到既有实例）与「静默得到 `default`」
+  这一失败形态，net8.0 / net10.0 双跑。生成的代码零改动。
 
 ### 变更
 
+- **破坏性变更：** 所有集成入口统一改为在被配置对象上调用 `AddStronglyTypedIds(...)`，不再使用
+  `StronglyTypedIds.ApplyTo(...)`。旧形态读起来像静态辅助方法、也无法链式调用；新形态与宿主框架自身的
+  约定一致（`AddControllers`、`AddSwaggerGen`、`AddOpenApi`、`AddGraphQLServer`），因此注册写成
+  `options.AddStronglyTypedIds()`，并返回同一实例以便链式调用。具体来说：`JsonSerializerOptions`、
+  `JsonSerializerSettings`、`ModelConfigurationBuilder`、`ModelBuilder`、`SwaggerGenOptions`、
+  `OpenApiOptions`、`MvcOptions`、`RouteOptions` 与 `MessagePackSerializerOptions` 都获得了扩展方法；
+  其中 `MessagePackSerializerOptions` 仍返回**新实例**，因为它不可变。Dapper 的无参入口现在是
+  `StronglyTypedIds.AddStronglyTypedIds()`（它没有可扩展的接收者），`AddStronglyTypedIds(IDbConnection)`
+  保留以维持源码兼容。`RegisterBsonSerializers()` 不变。EF Core 入口内部调用的
+  `{TypeName}Converter.ApplyTo(...)` 是实现细节，名字不变。调用点把 `StronglyTypedIds.ApplyTo(x)`
+  换成 `x.AddStronglyTypedIds()` 即可。
+- **Id 发现不再遍历类型树。** 在被引用程序集里找 Id 原先要枚举它的全部类型——光是
+  `System.Private.CoreLib` 就有上万个——而且每次编译都重算一遍。现在生成器直接读程序集元数据、
+  扫 `InterfaceImplementations` 表，并按模块 MVID 缓存结果，于是同一份被引用程序集只扫一次，
+  进程内后续编译复用。在基准引用集上实测：每次生成器运行的分配量从 5.55 MB 降到 1.55 MB（−72%），
+  耗时从 14.12 ms 降到 6.55 ms（−54%）。只有 `CompilationReference`（内存编译，没有元数据镜像）
+  仍走符号树。发现语义不变——两条路径的一致性有断言守着。
+- **指定种子的 Id 生成现在跨 .NET 版本、跨平台可复现。** `Any.Id<T>(seed)` 与 `AnyIdOptions.Seed` 原先把
+  种子交给 `Random`，而它的算法属实现细节、可能随版本变化，于是「可复现」只在单一运行时内成立。取值源
+  现改为内置的 SplitMix64，黄金文件与快照测试可以断言精确值。**既有种子产出的值会变** —— 固定过这些值的
+  快照需要重新录制。不指定种子时仍按时钟取种、不可复现。
 - 生成的类型声明不再带 `/// <summary>` 注释。那句话只是把声明本身又说了一遍，而且是整个文件里
   唯一不来自 `/// <inheritdoc/>` 的文档注释，在每个生成文件里都像噪音。
 - 其余生成的文档注释改为 C# 惯例写法：`<summary>` 独占一行，正文另起一行，`</summary>` 再占一行。
@@ -103,14 +197,22 @@
 - 当格式提供程序为 `null` 时，`Parse` / `TryParse` 现在回退到不变文化，与 `ToString()` 写出的内容
   一致。此前 `null` 表示当前文化，于是 `Parse(id.ToString())` 在 `de-DE` 等区域下会静默产生错误值
   （`"1.5"` → `15`）。显式传入的 provider 仍按其文化处理。
-- Dapper 注册新增无参重载 `StronglyTypedIds.ApplyTo()`。Dapper 的类型处理器存在进程级注册表里，
-  `IDbConnection` 实参本来就没有可作用的对象；原有的 `ApplyTo(IDbConnection)` 保留以维持源码兼容，
+- Dapper 注册新增无参重载 `StronglyTypedIds.AddStronglyTypedIds()`。Dapper 的类型处理器存在进程级注册表里，
+  `IDbConnection` 实参本来就没有可作用的对象；原有的 `AddStronglyTypedIds(IDbConnection)` 保留以维持源码兼容，
   内部转发到新重载。两者重复调用都无害 —— Dapper 对同一类型是替换而非追加，注册表不会膨胀。
 - README 的参考表格（基元类型、集成、诊断）由 `tools/Len.StronglyTypedId.DocGen` 从生成器源码
   生成；一旦发生漂移，CI 即失败。
 - 性能：生成器的发现结果在整条流水线内复用，`TryFormat` 不再装箱，`CompilationProvider` 依赖下沉。
 - 构建：`.editorconfig` + `Directory.Build.props` 固定零警告基线（IDE/CA/xUnit 规则提升为警告），
   `dotnet pack` 时执行包校验，CI 新增 Native AOT 冒烟测试、包内容断言与生成器分配门槛。
+- 测试套件：分析器 / CodeFix 测试基建改为复用同一个 `ReferenceAssemblies` 实例，不再每个用例新建一个。
+  `ReferenceAssemblies` 把解析结果缓存在实例字段里，旧写法让约 170 个分析器与 CodeFix 用例各自把
+  约 160 个引用程序集重新打开、重新解析一遍。程序集到引用的解析也按 `Assembly` 缓存（含解析失败的负结果），
+  受信平台程序集列表改为建一次索引，不再每次查找都 `Split` 并逐项扫描。生成器测试工程的墙钟在 24 核机器上
+  从约 13.7 秒降到约 4.2 秒（−69%），限定 4 核时从约 15 秒降到约 6.6 秒。`xunit.runner.json` 的并发
+  上限改为 10 路 —— 这是新负载画像下实测的平台点。
+- 测试依赖：`FluentAssertions` 钉在 **7.2.0**，即最后一个 MIT 许可版本。8.0 起改为 Xceed 商业授权、
+  仅非商业用途免费，MIT 开源库不能把这种组件作为测试依赖。Dependabot 已配置为拒绝它的 major 升级。
 - `STIA0011` 现在除 `new Xxx(...)` 外，还报告目标类型化的 `new(...)` 与 `default` / `default(T)`
   构造，默认级别由 `Info` 提升为 `Warning`，使「绕过验证器」能在 build 输出与 CI 中显现。只声明了
   `Normalizer` 的 Id 同样会触发该规则——直接构造出来的 Id 不是规范形。仅用于比较的 `default`
@@ -133,11 +235,23 @@
 
 ### 修复
 
+- **测试辅助包遇到泛型容器里的 Id 会崩溃。** 声明在泛型容器里的 Id（如 `Box<T>.BoxedId`）以开放泛型
+  暴露，`AnyIdGenerator.Create(Type)` 与 Bogus 适配的自动发现都会对它调用 `MakeGenericMethod`，抛出的
+  *"Late bound operations cannot be performed on types or methods for which ContainsGenericParameters is
+  true"* 完全看不出问题出在「这个 Id 声明在泛型容器里」。现在 `AnyIdGenerator.Create` 直接报
+  `ArgumentException` 并说明原因与替代做法；Bogus 的自动发现静默跳过开放泛型（泛型容器里的 Id 本来
+  就不会作为某个具体类型的属性出现），显式传入时则报错；AutoFixture 的 specimen builder 改为返回
+  `NoSpecimen`，交由后续 builder 决定。闭合后的泛型容器 Id（如 `Box<int>.BoxedId`）照常可用。
+- **EF Core 无法映射以自定义基元为底的 Id。** 生成的 `ValueConverter<TId, TPrimitive>` 把基元本身当作
+  provider 类型，而数据库提供程序不认识用户自定义的 CLR 类型 —— 模型构建直接失败：
+  *"The 'Ulid' property 'Order.Id' could not be mapped because the database provider does not support this
+  type"*。现在自定义基元转换为 `string`（规范文本），与 JSON、MessagePack、BSON、Dapper 存的口径一致。
+  以内置基元为底的 Id 不受影响，产物逐字节不变。
 - `Swashbuckle` 集成现在也会补回 **Minimal API 参数**上的强类型 Id schema。`ApiExplorer` 会把实现了
   `IParsable` 的参数描述成 `string` —— 框架认得出这是可解析的文本类型 —— 于是按 CLR 类型登记的 `MapType`
   对路由参数与查询参数一直没机会生效：它们在文档里是裸的 `type: string`、不带 `format`，而同一个 Id
   在请求体里是 `type: string, format: uuid`。现在由生成的操作过滤器按参数的真实类型把 schema 补回去。
-  `ApplyTo` 仍然是幂等的，且 `MapType` 的注册加了守卫 —— 重复调用不再抛
+  `AddStronglyTypedIds` 仍然是幂等的，且 `MapType` 的注册加了守卫 —— 重复调用不再抛
   `An item with the same key has already been added`。
 - `System.Text.Json` 转换器不再把基元外包给 `JsonSerializer`。原先调用
   `JsonSerializer.Serialize(writer, primitiveId, options)` / `Deserialize<T>(ref reader, options)`，
@@ -154,9 +268,8 @@
   内嵌转换器只能生成在声明 Id 的那个程序集里（消费方补一份会撞 `CS0426`），于是这类 Id 此前一个
   Newtonsoft 转换器都没有，被写成对象形态（`{"Value":"…"}`），而 `System.Text.Json` 写的是字符串 ——
   同一份数据两种表示，编译无警告、运行不抛异常。宿主应用现在会为这些 Id 得到一份顶层转换器，
-  经 `AddStronglyTypedId` 注册。内嵌转换器与它的 `[JsonConverter]` 特性一律保留，因此引用了
+  经 `AddStronglyTypedIds` 注册。内嵌转换器与它的 `[JsonConverter]` 特性一律保留，因此引用了
   Newtonsoft 的程序集不受影响。
-
 - `STIA0016`（重复基元类型）不再退化为 O(N²)。原先每个强类型 Id 都从头重算整组分组，于是同处一个命名空间的
   N 个 Id 各自重新扫描整个命名空间（含嵌套类型）。现在分组按命名空间缓存、在 Id 的符号操作之间共享，
   整体复杂度从 O(N·M) 降为 O(M)。上报的诊断与「组内第一个成员上报」的规则保持不变。
@@ -207,7 +320,7 @@
   于是表达式体重载顶格输出，而块体重载（配置 `Normalizer` 时）是正常的。纯排版问题 —— 两种形态都能
   编译 —— 但每个生成文件在编辑器里看着都是坏的。
 - 又有三处生成块的缩进统一了。引用类型 Id 的 `CompareValues` 辅助方法缩进 20 空格，而同级成员是 4 空格；
-  EF Core 与 Swagger 的 `ApplyTo` 方法体用制表符缩进（Swagger 的左大括号后还多一个尾随空格），而其余
+  EF Core 与 Swagger 的 `AddStronglyTypedIds` 方法体用制表符缩进（Swagger 的左大括号后还多一个尾随空格），而其余
   生成行一律 4 空格。纯排版问题 —— 两种形态都能编译。
 - 枚举 Id 作 `Dictionary` 键时忽略 `JsonSerializerOptions.DictionaryKeyPolicy`：`CamelCase` 策略下写出
   `{"Active":1}`，而原生 `Dictionary<Status, int>` 写出的是 `{"active":1}`。生成的 `WriteAsPropertyName`
@@ -232,16 +345,16 @@
   路由与查询参数在 `JsonTypeInfo` 中描述的是基元，此前的 schema 转换器会漏掉它们；请求体与响应体
   本来就是正确的。
 - 声明在泛型容器内的 Id 不再发出 `[JsonConverter(typeof(...))]` —— 特性实参中出现类型参数是非法的
-  （CS0416）。转换器类型仍会生成，可为封闭构造手动注册；`AddStronglyTypedId` / `ApplyTo` 出于同样的
+  （CS0416）。转换器类型仍会生成，可为封闭构造手动注册；`AddStronglyTypedIds` 出于同样的
   原因（开放泛型不能作类型实参）会跳过它。README 此前声称两种序列化开箱即用，现已改为说明按闭合类型
   手动注册（`new Outer<int>.InnerId.SystemTextJsonConverter()`）。
 - 对于声明程序集未引用 JSON 库的 Id，不再生成 JSON 注册入口，消除了消费者项目中的 CS0426。
+- EF Core、Dapper、Swagger、MVC 与 OpenAPI 生成器在「没有可注册的 Id」时不再产出空的
+  `StronglyTypedIds` 注册类。此前没有任何合格 Id 的程序集仍会拿到一个 `AddStronglyTypedIds` 什么都不做的
+  `StronglyTypedIds.*.g.cs`；现在直接跳过，与 JSON 注册入口的既有行为一致。
 - Dapper 类型处理器改为重写 `SqlMapper.TypeHandler<TId>` 的非可空签名（`SetValue(IDbDataParameter, TId)`
   与 `Parse(object?)`）。此前的 `TId?` 签名对 struct Id 会解析成 `Nullable<TId>`，编译时报
   CS0115 / CS0508。
-- EF Core、Dapper、Swagger、MVC 与 OpenAPI 生成器在「没有可注册的 Id」时不再产出空的
-  `StronglyTypedIds` 注册类。此前没有任何合格 Id 的程序集仍会拿到一个 `ApplyTo` 什么都不做的
-  `StronglyTypedIds.*.g.cs`；现在直接跳过，与 JSON 注册入口的既有行为一致。
 - 引用类型 Id（`partial record`）的 Dapper 类型处理器改为把被包裹的基元写入 `DbParameter.Value`，
   不再写入 Id 包装对象。SqlClient / SQLite 等驱动会以「No mapping exists from object type ...」
   拒绝该包装对象，导致引用类型 Id 的所有插入与更新在参数绑定阶段失败。值类型 Id 不受影响。
@@ -261,7 +374,7 @@
   测试首次在 CI 跑通时暴露了两个缺口：MessagePack 在 AOT（禁用动态代码）下的 resolver 链里根本没有
   枚举 resolver（走 IL Emit 的 `DynamicEnumResolver` 被排除），枚举基元的 Id 连序列化都过不去；BSON 的
   `PrimitiveSerializationProvider` 经 `Activator` 反射创建 `Int32Serializer`、`EnumSerializer<T>` 等实例，
-  构造器被裁剪后在 AOT 下直接抛 `MissingMethodException`。现在 `ApplyTo` 会为每个去重后的枚举基元追加
+  构造器被裁剪后在 AOT 下直接抛 `MissingMethodException`。现在 `AddStronglyTypedIds` 会为每个去重后的枚举基元追加
   `GenericEnumFormatter<TEnum>`（与动态 resolver 写同样的底层数值载荷，线格式不变）；
   `RegisterBsonSerializers` 会为全部二进制路径基元预注册默认配置的序列化器 —— `Guid` 仍被排除：
   driver 3.0 起它没有全局默认表示，应用必须自选。
@@ -302,7 +415,7 @@
   ——或从别的命名空间引入的短名 `[StronglyTypedId]`——会和真正的那个一起被剥掉，静默抹掉另一个库
   用它表达的信息。现在特性经语义解析，只有绑定到 `Len.StronglyTypedId.StronglyTypedIdAttribute` 时
   才删除；名字根本没解析到任何特性（被同名命名空间遮蔽）时仍按强类型 Id 处理，那种场景下重构照常可用。
-- `StronglyTypedIds.ApplyTo(MvcOptions)` 现在是幂等的。它此前每次调用都插入一个新的
+- `AddStronglyTypedIds(MvcOptions)` 现在是幂等的。它此前每次调用都插入一个新的
   `StronglyTypedIdModelBinderProvider`，于是启动代码从多个模块各注册一次、或配置回调被执行两次，
   都会在 `ModelBinderProviders` 里留下重复的提供者，每个都在每次请求上重建绑定器。现在检测到已存在
   就直接返回。

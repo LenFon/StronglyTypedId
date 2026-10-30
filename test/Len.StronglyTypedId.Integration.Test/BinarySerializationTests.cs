@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using FluentAssertions;
 using MessagePack;
 using MessagePack.Formatters;
@@ -22,7 +22,7 @@ public class BinarySerializationTests
     /// 生成器产出的装配入口：先查生成的格式化器，再退回原有解析器。
     /// </summary>
     private static readonly MessagePackSerializerOptions _messagePackOptions =
-        StronglyTypedIds.ApplyTo(MessagePackSerializerOptions.Standard);
+        MessagePackSerializerOptions.Standard.AddStronglyTypedIds();
 
     /// <summary>
     /// 普通数组载荷：用来验证「生成的格式化器找不到时退回原有解析器」。
@@ -280,7 +280,7 @@ public class BinarySerializationTests
     }
 
     [Fact]
-    public void MessagePack_ApplyTo_Should_FallBackToOriginalResolver()
+    public void MessagePack_AddStronglyTypedIds_Should_FallBackToOriginalResolver()
     {
         // 装配入口是「先查生成的格式化器，再退回原有解析器」，不能把别人的解析能力挤掉。
         var bytes = MessagePackSerializer.Serialize(
@@ -314,7 +314,10 @@ public class BinarySerializationTests
             .SelectMany(static type => type.GetInterfaces())
             .Where(static @interface => @interface.IsGenericType
                 && @interface.GetGenericTypeDefinition() == typeof(IMessagePackFormatter<>))
-            .Select(static @interface => @interface.GetGenericArguments()[0]);
+            .Select(static @interface => @interface.GetGenericArguments()[0])
+            // 自定义基元不在本矩阵的职责内：样本值表按内置基元建立，
+            // 自定义基元的二进制往返由 CustomPrimitiveIntegrationTests 单独覆盖。
+            .Where(idType => IntegrationSampleValues.ByPrimitive.ContainsKey(PrimitiveOf(idType)));
 
     /// <summary>
     /// 本编译里生成了 BSON 序列化器的全部 Id 类型。
@@ -324,7 +327,9 @@ public class BinarySerializationTests
             .GetNestedTypes(BindingFlags.NonPublic | BindingFlags.Public)
             .Where(static type => type.BaseType is { IsGenericType: true } baseType
                 && baseType.GetGenericTypeDefinition() == typeof(SerializerBase<>))
-            .Select(static type => type.BaseType!.GetGenericArguments()[0]);
+            .Select(static type => type.BaseType!.GetGenericArguments()[0])
+            // 同 MessagePackFormatterIdTypes。
+            .Where(idType => IntegrationSampleValues.ByPrimitive.ContainsKey(PrimitiveOf(idType)));
 
     /// <summary>
     /// 把单个值写成一个只含 <c>v</c> 字段的 BSON 文档。

@@ -28,15 +28,19 @@ directly.
 
 <a id="primitive-types"></a>
 
-## Only the listed primitives are supported
+## Only the listed primitives are supported by default
 
-Arbitrary custom types are not accepted — the list is closed and lives in
+The built-in list is closed and lives in
 [Supported primitive types](https://github.com/LenFon/StronglyTypedId#supported-primitive-types).
+It is extensible, though: a type of your own is accepted when it implements `IParsable<TSelf>`,
+`IComparable<TSelf>` and the non-generic `IComparable`, and exposes public static `Parse` / `TryParse` —
+see [Custom primitives](https://github.com/LenFon/StronglyTypedId#custom-primitives). Anything that does
+not satisfy that contract is rejected by `STIA0008`.
 
-`Uri` is deliberately absent. `Uri.Equals` ignores the fragment and normalises case and default ports, so
-two different URIs would compare equal and silently collapse into the same id — exactly the bug a strongly
-typed id exists to prevent. Wrap such a value in a supported primitive (usually `string`) and validate the
-format instead:
+`Uri` is deliberately absent even though it satisfies the contract. `Uri.Equals` ignores the fragment and
+normalises case and default ports, so two different URIs would compare equal and silently collapse into the
+same id — exactly the bug a strongly typed id exists to prevent. Wrap such a value in a supported primitive
+(usually `string`) and validate the format instead:
 
 ```csharp
 [StronglyTypedId(Validator = nameof(Validate))]
@@ -65,8 +69,12 @@ want, since that is where the invariant is known to hold.
 
 `Outer<T>.InnerId` is generated, but it cannot be wired up automatically: an attribute argument may not
 reference a converter that carries the container's type parameter (CS0416), so `[JsonConverter]` cannot be
-emitted, and the `ApplyTo` / `AddStronglyTypedId` entry points skip it because an open generic type cannot
+emitted, and the `AddStronglyTypedIds` entry points skip it because an open generic type cannot
 be passed as a type argument. The converter classes themselves are generated — register the one for the
 closed type you use by hand, see [Nested types](declaration.md#nested-types).
+
+`[DebuggerTypeProxy]` is skipped for the same reason, and unlike the converters its proxy class is not
+generated either: it is private, so there is no way to wire it up by hand, and the id simply shows its
+record members when expanded in the debugger.
 
 [<- Back to the index](index.md) · [中文](zh-CN/limitations.md)

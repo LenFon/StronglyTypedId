@@ -65,15 +65,43 @@ The difference that matters here is **whether the `[JsonConverter]` attribute on
 
 `Metadata` is the recommended configuration for AOT (smaller artifacts), so in that mode the converter
 has to be registered into `options.Converters` through
-`StronglyTypedIds.ApplyTo(JsonSerializerOptions)` — a path that does not depend on what the source
-generator decides. Under `Default` the attribute is already enough and `ApplyTo` is optional.
+`options.AddStronglyTypedIds()` — a path that does not depend on what the source
+generator decides. Under `Default` the attribute is already enough and `AddStronglyTypedIds` is optional.
+
+### Making the context write the same shape
+
+`AddStronglyTypedIds` fixes the shape for converters the serializer resolves through `options.Converters`, but a
+source-generated context does not consult that list for a type it was told to generate metadata for: it
+emits its own `JsonTypeInfo` for the id and writes it by properties. The result is `{"Value":"…"}` from
+the context and `"…"` from reflection — the same id, two shapes, no error.
+
+`WithStronglyTypedIds()` closes that gap. It wraps your resolver so the id's `JsonTypeInfo` — built
+around the generated converter, without reflection — is consulted first:
+
+```csharp
+var options = new JsonSerializerOptions
+{
+    TypeInfoResolver = AppJsonContext.Default.WithStronglyTypedIds(),
+};
+```
+
+The order matters and the method handles it: `JsonTypeInfoResolver.Combine` returns the first resolver
+that produces a non-null `JsonTypeInfo`, and the context does produce one for the id. Putting the id
+resolver first is what makes the converter win; every other type still falls through to your context.
+
+`AddStronglyTypedIds` and `WithStronglyTypedIds()` are independent — use the one that matches how you configure
+serialization. If you set `TypeInfoResolver` to a context, use `WithStronglyTypedIds()`; if you rely on
+`options.Converters`, use `AddStronglyTypedIds`. Setting both is harmless.
+
+Both target frameworks are covered: the `System.Text.Json` source generator ships in the net8.0 reference
+pack as well as the net10.0 one, so the same gap and the same fix apply on either.
 
 ## MessagePack and MongoDB.Bson under AOT
 
 The generated integration artifacts are reflection-free themselves, and the registration entry points
 also cover the **primitive** the ids wrap:
 
-- **MessagePack** — `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` adds a
+- **MessagePack** — `MessagePackSerializerOptions.AddStronglyTypedIds()` adds a
   `GenericEnumFormatter<TEnum>` for each distinct enum primitive. MessagePack's AOT-safe resolver chain
   (`StandardResolver` when dynamic code is unavailable) contains no enum resolver at all — the
   IL-emitting `DynamicEnumResolver` is excluded — so without this entry an enum-backed id cannot be
@@ -91,10 +119,10 @@ also cover the **primitive** the ids wrap:
   **`Guid` is the exception**: since driver 3.0 there is no global default representation, so an app
   must register its own `GuidSerializer` with the representation its data uses.
 
-## How this is verified
+## What is covered
 
-`test/Len.StronglyTypedId.Aot.SmokeTest` is a real `PublishAot` executable, published and run by the
-`aot` job in CI — the claim is tested, not asserted. It exercises, on a published AOT binary:
+The library's own AOT smoke test publishes a real `PublishAot` executable and runs it in CI, so the claim
+is tested rather than asserted. On a published AOT binary it exercises:
 
 | Area | Covered |
 | --- | --- |
@@ -103,18 +131,21 @@ also cover the **primitive** the ids wrap:
 | Formatting | `TryFormat` to `Span<char>` and `Span<byte>`, plus interpolated `ToString()` |
 | Prefix | prefixed `ToString`, round-trip, and the lenient bare-value read |
 | JSON | converter `Write` / `Read` round-trip, and `WriteAsPropertyName` / `ReadAsPropertyName` |
+| JSON via context | `JsonSerializer` through a source-generated `JsonSerializerContext` + `WithStronglyTypedIds()`, including the prefixed and validator-rejection paths |
 | MessagePack | value round-trips over `int` and `enum` primitives, plus rejection of an undefined enum value |
 | MongoDB.Bson | value round-trips over `int` and `enum` primitives, plus rejection of an undefined enum value |
 
-The project sets `TrimmerSingleWarn` to `false` so trim and AOT warnings are listed individually instead
-of collapsing into a single `IL2104`, and it must compile with **zero** warnings: analyzer-clean plus
-runtime-clean is the bar for "works under AOT".
+You do not need to reproduce any of this in your own app; it is listed so you know which paths have been
+proven to work under AOT. The smoke project is a CI concern — see
+[CONTRIBUTING](https://github.com/LenFon/StronglyTypedId/blob/main/.github/CONTRIBUTING.md) if you are working on
+the library itself.
 
 ## Checklist for an AOT app
 
 1. Publish with `<PublishAot>true</PublishAot>` (or `<PublishTrimmed>true</PublishTrimmed>`).
 2. Provide a source-generated `JsonSerializerContext` and set it as `TypeInfoResolver` if you serialize
-   ids — the same context you already need for every other type.
+   ids — the same context you already need for every other type. Wrap it with
+   `.WithStronglyTypedIds()` so ids keep the string shape instead of being written as objects.
 3. Leave the trim analyzer on. If it flags a call site that passes a `Type` into
    `GetPrimitiveIdType` / `IsStronglyTypedId`, annotate that parameter with
    `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]` rather than suppressing the

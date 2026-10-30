@@ -155,7 +155,7 @@ public class StronglyTypedIdCodeFixConversionTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
-            .WithSpan(6, 31, 6, 34).WithArguments("Foo");
+            .WithSpan(6, 31, 6, 34).WithArguments("Foo", "It is not a struct or class.");
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
@@ -183,7 +183,7 @@ public class StronglyTypedIdCodeFixConversionTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
-            .WithSpan(4, 31, 4, 34).WithArguments("Foo");
+            .WithSpan(4, 31, 4, 34).WithArguments("Foo", "It is not a struct or class.");
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
@@ -371,7 +371,7 @@ public class StronglyTypedIdCodeFixConversionTests
             """";
 
         var expected = Verify.Diagnostic(Descriptors.ParameterTypeIsInvalid)
-            .WithSpan(7, 43, 7, 46).WithArguments("Foo");
+            .WithSpan(7, 43, 7, 46).WithArguments("Foo", "It is not a struct or class.");
 
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }

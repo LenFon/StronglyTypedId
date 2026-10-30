@@ -47,8 +47,9 @@ public sealed class AnyIdGenerator
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttempts, 1);
 
         _options = options;
+        // 未指定种子时用时钟熵播种，行为与之前一样不可复现；指定种子时序列跨运行时、跨平台一致。
         _values = new PrimitiveValueFactory(
-            new Random(options.Seed ?? Random.Shared.Next()),
+            new DeterministicRandom(options.Seed ?? Random.Shared.Next()),
             options.StringLength,
             options.PrimitiveValueFactory,
             options.IncludeBoundaryValues);
@@ -86,9 +87,16 @@ public sealed class AnyIdGenerator
     {
         ArgumentNullException.ThrowIfNull(idType);
 
-        return _registered.TryGetValue(idType, out var registered)
-            ? registered()
-            : _factories.GetOrAdd(idType, BuildFactory)(this);
+        // 开放泛型（如 Box<T>.BoxedId）无法构造：MakeGenericMethod 会抛「not fully instantiated」，
+        // 而那条消息完全看不出是「这个 Id 声明在泛型容器里」。按调用方实际能做的事报错。
+        return idType.ContainsGenericParameters
+            ? throw new ArgumentException(
+                $"'{idType}' is an open generic type, so no value can be generated for it. "
+                + "Declare the id in a non-generic container, or request a closed type such as Box<int>.BoxedId.",
+                nameof(idType))
+            : _registered.TryGetValue(idType, out var registered)
+                ? registered()
+                : _factories.GetOrAdd(idType, BuildFactory)(this);
     }
 
     /// <summary>

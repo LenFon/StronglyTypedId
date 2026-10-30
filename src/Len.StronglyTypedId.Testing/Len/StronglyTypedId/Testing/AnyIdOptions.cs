@@ -6,11 +6,11 @@
 public sealed class AnyIdOptions
 {
     /// <summary>
-    /// 获取或设置传给 <see cref="Random"/> 的种子。
+    /// 获取或设置传给内置伪随机源的种子。
     /// </summary>
     /// <value>
-    /// <see langword="null"/>（默认）表示按时钟取种；给定显式值可使序列可复现。可复现性仅在特定运行时版本内成立：
-    /// <see cref="Random"/> 的算法属实现细节，可能随 .NET 版本变化。
+    /// <see langword="null"/>（默认）表示按时钟取种；给定显式值可使序列可复现。可复现性跨 .NET 版本、
+    /// 跨平台成立：内置的是自实现的 SplitMix64，不依赖 <see cref="Random"/> 的实现细节。
     /// </value>
     public int? Seed { get; set; }
 
