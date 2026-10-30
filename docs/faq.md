@@ -11,7 +11,7 @@ title: FAQ
 
 A: Just `Len.StronglyTypedId`. It depends on `Len.StronglyTypedId.Generators`, which contains the
 generator, the analyzer and the code fixes; the runtime library is what you reference from code. The other
-three packages are optional — see [Packages](packages.md#packages).
+four packages are optional — see [Packages](packages.md#packages).
 
 **Q: Is the id usable as a `Dictionary`/`HashSet` key?**
 
@@ -31,7 +31,7 @@ so its ordering agrees with `Equals` and does not shift with the machine's cultu
 
 A: The invariant-culture text of the wrapped primitive value (`"42"`, `"3f2c…"`, `"1.5"`) rather than
 the record's default `OrderId { Value = 42 }` form, which keeps ids readable in logs and interpolated
-strings. It is deliberately culture-independent so it matches the serialized form and round-trips through
+strings. It is culture-independent so it matches the serialized form and round-trips through
 `Parse(id.ToString())` — `Parse` / `TryParse` treat a `null` provider as the invariant culture for exactly
 this reason. Ids whose primitive implements `IFormattable` — every supported primitive except `string`
 and enum-backed ids — also expose `ToString(string?, IFormatProvider?)` for culture-specific output, and

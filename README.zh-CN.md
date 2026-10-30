@@ -1,4 +1,4 @@
-﻿# StronglyTypedId
+# StronglyTypedId
 
 > 📖 英文文档：[README.md](README.md) · 🌐 文档站：[lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
 
@@ -15,7 +15,6 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 ## 目录
 
 - [功能特性](#features)
-- [环境要求](#requirements)
 - [快速开始](#getting-started)
 - [支持的基元类型](#supported-primitive-types)
 - [生成器会生成什么](#what-gets-generated)
@@ -27,59 +26,19 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
-- **声明极简** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`）即可。
-- **编译期安全** —— 内建分析器会把不合法的声明作为错误报出，其中 26 条规则里有 21 条附带代码修复，
-  可一键修好声明（见[诊断与代码修复](docs/zh-CN/diagnostics.md#diagnostics)）。
-- **一键静音** —— 只消费 `IStronglyTypedId<,>` 而自己不声明 Id 的项目要背 26 条规则的噪音。在工程文件里设
-  `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>` 即整个分析器静音（代码生成照常）。
-- **解析与格式化** —— 自动生成 `IParsable<TSelf>` 与 `ISpanParsable<TSelf>` 支持（`Parse` / `TryParse`
-  的 `string` 与 `ReadOnlySpan<char>` 两套重载），并在基元类型自身实现 `IFormattable` / `ISpanFormattable`
-  时一并生成 —— `string` 没有实现它们，枚举基元则两者都跳过，因为 `System.Enum` 继承来的成员已标记
-  `[Obsolete]`。
-- **比较与排序** —— 每个 Id 都实现了 `IComparable<TSelf>` 与四个比较运算符，因此 `OrderBy`、
-  `SortedSet<T>` 与区间判断都无需自定义比较器。
-- **值校验** —— 把 `Validator` 指向 Id 自身的静态方法，即可让 `Create` 与 `TryParse` 拒绝非法取值
-  （见[值校验](docs/zh-CN/declaration.md#value-validation)）。
-- **自定义失败异常** —— `ExceptionType` 可以把验证器拒绝取值时 `Create` 抛出的 `ArgumentException`
-  换成你自己的异常类型。
-- **值归一化** —— 把 `Normalizer` 指向 Id 自身的静态方法，即可在校验与构造之前修正取值（去空白、
-  统一大小写、去分隔符），见[值归一化](docs/zh-CN/declaration.md#value-normalization)。
-- **命名实例** —— `[StronglyTypedIdInstance("Unspecified", "-1")]` 生成 `public static readonly` 字段，
-  且一律经 `Create` 构造，因此同样经过归一化与验证器，`Parse` 一定读得回来（见[命名实例](docs/zh-CN/declaration.md#named-instances)）。
-- **`TryCreate` 工厂** —— `Create` 的非抛异常版本：解析失败返回 `false`，`result` 为 `default`，而不是抛异常。
-- **UTF-8 接口** —— 对支持相应接口的基元类型（如 .NET 10 的 `Guid`）自动生成 `IUtf8SpanFormattable` 与
-  `IUtf8SpanParsable<TSelf>`，可直接以 `ReadOnlySpan<byte>` 解析 / 格式化。
-- **逐类型类型转换器** —— 用 `[StronglyTypedId(TypeConverter = true)]` 开启后，生成的嵌套 `TypeConverter`
-  经 `TypeDescriptor` 在字符串与强类型 Id 间往返，覆盖配置绑定 / `XmlSerializer` 等场景。
-- **程序集级默认** —— 用 `[assembly: StronglyTypedIdDefaults(Validator = ...)]` 为整个程序集统一设置默认验证器。
-- **另外七个集成** —— Entity Framework Core、Dapper、Swashbuckle、ASP.NET Core MVC（其注册同时支撑
-  Minimal API 的路由约束）、ASP.NET Core OpenAPI、MessagePack、MongoDB。每个集成只在对应包被引用时才生成，
-  且各自提供一个 `StronglyTypedIds.ApplyTo(...)` 入口（见[集成](docs/zh-CN/integrations.md)）。
-- **序列化** —— 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，其中
-  `System.Text.Json` 还支持字典键；两者另提供显式注册入口，并可按 Id 选择基元形态或对象形态
-  （见[序列化](docs/zh-CN/serialization.md#serialization)）。
-- **文本前缀** —— 用 `[StronglyTypedId(Prefix = "ord_")]` 为 Id 指定规范文本形（`"ord_3f2c…"`），
-  该前缀会贯穿 `ToString`、`Parse`、JSON 及其余全部文本路径（见[文本前缀](docs/zh-CN/serialization.md#serialization)）。
-- **运行时反射助手** —— 可在运行时判断任意类型是否为强类型 Id，并取回其底层基元类型。
-- **原生 AOT 与裁剪** —— 运行时库标记为 AOT 兼容，且不按名字加载任何类型，因此强类型 Id 在 Native AOT
-  与经过裁剪的应用中同样可用。AOT 下 `System.Text.Json` 仍需源生成的 `JsonSerializerContext`，那是它自己的
-  要求，不是本库的特例（见[原生 AOT 与裁剪](docs/zh-CN/aot.md)）。
-- **零第三方依赖** —— 包内仅包含生成器/分析器程序集，以及一个很小的运行时库，不会往你的依赖图里塞任何东西。
+- **一行声明** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`），
+  就得到一个完整的值类型：解析、格式化、比较、`Create` / `TryCreate`、解构、JSON 转换器与调试器视图。
+- **`Guid` 再也冒充不了 `OrderId`** —— 编译器会拒绝这种替换；内建分析器把不合法的声明作为错误报出，
+  26 条规则里有 21 条附带代码修复。
+- **23 种基元，或你自己的类型** —— 全部数值类型、`Guid`、`string`、日期与 `BigInteger`，外加任意 `enum`，
+  或任何实现了 `IParsable<TSelf>` 与 `IComparable` 的类型。ULID 零改动即可用。
+- **在取值进入的地方校验** —— 把 `Validator` 与 `Normalizer` 指向静态方法，所有生成的入口
+  （`Create`、`Parse`、JSON、EF Core、Dapper、模型绑定）都会执行它们。
+- **11 个集成，只在引用对应包时才生成** —— System.Text.Json、Newtonsoft.Json、EF Core、Dapper、
+  Swashbuckle、ASP.NET Core MVC 与 OpenAPI、MessagePack、MongoDB、HotChocolate 与 protobuf-net。
+- **原生 AOT、裁剪，且零第三方依赖** —— 运行时库不按名字加载任何类型，包也不会往你的依赖图里塞东西。
 
-<a id="requirements"></a>
-
-## 环境要求 <a href="#top" style="float:right">↑ 返回目录</a>
-
-| 组件                              | 要求                                                                                     |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| 项目的目标框架                    | **`net8.0`、`net10.0`** 或更高兼容框架（运行时库的目标框架为 `net8.0` 与 `net10.0`）。    |
-| .NET SDK                          | **提供 Roslyn 5.9 或更新版本的编译器**。生成器是针对 `Microsoft.CodeAnalysis` 5.9 编译的，更旧的编译器无法加载它：构建会先报 `CS9057`，随后因缺少 `Create` 方法而失败。已实测 .NET SDK **10.0.401** 可用；SDK 10.0.201（Roslyn 5.3）与 9.0.308（Roslyn 4.14）均失败。 |
-| Newtonsoft.Json                   | ≥ **13.0.0**（仅在使用 Newtonsoft.Json 转换器时需要）。                                   |
-| EntityFrameworkCore               | ≥ **7.0.0**（仅在使用 EF Core 转换器时需要）。                                            |
-| Swashbuckle.AspNetCore.SwaggerGen | ≥ **6.0.0**（仅在使用 Swagger 架构映射时需要）。                                          |
-
-生成代码依赖 `IParsable<T>`、`ISpanParsable<T>` 以及 `System.Numerics` 下的比较/相等运算符接口，因此
-运行时库从 `net8.0` 起步，并不跟随生成器低得多的 `netstandard2.0` 基线。
+完整清单 —— 每个生成成员、每个配置项、每个集成 —— 见[功能特性](docs/zh-CN/features.md)。
 
 <a id="getting-started"></a>
 
@@ -169,6 +128,68 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 任意 `enum` 同样受支持；枚举 Id 如何解析、省略了哪些接口，见
 [枚举 Id](docs/zh-CN/generated-code.md#enum-backed-ids)。
 
+<a id="custom-primitives"></a>
+
+### 自定义基元
+
+你自己写的类型只要满足以下契约，就可以作为基元：
+
+- 实现 `IParsable<TSelf>` 与 `IComparable<TSelf>`，且类型实参是自身；
+- 实现非泛型 `System.IComparable` —— 这才是 `IStronglyTypedId<TSelf, TPrimitiveId>` 对 `TPrimitiveId`
+  的实际约束，`IComparable<T>` 并不蕴含它；
+- 暴露**公开静态**的 `Parse(string, IFormatProvider)` 与 `TryParse(string, IFormatProvider, out TSelf)` ——
+  显式接口实现不算，因为生成代码按类型名直呼它们；
+- 是非抽象、非静态、非泛型的 struct 或 class，且不是 `System.Uri`。
+
+```csharp
+public readonly record struct Email(string Value)
+    : IParsable<Email>, IComparable<Email>, IComparable
+{
+    public static Email Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException(s);
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out Email result)
+    {
+        result = new Email(s ?? string.Empty);
+        return s is not null;
+    }
+
+    public int CompareTo(Email other) => string.CompareOrdinal(Value, other.Value);
+
+    public int CompareTo(object? obj) => obj is Email other ? CompareTo(other) : throw new ArgumentException();
+
+    public override string ToString() => Value;
+}
+
+[StronglyTypedId]
+public partial record struct EmailId(Email Value);
+```
+
+- **`ToString()` 必须产出你自己的 `Parse` 能读回的文本。** 所有序列化路径写的都是基元的规范文本 ——
+  System.Text.Json、Newtonsoft.Json、MessagePack、BSON 与 Dapper 全都如此，因此同一个 Id 不会在 REST
+  是一种形态、在数据库里是另一种。把自定义类型交给序列化器，它会按公开属性写出、读回 `default`。
+- **命名实例的值在运行期校验，不在编译期。** 生成器跑在 `netstandard2.0` 上，无法执行你的 `Parse`，
+  所以 `[StronglyTypedIdInstance("Unknown", "…")]` 只在首次触碰该类型时才失败。失败是一个
+  `InvalidOperationException`，消息里带实例名与 Id 类型名；`Len.StronglyTypedId.Testing` 的
+  `StronglyTypedIdConformance.AssertAllInstancesValid(assembly)` 能一次报出全部坏实例。
+
+**ULID 不需要本库写任何代码。** Cysharp 的 [`Ulid`](https://www.nuget.org/packages/Ulid) 是第三方包，
+需要你自己引入 —— 本库不依赖它，也不会为它生成任何专属代码。它实现了 `IParsable<Ulid>`、
+`IComparable<Ulid>` 与非泛型 `IComparable`，因此已经满足上面的契约：
+
+```shell
+dotnet add package Ulid
+```
+
+```csharp
+[StronglyTypedId]
+public partial record struct OrderId(Ulid Value);
+```
+
+它的规范文本是 26 字符的 Crockford Base32，因此 JSON、MessagePack、BSON、EF Core 与 Dapper 存的都是
+这个字符串。注意同一毫秒内生成的 ULID 只按随机部分排序，而随机部分不保证单调 —— 「ULID 可排序」只在
+跨毫秒成立，同毫秒内不成立。
+
 <a id="what-gets-generated"></a>
 
 ## 生成器会生成什么 <a href="#top" style="float:right">↑ 返回目录</a>
@@ -178,18 +199,20 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 具体产出取决于当前编译引用了什么：
 
 <!-- BEGIN GENERATED:generated-code -->
-| 编译中的条件                                                                                             | 生成的代码                                                                                                                         |
-| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 始终                                                                                                     | 核心实现                                                                                                                           |
-| 引用了 `System.Text.Json`                                                                                | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性，以及 `StronglyTypedIds.ApplyTo(JsonSerializerOptions)`                   |
-| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                                        | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性，以及 `StronglyTypedIds.AddStronglyTypedId(this JsonSerializerSettings)`  |
-| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0                                                           | 嵌套 `{TypeName}Converter`，以及 `StronglyTypedIds.ApplyTo(ModelConfigurationBuilder)` 与 `StronglyTypedIds.ApplyTo(ModelBuilder)` |
-| 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                                       | `StronglyTypedIds.ApplyTo(SwaggerGenOptions)`                                                                                      |
-| 引用了 `Dapper` ≥ 2.0.0                                                                                  | 嵌套 `{TypeName}TypeHandler`，以及 `StronglyTypedIds.ApplyTo()`                                                                    |
-| 引用了 `MessagePack` ≥ 2.0.0                                                                             | `{TypeName}MessagePackFormatter`，以及 `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)`                                    |
-| 引用了 `MongoDB.Bson` ≥ 3.0.0                                                                            | `{TypeName}BsonSerializer`，以及 `StronglyTypedIds.RegisterBsonSerializers()`                                                      |
-| 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                                            | `StronglyTypedIds.ApplyTo(OpenApiOptions)`                                                                                         |
-| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `StronglyTypedIds.ApplyTo(MvcOptions)` + `ApplyTo(RouteOptions)`（同时支撑 Minimal API 的路由约束）                                |
+| 编译中的条件                                                                                             | 生成的代码                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 始终                                                                                                     | 核心实现                                                                                                                                                               |
+| 引用了 `System.Text.Json`                                                                                | 嵌套 `SystemTextJsonConverter` 与 `[JsonConverter]` 特性，以及 `JsonSerializerOptions` 上的 `AddStronglyTypedIds()` 与供源生成 context 使用的 `WithStronglyTypedIds()` |
+| 引用了 `Newtonsoft.Json` ≥ 13.0.0                                                                        | 嵌套 `NewtonsoftJsonConverter` 与 `[JsonConverter]` 特性，以及 `JsonSerializerSettings` 上的 `AddStronglyTypedIds()`                                                   |
+| 引用了 `Microsoft.EntityFrameworkCore` ≥ 7.0.0                                                           | 嵌套 `{TypeName}Converter`，以及 `ModelConfigurationBuilder` 与 `ModelBuilder` 上的 `AddStronglyTypedIds()`                                                            |
+| 引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0                                                       | `SwaggerGenOptions` 上的 `AddStronglyTypedIds()`                                                                                                                       |
+| 引用了 `Dapper` ≥ 2.0.0                                                                                  | 嵌套 `{TypeName}TypeHandler`，以及 `AddStronglyTypedIds()`（`IDbConnection` 上也有一个）                                                                               |
+| 引用了 `MessagePack` ≥ 2.0.0                                                                             | `{TypeName}MessagePackFormatter`，以及 `MessagePackSerializerOptions` 上的 `AddStronglyTypedIds()`                                                                     |
+| 引用了 `MongoDB.Bson` ≥ 3.0.0                                                                            | `{TypeName}BsonSerializer`，以及 `StronglyTypedIds.RegisterBsonSerializers()`                                                                                          |
+| 引用了 `HotChocolate` ≥ 13.0.0                                                                           | `{TypeName}HotChocolateType` scalar，以及 `IRequestExecutorBuilder` 上的 `AddStronglyTypedIds()`                                                                       |
+| 引用了 `protobuf-net` ≥ 3.0.0                                                                            | Id 上的 `[ProtoContract(Surrogate = …)]`，以及带转换运算符的嵌套 `{TypeName}Surrogate`                                                                                 |
+| 引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0                                                            | `OpenApiOptions` 上的 `AddStronglyTypedIds()`                                                                                                                          |
+| 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `MvcOptions` 与 `RouteOptions` 上的 `AddStronglyTypedIds()`（同时支撑 Minimal API 的路由约束）                                                                         |
 <!-- END GENERATED:generated-code -->
 
 上表是产物清单。生成的文件名，以及每个生成成员的具体语义——实现了哪些接口、`Parse` 如何处理
@@ -204,19 +227,22 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 
 | 页面 | 内容 |
 | --- | --- |
-| [NuGet 包](docs/zh-CN/packages.md) | 四个包的分工、生成器为何单独成包，以及分析器如何抵达每个项目。 |
+| [功能特性](docs/zh-CN/features.md) | 完整清单：每个生成成员、每个配置项、每个集成。 |
+| [功能索引](docs/zh-CN/features-index.md) | 每个功能点对应的可运行示例与讲解页面；表格由源码生成并在构建时校验。 |
+| [NuGet 包](docs/zh-CN/packages.md) | 五个包的分工、生成器为何单独成包，以及分析器如何抵达每个项目。 |
 | [声明一个 Id](docs/zh-CN/declaration.md) | 校验、归一化、命名实例、异常类型、程序集级默认、关闭集成、嵌套类型、`TryCreate` 与 UTF-8 接口、`TypeConverter`。 |
 | [生成产物](docs/zh-CN/generated-code.md) | 每个生成成员做什么：实现了哪些接口、`Parse` 与文化、`[Flags]` 枚举的收紧、`ToString()` 与集成入口。 |
 | [序列化](docs/zh-CN/serialization.md) | System.Text.Json、Newtonsoft.Json、字典键、JSON 形态、文本前缀、显式注册，以及序列化器不认识的基元。 |
-| [集成](docs/zh-CN/integrations.md) | Entity Framework Core、Swashbuckle、Dapper、MessagePack、MongoDB、ASP.NET Core MVC、Minimal API、ASP.NET Core OpenAPI。 |
+| [集成](docs/zh-CN/integrations.md) | Entity Framework Core、Swashbuckle、Dapper、MessagePack、MongoDB、HotChocolate（GraphQL）、protobuf-net、ASP.NET Core MVC、Minimal API、ASP.NET Core OpenAPI。 |
 | [运行时](docs/zh-CN/runtime.md) | 用 `IStronglyTypedId<,>` 约束泛型，以及运行时反射辅助。 |
 | [原生 AOT 与裁剪](docs/zh-CN/aot.md) | 裁剪后什么还能用、反射辅助方法，以及 AOT 应用必须提供的 `JsonSerializerContext`。 |
-| [测试](docs/zh-CN/testing.md) | `Any.Id<T>()`、AutoFixture 集成，以及示例程序。 |
+| [测试](docs/zh-CN/testing.md) | `Any.Id<T>()`、AutoFixture 与 Bogus 集成，以及示例程序。 |
 | [诊断](docs/zh-CN/diagnostics.md) | 每一条规则、级别，以及是否带代码修复。 |
-| [性能](docs/zh-CN/performance.md) | 生成器在构建期的开销、生成代码在运行期的开销，以及按分配量判定的回归门禁。 |
+| [性能](docs/zh-CN/performance.md) | 生成器在构建期的开销，以及生成代码在运行期的开销。 |
 | [故障排查](docs/zh-CN/troubleshooting.md) | 按症状索引：什么都没生成、集成缺失、分析器不刷新、解析出乎意料。 |
 | [已知限制](docs/zh-CN/limitations.md) | 源码生成器做不到的事 —— `Value` 的可见性、封闭的基元清单、不受保护的主构造函数 —— 以及各自的绕法。 |
 | [常见问题](docs/zh-CN/faq.md) | 最常被问到的问题。 |
+| [未来规划](docs/zh-CN/roadmap.md) | 暂无 —— 计划中的方向已全部交付。 |
 
 <a id="limitations"></a>
 
@@ -225,7 +251,8 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 **`Value` 恒为 public。** 该属性来自位置记录的主构造函数，源码生成器无法改变你亲手声明的成员的可见性。
 确实需要硬边界时，把 Id 声明为 `internal`；`STIA0014` 会在 Id 对外可见、其验证器可被 `new` 绕过时给出提示。
 
-**只支持清单内的基元类型。** 任意自定义类型不被接受，`Uri` 则是刻意缺席：`Uri.Equals` 会忽略 fragment，
+**开箱只支持清单内的基元类型。** 你自己写的类型只要满足[自定义基元契约](#custom-primitives)就会被接受，
+其余一律拒绝。`Uri` 即使满足契约也不支持：`Uri.Equals` 会忽略 fragment，
 并对大小写与默认端口做归一化，两个不同的 URI 会被判为相等、静默塌缩成同一个 Id。
 
 **主构造函数不受约束。** `new OrderId(...)` 会同时绕过 `Normalizer` 与 `Validator`，只有 `Create`、

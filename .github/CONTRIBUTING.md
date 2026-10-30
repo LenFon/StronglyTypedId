@@ -44,6 +44,12 @@ Two practical notes:
   keeps the output assemblies locked and the build fails with MSB3026/MSB3027.
 - **`0 warnings` is a real gate, not a slogan.** `EnforceCodeStyleInBuild` is on, so IDE rules fail the
   build too. Do not silence a new warning with `NoWarn` — fix it, or raise it in the PR.
+- **Generated-code snapshots are plain text files.** `GeneratorSnapshotTests` compares each scenario's
+  full output against `test/Len.StronglyTypedId.Generators.Test/Snapshots/`. A mismatch writes a
+  `.received.txt` next to the baseline and fails with the first differing line. When the change is
+  intended, regenerate with `STRONGLY_TYPED_ID_UPDATE_SNAPSHOTS=1 dotnet test --project
+  test/Len.StronglyTypedId.Generators.Test` and review the diff — the baselines are the review artifact.
+  The reference set is pinned to net8.0, so one baseline serves both TFMs.
 
 ## Gates that run in CI
 
@@ -57,6 +63,46 @@ Two practical notes:
 | Packaging | `Len.StronglyTypedId.Packaging.Test` | The `.nupkg` actually carries the generator, the readme and the icon |
 | API compat | `dotnet pack -c Release` | No accidental breaking change against the published baseline |
 
+### The generator performance gate
+
+`bench/Len.StronglyTypedId.Benchmarks` holds four benchmark groups (`GeneratorRunBenchmarks`,
+`DiscoveryBenchmarks`, `ColdDiscoverBenchmarks`, `GetTypesBenchmarks`) for local investigation via
+BenchmarkDotNet:
+
+```bash
+dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --filter *Discovery*
+```
+
+CI runs the deterministic gate instead, because a single BDN run takes minutes and wall-clock noise on a
+shared runner routinely exceeds ±20%:
+
+```bash
+dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate
+```
+
+**Allocated bytes is the primary criterion.** The same code on the same path allocates the same number of
+bytes regardless of machine speed, and almost every Roslyn-side regression (enumerating symbols twice,
+concatenating one more string, adding a LINQ layer) shows up as allocation. Elapsed time is only an
+order-of-magnitude backstop (10× the baseline), there to catch "allocations unchanged but complexity
+exploded".
+
+| Knob | Value | Why |
+| --- | --- | --- |
+| Allocation tolerance | +10% | Consecutive runs on one machine differ by about 0.005%, so 10% is ~2000× the observed noise. It cannot go to 20%: reverting a real regression in this repository's history (one enumeration turned into five) raised allocations by only 16.3%, which a 20% threshold would have waved through |
+| Elapsed tolerance | 10× baseline | Wall clock is not comparable across machines: the same code and baseline measured 13.97 ms on a developer machine and 59.75 ms on `windows-latest`, while allocations differed by 0.011% |
+| Runs | 3 warm-up + 10 measured, median | The compilation and driver are rebuilt every iteration; reusing a driver would hit the incremental cache and stop measuring a build |
+
+The baseline lives in `bench/Len.StronglyTypedId.Benchmarks/baselines/generator-run.baseline.json` and
+records the runtime version alongside the numbers. If you change performance characteristics on purpose,
+rewrite it and commit it with the change:
+
+```bash
+dotnet run -c Release --project bench/Len.StronglyTypedId.Benchmarks -- --gate --update-baseline
+```
+
+The gate self-checks: every measured run must produce the same number of generated files as the first,
+otherwise the numbers are not comparable and it fails loudly instead of reporting a delta.
+
 ## Files that must stay in sync
 
 Most of the friction in this repository comes from the same fact stated five ways. If you change one of
@@ -67,12 +113,39 @@ these, check the rest:
 | A diagnostic (id, severity, title, message, fixability) | `Descriptors.cs`, `AnalyzerReleases.Shipped.md` / `.Unshipped.md`, and the README diagnostics table (regenerate with DocGen — never hand-edit it) |
 | A supported primitive type | `SupportedPrimitiveTypes.DocumentedTypes`, the README primitive table (DocGen), and the serializer gaps noted in `Limitations` |
 | An integration's availability condition | The README "What gets generated" table (DocGen) and `PACKAGE.md` |
+| A `build` / `buildTransitive` `.props` or `.targets` file | Its file name must match the package ID exactly — NuGet only auto-imports files named after the package. A mismatch ships the file without importing it, so the property silently never reaches the analyzer |
 | Public API of `Len.StronglyTypedId` | `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` — RS0016/RS0017 are errors |
-| Generated code shape | The generator tests that assert on the emitted text, plus `samples/` if the sample output changes |
+| Generated code shape | The generator tests that assert on the emitted text, the snapshots under `test/Len.StronglyTypedId.Generators.Test/Snapshots/`, plus `samples/` if the sample output changes |
 | Anything user-visible | `CHANGELOG.md` **and** `CHANGELOG.zh-CN.md` — both are verified against the tag |
 
 The README tables live between `<!-- BEGIN GENERATED:… -->` / `<!-- END GENERATED:… -->` markers. Editing
 inside those markers by hand will be reverted by the next DocGen run and will fail `--verify` in CI.
+
+## Adding an integration
+
+An integration touches seven places. All eleven existing ones were built this way, so follow the pattern
+rather than inventing a shorter path:
+
+| # | File | What changes |
+| --- | --- | --- |
+| 1 | `src/Len.StronglyTypedId/…/StronglyTypedIdIntegrations.cs` | Add the public enum bit and fold it into `All` |
+| 2 | `src/Len.StronglyTypedId.Generators/…/IntegrationFlags.cs` | Add the **mirrored** constant. The generator does not reference the runtime assembly, so it matches by integer bit — the two must agree bit for bit |
+| 3 | `src/Len.StronglyTypedId.Generators/…/Generators/<Xxx>CodeGenerator.cs` | The new generator, implementing `IIntegrationCodeGenerator` (`Order` decides execution order) |
+| 4 | `…/Generators/StronglyTypedIdGenerator.cs` | One `CodeGeneratorRegistration` in `_generatorCatalog` (assembly gate + English and Chinese `DocText`), a `GenerateXxxCode` method, and one `RegisterSourceOutput` line |
+| 5 | `…/Generators/PrimitiveIdSchemaMap.cs` | If the integration exposes an OpenAPI schema, the mapping goes here — Swashbuckle and the built-in OpenAPI share it, so the two cannot drift |
+| 6 | `docs/integrations.md` + `docs/zh-CN/integrations.md` | The integration's section. DocGen `--verify` checks the README table against the registration entries |
+| 7 | `test/…/Generators/` + `test/Len.StronglyTypedId.Integration.Test/` | Generator unit tests plus an end-to-end round-trip |
+
+Enum bits currently occupy bit 0–11 (`None` plus the eleven integrations); the next free one is `1 << 12`.
+
+Two conventions the gate and the entry point must follow:
+
+- **Gate** with `modules.HasModule("Xxx.dll", minimumMajorVersion)`, comparing `module.Version.Major`.
+- **Registration entry points are idempotent.** The System.Text.Json and Newtonsoft.Json `AddStronglyTypedIds`
+  collect already-registered converter types into a `HashSet` before adding, so a second call neither grows
+  the list nor throws `InvalidOperationException` on a frozen `JsonSerializerOptions`. MessagePack's
+  `AddStronglyTypedIds` returns a **new** instance instead, because `MessagePackSerializerOptions` is
+  immutable.
 
 ## Changing a diagnostic
 

@@ -22,9 +22,12 @@ public class ReadmeDocumentationTests
     [InlineData("docs/zh-CN/generated-code.md", "zh-CN", "generated-files")]
     [InlineData("docs/diagnostics.md", "en", "diagnostics")]
     [InlineData("docs/zh-CN/diagnostics.md", "zh-CN", "diagnostics")]
+    [InlineData("docs/features-index.md", "en", "feature-index")]
+    [InlineData("docs/zh-CN/features-index.md", "zh-CN", "feature-index")]
     public void Document_Should_MatchGeneratedTables(string fileName, string cultureName, string blockIds)
     {
-        var path = Path.Combine(RepositoryRoot(), fileName);
+        var root = RepositoryRoot();
+        var path = Path.Combine(root, fileName);
 
         File.Exists(path).Should().BeTrue($"测试前提：{fileName} 必须存在于仓库中");
 
@@ -32,14 +35,73 @@ public class ReadmeDocumentationTests
         var newLine = ReadmeBlocks.DetectNewLine(text);
         var culture = CultureInfo.GetCultureInfo(cultureName);
 
+        // 与 Program 的 targets 保持同一份前缀规则：中文页在 docs/zh-CN/ 下，比英文页多一层。
+        var samplesPrefix = fileName.StartsWith("docs/zh-CN/", StringComparison.Ordinal) ? "../../" : "../";
+
         var expected = text;
 
         foreach (var blockId in blockIds.Split(','))
         {
-            expected = ReadmeBlocks.Replace(expected, blockId, Program.Render(blockId, culture), newLine);
+            expected = ReadmeBlocks.Replace(expected, blockId, Program.Render(root, blockId, culture, samplesPrefix), newLine);
         }
 
         ShouldMatch(text, expected, $"{fileName} 的表格已过期，请运行 `dotnet run --project tools/Len.StronglyTypedId.DocGen`");
+    }
+
+    /// <summary>
+    /// 功能索引表必须覆盖生成器登记表里的每一个集成。
+    /// </summary>
+    /// <remarks>
+    /// 这条用例守的是「集成加了、索引没加」这类遗漏——protobuf-net 当初就是集成与测试都进了仓库、
+    /// 示例却漏了。索引表由 <see cref="StronglyTypedIdGenerator.DocumentedGenerators"/> 驱动，
+    /// 因此这里直接比对两份清单，任何一边多出条目都会失败。
+    /// </remarks>
+    [Fact]
+    public void FeatureIndex_Should_CoverEveryDocumentedIntegration()
+    {
+        var expected = StronglyTypedIdGenerator.DocumentedGenerators
+            .Select(static registration => registration.AssemblyName)
+            .Where(static name => !string.Equals(name, "Len.StronglyTypedId.dll", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        var actual = Integrations.Entries
+            .Select(static entry => entry.Name.En + ".dll")
+            .ToArray();
+
+        actual.Should().BeEquivalentTo(expected, "功能索引表必须为每个集成各留一行");
+    }
+
+    /// <summary>
+    /// 功能索引表的每一行都必须指向真实存在的示例文件与文档锚点。
+    /// </summary>
+    /// <remarks>
+    /// 渲染器本身会在缺失时抛异常，但那只在渲染时触发；这条用例让失败信息直接指向具体条目，
+    /// 而不是一句「渲染失败」。
+    /// </remarks>
+    [Fact]
+    public void FeatureIndex_Should_PointAtExistingSamplesAndAnchors()
+    {
+        var root = RepositoryRoot();
+
+        foreach (var feature in Features.Entries)
+        {
+            if (feature.SamplePath is { } samplePath)
+            {
+                File.Exists(Path.Combine(root, samplePath.Replace('/', Path.DirectorySeparatorChar)))
+                    .Should().BeTrue($"「{feature.Name.En}」的示例文件不存在：{samplePath}");
+            }
+
+            var documentPath = Path.Combine(root, feature.DocumentPath.Replace('/', Path.DirectorySeparatorChar));
+
+            File.Exists(documentPath).Should().BeTrue($"「{feature.Name.En}」的文档不存在：{feature.DocumentPath}");
+
+            if (feature.DocumentAnchor is { } anchor)
+            {
+                File.ReadAllText(documentPath).Should().Contain(
+                    $"<a id=\"{anchor}\"></a>",
+                    $"「{feature.Name.En}」的文档锚点不存在：{feature.DocumentPath}#{anchor}");
+            }
+        }
     }
 
     /// <summary>

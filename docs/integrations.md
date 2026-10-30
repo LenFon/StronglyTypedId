@@ -26,7 +26,7 @@ protected override void ConfigureConventions(ModelConfigurationBuilder configura
     base.ConfigureConventions(configurationBuilder);
 
     // Registers a ValueConverter for every strongly typed id in the project.
-    StronglyTypedIds.ApplyTo(configurationBuilder);
+    configurationBuilder.AddStronglyTypedIds();
 
     // Convention configuration still applies to an id after it has been registered.
     configurationBuilder.Properties<UserId>().HaveMaxLength(100);
@@ -42,7 +42,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
     base.OnModelCreating(modelBuilder);
 
     // Walks every entity's properties and assigns the generated converter wherever the CLR type is a strongly typed id.
-    StronglyTypedIds.ApplyTo(modelBuilder);
+    modelBuilder.AddStronglyTypedIds();
 }
 ```
 
@@ -50,24 +50,32 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 > integration, with no requirement that a `DbContext` override `ConfigureConventions`. `ModelConfigurationBuilder`
 > only exists from EF Core 7, which is why the version floor is higher here than elsewhere.
 >
-> `ApplyTo(ModelBuilder)` scans the model as it stands at the moment of the call, so entity types configured
-> after it will not be picked up: call it at the **end** of `OnModelCreating`. The conventions overload has no
-> such ordering constraint and is the better default.
+> `AddStronglyTypedIds(ModelBuilder)` scans the model as it stands at the moment of the call, so entity types
+> configured after it will not be picked up: call it at the **end** of `OnModelCreating`. The conventions
+> overload has no such ordering constraint and is the better default.
 
 Each id gets a `ValueConverter<{Id}, {Primitive}>` nested in the generated `StronglyTypedIds` class, named
 `{TypeName}Converter`. If two ids with the same short name exist in different namespaces, the converter
 names would collide inside that single class, so only then are they disambiguated as
 `{Namespace_With_Underscores}_{TypeName}Converter` (for example `Domain_OrderIdConverter`). The converters
-are implementation details of `ApplyTo`, generated as private nested types — you never reference them by
+are implementation details of `AddStronglyTypedIds`, generated as private nested types — you never reference them by
 name, and no action is required from you in either case.
 
-Because the converter's provider type is the primitive, the column type and the schema EF Core builds are
-the ones the primitive would have had on its own: introducing the id migrates nothing, and existing columns
-keep working. Reading a row back goes through `Create`, so the id's validators and normalizers run on every
+For a built-in primitive the converter's provider type is that primitive, so the column type and the schema
+EF Core builds are the ones the primitive would have had on its own: introducing the id migrates nothing,
+and existing columns keep working.
+
+A **custom primitive** is the exception. The database provider does not know your CLR type, so the provider
+type is fixed to `string` and the column stores the primitive's canonical text form — the same text the
+JSON, binary and Dapper paths use. Without that, EF Core rejects the property with
+`The '<Primitive>' property could not be mapped because the database provider does not support this type`.
+Built-in primitives are unaffected and their generated output is byte-for-byte unchanged.
+
+Reading a row back goes through `Create`, so the id's validators and normalizers run on every
 materialisation — a stored value the validator rejects throws instead of producing an id that could never
 have been constructed in code.
 
-> `ApplyTo(ModelBuilder)` walks the model as it stands at the moment of the call, so invoke it after your
+> `AddStronglyTypedIds(ModelBuilder)` walks the model as it stands at the moment of the call, so invoke it after your
 > entities and `IEntityTypeConfiguration`s have been registered; entities added later are not scanned.
 
 <a id="swashbuckle"></a>
@@ -79,11 +87,8 @@ Map every strongly typed id to its underlying primitive schema (Swashbuckle.AspN
 ```csharp
 services.AddSwaggerGen(options =>
 {
-    StronglyTypedIds.ApplyTo(options);
+    options.AddStronglyTypedIds();
 });
-
-// method groups work too:
-services.AddSwaggerGen(StronglyTypedIds.ApplyTo);
 ```
 
 The mapping is generated whenever `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced, and it works
@@ -111,12 +116,14 @@ with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.
 | `TimeOnly`        | `string`       | `time`      |
 | `TimeSpan`        | `string`       | —           |
 | any `enum`        | `integer`      | —           |
+| any custom primitive (e.g. `Ulid`) | `string` | —  |
 
 The table describes what the converters actually write, not what the CLR type is called: `decimal` and
 the floating-point primitives are JSON numbers, an enum is its underlying number, and `Int128` /
 `UInt128` / `BigInteger` have no bounded `int64` / `uint64` range to advertise, so they get a bare
 `integer` with no `format`. An id with a `Prefix` is always `string` with no `format`, because its
-canonical text form is text.
+canonical text form is text. A custom primitive is `string` with no `format` for the same reason: its JSON
+form is the canonical text, so there is no `uuid`-style format to advertise.
 
 One limitation of any compile-time mapping: an `enum`-backed id is documented as `integer` because that is
 what `System.Text.Json` writes by default. If you register a `JsonStringEnumConverter` globally, the
@@ -145,12 +152,11 @@ response body, a model nested inside another, an MVC controller parameter — th
 never gets a chance to apply. This library therefore also generates an operation filter: it looks the
 parameter up by its **declared type** (`ApiParameterDescription.Type` still holds the id type) in the same
 schema mapping, and replaces the bare `type: string` with the shape that carries a `format`. Request and
-response bodies, and DTO properties, are mapped by `MapType` as usual; an MVC controller parameter is mapped
-too (`samples/Len.StronglyTypedId.Sample3` renders `/api/products/{id}` as `type: integer, format: int32`).
-Measured in `samples/Len.StronglyTypedId.Sample4` (`net8.0`, Swashbuckle 6.9.0): `/orders/{id}` now comes
-out as `type: string, format: uuid`.
+response bodies, and DTO properties, are mapped by `MapType` as usual, and so is an MVC controller
+parameter. With the filter in place, a `Guid`-backed id in a Minimal API route is documented as
+`type: string, format: uuid` instead of a bare `string`.
 
-The filter is registered together with `ApplyTo`, and calling it twice does not grow the filter list. The
+The filter is registered together with `AddStronglyTypedIds`, and calling it twice does not grow the filter list. The
 built-in [ASP.NET Core OpenAPI](#aspnetcore-openapi) integration does not have this gap — its transformer
 inspects the schema the framework already built.
 
@@ -166,7 +172,7 @@ using Dapper;
 
 // Register TypeHandlers for all strongly typed ids. Dapper keeps them in a process-wide
 // registry, so this only needs to run once per process.
-StronglyTypedIds.ApplyTo();
+StronglyTypedIds.AddStronglyTypedIds();
 
 connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Create(Guid.NewGuid()) });
 ```
@@ -174,6 +180,11 @@ connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Cr
 Each id's `TypeHandler` writes the wrapped primitive into the parameter, and reconstructs the id through
 `Create` when reading. Ids with the same short name in different namespaces get a "namespace-underscored"
 prefix on their `TypeHandler` to avoid collisions (the same disambiguation used for EF Core converters).
+
+A **custom primitive** is written as its canonical text form instead of the CLR value, because the driver
+does not recognise your type and would throw `No mapping exists` while binding the parameter. The text is
+the same one the JSON, binary and EF Core paths use, so an id never appears as one shape in one store and
+another elsewhere. Reading goes through the primitive's own `Parse`, so the round trip is lossless.
 
 A `null` reference-type id is written as `DBNull.Value` rather than as a null object, so the column sees a
 real SQL `NULL`. The handler is registered with `SqlMapper.AddTypeHandler<T>`, which keys it by the id
@@ -204,8 +215,8 @@ to the enum's underlying type first (an out-of-range value throws `OverflowExcep
 defined members. So `999L`, `300L`, `1.5d` and `uint.MaxValue` are all rejected exactly like their textual
 counterparts, and a value that arrives already typed as the enum is validated too rather than waved through.
 
-> Registration is global, not per connection. `ApplyTo(IDbConnection)` is still generated for source
-> compatibility, but it ignores its argument and forwards to `ApplyTo()`. Calling either one more than once
+> Registration is global, not per connection. `AddStronglyTypedIds(IDbConnection)` is still generated for source
+> compatibility, but it ignores its argument and forwards to `AddStronglyTypedIds()`. Calling either one more than once
 > is harmless: Dapper replaces the handler for each type instead of appending, so the registry does not grow.
 
 > Referencing `Dapper` with a major version below 2.0.0 emits nothing, to avoid incompatibility with the
@@ -222,7 +233,7 @@ single entry point assembles them into serializer options:
 using MessagePack;
 
 // MessagePackSerializerOptions is immutable — the returned instance is the one to use.
-var options = StronglyTypedIds.ApplyTo(MessagePackSerializerOptions.Standard);
+var options = MessagePackSerializerOptions.Standard.AddStronglyTypedIds();
 
 var bytes = MessagePackSerializer.Serialize(OrderId.Create(Guid.NewGuid()), options);
 var id    = MessagePackSerializer.Deserialize<OrderId>(bytes, options);
@@ -232,12 +243,12 @@ The returned options put the generated formatters in a `CompositeResolver` ahead
 argument already carried, so your own custom formatters keep working — the generated ones only win for ids.
 
 Each id's formatter is named `{TypeName}MessagePackFormatter` and lives in the generated `StronglyTypedIds`
-class instead of being attached to the id. That is deliberate: `[MessagePackFormatter]` can only be applied
-to a type declared in the current compilation, so an id that comes from a referenced library — the common
-"library declares the id, application uses it" case — could never get one. Ids with the same short name in
+class instead of being attached to the id. That placement is what makes ids from a referenced library work:
+`[MessagePackFormatter]` can only be applied to a type declared in the current compilation, so the common
+"library declares the id, application uses it" case could never get one. Ids with the same short name in
 different namespaces are disambiguated the same way as Dapper's handlers.
 
-`ApplyTo` also registers a formatter for each distinct **enum** primitive the ids wrap. MessagePack's
+`AddStronglyTypedIds` also registers a formatter for each distinct **enum** primitive the ids wrap. MessagePack's
 AOT-safe resolver chain contains no enum resolver at all — the IL-emitting `DynamicEnumResolver` is
 excluded when dynamic code is unavailable — so without that entry an enum-backed id cannot be serialized
 under Native AOT. The registered `GenericEnumFormatter<TEnum>` writes the same underlying numeric payload
@@ -250,10 +261,13 @@ form only, and a binary format has no text to decorate. Three primitives are the
 and read back through `TryParse`. For them the prefix *does* travel in the payload, because it is part of the
 text.
 
-That exception is a deliberate choice, not a limitation of the current MessagePack release: 3.x encodes all
-three natively, and this library still uses the text form so that payloads written by 2.x-era versions stay
-readable. Switching them to native encoding would silently change the wire format for existing data, so it is
-not done.
+**Custom primitives** take the same text path, for a different reason: MessagePack has no formatter for a
+type it has never seen, so the id is written as its canonical text and read back through the id's `TryParse`.
+A prefix travels in the payload for them too.
+
+The three-primitive exception is stable, not a limitation of the current MessagePack release: 3.x can encode
+all three natively, but this library keeps the text form so that payloads written by earlier versions stay
+readable. Switching them to native encoding would silently change the wire format for existing data.
 
 For every other primitive the bytes are exactly what the primitive itself serialises to, so an id field is
 indistinguishable from a bare primitive field in an existing payload — swapping one for the other needs no
@@ -290,12 +304,17 @@ await collection.InsertOneAsync(new Order { Id = OrderId.Create(Guid.NewGuid()) 
 ```
 
 `BsonSerializer` keeps serializers in a process-wide registry, so registration is global rather than
-per-collection, and calling it twice is harmless — an already registered serializer is left untouched.
+per-collection, and calling it twice is harmless — the driver sees the same serializer type already
+registered and returns `false` instead of adding a second entry.
 
-"Untouched" also covers a serializer registered by someone else for the same id type: the driver's
-`TryRegisterSerializer` reports `false` and keeps the existing one, so a conflicting registration silently
-wins over the generated serializer. That is deliberate — overwriting would break the idempotency above — but
-it means an id type whose serializer was registered elsewhere is serialized by that one, not by ours.
+A serializer registered by someone else for the same id type is a different matter. The driver's
+`TryRegisterSerializer` only tolerates a repeat of the *same* serializer; when a *different* one is already
+registered for that type it throws `BsonSerializationException: There is already a different serializer
+registered`. The generated id registrations call it directly, so `RegisterBsonSerializers()` surfaces that
+exception rather than silently deferring to the existing serializer. If you register your own serializer for
+an id type, either drop the generated one for that id (`Integrations = None`) or register yours after
+`RegisterBsonSerializers()` — the driver will reject the second registration either way, so pick one owner
+per type.
 
 Each id's serializer is named `{TypeName}BsonSerializer` and lives in the generated `StronglyTypedIds` class.
 `[BsonSerializer]` would have been the shorter route, but it can only be applied to a type declared in the
@@ -305,16 +324,20 @@ current compilation, which would leave ids from a referenced library without a s
 wrap — `int`, `char`, `decimal`, `string`, enums, and so on. BSON's `PrimitiveSerializationProvider` would
 otherwise create those via `Activator`, which throws `MissingMethodException` under Native AOT once the
 constructors are trimmed. The pre-registered instances match the provider-created defaults, so nothing
-changes for a JIT application. BSON's dynamic types (`object`, `List<object>`, `ExpandoObject`) are
-registered for the same reason: every root serialization context takes
+changes for a JIT application. These registrations call the driver directly, so they stay harmless only as
+long as the app has not registered a *different* serializer for that primitive — registering, say, a custom
+`int` serializer makes the call throw. BSON's dynamic types (`object`, `List<object>`, `ExpandoObject`) are
+registered for the same AOT reason: every root serialization context takes
 `BsonDefaults.DynamicArraySerializer` and `BsonDefaults.DynamicDocumentSerializer`, which look those types
-up in the registry. `Guid` stays excluded: since driver 3.0 it has no global default representation, and
-the app must register the one its data uses, as in the snippet above. See
+up in the registry. Those three go through a private helper that swallows a conflict, so an app that already
+registered its own keeps it. `Guid` stays excluded: since driver 3.0 it has no global default representation,
+and the app must register the one its data uses, as in the snippet above. See
 [Native AOT and trimming](aot.md).
 
 The payload is the wrapped primitive value. `BigInteger`, `Int128` and `UInt128` have no BSON serializer, so
 those ids are stored as a BSON string holding the invariant-culture text form (prefix included) and read back
-through `TryParse`. A `null` reference-type id is stored as BSON `null`; a value-type id that meets BSON
+through `TryParse`. **Custom primitives** are stored the same way, because the driver has no serializer for a
+type it does not know. A `null` reference-type id is stored as BSON `null`; a value-type id that meets BSON
 `null` throws `BsonSerializationException`. A value rejected by the id's `Validator` is reported the same
 way: the serializer calls `TryCreate` and throws `BsonSerializationException` itself, so the
 `ArgumentException` from `Create` never reaches the caller.
@@ -323,6 +346,146 @@ For every other primitive the stored BSON value is the primitive's own, so exist
 and an id field is indistinguishable from a bare primitive field. Because the serializer is registered by
 type, LINQ filters and projections (`Builders<Order>.Filter.Eq(x => x.Id, id)`) serialise the id through it
 too — there is nothing to configure per query.
+
+<a id="hotchocolate"></a>
+
+## HotChocolate (GraphQL)
+
+When `HotChocolate` ≥ 13.0.0 is referenced, every strongly typed id gets a `ScalarType<TId>`, and a single
+entry point registers them all:
+
+```csharp
+using HotChocolate;
+using HotChocolate.Execution.Configuration;
+
+builder.Services
+    .AddGraphQLServer()
+    .AddQueryType<Query>()
+    .AddStronglyTypedIds();   // generated extension on IRequestExecutorBuilder
+```
+
+The generated entry point is `AddStronglyTypedIds()`, an extension on `IRequestExecutorBuilder` — the same
+shape as `AddGraphQLServer()` and `AddQueryType<T>()`, so it chains. It is idempotent — calling it twice
+leaves the service collection unchanged — and it registers each scalar with **`BindRuntimeType`**, not just
+`AddType`. That distinction matters: without the runtime-type binding HotChocolate still infers the id as an
+object type, and schema construction fails with
+`The name 'OrderId' was already registered by another type`.
+
+### Representation matches the JSON form
+
+The scalar's literal kind follows the same rule as the JSON converter and the OpenAPI schema, so an id is
+never written one way over REST and another over GraphQL:
+
+| Primitive | GraphQL literal | Example |
+| --- | --- | --- |
+| `Guid`, `string`, `char`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly` | `String` | `"3fa85f64-…"` |
+| Any id with a `Prefix` | `String` (the canonical text form) | `"ord_3fa85f64-…"` |
+| `byte` … `ulong`, `Int128`, `UInt128`, `BigInteger` | `Int` | `42` |
+| `enum` | `Int` — the **underlying value**, not the member name | `1` |
+| `decimal`, `double`, `float`, `Half` | `Float` | `1.5` |
+| any custom primitive (e.g. `Ulid`) | `String` (the canonical text form) | `"01ARZ3NDEKTSV4RRFFQ69G5FAV"` |
+
+An enum-backed id is written as its underlying number, not its member name, so the same id reads `1` in
+GraphQL and `1` in JSON. HotChocolate's own enum scalars use the member name instead, which would make the
+same value `"Paid"` on one side and `1` on the other. If you want member names in your schema, map the enum
+to a GraphQL enum type yourself and keep the id out of that path.
+
+`Int128`, `UInt128` and `BigInteger` exceed what GraphQL's `Int` can carry, so their literals are built from
+the invariant-culture text and parsed back through `TryParse` — the value round-trips exactly, it just is not
+a 32-bit `Int` on the wire.
+
+### Input, output and failure
+
+- **Output** goes through `TrySerialize`, which returns the raw CLR value (`string`, an integer, a floating
+  point) so HotChocolate writes it natively. A `null` reference-type id returns `false`, which the framework
+  writes as GraphQL `null`.
+- **Input** arrives either as a literal (`ParseLiteral`) or as a variable (`TryDeserialize`). The variable
+  path must accept both `string` and `System.Text.Json.JsonElement`: a real HTTP request hands the scalar a
+  `JsonElement`, while `QueryRequestBuilder` hands it a `string`. The generated code handles both.
+- **Failure** throws `HotChocolate.Types.SerializationException`, not `FormatException`. The framework turns
+  the former into a located GraphQL error; the latter would surface as `Unexpected Execution Error` with no
+  useful message. Values rejected by the id's `Validator` are reported the same way, because the scalar goes
+  through `TryParse` rather than constructing the id directly — so an undefined enum value is rejected too.
+
+Each id's scalar is named `{TypeName}HotChocolateType` and lives in the generated `StronglyTypedIds` class
+rather than being attached to the id, so ids that come from a referenced library get a scalar as well. Ids
+with the same short name in different namespaces are disambiguated the same way as Dapper's handlers.
+
+<a id="protobuf-net"></a>
+
+## protobuf-net
+
+When `protobuf-net` ≥ 3.0.0 is referenced, every id declared **in the current compilation** gets a surrogate
+contract:
+
+```csharp
+[StronglyTypedId]
+public partial record struct OrderId(Guid Value);
+```
+
+```csharp
+// generated
+[ProtoContract(Surrogate = typeof(OrderId.OrderIdSurrogate))]
+partial record struct OrderId
+{
+    [ProtoContract]
+    internal sealed class OrderIdSurrogate
+    {
+        [ProtoMember(1)] public Guid Value { get; set; }
+
+        public static implicit operator OrderIdSurrogate(OrderId id) => new() { Value = id.Value };
+        public static implicit operator OrderId(OrderIdSurrogate surrogate) { /* TryCreate, else ProtoException */ }
+    }
+}
+```
+
+There is no registration call — `Serializer.Serialize(order)` just works, because protobuf-net discovers the
+surrogate from the attribute.
+
+### Why an attribute and not a runtime registration
+
+protobuf-net also offers `RuntimeTypeModel.Default.Add(typeof(OrderId), false).SetSurrogate(...)`, which
+would let a consuming assembly cover ids from referenced libraries. This library does not use it, because
+that API is order-dependent: once a type has been serialised the model is frozen, and registering a
+surrogate afterwards throws `The type cannot be changed once a serializer has been generated for OrderId`.
+Whether that happens depends on what your application did first, which a generated helper cannot control.
+The attribute has no such problem, and it is what protobuf-net documents.
+
+The cost is that **ids from a referenced assembly get no surrogate**. The attribute can only be applied to a
+type declared in the same compilation, so if your domain layer declares the id and your serialisation layer
+references it, add the surrogate by hand there (or declare the id in the serialising assembly).
+
+### Payload: the primitive value, or its canonical text
+
+protobuf-net has native support for most primitives, and the payload is the primitive value itself — the same
+choice MessagePack and BSON make, so an id's wire form does not depend on which serializer you picked.
+
+Five primitives have no native representation and fall back to the invariant-culture text:
+
+| Primitive | Payload |
+| --- | --- |
+| `Guid`, `string`, `char`, `byte` … `ulong`, `decimal`, `float`, `double`, `DateTime`, `TimeSpan`, `DateOnly`, `TimeOnly`, `enum` | the value itself |
+| `Int128`, `UInt128`, `Half`, `DateTimeOffset`, `BigInteger` | canonical text (`string`) |
+| any custom primitive (e.g. `Ulid`) | canonical text (`string`) |
+
+`DateTimeOffset` uses the `"O"` format specifically: the default `ToString()` drops sub-second ticks, so a
+round-trip would silently truncate the value. `"O"` preserves both the ticks and the offset.
+
+A `Prefix` does **not** appear in the payload — it belongs to the text representation, not to the data. The
+same rule applies to MessagePack and BSON.
+
+### Failure and null
+
+- A payload rejected by the id's `Validator` throws `ProtoBuf.ProtoException`, not `ArgumentException`. The
+  generated conversion operator calls `TryCreate` and throws the framework's own exception type, because
+  protobuf-net wraps anything else and the caller loses the reason.
+- A `null` reference-type id round-trips as `null`. protobuf-net writes a root-level `null` as an empty
+  payload and reads it back as a surrogate with a `null` field, so the generated operator maps both shapes to
+  `null`.
+- Ids nested in a generic container are skipped: the attribute argument would contain a type parameter
+  (`CS0416`), and without the attribute the surrogate is dead code.
+- If you already put `[ProtoContract]` on the id yourself, the generator skips it — attributes cannot be
+  repeated (`CS0579`), and your contract wins.
 
 <a id="aspnet-core-mvc"></a>
 
@@ -337,8 +500,8 @@ per-type boilerplate:
 using Microsoft.Extensions.DependencyInjection;
 
 // Register the model-binder provider and the per-id route constraints.
-builder.Services.AddControllers(options => StronglyTypedIds.ApplyTo(options));
-builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddControllers(options => options.AddStronglyTypedIds());
+builder.Services.AddRouting(options => options.AddStronglyTypedIds());
 ```
 
 ```csharp
@@ -361,7 +524,7 @@ public class OrdersController : ControllerBase
 > every id already has, so there is no per-request reflection beyond a one-time type check at registration.
 
 The provider is inserted at the front of `ModelBinderProviders`, so it wins over the framework's own
-providers. `ApplyTo(MvcOptions)` is idempotent: if a `StronglyTypedIdModelBinderProvider` is already in the
+providers. `AddStronglyTypedIds(MvcOptions)` is idempotent: if a `StronglyTypedIdModelBinderProvider` is already in the
 list it returns without inserting another, so startup code that registers it from several modules — or a
 configuration callback that runs twice — does not grow the provider list or rebuild the binder on every
 request. Nullable ids are covered too: `[FromQuery] OrderId?` has CLR type `Nullable<OrderId>`, which
@@ -411,27 +574,66 @@ No `BindAsync`, no `TryParse` shim and no DI registration are needed — the fra
 `TryParse` on the type itself. Because binding goes through that same member, a `Prefix` and the id's read
 mode apply here exactly as they do in MVC.
 
-Route constraints are shared with MVC: the generated `ApplyTo(RouteOptions)` registers one constraint per id,
+Route constraints are shared with MVC: the generated `AddStronglyTypedIds(RouteOptions)` registers one constraint per id,
 so `{id:OrderId}` works in Minimal API templates too (the `Microsoft.AspNetCore.Mvc.*` assemblies ship in the
 ASP.NET Core shared framework, so the gate is satisfied in a Minimal API project):
 
 ```csharp
-builder.Services.AddRouting(options => StronglyTypedIds.ApplyTo(options));
+builder.Services.AddRouting(options => options.AddStronglyTypedIds());
 
 app.MapGet("/orders/v2/{id:OrderId}", (OrderId id) => Results.Ok(id.Value));
 ```
+
+## AutoMapper
+
+AutoMapper needs no generated integration. Two cases cover everything, and only the second needs
+configuration.
+
+**Both sides are ids.** Nothing to do — AutoMapper assigns members of the same type directly:
+
+```csharp
+cfg.CreateMap<Order, OrderDto>();   // Order.Id (OrderId) -> OrderDto.Id (OrderId)
+```
+
+**One side is the bare primitive.** AutoMapper will not guess that `OrderId` should unwrap to `Guid`, so
+register the conversion once per id type:
+
+```csharp
+cfg.CreateMap<OrderId, Guid>().ConvertUsing(id => id.Value);
+cfg.CreateMap<Guid, OrderId>().ConvertUsing(value => OrderId.Create(value));
+```
+
+Registering the pair once is enough for every mapping that crosses that boundary, in both directions.
+
+### `ProjectTo` translates to SQL
+
+The conversion survives EF Core's expression translation, so `ProjectTo` stays a server-side query — the
+lambda is not evaluated on the client. Mapping an entity to a DTO whose id is a bare `Guid` executes a
+single `SELECT` over the entity's columns:
+
+```sql
+SELECT "o"."Id", "o"."Name" FROM "Orders" AS "o"
+```
+
+`ConvertUsing(id => id.Value)` is eliminated entirely: EF already maps the `OrderId` column to `Guid`
+through the generated value converter, and the lambda is just a member access on top of it. The same
+holds for the reverse direction and for `MapFrom(source => source.Id.Value)`.
+
+> This is why there is no `AutoMapper` flag on `Integrations` and no `AddStronglyTypedIds(AutoMapperConfiguration)`:
+> the common case needs nothing, and the remaining case is two explicit lines that read better than a
+> registration you cannot see at the call site.
 
 <a id="aspnetcore-openapi"></a>
 
 ## ASP.NET Core OpenAPI
 
 When `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced, OpenAPI schema mappings are generated for every
-strongly typed id, in parallel to Swashbuckle's `ApplyTo(SwaggerGenOptions)`:
+strongly typed id, in parallel to Swashbuckle's `AddStronglyTypedIds(SwaggerGenOptions)`:
 
 ```csharp
 builder.Services.AddOpenApi(options =>
 {
-    StronglyTypedIds.ApplyTo(options);
+    options.AddStronglyTypedIds();
 });
 ```
 
@@ -448,14 +650,15 @@ rather than as an inline object. Swashbuckle's `MapType` instead replaces the sc
 with an inline one that carries only `type` and `format`. The exception is `JsonShape.Object`, where both
 integrations write the object shape, since the framework has no schema to preserve.
 
-The two also differ in where they reach. Measured with `samples/Len.StronglyTypedId.Sample2` (`net10.0`,
-`Microsoft.AspNetCore.OpenApi` 10.0.13), route and query parameters do get `type: string, format: uuid`.
-Swashbuckle on `net8.0` (`Sample4`) reaches **Minimal API** parameters through an operation filter,
-because `ApiExplorer` reports an `IParsable` parameter as `string` and `MapType` is keyed on the CLR type —
-see the [note](#swashbuckle) in that section. Neither integration touches a schema that is not an id.
+The two also differ in where they reach. The built-in OpenAPI integration covers route and query
+parameters as well as bodies and DTO properties, so a `Guid`-backed id in a Minimal API route is documented
+as `type: string, format: uuid`. Swashbuckle needs the operation filter described in its own
+[section](#swashbuckle) to reach Minimal API parameters, because `ApiExplorer` reports an `IParsable`
+parameter as `string` and `MapType` is keyed on the CLR type. Neither integration touches a schema that is
+not an id.
 
 > This integration is independent of Swashbuckle: either, both, or neither may be present, and each generates
-> its own `ApplyTo` overload.
+> its own `AddStronglyTypedIds` overload.
 
 ### Why 9.0 and not 8.0
 
@@ -463,8 +666,6 @@ see the [note](#swashbuckle) in that section. Neither integration touches a sche
 API — `IOpenApiSchemaTransformer`, `OpenApiSchemaTransformerContext` and `AddSchemaTransformer` — arrives in
 9.0.0, so a transformer generated against 8.0.x fails to compile with `CS0246`; the gate cannot be lowered.
 `net8.0` has no built-in document generation, so use the [Swashbuckle](#swashbuckle) integration there — it
-maps the same ids to the same `type` / `format` pairs. `samples/Len.StronglyTypedId.Sample4` pins the package
-to 8.0.0 and is the runnable proof of that fallback: the package resolves, the app starts, and
-`/swagger/v1/swagger.json` carries the mapped schemas.
+maps the same ids to the same `type` / `format` pairs.
 
 [<- Back to the index](index.md) · [中文](zh-CN/integrations.md)

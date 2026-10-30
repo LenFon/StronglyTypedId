@@ -6,8 +6,8 @@
 `Len.StronglyTypedId` is a Roslyn source generator (with analyzer + code fixes) that turns a one-line
 `record` declaration into a fully featured strongly typed identifier. It generates the
 `IStronglyTypedId<TSelf, TPrimitiveId>` and `IParsable<TSelf>` implementation plus System.Text.Json /
-Newtonsoft.Json / EF Core / Dapper / Swashbuckle / ASP.NET Core / MessagePack / MongoDB integrations — so a
-`Guid` can never be passed where an `OrderId` is expected, and vice versa.
+Newtonsoft.Json / EF Core / Dapper / Swashbuckle / ASP.NET Core / MessagePack / MongoDB / HotChocolate /
+protobuf-net integrations — so a `Guid` can never be passed where an `OrderId` is expected, and vice versa.
 
 ## Install
 
@@ -15,10 +15,9 @@ Newtonsoft.Json / EF Core / Dapper / Swashbuckle / ASP.NET Core / MessagePack / 
 dotnet add package Len.StronglyTypedId
 ```
 
-One package is enough — it already depends on `Len.StronglyTypedId.Generators`. Requires a compiler that
-provides **Roslyn 5.9 or newer** (verified with .NET SDK 10.0.401; older SDKs fail with `CS9057`) and a
-target framework `net8.0` / `net10.0`. Integrations are generated only when the matching package
-is referenced.
+One package is enough — it already depends on `Len.StronglyTypedId.Generators`. Its target frameworks are
+`net8.0` and `net10.0`, so the package works in any project targeting either one. Integrations are generated
+only when the matching package is referenced.
 
 ## Quick start
 
@@ -91,32 +90,44 @@ public partial record struct OrderId(Guid Value);
 Generated only when the matching package is referenced; `Integrations` can narrow the set per id, and
 `[assembly: StronglyTypedIdDefaults(...)]` sets assembly-wide defaults. The flags are
 `EntityFrameworkCore`, `Dapper`, `SystemTextJson`, `NewtonsoftJson`, `Swagger`, `AspNetCoreOpenApi`,
-`AspNetCoreMvc`, `MessagePack` and `MongoDb`:
+`AspNetCoreMvc`, `MessagePack`, `MongoDb`, `HotChocolate` and `Protobuf`:
 
 - **Serialization** — `SystemTextJson` and `NewtonsoftJson` converters via a generated `[JsonConverter]`.
 - **Binary serialization** — `MessagePack` and `MongoDb`: a generated `IMessagePackFormatter<TId>` /
-  `IBsonSerializer<TId>`, wired up by `StronglyTypedIds.ApplyTo(MessagePackSerializerOptions)` and
+  `IBsonSerializer<TId>`, wired up by `MessagePackSerializerOptions.AddStronglyTypedIds()` and
   `StronglyTypedIds.RegisterBsonSerializers()`. Both write the primitive value itself — the text prefix
   belongs to the text form (`ToString()` / JSON) and does not reach the payload. The exception is
   `BigInteger`, `Int128` and `UInt128`: they have no native MessagePack / BSON representation, so those
   ids are stored as their invariant-culture text, prefix included.
-- **EF Core** — `EntityFrameworkCore`: `StronglyTypedIds.ApplyTo(configurationBuilder)` from
-  `ConfigureConventions`, plus a model-scanning `StronglyTypedIds.ApplyTo(modelBuilder)` from
+- **EF Core** — `EntityFrameworkCore`: `configurationBuilder.AddStronglyTypedIds()` from
+  `ConfigureConventions`, plus a model-scanning `modelBuilder.AddStronglyTypedIds()` from
   `OnModelCreating` for contexts that do not override `ConfigureConventions`. Both overloads are
   generated whenever EF Core ≥ 7.0.0 is referenced.
-- **Dapper** — `Dapper`: `StronglyTypedIds.ApplyTo()` registers `TypeHandler`s in Dapper's process-wide
-  registry, so it only needs to run once. The `ApplyTo(IDbConnection)` overload is kept for source
+- **Dapper** — `Dapper`: `StronglyTypedIds.AddStronglyTypedIds()` registers `TypeHandler`s in Dapper's process-wide
+  registry, so it only needs to run once. The `AddStronglyTypedIds(IDbConnection)` overload is kept for source
   compatibility and ignores its argument.
-- **Swashbuckle / OpenAPI** — `Swagger` and `AspNetCoreOpenApi`: `StronglyTypedIds.ApplyTo(options)` for
+- **Swashbuckle / OpenAPI** — `Swagger` and `AspNetCoreOpenApi`: `options.AddStronglyTypedIds()` for
   `AddSwaggerGen` / `AddOpenApi`.
-- **ASP.NET Core MVC** — `AspNetCoreMvc`: `StronglyTypedIds.ApplyTo(options)` enables `[FromRoute] OrderId id`
+- **ASP.NET Core MVC** — `AspNetCoreMvc`: `options.AddStronglyTypedIds()` enables `[FromRoute] OrderId id`
   and `{id:OrderId}`.
+- **GraphQL** — `HotChocolate`: a generated `ScalarType<TId>` per id, wired up by
+  `AddStronglyTypedIds()` on `IRequestExecutorBuilder`. The representation matches the JSON form, so an id
+  is not written one way over REST and another over GraphQL: text primitives (including prefixed ids) are
+  GraphQL `String`, integers and enums are `Int` (enums by underlying value, not member name), and floating
+  points are `Float`. The entry point is idempotent and uses `BindRuntimeType`, without which HotChocolate
+  would infer the id as an object type and the schema would fail to build.
+- **protobuf-net** — `Protobuf`: `[ProtoContract(Surrogate = …)]` on the id plus a nested
+  `{TypeName}Surrogate`, so `Serializer.Serialize(order)` works with no registration call. The payload is
+  the primitive value itself; `Int128`, `UInt128`, `Half`, `DateTimeOffset`, `BigInteger` and custom
+  primitives have no native protobuf representation and are stored as canonical text. Ids from a
+  referenced assembly get no surrogate — the attribute can only be applied in the declaring compilation.
 
 ## Testing
 
 `Len.StronglyTypedId.Testing` builds ids for arrange blocks (`Any.Id<OrderId>()`, `Any.Ids<OrderId>(10)`),
-and `Len.StronglyTypedId.Testing.AutoFixture` wires the same generator into AutoFixture
-(`fixture.WithStronglyTypedIds()`). Both respect generated validators.
+and `Len.StronglyTypedId.Testing.AutoFixture` / `Len.StronglyTypedId.Testing.Bogus` wire the same
+generator into AutoFixture (`fixture.WithStronglyTypedIds()`) and Bogus (`faker.WithStronglyTypedIds()`).
+All of them respect generated validators.
 
 ## Native AOT & trimming
 

@@ -13,12 +13,13 @@ will not compile; `STIA0011`, `STIA0013`, `STIA0019` and `STIA0024` are warnings
 (`STIA0014`, `STIA0015`, `STIA0016`, `STIA0022`) are informational. Every level can be tuned per project
 in `.editorconfig`. Diagnostics are localized for English and Chinese according to the compiler culture.
 
-A few rules fire in narrower circumstances than their titles suggest: `STIA0011` needs the id to declare
-a `Validator` or a `Normalizer` (without either, constructing it directly is not a bypass) and covers
-`new Xxx(...)`, target-typed `new(...)` and `default` / `default(T)` alike — a `default` that is only
-compared against (`id == default`) is not reported; `STIA0014` is **off by default** and must be enabled
-explicitly with `dotnet_diagnostic.STIA0014.severity = suggestion`; and `STIA0016` reports once per group
-of ids sharing a primitive, on the ordinally first member.
+A few rules fire in narrower circumstances than their titles suggest:
+
+- `STIA0011` needs the id to declare a `Validator` or a `Normalizer` — without either, constructing it
+  directly is not a bypass. It covers `new Xxx(...)`, target-typed `new(...)` and `default` / `default(T)`
+  alike; a `default` that is only compared against (`id == default`) is not reported.
+- `STIA0014` is **off by default**. Enable it with `dotnet_diagnostic.STIA0014.severity = suggestion`.
+- `STIA0016` reports once per group of ids sharing a primitive, on the ordinally first member.
 
 <!-- BEGIN GENERATED:diagnostics -->
 | Rule ID  | Description                                                           | Code fix                                                  |
@@ -51,27 +52,44 @@ of ids sharing a primitive, on the ordinally first member.
 | STIA0025 | Strongly typed id cannot be a file-local type                         | Remove the `file` modifier                                |
 <!-- END GENERATED:diagnostics -->
 
-Twenty-one of the twenty-six rules ship a code fix, and a few of those only when the repair is
-unambiguous — `STIA0003` is offered only when the id itself is generic (removing the *containing*
-type's type parameters would change your design), `STIA0005` only when the type declares no explicit
-constructor (adding a primary constructor next to an existing one would collide with `CS0111`), and
-`STIA0009` only when the containing type is actually missing `partial` (otherwise the fix would insert
-a second `partial`). `STIA0023` offers none on purpose: the only mechanical repair is deleting `Prefix`,
-which changes the canonical text form and makes data already written with that prefix unreadable —
-picking a safe replacement is a decision only you can make. The two naming hints (`STIA0015`,
-`STIA0016`) deliberately offer none: renaming a type correctly means renaming every reference to it,
-and "these ids look alike" has no mechanical repair. `STIA0022` is the same style advice as those two —
-a PascalCase suggestion that still requires you to choose the right name. `STIA0012` is raised by the
-generator rather than the analyzer when code emission fails, and no rewrite can guess the intent.
-That leaves five rules without a code fix: `STIA0012`, `STIA0015`, `STIA0016`, `STIA0022` and
-`STIA0023`. (The integration and instance rules that previously had none — `STIA0019`, `STIA0024`,
-`STIA0020` and `STIA0021` — now offer a fix that removes the offending `Integrations` argument or the
-entire `[StronglyTypedIdInstance]` attribute; you can still resolve the root cause instead, by adding the
-missing package, correcting the mask bit, or choosing a valid instance name or value.)
+Most rules ship a code fix, so the light bulb usually repairs the declaration for you. A few offer it only
+when the repair is unambiguous: `STIA0003` appears only when the id itself is generic (removing the
+*containing* type's type parameters would change your design), `STIA0005` only when the type declares no
+explicit constructor, and `STIA0009` only when the containing type is actually missing `partial`.
+
+Five rules have no code fix, because the right repair depends on your intent:
+
+- `STIA0023` (prefix overlaps the primitive text) — the only mechanical repair is deleting `Prefix`, which
+  changes the canonical text form and makes data already written with that prefix unreadable. Choosing a
+  safe replacement is your decision.
+- `STIA0015` (name should end with `Id`) and `STIA0016` (several ids share a primitive) — renaming a type
+  correctly means renaming every reference to it, and "these ids look alike" has no mechanical repair.
+- `STIA0022` (instance name should be PascalCase) — a style suggestion; you still choose the right name.
+- `STIA0012` (code generation failed) — raised by the generator rather than the analyzer, and no rewrite can
+  guess the intent.
+
+The integration and instance rules (`STIA0019`, `STIA0024`, `STIA0020`, `STIA0021`) do offer a fix that
+removes the offending `Integrations` argument or the entire `[StronglyTypedIdInstance]` attribute. You can
+also resolve the root cause instead, by adding the missing package, correcting the mask bit, or choosing a
+valid instance name or value.
 
 Code fixes are offered through the usual IDE light bulb and support **Fix all occurrences in document /
 project / solution**. A type may be declared across several `partial` blocks: type-level rules are
 evaluated once for the whole type, and parameter-level rules only against the block that declares the
 primary constructor, so adding members in a separate block is perfectly legal.
+
+### Configuring the naming suffix
+
+`STIA0015` checks that the type name ends with `Id`. A codebase that uses a different convention can change
+the expected suffix in `.editorconfig`; the diagnostic message and the suggested name follow it:
+
+```ini
+[*.cs]
+dotnet_diagnostic.STIA0015.suffix = Key
+```
+
+The value is trimmed, and a blank value falls back to `Id`. The rule reports at `Info` severity, so it
+never fails a build; silence it with `dotnet_diagnostic.STIA0015.severity = none` if the convention does
+not apply.
 
 [<- Back to the index](index.md) · [中文](zh-CN/diagnostics.md)

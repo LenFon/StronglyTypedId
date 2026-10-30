@@ -24,26 +24,37 @@ internal static class Program
     /// </summary>
     /// <remarks>
     /// 区块按文件分配：README 只留导览级两张表，诊断表与生成文件表随章节搬到 <c>docs/</c>；漏写某个文件不会静默放过，<see cref="ReadmeBlocks.Replace"/> 找不到标记就直接抛异常。
+    /// <para>
+    /// <c>SamplesPrefix</c> 是从该页指向仓库根的相对前缀，只有功能索引表需要它（示例链接跨到 <c>samples/</c>）：
+    /// 英文页在 <c>docs/</c> 下用 <c>../</c>，中文页在 <c>docs/zh-CN/</c> 下用 <c>../../</c>。
+    /// </para>
     /// </remarks>
-    private static readonly (string File, string Culture, string[] Blocks)[] _targets =
+    private static readonly (string File, string Culture, string SamplesPrefix, string[] Blocks)[] _targets =
     [
-        ("README.md", "en", ["primitive-types", "generated-code"]),
-        ("README.zh-CN.md", "zh-CN", ["primitive-types", "generated-code"]),
-        ("docs/generated-code.md", "en", ["generated-files"]),
-        ("docs/zh-CN/generated-code.md", "zh-CN", ["generated-files"]),
-        ("docs/diagnostics.md", "en", ["diagnostics"]),
-        ("docs/zh-CN/diagnostics.md", "zh-CN", ["diagnostics"]),
+        ("README.md", "en", "../", ["primitive-types", "generated-code"]),
+        ("README.zh-CN.md", "zh-CN", "../", ["primitive-types", "generated-code"]),
+        ("docs/generated-code.md", "en", "../", ["generated-files"]),
+        ("docs/zh-CN/generated-code.md", "zh-CN", "../../", ["generated-files"]),
+        ("docs/diagnostics.md", "en", "../", ["diagnostics"]),
+        ("docs/zh-CN/diagnostics.md", "zh-CN", "../../", ["diagnostics"]),
+        ("docs/features-index.md", "en", "../", ["feature-index"]),
+        ("docs/zh-CN/features-index.md", "zh-CN", "../../", ["feature-index"]),
     ];
 
     /// <summary>
     /// 区块 ID 与对应的渲染函数，顺序即替换顺序（彼此独立，不影响结果）。
     /// </summary>
-    private static readonly (string BlockId, Func<CultureInfo, string> Render)[] _blocks =
+    /// <remarks>
+    /// 渲染函数统一收 <c>(root, culture, samplesPrefix)</c>：多数表只用得上 culture，
+    /// 功能索引表还要读仓库里的示例文件与文档锚点，因此需要 root 与前缀。
+    /// </remarks>
+    private static readonly (string BlockId, Func<string, CultureInfo, string, string> Render)[] _blocks =
     [
-        ("primitive-types", DocumentationRenderer.RenderPrimitiveTypes),
-        ("generated-code", DocumentationRenderer.RenderGeneratedCode),
-        ("generated-files", DocumentationRenderer.RenderGeneratedFiles),
-        ("diagnostics", DocumentationRenderer.RenderDiagnostics),
+        ("primitive-types", static (_, culture, _) => DocumentationRenderer.RenderPrimitiveTypes(culture)),
+        ("generated-code", static (_, culture, _) => DocumentationRenderer.RenderGeneratedCode(culture)),
+        ("generated-files", static (_, culture, _) => DocumentationRenderer.RenderGeneratedFiles(culture)),
+        ("diagnostics", static (_, culture, _) => DocumentationRenderer.RenderDiagnostics(culture)),
+        ("feature-index", FeatureIndexRenderer.Render),
     ];
 
     public static int Main(string[] args)
@@ -76,7 +87,7 @@ internal static class Program
     {
         var stale = false;
 
-        foreach (var (file, cultureName, blocks) in _targets)
+        foreach (var (file, cultureName, samplesPrefix, blocks) in _targets)
         {
             var path = Path.Combine(root, file);
             var current = File.ReadAllText(path);
@@ -86,7 +97,7 @@ internal static class Program
 
             foreach (var blockId in blocks)
             {
-                generated = ReadmeBlocks.Replace(generated, blockId, Render(blockId, culture), newLine);
+                generated = ReadmeBlocks.Replace(generated, blockId, Render(root, blockId, culture, samplesPrefix), newLine);
             }
 
             if (string.Equals(generated, current, StringComparison.Ordinal))
@@ -123,8 +134,9 @@ internal static class Program
     /// 按区块 ID 取渲染函数。<paramref name="blockId"/> 拼错会在第一次运行时炸出来，
     /// 而不是留下一段永远不再更新的文档。测试复用同一入口，避免两处各写一份映射。
     /// </summary>
-    internal static string Render(string blockId, CultureInfo culture)
-        => _blocks.First(entry => string.Equals(entry.BlockId, blockId, StringComparison.Ordinal)).Render(culture);
+    internal static string Render(string root, string blockId, CultureInfo culture, string samplesPrefix)
+        => _blocks.First(entry => string.Equals(entry.BlockId, blockId, StringComparison.Ordinal))
+            .Render(root, culture, samplesPrefix);
 
     /// <summary>
     /// 定位仓库根目录：优先取 <c>--root &lt;path&gt;</c>，否则从程序集所在目录逐级上溯找解决方案文件。

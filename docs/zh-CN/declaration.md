@@ -28,6 +28,32 @@ public partial record struct OrderId(Guid Value);
 你的声明永远不会被改写：生成器在同名命名空间里产出一个兄弟 `partial`（嵌套 Id 则产回包含类型内部，
 见[嵌套类型](#nested-types)）。完整的形状规则与对应诊断，见[故障排查](troubleshooting.md#nothing-was-generated)。
 
+<a id="converting-an-existing-record"></a>
+
+## 把已有 record 转成 Id
+
+如果手上已经有一个只包装单个值的 record，不必重新敲一遍。把光标放在 record 的**声明头**上——即
+`record OrderId(...)` 那一行，而不是声明体内部——再打开重构菜单（灯泡图标；Visual Studio 里是
+`Ctrl+.`，VS Code 里是 `Ctrl+Shift+R`）：
+
+- **Convert to strongly typed id** 补上 `[StronglyTypedId]`、`partial` 修饰符与
+  `using Len.StronglyTypedId;`，仅此三项。新特性插在已有特性之前，原有特性的位置不变；已有该 `using`
+  时不重复插入；换行沿用文档自身的行尾。
+- **Inline strongly typed id** 是反向操作。它摘掉 `[StronglyTypedId]` 与 `partial`，并在文件里再无
+  需要该命名空间的地方时一并摘掉 `using Len.StronglyTypedId;`——判断依据不只是「还有没有别的 Id」，
+  还包括 `IStronglyTypedId<,>`、`StronglyTypedIdIntegrations` 这类同命名空间导出的类型。生成的成员随
+  特性一起消失，回到最初的普通 record。
+
+正向动作只在结果确实是一个合法 Id 时才提供，因此不会产出立刻被分析器判错的声明：主构造函数恰好一个
+参数、参数名为 `Value`、类型属于[受支持的基元](https://github.com/LenFon/StronglyTypedId/blob/main/README.zh-CN.md#supported-primitive-types)，
+且 record 既不是 `abstract` 也不是泛型。没有主构造函数、参数多于一个、参数名不是 `Value`、或包装了
+不受支持的类型时，不提供该动作。
+
+反向动作在 Id 由多段 `partial` 声明组成时不提供：从其中一段摘掉 `partial` 会触发 `CS0260`。
+
+两个动作都按**名字绑定到的符号**识别 `[StronglyTypedId]`，而不是按写法匹配。其它命名空间下的第三方
+`StronglyTypedIdAttribute`——即便在 `using` 之后以短名书写——会原样保留，所以「Inline」不会误删别人的特性。
+
 <a id="value-validation"></a>
 
 ## 值校验
@@ -48,7 +74,8 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // 返回 false，不抛�
 
 方法必须是该 Id 的静态成员，签名形如 `static bool Validate(TPrimitiveId value)`，取值合法时返回 `true`。
 生成代码会在 `Create`、`TryCreate` 与全部 `TryParse` 重载（string、span、UTF-8）里调用它，因此 `TryParse`
-依旧遵守约定——失败返回 `false` 而不抛异常。JSON 与 Entity Framework Core 集成都经由 `Create` 构造，
+依旧遵守约定——失败返回 `false` 而不抛异常。JSON 转换器与 Entity Framework Core 集成都会在反序列化时
+执行校验：EF Core 经 `Create` 构造，两个 JSON 转换器则经 `TryCreate` 构造，再把拒绝转成各自的框架异常，
 所以反序列化同样会拒绝非法值。
 
 源码生成器唯一做不到的是拦截你声明的主构造函数：`new OrderId(...)` 会绕过校验。当取值来自你的代码
@@ -76,6 +103,27 @@ OrderId.Create(Guid.Empty);   // 抛 DomainRuleViolationException
 否则在声明处报 [STIA0018](diagnostics.md#diagnostics)。只有 `Create` 会用它——`Parse` 抛的是 `FormatException`，
 遵循 `IParsable<TSelf>` 的惯例（与 `int.Parse` / `Guid.Parse` 一致），因为它的失败还包含「文本根本不是 Id」。
 与其他选项一样，它也可以在程序集级设置：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(...))]`。
+
+### 让被拒绝的取值不进消息
+
+拒绝消息会内插校验失败的那个值：`The value 'alice@example' is not a valid EmailAddress.`。这段文本会随异常
+进入日志、APM 追踪与错误上报——而对包装 `string` 的 Id 来说，那往往是用户输入，常常正因为它格式不对才被
+拒绝，但它仍然是个人数据。把 `RedactValidationMessage` 设为 `true` 即可去掉它：
+
+```csharp
+[StronglyTypedId(Validator = nameof(IsEmail), RedactValidationMessage = true)]
+public partial record struct EmailAddress(string Value)
+{
+    private static bool IsEmail(string value) => value.Contains('@');
+}
+
+EmailAddress.Create("alice@example");   // The value is not a valid EmailAddress.
+```
+
+默认是 `false`，因此既有消息不变。`[assembly: StronglyTypedIdDefaults(RedactValidationMessage = true)]`
+可为整个程序集打开；逐类型写 `false` 关不回去，因为脱敏是安全策略而不是逐类型的偏好。`Parse` 本就只报
+`Could not parse supplied value.`、不回显输入；ASP.NET Core 模型绑定器则会把原始值写进 `ModelState`——
+那条消息是回给发送者的，不会写进日志。
 
 <a id="value-normalization"></a>
 
@@ -124,10 +172,12 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 ```
 
 取值是**基元值**的不变文化文本形，**不带** `Prefix`：前缀装饰的是规范文本形，而实例承载的是基元值。
-它在编译期就被校验并翻译成字面量（或构造函数调用），运行期不再解析。
+它在编译期就被校验；对多数基元还会翻译成字面量或构造函数调用，运行期不再解析。例外有两类：
+`Int128`、`UInt128`、`BigInteger` —— 生成器跑在 `netstandard2.0` 上，那里没有这些类型，故它手工校验文本、
+再对已校验的字符串发射一次运行期 `Parse`；以及自定义基元 —— 它们的 `Parse` 在编译期根本无法执行。
 
 多数基元接受的就是它自己 `Parse` 接受的那种文本，因此 `int` 基元写 `[StronglyTypedIdInstance("X", " 1 ")]`
-没有问题。少数基元刻意更严，因为它们的 `Parse` 宽松到会让声明产生歧义——`"2020-1-1"` 与 `"2020-01-01"`
+没有问题。少数基元接受更严的形式，因为它们的 `Parse` 宽松到会让声明产生歧义——`"2020-1-1"` 与 `"2020-01-01"`
 是同一天，两种都接受就意味着同一个实例有两种写法：
 
 | 基元 | 接受的形式 | 虽然 `Parse` 接受但会被拒绝 |
@@ -143,8 +193,8 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 
 每个实例都经 `Create` 构造，这正是保证成立的原因：实例不是特权值，它与任何其它取值一样经过
 `Normalizer` 与 `Validator`，因此 `Parse(instance.ToString())` 必定读得回来。被验证器拒绝的取值不会在
-编译期被发现——而是在首次使用时由类型初始化抛 `TypeInitializationException`，这比悄悄交出一个
-「不可能存在」的 Id 更响亮。
+编译期被发现；而是在首次使用时由类型初始化抛 `TypeInitializationException`，让坏实例直接暴露，而不是
+悄悄交出一个「不可能存在」的 Id。
 
 名字必须是合法标识符、在同一个 Id 内唯一，且不能与 Id 类型本身、既有成员或生成成员撞名（`STIA0020`）；
 取值必须是该基元类型的合法值（`STIA0021`）；名字不是 PascalCase 时报 `STIA0022`（`Info`）。
@@ -188,6 +238,26 @@ public partial record struct ConvertibleGuidId(Guid Value);
 
 > 该转换器仅覆盖「字符串 ↔ Id」这一路径；它不替代 JSON 转换器，二者各自独立生效。
 
+### 配置绑定
+
+`Microsoft.Extensions.Configuration` 的 binder 通过 `TypeDescriptor` 把字符串转成属性的类型，因此
+**没有开 `TypeConverter = true` 的 Id 无法被绑定**——而且它是**静默**失败的。绑定一个属性为该 Id 的对象时，
+属性会停留在 `default`：不抛异常、不报警告；对 `Guid` 基元的 Id 来说就是
+`00000000-0000-0000-0000-000000000000`，哪怕配置里写着一个真实的值。
+
+```csharp
+public sealed class OrderSettings
+{
+    public OrderId Id { get; set; }   // 需要 [StronglyTypedId(TypeConverter = true)]
+}
+
+var settings = configuration.GetSection("Order").Get<OrderSettings>();
+```
+
+标量重载（`configuration.GetValue<OrderId>("Order:Id")`）同理，只是它从 binder 内部抛
+`NullReferenceException`，而不是返回 `default`。开启转换器后两种形态都能工作，前缀也一并生效：
+带前缀的 Id 读入 `"ord_3fa85f64-…"`，写回也是同一形态。
+
 <a id="assembly-defaults"></a>
 
 ## 程序集级默认设置（StronglyTypedIdDefaults）
@@ -209,6 +279,25 @@ public partial record struct ConvertibleGuidId(Guid Value);
 
 `ExceptionType` 同样遵循这一规则：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
 对所有未自行指定异常类型的 Id 生效。
+
+另有三个选项可以在程序集级设置，用于「整个程序集共用一种选择」的场景：
+
+```csharp
+[assembly: StronglyTypedIdDefaults(
+    JsonShape = JsonShape.Object,
+    TypeConverter = true,
+    PrefixReadMode = PrefixReadMode.Strict)]
+```
+
+| 选项 | 优先级 | 说明 |
+| --- | --- | --- |
+| `JsonShape` | 逐类型优先，包括显式写 `JsonShape.Primitive` | 枚举型，故「没写」与「写了默认值」可区分 —— 逐类型可以**双向**覆盖。 |
+| `PrefixReadMode` | 逐类型优先，包括显式写 `PrefixReadMode.Lenient` | 同为枚举，理由同上。它只决定带前缀的 Id 怎么读回，不提供默认前缀。 |
+| `TypeConverter` | **单向**：程序集默认能打开，逐类型写 `false` 关不回去 | 特性属性是 `bool`，元数据里「没写」与「写了 `false`」无法区分。与 `RedactValidationMessage` 同一规则。 |
+
+> `Prefix` 本身**不**提供程序集级默认值。程序集级前缀会让同程序集的每个 Id 共用同一种规范文本形，
+> 于是不同 Id 类型无法再靠文本区分，日后改这个前缀也会变成整个程序集的数据契约破坏。
+> （`STIA0023` 是另一回事：它报的是前缀与基元自身的文本重叠。）
 
 > 验证器方法仍需满足 [值校验](#value-validation) 的签名约定（`static bool Validate(TPrimitiveId value)`），
 > 否则由 [STIA0010](diagnostics.md#diagnostics) 报错。归一化方法同理，必须是
@@ -248,8 +337,12 @@ public partial record struct OrderId(Guid Value);           // 恰好这两类
 > `TypeConverter` **不属于** `Integrations`。它是显式 opt-in（`TypeConverter = true`），不是「引用了包
 > 就有」的东西，所以 `Integrations = None` 不会关掉它。
 
-> 引用程序集里的 Id 会尊重**它自己所在程序集**的默认值：领域库若写了
-> `[assembly: StronglyTypedIdDefaults(Integrations = None)]`，消费者就不会再为它的 Id 生成集成代码。
+> 引用程序集里的 Id 会尊重**它自己所在程序集**的默认值，而不是你的。消费方在生成集成代码时会重新读取的
+> 只有 `Integrations` 与 `JsonShape` 两项：领域库若写了
+> `[assembly: StronglyTypedIdDefaults(Integrations = None)]`，消费者就不会再为它的 Id 生成集成代码；
+> 若写了 `JsonShape = JsonShape.Object`，消费方生成的 Newtonsoft 转换器与 OpenAPI schema 也会跟着走
+> 对象形态。`TypeConverter` 与 `PrefixReadMode` 由声明程序集的核心生成器烘进 Id 本身，消费方随类型一起
+> 继承，不会重新生成。
 
 <a id="nested-types"></a>
 
@@ -276,15 +369,16 @@ var id = OrderAggregate.OrderId.Create(value);   // 按嵌套名使用，与普�
 因此声明在泛型容器里的 Id 能正常编译，并保留核心生成器产出的能力——比较与排序、格式化与 span
 解析、System.Text.Json 字典键。**JSON 是唯一的例外**：转换器类照常生成，但挂不上
 `[JsonConverter]` 特性（特性实参不能引用携带容器类型参数的转换器，会 CS0416），
-`AddStronglyTypedId` / `ApplyTo` 入口也会跳过它（开放泛型不能作类型实参）。请按实际使用的闭合类型
+`AddStronglyTypedIds` 入口也会跳过它（开放泛型不能作类型实参）。请按实际使用的闭合类型
 手动注册：
 
 ```csharp
 options.Converters.Add(new Outer<int>.InnerId.SystemTextJsonConverter());
 ```
 
-需要从外部按名字引用 Id 类型的集成（EF Core、Swagger、Dapper、MessagePack、MongoDB、MVC、OpenAPI）
-出于同样的原因会跳过声明在泛型容器里的 Id；对于这些集成，请把 Id 声明在命名空间层级或非泛型容器里。
+需要从外部按名字引用 Id 类型的集成（EF Core、Swagger、Dapper、MessagePack、MongoDB、HotChocolate、
+protobuf-net、MVC、OpenAPI）出于同样的原因会跳过声明在泛型容器里的 Id；对于这些集成，请把 Id 声明在
+命名空间层级或非泛型容器里。
 
 非泛型的普通嵌套不受影响：比较与排序、格式化与 span 解析、两种 JSON 序列化、System.Text.Json 字典键
 都照常工作。

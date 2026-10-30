@@ -10,7 +10,7 @@ title: 常见问题
 **问：我应该安装哪个包？**
 
 答：只装 `Len.StronglyTypedId` 即可。它依赖 `Len.StronglyTypedId.Generators`，后者包含生成器、分析器
-与代码修复；而代码中引用的是前者这个运行时库。另外三个包都是可选的 —— 见 [NuGet 包](packages.md#packages)。
+与代码修复；而代码中引用的是前者这个运行时库。另外四个包都是可选的 —— 见 [NuGet 包](packages.md#packages)。
 
 **问：强类型 Id 能直接作为 `Dictionary` / `HashSet` 的键吗？**
 
@@ -27,7 +27,7 @@ title: 常见问题
 **问：`ToString()` 输出什么？**
 
 答：输出被包装基元值的**不变文化**文本（`"42"`、`"3f2c…"`、`"1.5"`），而不是 record 默认的
-`OrderId { Value = 42 }` 形式，因此在日志里更易读。它刻意与区域设置无关，从而与序列化写出的形态一致，
+`OrderId { Value = 42 }` 形式，因此在日志里更易读。它与区域设置无关，从而与序列化写出的形态一致，
 并且 `Parse(id.ToString())` 必定往返——`Parse` / `TryParse` 把 `null` provider 当作不变文化，正是为了这一点。
 需要按特定文化输出时，请调用 `ToString(string?, IFormatProvider?)`。注意字符串插值不走 `ToString()`：
 `$"{id}"` 走 `IFormattable.ToString(null, null)`，数值基元会按当前区域格式化。以上两点只对**基元实现了

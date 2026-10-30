@@ -44,6 +44,7 @@
     <File Path="docs/limitations.md" />
     <File Path="docs/packages.md" />
     <File Path="docs/performance.md" />
+    <File Path="docs/roadmap.md" />
     <File Path="docs/runtime.md" />
     <File Path="docs/serialization.md" />
     <File Path="docs/testing.md" />
@@ -60,6 +61,7 @@
     <File Path="docs/zh-CN/limitations.md" />
     <File Path="docs/zh-CN/packages.md" />
     <File Path="docs/zh-CN/performance.md" />
+    <File Path="docs/zh-CN/roadmap.md" />
     <File Path="docs/zh-CN/runtime.md" />
     <File Path="docs/zh-CN/serialization.md" />
     <File Path="docs/zh-CN/testing.md" />
@@ -72,6 +74,8 @@
     <Project Path="samples/Len.StronglyTypedId.Sample3/Len.StronglyTypedId.Sample3.csproj" />
     <Project Path="samples/Len.StronglyTypedId.Sample4/Len.StronglyTypedId.Sample4.csproj" />
     <Project Path="samples/Len.StronglyTypedId.SampleConsole/Len.StronglyTypedId.SampleConsole.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.SampleDefaults/Len.StronglyTypedId.SampleDefaults.csproj" />
+    <Project Path="samples/Len.StronglyTypedId.SampleGraphQL/Len.StronglyTypedId.SampleGraphQL.csproj" />
     <Project Path="samples/Len.StronglyTypedId.SampleIntegrations/Len.StronglyTypedId.SampleIntegrations.csproj" />
   </Folder>
   <Folder Name="/src/">
@@ -84,6 +88,7 @@
   <Folder Name="/test/">
     <Project Path="test/Len.StronglyTypedId.Aot.SmokeTest/Len.StronglyTypedId.Aot.SmokeTest.csproj" />
     <Project Path="test/Len.StronglyTypedId.Generators.Test/Len.StronglyTypedId.Generators.Test.csproj" />
+    <Project Path="test/Len.StronglyTypedId.GraphQL.Test/Len.StronglyTypedId.GraphQL.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Integration.Test/Len.StronglyTypedId.Integration.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Packaging.Test/Len.StronglyTypedId.Packaging.Test.csproj" />
     <Project Path="test/Len.StronglyTypedId.Test/Len.StronglyTypedId.Test.csproj" />

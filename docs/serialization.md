@@ -101,18 +101,16 @@ from `Create` escape:
 | `System.Text.Json` | `JsonException` |
 | `Newtonsoft.Json` | `JsonSerializationException` |
 
-That matters because both libraries document their converter contract in terms of that exception: a caller
-that wraps deserialization in `catch (JsonException)` sees a malformed payload and a domain violation the
-same way, and neither leaks an `ArgumentException` the caller has no reason to expect. The generated code
-gets there by calling `TryCreate` and throwing the framework exception itself — the same approach the
-dictionary-key path already used.
+This is the exception both libraries document for a failed conversion, so a caller that wraps
+deserialization in `catch (JsonException)` sees a malformed payload and a domain violation the same way,
+and never has to expect an `ArgumentException` from a serializer.
 
 `BigInteger`-backed ids read their payload as text, so a payload that is not a number is reported the same
 way — as `JsonException`, not as the `FormatException` that `BigInteger.Parse` would raise.
 
-EF Core's `ValueConverter` deliberately keeps calling `Create`: materializing an entity from a database row
-is a data-integrity boundary, where `ArgumentException` describes the problem more precisely than an
-ORM-specific wrapper would.
+EF Core is the exception: its `ValueConverter` calls `Create`, so a rejected value surfaces as
+`ArgumentException`. Materializing an entity from a database row is a data-integrity boundary, where that
+exception describes the problem more precisely than an ORM-specific wrapper would.
 
 ## JSON shape
 
@@ -187,25 +185,27 @@ OrderId.TryParse("3f2c…", null, out _);       // false
 > from a JSON number to a JSON string, because the prefixed form is text. Database storage is unaffected.
 > Leave `Prefix` unset and the generated code is byte-for-byte identical to before.
 
-An empty or whitespace-only prefix is treated as "no prefix" and reported as `STIA0013`.
+An empty prefix is treated as "no prefix" and reported by nothing — the generated code is identical to
+leaving `Prefix` unset. A whitespace-only prefix is treated as "no prefix" too, but reported as `STIA0013`,
+because it is almost certainly a typo.
 
 ## Explicit registration
 
 The `[JsonConverter]` attribute covers the common case, but it is ignored when you supply your own
 `JsonSerializerOptions` / `JsonSerializerSettings` and want this library's converters attached to them anyway.
-Both serializers therefore expose a registration entry point on the generated `StronglyTypedIds` class, in
-parallel to the `ApplyTo` family generated for the other integrations — see
+Both serializers therefore expose a registration entry point, in
+parallel to the `AddStronglyTypedIds` family generated for the other integrations — see
 [Integrations](integrations.md) for those, including the binary formats (MessagePack, MongoDB BSON), which
 are registered the same way:
 
 ```csharp
 // System.Text.Json
 var options = new JsonSerializerOptions();
-StronglyTypedIds.ApplyTo(options);          // adds every id's converter to options.Converters
+options.AddStronglyTypedIds();               // adds every id's converter to options.Converters
 
 // Newtonsoft.Json
 var settings = new JsonSerializerSettings();
-settings.AddStronglyTypedId();              // adds every id's converter to settings.Converters
+settings.AddStronglyTypedIds();              // adds every id's converter to settings.Converters
 ```
 
 Each entry point is generated only when the corresponding serializer is referenced, and only when the
@@ -216,6 +216,32 @@ several modules — or twice from the same one — does not grow the list. Conve
 where they are. Under `System.Text.Json` this also means a second call after the options have been used is a
 no-op rather than an `InvalidOperationException`; `JsonSerializerOptions` freezes on first use, and the
 entry point never touches the collection when everything is already registered.
+
+### Source-generated `JsonSerializerContext`
+
+`AddStronglyTypedIds` registers converters in `options.Converters`, but a source-generated context does not consult
+that list for a type it was asked to generate metadata for. In `JsonSourceGenerationMode.Metadata` — the
+recommended mode for AOT — the context writes the id by its properties, so the same id serializes as
+`{"Value":"…"}` through the context and `"…"` through reflection.
+
+Wrap the context with `WithStronglyTypedIds()` to make the two agree:
+
+```csharp
+var options = new JsonSerializerOptions
+{
+    TypeInfoResolver = AppJsonContext.Default.WithStronglyTypedIds(),
+};
+```
+
+The method puts an id-only `IJsonTypeInfoResolver` in front of your context. Order is what makes it work:
+`JsonTypeInfoResolver.Combine` takes the first resolver that returns a non-null `JsonTypeInfo`, and the
+context does return one for the id. Types other than ids fall through to the context unchanged. The
+resolver builds each `JsonTypeInfo` from the generated converter, so it is reflection-free and works under
+Native AOT.
+
+`AddStronglyTypedIds` and `WithStronglyTypedIds()` are independent: use `AddStronglyTypedIds` when you configure
+`options.Converters`, and `WithStronglyTypedIds()` when you set `TypeInfoResolver` to a context. Setting
+both is harmless.
 
 ### When the id is declared in another assembly
 
@@ -230,13 +256,13 @@ The two serializers differ in where they put the converter:
   (the type already exists).
 
   The consumer (the host app that does reference Newtonsoft) generates a **top-level** converter for such
-  ids and registers it through `AddStronglyTypedId`. Newtonsoft's `[JsonConverter]` attribute, however,
+  ids and registers it through `AddStronglyTypedIds`. Newtonsoft's `[JsonConverter]` attribute, however,
   takes precedence over `JsonSerializerSettings.Converters`, and an attribute can only sit on the type
-  itself — so **across assemblies you must call `AddStronglyTypedId`**. Without it the id is written as an
+  itself — so **across assemblies you must call `AddStronglyTypedIds`**. Without it the id is written as an
   object (`{"Value":"…"}`) while `System.Text.Json` writes a string: the same data in two shapes, with no
   compiler warning and no exception at runtime.
 
   When both the domain layer and the host app reference Newtonsoft, the nested converter in the declaring
-  assembly travels with the type and wins by attribute precedence; `AddStronglyTypedId` is then optional.
+  assembly travels with the type and wins by attribute precedence; `AddStronglyTypedIds` is then optional.
 
 [<- Back to the index](index.md) · [中文](zh-CN/serialization.md)

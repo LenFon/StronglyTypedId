@@ -10,6 +10,8 @@ title: Troubleshooting
 Symptom first. For what a specific diagnostic means, see [Diagnostics](diagnostics.md#diagnostics); for
 conceptual questions, see [FAQ](faq.md#faq).
 
+<a id="nothing-was-generated"></a>
+
 ## Nothing was generated
 
 The type compiles but has no `Create`, no `Parse`, no converter.
@@ -43,6 +45,8 @@ clearly referenced.
 | Dapper | `Dapper` ≥ 2.0.0 is referenced |
 | MessagePack | `MessagePack` ≥ 2.0.0 is referenced |
 | MongoDB | `MongoDB.Bson` ≥ 3.0.0 is referenced |
+| HotChocolate (GraphQL) | `HotChocolate.Types` ≥ 13.0.0 is referenced |
+| protobuf-net | `protobuf-net` ≥ 3.0.0 is referenced — no entry point to call: the surrogate is discovered from `[ProtoContract]` |
 | ASP.NET Core OpenAPI | `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced — 8.0.x has no schema transformer API, so on `net8.0` use Swashbuckle instead |
 | ASP.NET Core MVC | `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `.Core` / `.Abstractions` facade) |
 
@@ -50,17 +54,18 @@ Two further reasons an integration skips an id: the id is declared inside a **ge
 external-reference integrations cannot reopen it — see [Nested types](declaration.md#nested-types)), or
 the assembly-level default turned it off.
 
-## `StronglyTypedIds.ApplyTo` is not found
+## `AddStronglyTypedIds` is not found
 
 The entry points live in `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId`
 namespace, generated alongside the integration that owns them. So:
 
 1. `using Len.StronglyTypedId;` must be in scope.
-2. The integration must actually be generated — see the table above. `ApplyTo(JsonSerializerOptions)`
-   needs System.Text.Json; `AddStronglyTypedId()` needs Newtonsoft.Json ≥ 13.0.0;
-   `ApplyTo(ModelConfigurationBuilder)` / `ApplyTo(ModelBuilder)` need EF Core ≥ 7.0.0;
-   `ApplyTo(MessagePackSerializerOptions)` needs MessagePack; `RegisterBsonSerializers()` needs
-   MongoDB.Bson.
+2. The integration must actually be generated — see the table above. `AddStronglyTypedIds(JsonSerializerOptions)`
+   needs System.Text.Json; `AddStronglyTypedIds(JsonSerializerSettings)` needs Newtonsoft.Json ≥ 13.0.0;
+   `AddStronglyTypedIds(ModelConfigurationBuilder)` / `AddStronglyTypedIds(ModelBuilder)` need EF Core ≥ 7.0.0;
+   `AddStronglyTypedIds(MessagePackSerializerOptions)` needs MessagePack; `RegisterBsonSerializers()` needs
+   MongoDB.Bson; `AddStronglyTypedIds(IRequestExecutorBuilder)` needs HotChocolate ≥ 13.0.0. protobuf-net
+   has no entry point — check that the id carries `[ProtoContract(Surrogate = …)]` instead.
 
 ## The analyzer reports nothing, or reports stale results
 
@@ -83,6 +88,21 @@ Changing `Prefix`, `JsonShape`, the primitive type, or a `Normalizer` changes th
 text form for `Prefix` / `Normalizer`, the JSON shape for `JsonShape` — and that is a data contract, so
 rows written before the change will not read back. Treat those as breaking changes and migrate the stored
 data; see [Serialization](serialization.md#serialization).
+
+## Configuration binding leaves an id at `default`
+
+`Microsoft.Extensions.Configuration` converts a string to a property's type through `TypeDescriptor`, so an
+id needs `TypeConverter = true` to be bindable. Without it the binder does not fail — it leaves the property
+at `default`, which for a `Guid`-backed id is `00000000-0000-0000-0000-000000000000` even though the
+configuration holds a real value. The scalar overloads (`GetValue<OrderId>(...)`) throw a
+`NullReferenceException` from inside the binder instead. Add the converter:
+
+```csharp
+[StronglyTypedId(TypeConverter = true)]
+public partial record struct OrderId(Guid Value);
+```
+
+See [TypeConverter](declaration.md#type-converter).
 
 ## JSON throws under Native AOT
 
@@ -107,12 +127,12 @@ See [MongoDB](integrations.md#mongodb).
 
 If the id sits in a **Minimal API** route or query parameter and the document still shows a bare
 `type: string`, the operation filter did not run — it is registered by
-`StronglyTypedIds.ApplyTo(options)`, so that call has to be there:
+`options.AddStronglyTypedIds()`, so that call has to be there:
 
 ```csharp
 services.AddSwaggerGen(options =>
 {
-    StronglyTypedIds.ApplyTo(options);
+    options.AddStronglyTypedIds();
 });
 ```
 

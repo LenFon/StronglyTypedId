@@ -23,8 +23,10 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 「普通」：有限浮点数（正负都有）、非空字符串、1970–2100 之间的日期 —— 免得测试因为 `double.NaN`
 之类的值报出与被测代码无关的失败。
 
-- **可复现** —— `Any.Id<OrderId>(seed: 42)` 在同一运行时版本下返回相同的值；要让一整串值重复，
-  请复用同一个 `AnyIdGenerator` 实例，或用 `Any.Ids<T>(count, seed)`。
+- **可复现** —— `Any.Id<OrderId>(seed: 42)` 跨 .NET 版本、跨平台返回相同的值，而不只是在同一运行时
+  版本内：取值源是内置的 SplitMix64，不是算法属实现细节的 `Random`。要让一整串值重复，
+  请复用同一个 `AnyIdGenerator` 实例，或用 `Any.Ids<T>(count, seed)`。长期复用的生成器用
+  `new AnyIdOptions { Seed = 42 }` 传同一个种子；不传则按时钟播种。
 - **尊重验证器** —— 生成最多重试 `AnyIdOptions.MaxAttempts` 次（默认 100），仍不满足则抛出异常，
   并在消息中指向 `Any.Register<T>(factory)`。拒绝只按异常类型识别，因此验证器因其他原因抛
   `ArgumentException` 时同样会被当作拒绝而重试。
@@ -39,8 +41,29 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
   仅对整数与 `decimal` 生效 —— 浮点数的边界是 `NaN` / `±Infinity`，它们永远不会被生成，否则 JSON 往返
   会因为与被测代码无关的原因失败。
 
-另有两类取值值得说明：`enum` 从已声明的成员里抽，`char` 从 71 个字符的字母表（字母、数字与
+另有两类取值值得说明：`enum` 从已声明的成员里抽，`char` 从 68 个字符的字母表（字母、数字与
 `@ . - _ / :`）里抽 —— 因此「必须含分隔符」这类验证器也能在重试预算内通过。
+
+`AnyIdGenerator.Create(Type)` 是 `Any.Id<T>()` 的非泛型形式，用于 Id 类型只在运行期才知道的场合——
+对 `Type[]` 做 theory，或反射驱动的测试。传入不是强类型 Id 的类型时抛 `ArgumentException`。
+
+### 检查命名实例
+
+`[StronglyTypedIdInstance]` 的值若被 Id 的 `Validator` 拒绝，编译期不会发现：类型初始化器会在该类型第一次
+被触碰时抛 `TypeInitializationException`，在测试套件里这可能离声明处很远才暴露。`StronglyTypedIdConformance`
+一次报出全部坏实例：
+
+```csharp
+// 抛出异常并列出全部坏实例；可作为每个程序集一行的测试。
+StronglyTypedIdConformance.AssertAllInstancesValid(typeof(OrderId).Assembly);
+
+// 或者自己检查列表。
+IReadOnlyList<(Type IdType, string Message)> broken =
+    StronglyTypedIdConformance.FindBrokenInstances(typeof(OrderId).Assembly);
+```
+
+自定义基元正是它存在的理由：生成器跑在 `netstandard2.0` 上，无法执行你的 `Parse`，所以这类实例值只能在
+运行期校验。
 
 配合 AutoFixture 使用时，加上 `Len.StronglyTypedId.Testing.AutoFixture` 并启用定制：
 
@@ -74,53 +97,37 @@ var faker = new Faker<Order>()
 
 ## 示例程序
 
-上文每一项能力在 [`samples/`](https://github.com/LenFon/StronglyTypedId/tree/main/samples) 下都有可直接运行的示例：
+上文每一项能力在 [`samples/`](https://github.com/LenFon/StronglyTypedId/tree/main/samples) 下都有可直接运行的示例。
+挑一个最接近你要做的事的工程看即可：
 
 | 工程 | 目标框架 | 演示内容 |
 |---|---|---|
-| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、验证器、命名实例、文本前缀、`TypeConverter`、System.Text.Json 与 Newtonsoft.Json、嵌套类型、泛型容器、反射辅助、测试辅助包。 |
-| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core（`ApplyTo(ModelConfigurationBuilder)`）与 Dapper（`ApplyTo()`）跑内存 SQLite，并演示程序集级 `StronglyTypedIdDefaults`。 |
+| `Len.StronglyTypedId.SampleConsole` | `net8.0;net10.0` | 核心能力巡览：`Create` / `TryCreate` / `Parse`、格式化、相等性与排序、解构、验证器、归一化、命名实例、文本前缀（含格式化路径）、`TypeConverter`、集成过滤与白名单、System.Text.Json 与 Newtonsoft.Json、JSON 边界（字典键 / 枚举野值 / 文本基元 / `JsonShape.Object`）、源生成 `JsonSerializerContext`、23 种基元 + enum 矩阵、string 基元的序数比较与空串语义、引用类型 Id、自定义基元（含 ULID）、配置绑定、嵌套类型、泛型容器、接口层次、反射辅助（含可空 Id）、调试器视图、测试辅助包（含 Bogus）。**建议从这里开始。** |
+| `Len.StronglyTypedId.SampleIntegrations` | `net8.0` | EF Core 两种注册入口（`AddStronglyTypedIds(ModelConfigurationBuilder)` 与 `AddStronglyTypedIds(ModelBuilder)`）与 Dapper（`AddStronglyTypedIds()`）跑内存 SQLite，含「驱动返回类型与基元不一致」的转换路径、非法值拒绝与引用类型 Id 的 NULL 语义；MessagePack、MongoDB BSON 与 protobuf-net 的往返（含引用类型 Id 的 null 语义与验证器拒绝）。 |
+| `Len.StronglyTypedId.SampleDefaults` | `net8.0` | 程序集级 `[assembly: StronglyTypedIdDefaults(...)]` 的全部选项（含 `Integrations`），以及逐类型覆盖的优先级（哪些能双向覆盖、哪些只能单向打开）。 |
 | `Len.StronglyTypedId.Sample1` | `net8.0` | MVC 模型绑定与 `{id:OrderId}` 路由约束、把 Newtonsoft.Json 用作 MVC 格式化器、EF Core（SQL Server）与 Swashbuckle 6。启动需要可连接的 SQL Server。 |
-| `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API：`IParsable` 绑定、`[AsParameters]`、路由约束、JSON 请求体，以及内置 OpenAPI 转换器（`AddOpenApi(ApplyTo)`）。 |
+| `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API：`IParsable` 绑定、`[AsParameters]`、路由约束、JSON 请求体，以及内置 OpenAPI 转换器（`AddOpenApi(options => options.AddStronglyTypedIds())`）。 |
 | `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10（Microsoft.OpenApi 2.x）的 schema 映射。 |
-| `Len.StronglyTypedId.Sample4` | `net8.0` | `Microsoft.AspNetCore.OpenApi` 钉在 **8.0.0**：包能正常还原、应用能正常启动，文档由 Swashbuckle 产出——内置 schema 转换器要 9.0+。 |
+| `Len.StronglyTypedId.Sample4` | `net8.0` | `net8.0` 上的 `Microsoft.AspNetCore.OpenApi` 8.0.0：内置 schema 转换器要 9.0+，因此文档改由 Swashbuckle 产出。 |
+| `Len.StronglyTypedId.SampleGraphQL` | `net8.0` | HotChocolate（`IRequestExecutorBuilder` 上的 `AddStronglyTypedIds()`）：Id 在 schema 里是 `SCALAR`，字面量种类与 JSON 形态一致——`Guid` 与带前缀的 Id 是 `String`，整数与枚举（按底层数值）是 `Int`，浮点是 `Float`。同时演示变量路径（`JsonElement`）与两条失败路径。 |
 
-### 特性 → 示例文件
-
-| 特性 | 看哪里 |
-| --- | --- |
-| `Create` / `TryCreate` / `Parse` / `TryParse`、解构、相等性 | `SampleConsole/Demos/CoreDemo.cs` |
-| 验证器、归一化（先修正再校验） | `SampleConsole/Demos/ValidationDemo.cs` |
-| 文本前缀（宽松 / 严格读取）、`JsonShape.Object`、`TypeConverter` | `SampleConsole/Demos/TextDemo.cs` |
-| 命名实例 `[StronglyTypedIdInstance]` | `SampleConsole/Demos/InstanceDemo.cs` |
-| 验证失败异常类型 `ExceptionType` | `SampleConsole/Demos/ExceptionDemo.cs` |
-| `[Flags]` 枚举的位校验 | `SampleConsole/Demos/FlagsDemo.cs` |
-| 文化不变性（de-DE 小数逗号） | `SampleConsole/Demos/CultureDemo.cs` |
-| 集成过滤 `Integrations = None` | `SampleConsole/Demos/IntegrationsDemo.cs` |
-| System.Text.Json（含字典键、显式注册） | `SampleConsole/Demos/SystemTextJsonDemo.cs` |
-| Newtonsoft.Json（含字典键、显式注册） | `SampleConsole/Demos/NewtonsoftJsonDemo.cs` |
-| 嵌套类型、泛型容器、泛型工厂 | `SampleConsole/Demos/StructureDemo.cs` |
-| 运行时反射识别 Id 与基元 | `SampleConsole/Demos/ReflectionDemo.cs` |
-| `Any.Id` / `Any.Ids` / `Any.Register` / AutoFixture | `SampleConsole/Demos/TestingDemo.cs` |
-| EF Core 值转换器 | `SampleIntegrations/EfCoreDemo.cs` |
-| Dapper 类型处理器 | `SampleIntegrations/DapperDemo.cs` |
-| MVC 模型绑定 + 路由约束 | `Sample1/Controllers/OrderController.cs` |
-| Minimal API 绑定 + `[AsParameters]` | `Sample2/Program.cs` |
-| OpenAPI / Swagger schema 映射 | `Sample2/Program.cs`、`Sample3/Program.cs` |
-| OpenAPI 8.0 替代路径（文档由 Swashbuckle 产出） | `Sample4/Program.cs` |
+每个示例都很小且自包含；控制台示例按特性分节打印，可以对照代码看输出。运行方式：
 
 ```shell
 dotnet run --project samples/Len.StronglyTypedId.SampleConsole
 dotnet run --project samples/Len.StronglyTypedId.SampleIntegrations
+dotnet run --project samples/Len.StronglyTypedId.SampleDefaults
+dotnet run --project samples/Len.StronglyTypedId.SampleGraphQL
 ```
 
 控制台示例逐步打印后退出；Web 示例的文档地址分别是 `/openapi/v1.json`（Sample2）与
 `/swagger/v1/swagger.json`（Sample1、Sample3、Sample4）。
 
-### 约定
+### 阅读示例时
 
-- 示例里的 Id 都用 `record struct`；`SampleConsole/Ids.cs` 另有 `record` 引用类型与嵌套 / 泛型容器的例子。
-- 示例代码刻意不写 `new OrderId(...)`：直接构造会绕过验证器与归一化，分析器 `STIA0011` 会对配了验证器的 Id 报警。
-- `SampleConsole` 同时面向 `net8.0` 与 `net10.0`：UTF-8 span 那一节只在 `net10.0` 下编译，用来演示 `IUtf8SpanParsable` 的可用性差异。
+- 示例里的 Id 都用 `record struct`，这是推荐的默认选择。`SampleConsole` 还演示了嵌套 Id 与泛型容器里的 Id。
+- 示例代码不对配了验证器的 Id 写 `new OrderId(...)`，因为直接构造会绕过验证器与归一化。取值请走 `Create`。
+- `SampleConsole` 同时面向 `net8.0` 与 `net10.0`：UTF-8 span 那一节只在 `net10.0` 下编译，
+  `IUtf8SpanParsable` 正是从那里开始可用。
 
 [<- 返回目录](index.md) · [English](../testing.md)
