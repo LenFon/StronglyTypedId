@@ -11,7 +11,9 @@
 
 ## [未发布]
 
-下一个版本：自定义基元（含 ULID）、protobuf-net 与 GraphQL 集成、每个 Id 的调试器代理，以及序列化与
+## [1.4.0] - 2026-10-30
+
+集成版本：自定义基元（含 ULID）、protobuf-net 与 GraphQL 集成、每个 Id 的调试器代理，以及序列化与
 分析器修复。其中数处为破坏性变更，「变更」一节已逐条标注。
 
 ### 新增
@@ -269,7 +271,8 @@ _以此拼写发布；后续版本改用 `preview`。_
 
 - 两次调用 `AddStronglyTypedId` 不再注册重复的解析器。
 
-[未发布]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...HEAD
+[未发布]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...HEAD
+[1.4.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.11...1.3.0
 [1.3.0-preview.11]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.10...1.3.0-preview.11
 [1.3.0-preview.10]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.9...1.3.0-preview.10

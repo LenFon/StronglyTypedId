@@ -12,9 +12,11 @@ change set rather than reproducing every commit.
 
 ## [Unreleased]
 
-Next release: custom primitives (including ULID), protobuf-net and GraphQL integrations, a debugger proxy
-on every id, and serialization and analyzer fixes. Several changes are breaking — marked **Breaking** under
-**Changed**.
+## [1.4.0] - 2026-10-30
+
+The integrations release: custom primitives (including ULID), protobuf-net and GraphQL integrations, a
+debugger proxy on every id, and serialization and analyzer fixes. Several changes are breaking — marked
+**Breaking** under **Changed**.
 
 ### Added
 
@@ -291,7 +293,8 @@ _Published with this spelling; later releases use `preview`._
 
 - Calling `AddStronglyTypedId` twice no longer registers duplicate resolvers.
 
-[Unreleased]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...HEAD
+[Unreleased]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...HEAD
+[1.4.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.11...1.3.0
 [1.3.0-preview.11]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.10...1.3.0-preview.11
 [1.3.0-preview.10]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.9...1.3.0-preview.10

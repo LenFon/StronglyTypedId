@@ -242,6 +242,7 @@ public partial record struct OrderId(Ulid Value);
 | [故障排查](docs/zh-CN/troubleshooting.md) | 按症状索引：什么都没生成、集成缺失、分析器不刷新、解析出乎意料。 |
 | [已知限制](docs/zh-CN/limitations.md) | 源码生成器做不到的事 —— `Value` 的可见性、封闭的基元清单、不受保护的主构造函数 —— 以及各自的绕法。 |
 | [常见问题](docs/zh-CN/faq.md) | 最常被问到的问题。 |
+| [从 1.3.0 升级](docs/zh-CN/migration.md) | 1.4.0 中四处需要动手的变更、四处能编译通过但会改变行为的变化，以及升级后可按需采用的能力。 |
 | [未来规划](docs/zh-CN/roadmap.md) | 暂无 —— 计划中的方向已全部交付。 |
 
 <a id="limitations"></a>

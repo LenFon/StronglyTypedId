@@ -256,6 +256,7 @@ Everything past the quick start lives in `docs/`, and is published at
 | [Troubleshooting](docs/troubleshooting.md) | Symptom-first: nothing generated, a missing integration, stale analyzers, parsing surprises. |
 | [Limitations](docs/limitations.md) | What a source generator cannot do — `Value` visibility, the closed primitive list, the unguarded constructor — and the workaround for each. |
 | [FAQ](docs/faq.md) | The questions that come up most often. |
+| [Migrating from 1.3.0](docs/migration.md) | The four changes that need action in 1.4.0, the four that change behaviour without breaking the build, and what to adopt afterwards. |
 | [Future plans](docs/roadmap.md) | None at the moment — every planned direction has shipped. |
 
 <a id="limitations"></a>
