@@ -2,21 +2,10 @@
 	<Import Project="version.props" />
 	<PropertyGroup>
 		<RootNamespace />
-		<!--
-		  发布物查全链：src 下四个工程产出的包会被别人引用，其传递依赖也是使用者的依赖，故覆盖
-		  Directory.Build.props 的 direct 改为 all。敢开 all 是因为实测这四个工程零漏洞；将来某个
-		  传递依赖被披露漏洞时 restore 会直接报 NU1902/NU1903，这正是要的信号。
-		-->
+		<!-- 发布物查全链：src 下五个工程产出的包会被别人引用，其传递依赖也是使用者的依赖。 -->
 		<NuGetAuditMode>all</NuGetAuditMode>
 
-		<!--
-		  默认不打包，只有真正要发布的两个包（src/Len.StronglyTypedId、src/Len.StronglyTypedId.Generators）
-		  在自己 csproj 里显式打开 IsPackable。原因：Release 下 GeneratePackageOnBuild 是开的，而 IsPackable
-		  默认 true —— `dotnet build -c Release` 会把 test / samples / bench / tools 与尚未发布的 Testing 系列
-		  全打成 .nupkg，还会被 publish-nuget.yml 的 `dotnet nuget push bin/Release/*.nupkg` 一并推到 nuget.org。
-		  新增工程默认落在「不打包」一侧，要发布必须显式声明。
-		-->
-		<IsPackable>false</IsPackable>
+		<IsPackable>true</IsPackable>
 		<Authors>lenfon</Authors>
 		<Description>A source generator, analyzer, and code fix provider that turns a one-line record declaration into a fully featured strongly typed id, with built-in System.Text.Json, Newtonsoft.Json, Entity Framework Core, Dapper, Swashbuckle, and ASP.NET Core OpenAPI integrations.</Description>
 		<PackageTags>len;id;strongly-typed;primitive;value;DDD</PackageTags>
@@ -44,17 +33,12 @@
 		-->
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<!--
-		  打包时做 API 兼容性校验（SDK 内置）：删成员 / 改签名 / 去目标框架 / 降程序集版本都会在 pack 阶段
-		  直接报错。基线取同一代的最近一次发布（1.3.0-preview.5，同为 net8.0;net10.0）；不用 1.2.1 是因为它
-		  尚支持 net7.0，比对会命中 PKV006 —— 那是上一代与本代的差异，不是待修的回归。
-
-		  基线只在「当前版本号 ≥ 基线」时才挂上：version.props 的版本号是本地占位值（发布流程才用 TagToVersion
-		  按 tag 覆写），必然低于任何已发布版本，此时挂基线只会得到 CP0003。低于基线时不挂，退化为包内一致性
-		  校验；发布流水线覆写版本号后自动恢复跨版本比对。
-
-		  有意为之的破坏性变更（如为支持 enum 放宽 TPrimitiveId 约束）用
-		  `dotnet build -c Release -p:Version=<高于基线> -p:ApiCompatGenerateSuppressionFile=true` 重建
-		  CompatibilitySuppressions.xml 并入库 —— 该文件存在时 SDK 自动加载，禁止用 NoWarn 压制。
+		  打包时做 API 兼容性校验：删成员 / 改签名 / 去目标框架 / 降程序集版本都会在 pack 阶段报错。
+		  基线只在「当前版本 ≥ 基线」时挂上 —— version.props 是本地占位号，低于基线，此时退化为包内
+		  一致性校验；发布流水线按 tag 覆写版本号后自动恢复跨版本比对。
+		  有意为之的破坏性变更用 `dotnet build -c Release -p:Version=<高于基线>
+		  -p:ApiCompatGenerateSuppressionFile=true` 重建 CompatibilitySuppressions.xml 并入库，
+		  禁止用 NoWarn 压制。
 		-->
 		<EnablePackageValidation>true</EnablePackageValidation>
 		<StronglyTypedIdPackageValidationBaseline>1.3.0-preview.5</StronglyTypedIdPackageValidationBaseline>
@@ -80,9 +64,7 @@
 		<FileVersion Condition="'$(FileVersion)' == ''">1.0.0.0</FileVersion>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-		<!--
-		  只在 Release 下隐式打包（Debug 保持纯构建）。真正生效的前提是 IsPackable=true，故实际只打出那两个包。
-		-->
+		<!-- 只在 Release 下隐式打包（Debug 保持纯构建）。 -->
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	</PropertyGroup>
 	<!--

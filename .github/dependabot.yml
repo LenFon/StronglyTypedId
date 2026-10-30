@@ -67,6 +67,11 @@ updates:
       - dependency-name: "Swashbuckle*"
         update-types:
           - "version-update:semver-major"
+      # FluentAssertions 8.0 起改为 Xceed 商业授权（免费仅限非商业项目）。本仓是 MIT 开源库，
+      # 测试依赖不能引入需要商业授权的组件，故锁在最后一个 MIT 版本 7.2.0，拒绝 major 升级。
+      - dependency-name: "FluentAssertions"
+        update-types:
+          - "version-update:semver-major"
 
   # Actions 自身的版本也要跟：checkout、setup-dotnet、codeql-action 一旦弃用旧运行时
   # （Node 20 → 24 之类），工作流会直接红，而这与业务代码毫无关系。
