@@ -13,6 +13,7 @@
 		     否则 MessagePackCodeGenerator / MongoDbCodeGenerator 不会触发。 -->
 		<PackageReference Include="MessagePack" />
 		<PackageReference Include="Microsoft.Data.Sqlite" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
 		<PackageReference Include="MongoDB.Bson" />
 		<!-- protobuf-net：surrogate 契约是核心生成器产物，门控同样只看「有没有引用这个包」。 -->
