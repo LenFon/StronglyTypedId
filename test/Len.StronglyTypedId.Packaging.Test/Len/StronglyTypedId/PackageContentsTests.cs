@@ -341,17 +341,33 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     }
 
     /// <summary>
-    /// 核心测试辅助包不能依赖 Bogus。
+    /// AutoFixture 适配包必须自带 <c>AutoFixture</c> 与 <c>Len.StronglyTypedId.Testing</c> 两个依赖。
+    /// </summary>
+    /// <remarks>
+    /// 与 Bogus 适配包同一条分界：第三方库的依赖只能落在适配包上，核心测试辅助包保持零第三方依赖。
+    /// </remarks>
+    [Fact]
+    public void TestingAutoFixturePackage_Should_DependOnAutoFixtureAndTesting()
+    {
+        var dependencies = ReadDependencyIds(fixture.TestingAutoFixturePackagePath);
+
+        dependencies.Should().Contain("AutoFixture");
+        dependencies.Should().Contain("Len.StronglyTypedId.Testing");
+    }
+
+    /// <summary>
+    /// 核心测试辅助包不能依赖任何第三方库。
     /// </summary>
     /// <remarks>
     /// 这是「适配包独立、核心包干净」的分界：依赖只能从适配包指向核心包，不能反过来。
     /// </remarks>
     [Fact]
-    public void TestingPackage_Should_NotDependOnBogus()
+    public void TestingPackage_Should_NotDependOnThirdPartyLibraries()
     {
         var dependencies = ReadDependencyIds(fixture.TestingPackagePath);
 
         dependencies.Should().NotContain("Bogus");
+        dependencies.Should().NotContain("AutoFixture");
     }
 
     /// <summary>

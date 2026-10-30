@@ -6,8 +6,6 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-		<!-- 可发布包之一（common.props 默认 IsPackable=false，这里显式打开）。 -->
-		<IsPackable>true</IsPackable>
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>

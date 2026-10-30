@@ -4,8 +4,6 @@
 		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<!-- 可发布包之一（common.props 默认 IsPackable=false，这里显式打开）。 -->
-		<IsPackable>true</IsPackable>
 		<!--
 		  声明运行时库兼容 Native AOT 与裁剪：核心类型与生成的转换器在 AOT 下零动态代码生成、零按名加载类型。
 		  开启后 MSBuild 会对本程序集跑裁剪 / AOT 分析器；唯一用到反射的 StronglyTypedIdExtensions 不走

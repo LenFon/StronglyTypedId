@@ -259,12 +259,13 @@ jobs:
     - name: Build (Release)
       run: dotnet build ./Len.StronglyTypedId.slnx -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
     # 逐项目 pack 而不是 pack 整个解决方案：主包多 TFM 的 dll 收集在统一 OutputPath 下会撞 NU5026。
-    # 只有两个可发布项目（common.props 把 IsPackable 默认设为 false），故上面的 Release build
-    # （GeneratePackageOnBuild）与这里的 pack 都只产出这两个包。
     - name: Pack (Release, with package validation)
       run: |
         dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
         dotnet pack ./src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+        dotnet pack ./src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+        dotnet pack ./src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
+        dotnet pack ./src/Len.StronglyTypedId.Testing.Bogus/Len.StronglyTypedId.Testing.Bogus.csproj -c Release --no-restore -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }}
 
   # 生成器性能回归门槛。
   #

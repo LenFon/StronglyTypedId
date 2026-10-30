@@ -100,16 +100,20 @@ jobs:
         OUT="$PWD/bin/Release"
         dotnet pack ./src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
         dotnet pack ./src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
+        dotnet pack ./src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
+        dotnet pack ./src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
+        dotnet pack ./src/Len.StronglyTypedId.Testing.Bogus/Len.StronglyTypedId.Testing.Bogus.csproj -c Release --no-restore -p:PackageOutputPath="$OUT" -p:AssemblyVersion=$ASSEMBLY_VERSION -p:FileVersion=$ASSEMBLY_VERSION
 
-    # 发布目录里只允许出现这两个包。common.props 已把 IsPackable 默认设为 false，但「给新工程打开
-    # IsPackable」不会让本地构建报错，只会在下次打 tag 时把垃圾包静默推到 nuget.org（撤不回，只能
-    # unlist）。故在换取 API 密钥之前先做一次硬断言。
+    # 发布目录里只允许出现这五个包。多一个少一个都会在换取 API 密钥之前中止发布。
     - name: Verify packaged set
       run: |
         set -eu
         expected=$(printf '%s\n' \
           "Len.StronglyTypedId.${PACKAGE_VERSION}.nupkg" \
-          "Len.StronglyTypedId.Generators.${PACKAGE_VERSION}.nupkg" | sort)
+          "Len.StronglyTypedId.Generators.${PACKAGE_VERSION}.nupkg" \
+          "Len.StronglyTypedId.Testing.${PACKAGE_VERSION}.nupkg" \
+          "Len.StronglyTypedId.Testing.AutoFixture.${PACKAGE_VERSION}.nupkg" \
+          "Len.StronglyTypedId.Testing.Bogus.${PACKAGE_VERSION}.nupkg" | sort)
         actual=$(find bin/Release -maxdepth 1 -name '*.nupkg' -printf '%f\n' | sort)
         if [ "$actual" != "$expected" ]; then
           echo "::error::bin/Release 下的包与预期不符，已中止发布"

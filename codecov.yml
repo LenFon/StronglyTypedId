@@ -4,9 +4,8 @@
 # Dapper / Microsoft.CodeAnalysis.Testing 这些测试依赖。它们把总覆盖率稀释到 40% 左右（实测
 # 6207/15491 行），于是「跌 1%」这种阈值永远不会被触发 —— 门槛形同虚设。
 #
-# 所以先用 ignore 剔出去，只留真正发布到 nuget.org 的两个包（Len.StronglyTypedId /
-# Len.StronglyTypedId.Generators）。Testing 与 Testing.AutoFixture 尚未发布，算进来只会稀释真实
-# 信号 —— 覆盖率应该衡量「发出去的东西」。
+# 所以先用 ignore 剔出去，只留真正发布到 nuget.org 的五个包（src/ 下的全部工程）。覆盖率应该衡量
+# 「发出去的东西」。
 #
 # 剔除后本机实测（2026-10-21，合并单报告口径，35 个文件 / 3919 行）：95.00%。拆开看：主包 18/21
 # （85.71%）、生成器包 3705/3898（95.05%）。主包行数极少，一个未覆盖分支就能拉动 4 个百分点，
@@ -50,16 +49,12 @@ comment:
 notify:
   after_n_builds: 2
 
-# 只统计真正发布出去的两个包。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
+# 只统计真正发布出去的五个包。测试工程与工具自身的行数比产品代码还多，算进去只会掩盖真实趋势。
 ignore:
   - "test/**"
   - "tools/**"
   - "samples/**"
   - "bench/**"
-  # 尚未发布的两个 Testing 包（见文件头）：它们有自己的测试、覆盖率很高，但既然不发出去，就不该
-  # 出现在发布物的覆盖率里。
-  - "src/Len.StronglyTypedId.Testing/**"
-  - "src/Len.StronglyTypedId.Testing.AutoFixture/**"
   # 下面两条是保险：这两个依赖的源码路径来自嵌入 PDB 的虚拟路径（`/_/Dapper/...`），Codecov 通常
   # 无法映射回仓库而自动丢弃；显式写上，免得映射规则变了又被算进来。
   - "**/Dapper/**"
