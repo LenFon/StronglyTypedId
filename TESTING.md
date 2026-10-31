@@ -7,7 +7,7 @@ Three packages:
 
 | Package | Purpose | Dependencies |
 | --- | --- | --- |
-| `Len.StronglyTypedId.Testing` | `Any` / `AnyIdGenerator` — value generation for every supported primitive | none |
+| `Len.StronglyTypedId.Testing` | `Any` / `AnyIdGenerator`: value generation for every supported primitive | none |
 | `Len.StronglyTypedId.Testing.AutoFixture` | `fixture.Create<OrderId>()` support | `AutoFixture` |
 | `Len.StronglyTypedId.Testing.Bogus` | `faker.Generate<Order>()` support | `Bogus` |
 
@@ -21,7 +21,7 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 ```
 
 The generator reads the wrapped primitive from the implemented
-`IStronglyTypedId<TSelf, TPrimitiveId>` interface, so it works for ids declared in any assembly —
+`IStronglyTypedId<TSelf, TPrimitiveId>` interface, so it works for ids declared in any assembly,
 including ones generated after this package was compiled. Every primitive the generator supports is
 covered, plus `enum`.
 
@@ -60,7 +60,7 @@ through `ExceptionType` (per id, falling back to `[assembly: StronglyTypedIdDefa
 thrown by the validator is a bug in the validator, so it propagates instead of being retried.
 
 The exception type is the **only** signal, so a validator that throws `ArgumentException` for an
-unrelated reason — a null argument, a failed cast, an invariant it asserts — is indistinguishable from
+unrelated reason (a null argument, a failed cast, an invariant it asserts) is indistinguishable from
 a rejection: the value is retried until `MaxAttempts` and then reported as "cannot generate". Keep
 validators total (return `false` instead of throwing), or register a factory for that id.
 
@@ -81,15 +81,15 @@ Return `null` to fall back to the built-in generator for that type.
 ## Boundary values
 
 Values stay ordinary by default: `int.MaxValue` is reachable in principle but never actually drawn.
-Turn on `IncludeBoundaryValues` when the code under test is boundary-sensitive — formatting width,
-overflow checks, database column limits:
+Turn on `IncludeBoundaryValues` when the code under test is boundary-sensitive (formatting width,
+overflow checks, database column limits):
 
 ```csharp
 var any = new AnyIdGenerator(new AnyIdOptions { IncludeBoundaryValues = true });
 ```
 
 Roughly one value in sixteen is then the primitive's `MinValue` or `MaxValue` (integral and `decimal`
-types only). Leave it off when a test asserts uniqueness: two ids can then collide on the same extreme.
+types only). Leave it off when a test asserts uniqueness, because two ids can then collide on the same extreme.
 
 ## AutoFixture
 
@@ -103,7 +103,7 @@ OrderId orderId = fixture.Create<OrderId>();
 ```
 
 The customization is inserted at the front of the customization list, so it wins over AutoFixture's
-constructor-based strategy — which would otherwise bypass `Create` and therefore the validator. Pass a
+constructor-based strategy, which would otherwise bypass `Create` and therefore the validator. Pass a
 seeded `AnyIdGenerator` to `WithStronglyTypedIds` for reproducible fixtures.
 
 ## Bogus
@@ -117,8 +117,8 @@ var faker = new Faker<Order>().WithStronglyTypedIds();
 Order order = faker.Generate();   // order.Id is a real id
 ```
 
-Bogus fills a member by its declared type, and a strongly typed id is a distinct type — without this
-adapter Bogus cannot produce one, so the member stays at its default value **without any error**. The
+Bogus fills a member by its declared type, and a strongly typed id is a distinct type, so without this
+adapter Bogus cannot produce one and the member stays at its default value **without any error**. The
 adapter registers Bogus' own `RuleForType` rules for every id type, so generation fills them like any
 other member.
 
@@ -134,13 +134,13 @@ var faker = new Faker<Order>()
 ```
 
 Pass a seeded `AnyIdGenerator` for reproducible data. The adapter never overwrites a rule you wrote
-yourself — Bogus keeps it.
+yourself; Bogus keeps it.
 
 ## Notes
 
 - Values are deliberately ordinary: finite floating-point numbers (either sign), non-empty strings,
   dates inside 1970–2100. A fixture handing out `double.NaN` or `DateTime.MaxValue` mostly produces
-  failures unrelated to the code under test — `NaN` is not even valid JSON, so a round-trip test would
+  failures unrelated to the code under test; `NaN` is not even valid JSON, so a round-trip test would
   fail for a reason that has nothing to do with the id.
 - Strings are drawn from letters, digits and the separators `@ . - _ / :`, so a validator that looks
   for an `@` or a `.` can be satisfied without registering a factory. Anything stricter (a real email

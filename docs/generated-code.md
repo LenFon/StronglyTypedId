@@ -6,7 +6,7 @@ title: Generated code
 # Generated code
 
 The generator emits a `partial` declaration in the same namespace as the id (nested ids are declared
-back inside their containing types — see [Nested types](declaration.md#nested-types)), and your own
+back inside their containing types; see [Nested types](declaration.md#nested-types)), and your own
 declaration is never modified. **Which** files appear depends on what the compilation references:
 
 <!-- BEGIN GENERATED:generated-files -->
@@ -53,13 +53,13 @@ carries the same inventory without the file names, as a one-glance list.
   proxy class, because an attribute argument may not reference a type that carries the container's type
   parameter (CS0416).
 - A static `Create(TPrimitiveId value)` factory. With a `Validator` configured it refuses an unacceptable
-  value by throwing `ArgumentException` — `The value '…' is not a valid OrderId.` — or the `ExceptionType`
+  value by throwing `ArgumentException` (`The value '…' is not a valid OrderId.`) or the `ExceptionType`
   you pointed it at, so an invalid id cannot be constructed through it.
-- A static `TryCreate(TPrimitiveId value, out TSelf result)` factory — the non-throwing twin of `Create`:
+- A static `TryCreate(TPrimitiveId value, out TSelf result)` factory, the non-throwing twin of `Create`:
   it returns `false` and sets `result` to `default` instead of throwing.
 - A `public static readonly TSelf` field per `[StronglyTypedIdInstance]`, initialized through `Create`.
 - `Deconstruct(out TPrimitiveId value)`, so `id.Deconstruct(out var value);` unwraps the primitive.
-  (A single-element `var (value) = id;` is not legal C# — deconstruction declarations need at least two elements.)
+  (A single-element `var (value) = id;` is not legal C#; deconstruction declarations need at least two elements.)
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
   `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
   round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
@@ -72,7 +72,7 @@ carries the same inventory without the file names, as a one-glance list.
   never dereferences `Value`.
   A `string`-backed id compares **ordinally** (`string.CompareOrdinal`), not with
   `string.CompareTo(string)`: the latter is culture-sensitive, so it disagrees with the record's
-  `Equals` — `"a\u00ADb"` and `"ab"` compare equal yet are not equal — and the ordering of `"I"` and
+  `Equals` (`"a\u00ADb"` and `"ab"` compare equal yet are not equal) and the ordering of `"I"` and
   `"i"` flips between cultures. Because `SortedSet<T>` and `SortedDictionary<TKey, TValue>` use
   `CompareTo` to detect duplicates, a culture-sensitive comparison silently drops elements there. Ordinal
   comparison keeps ordering consistent with equality and with the invariant text the serializers write.
@@ -89,7 +89,7 @@ carries the same inventory without the file names, as a one-glance list.
 - A nested `XxxTypeConverter` (`[TypeConverter]` attribute) when TypeConverter is enabled per type,
   round-tripping between string and the id through `TypeDescriptor`: `ConvertFrom` runs `Parse` with the
   invariant culture, `ConvertTo` runs `ToString()`, and converting a `null` id to `string` yields `null`.
-  A value that is not a string — including `null` — is rejected with `NotSupportedException`.
+  A value that is not a string, including `null`, is rejected with `NotSupportedException`.
 
 <a id="enum-backed-ids"></a>
 
@@ -97,13 +97,13 @@ carries the same inventory without the file names, as a one-glance list.
 
 Enum-backed ids keep `IComparable<TSelf>`, `IParsable<TSelf>` and `ISpanParsable<TSelf>` (parsing uses
 `Enum.TryParse<TEnum>`), but deliberately skip `IFormattable`/`ISpanFormattable` because `Enum`'s
-`ToString(string, IFormatProvider)` is marked obsolete — their `ToString()` simply returns the
+`ToString(string, IFormatProvider)` is marked obsolete. Their `ToString()` simply returns the
 underlying value's text.
 
 `Enum.TryParse` accepts any numeric text, so the generated `TryParse` tightens it: a plain enum must name a
 defined member (`Enum.IsDefined`), while a `[Flags]` enum may combine members but must not set a bit that no
-member occupies — `Read | Write` parses, `999` does not. The bit mask is computed at compile time from the
-members' constants and trimmed to the enum's underlying type, so it costs one bitwise-and at run time; an enum
+member occupies, so `Read | Write` parses and `999` does not. The bit mask is computed at compile time from
+the members' constants and trimmed to the enum's underlying type, so it costs one bitwise-and at run time; an enum
 that defines every bit (typically `All = -1`) gets no check at all.
 
 Beyond that check the semantics are `Enum.TryParse`'s own: surrounding whitespace and numeric text are
@@ -116,8 +116,8 @@ canonical member name.
 
 ## The integration entry point
 
-The integration entry points are emitted into a single generated class —
-`internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace — so every
+The integration entry points are emitted into a single generated class,
+`internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId` namespace, so every
 `AddStronglyTypedIds` overload lives side by side no matter how many ids the project declares. Add
 `using Len.StronglyTypedId;` (already required for the attribute itself) to call them. MongoDB is the one
 exception to the `AddStronglyTypedIds` naming: its entry point is `RegisterBsonSerializers()`, because the

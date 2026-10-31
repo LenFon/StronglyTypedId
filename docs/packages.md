@@ -11,9 +11,9 @@ One package to install. Four more exist, and you may want three of them.
 
 | Package | Targets | Contains | Install when |
 | --- | --- | --- | --- |
-| `Len.StronglyTypedId` | `net8.0`, `net10.0` | The runtime library: `IStronglyTypedId<,>`, the reflection helpers, and the types the generated code builds on | Always — this is the one you reference from code |
+| `Len.StronglyTypedId` | `net8.0`, `net10.0` | The runtime library: `IStronglyTypedId<,>`, the reflection helpers, and the types the generated code builds on | Always, because this is the one you reference from code |
 | `Len.StronglyTypedId.Generators` | `netstandard2.0` | The source generator, the analyzer and the code fixes | Never directly: the main package depends on it |
-| `Len.StronglyTypedId.Testing` | `net8.0`, `net10.0` | `Any.Id<T>()`, `Any.Ids`, `Any.Register`, `Any.Reset`, `AnyIdGenerator` and `AnyIdOptions` | Test projects that need plausible ids — see [Testing](testing.md#testing) |
+| `Len.StronglyTypedId.Testing` | `net8.0`, `net10.0` | `Any.Id<T>()`, `Any.Ids`, `Any.Register`, `Any.Reset`, `AnyIdGenerator` and `AnyIdOptions` | Test projects that need plausible ids; see [Testing](testing.md#testing) |
 | `Len.StronglyTypedId.Testing.AutoFixture` | `net8.0`, `net10.0` | `WithStronglyTypedIds()`, which teaches AutoFixture to fill ids | Test projects already using AutoFixture |
 | `Len.StronglyTypedId.Testing.Bogus` | `net8.0`, `net10.0` | `WithStronglyTypedIds()`, which teaches Bogus to fill ids | Test projects already using Bogus |
 
@@ -26,8 +26,8 @@ dotnet add package Len.StronglyTypedId
 ## Why the generator is a separate package
 
 An analyzer has to load inside the compiler, so it targets `netstandard2.0` and is compiled against
-`Microsoft.CodeAnalysis`. The runtime library targets `net8.0`/`net10.0` and must not drag Roslyn — or the
-`System.Collections.Immutable` and `System.Reflection.Metadata` versions it brings — into your application's
+`Microsoft.CodeAnalysis`. The runtime library targets `net8.0`/`net10.0` and must not drag Roslyn, or the
+`System.Collections.Immutable` and `System.Reflection.Metadata` versions it brings, into your application's
 dependency graph. Those two requirements cannot live in one assembly, so they live in two.
 
 The main package declares the dependency, which is why one `dotnet add package` is enough.
@@ -41,7 +41,7 @@ The main package declares the dependency, which is why one `dotnet add package` 
 ## The analyzer arrives transitively
 
 Because the dependency is transitive, **every project that references the main package also gets the
-analyzer** — including projects that only consume `IStronglyTypedId<,>` and declare no ids of their own.
+analyzer**, including projects that only consume `IStronglyTypedId<,>` and declare no ids of their own.
 That is intentional: an id declared further downstream still needs the generator, and a consumer that
 silently lacked it would fail with a puzzling "no `Create` method" error instead of a diagnostic.
 
@@ -56,7 +56,7 @@ project file:
 
 The property travels from MSBuild to the analyzer through the analyzer config the SDK writes for the
 compilation (`build_property.StronglyTypedIdEnableAnalyzers`); when it reads "no" the analyzer registers
-**no diagnostic action at all** — none of the 26 rules report, and the code fixes disappear with them
+**no diagnostic action at all**, so none of the 26 rules report, and the code fixes disappear with them
 (there is nothing left to fix).
 
 The three states:
@@ -73,7 +73,7 @@ components, so a muted project still gets complete, fully usable strongly typed 
 ### Checking that the switch took effect
 
 A muted build looks exactly like a clean build, so "no diagnostics" proves nothing on its own. Verify with a
-rule that is reported at `Warning` or higher — `STIA0011` (direct construction) is a warning, and the
+rule that is reported at `Warning` or higher: `STIA0011` (direct construction) is a warning, and the
 advisory rules such as `STIA0015` are `Info`, which `dotnet build` does not print by default. A test that
 only looks at `Info`-level output will report "nothing" in both states and prove nothing.
 
@@ -84,7 +84,7 @@ dotnet build -warnaserror
 ```
 
 With the property set to `false` the build stays green even though the code violates a rule; remove the
-property and the same build fails. If it fails in both cases, the property never reached the analyzer — most
+property and the same build fails. If it fails in both cases, the property never reached the analyzer, most
 often because the `buildTransitive` props did not flow to the project (see the note below), or because the
 value was written somewhere the SDK does not read, such as a `Directory.Build.targets` that runs after the
 analyzer config is generated.
@@ -105,10 +105,10 @@ or in the project file, which is blunter but survives a missing `.editorconfig`:
 ```
 
 > **Why the property works without any extra setup**: the SDK does not put arbitrary MSBuild properties
-> into `build_property.*` — only the two dozen it defines itself (`TargetFramework`, `RootNamespace`, …).
+> into `build_property.*`, only the two dozen it defines itself (`TargetFramework`, `RootNamespace`, …).
 > A custom property reaches that section only when it is explicitly allowed through
 > `<CompilerVisibleProperty Include="…" />`. This library already does that for you, and the file that
-> carries it flows down the dependency chain to the final consumer — so **setting the property is all a
+> carries it flows down the dependency chain to the final consumer, so **setting the property is all a
 > project that references the main package has to do**.
 
 <a id="symbols"></a>

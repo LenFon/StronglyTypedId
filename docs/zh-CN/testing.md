@@ -20,32 +20,32 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 
 取值来自 `IStronglyTypedId<TSelf, TPrimitiveId>` 暴露的基元类型，因此对任意程序集声明的 Id 都有效
 （包括在本测试包编译之后才生成的 Id）。覆盖生成器支持的全部基元类型，外加 `enum`。取值刻意保持
-「普通」：有限浮点数（正负都有）、非空字符串、1970–2100 之间的日期 —— 免得测试因为 `double.NaN`
+「普通」：有限浮点数（正负都有）、非空字符串、1970–2100 之间的日期，免得测试因为 `double.NaN`
 之类的值报出与被测代码无关的失败。
 
-- **可复现** —— `Any.Id<OrderId>(seed: 42)` 跨 .NET 版本、跨平台返回相同的值，而不只是在同一运行时
+- **可复现。** `Any.Id<OrderId>(seed: 42)` 跨 .NET 版本、跨平台返回相同的值，而不只是在同一运行时
   版本内：取值源是内置的 SplitMix64，不是算法属实现细节的 `Random`。要让一整串值重复，
   请复用同一个 `AnyIdGenerator` 实例，或用 `Any.Ids<T>(count, seed)`。长期复用的生成器用
   `new AnyIdOptions { Seed = 42 }` 传同一个种子；不传则按时钟播种。
-- **尊重验证器** —— 生成最多重试 `AnyIdOptions.MaxAttempts` 次（默认 100），仍不满足则抛出异常，
+- **尊重验证器。** 生成最多重试 `AnyIdOptions.MaxAttempts` 次（默认 100），仍不满足则抛出异常，
   并在消息中指向 `Any.Register<T>(factory)`。拒绝只按异常类型识别，因此验证器因其他原因抛
   `ArgumentException` 时同样会被当作拒绝而重试。
-- **可覆盖** —— `AnyIdOptions.PrimitiveValueFactory` 可按基元类型替换取值来源；返回 `null`
+- **可覆盖。** `AnyIdOptions.PrimitiveValueFactory` 可按基元类型替换取值来源；返回 `null`
   表示回落到内置生成逻辑。
-- **可重置** —— `Any.Reset()` 丢弃共享生成器，连同在其上做过的全部 `Any.Register<T>(factory)`。
+- **可重置。** `Any.Reset()` 丢弃共享生成器，连同在其上做过的全部 `Any.Register<T>(factory)`。
   注册了互相冲突的工厂的测试之间请调用它。
-- **可配置文本** —— `AnyIdOptions.StringLength`（默认 8）设定生成 `string` 基元的长度；验证器要求更长
+- **可配置文本。** `AnyIdOptions.StringLength`（默认 8）设定生成 `string` 基元的长度；验证器要求更长
   输入时调大它。
-- **按需覆盖边界** —— `AnyIdOptions.IncludeBoundaryValues` 会掺入基元的 `MinValue` / `MaxValue`
+- **按需覆盖边界。** `AnyIdOptions.IncludeBoundaryValues` 会掺入基元的 `MinValue` / `MaxValue`
   （约每 16 个值一个）。默认关闭：极端值会让「断言唯一性」的测试偶发失败，而大多数测试要的就是普通值。
-  仅对整数与 `decimal` 生效 —— 浮点数的边界是 `NaN` / `±Infinity`，它们永远不会被生成，否则 JSON 往返
+  仅对整数与 `decimal` 生效；浮点数的边界是 `NaN` / `±Infinity`，它们永远不会被生成，否则 JSON 往返
   会因为与被测代码无关的原因失败。
 
 另有两类取值值得说明：`enum` 从已声明的成员里抽，`char` 从 68 个字符的字母表（字母、数字与
-`@ . - _ / :`）里抽 —— 因此「必须含分隔符」这类验证器也能在重试预算内通过。
+`@ . - _ / :`）里抽，因此「必须含分隔符」这类验证器也能在重试预算内通过。
 
-`AnyIdGenerator.Create(Type)` 是 `Any.Id<T>()` 的非泛型形式，用于 Id 类型只在运行期才知道的场合——
-对 `Type[]` 做 theory，或反射驱动的测试。传入不是强类型 Id 的类型时抛 `ArgumentException`。
+`AnyIdGenerator.Create(Type)` 是 `Any.Id<T>()` 的非泛型形式，用于 Id 类型只在运行期才知道的场合，
+例如对 `Type[]` 做 theory，或反射驱动的测试。传入不是强类型 Id 的类型时抛 `ArgumentException`。
 
 ### 检查命名实例
 
@@ -81,7 +81,7 @@ var faker = new Faker<Order>().WithStronglyTypedIds();
 Order order = faker.Generate();   // order.Id 已经是造好的 Id
 ```
 
-Bogus 按属性的声明类型填值，而强类型 Id 是一个独立的类型 —— 没有这层适配，Bogus 无从下手，属性就停在
+Bogus 按属性的声明类型填值，而强类型 Id 是一个独立的类型，没有这层适配，Bogus 无从下手，属性就停在
 默认值上，且**不报任何错**。适配之后，Bogus 会为每个 Id 类型登记自己的取值规则，生成时照常填上。
 
 Id 类型默认从**当前已加载的程序集**里发现；某个 Id 所在的程序集尚未加载时，显式列出即可：
@@ -109,7 +109,7 @@ var faker = new Faker<Order>()
 | `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API：`IParsable` 绑定、`[AsParameters]`、路由约束、JSON 请求体，以及内置 OpenAPI 转换器（`AddOpenApi(options => options.AddStronglyTypedIds())`）。 |
 | `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10（Microsoft.OpenApi 2.x）的 schema 映射。 |
 | `Len.StronglyTypedId.Sample4` | `net8.0` | `net8.0` 上的 `Microsoft.AspNetCore.OpenApi` 8.0.0：内置 schema 转换器要 9.0+，因此文档改由 Swashbuckle 产出。 |
-| `Len.StronglyTypedId.SampleGraphQL` | `net8.0` | HotChocolate（`IRequestExecutorBuilder` 上的 `AddStronglyTypedIds()`）：Id 在 schema 里是 `SCALAR`，字面量种类与 JSON 形态一致——`Guid` 与带前缀的 Id 是 `String`，整数与枚举（按底层数值）是 `Int`，浮点是 `Float`。同时演示变量路径（`JsonElement`）与两条失败路径。 |
+| `Len.StronglyTypedId.SampleGraphQL` | `net8.0` | HotChocolate（`IRequestExecutorBuilder` 上的 `AddStronglyTypedIds()`）：Id 在 schema 里是 `SCALAR`，字面量种类与 JSON 形态一致，`Guid` 与带前缀的 Id 是 `String`，整数与枚举（按底层数值）是 `Int`，浮点是 `Float`。同时演示变量路径（`JsonElement`）与两条失败路径。 |
 
 每个示例都很小且自包含；控制台示例按特性分节打印，可以对照代码看输出。运行方式：
 

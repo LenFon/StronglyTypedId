@@ -7,8 +7,8 @@ title: 从 1.3.0 升级到 1.4.0
 
 # 从 1.3.0 升级到 1.4.0
 
-1.4.0 是集成版本。四处变更在升级时需要动手，另有四处会改变行为但不破坏编译。其余都是新增 —— 新基元、
-新集成、新选项 —— 不主动启用就不影响既有产物。
+1.4.0 是集成版本。四处变更在升级时需要动手，另有四处会改变行为但不破坏编译。其余都是新增（新基元、
+新集成、新选项），不主动启用就不影响既有产物。
 
 先走一遍清单，再读[行为变化](#behaviour-changes)：那些改动能编译通过，却仍会改变运行结果。
 
@@ -25,7 +25,7 @@ title: 从 1.3.0 升级到 1.4.0
 7. [把警告当错误时复核 `STIA0011`](#stia0011-warning)
 
 > 变更日志里还有两条标了 Breaking，但它们不影响从 1.3.0 升级：格式化输出保留前缀，以及种子生成算法。
-> 两者都属于**1.4.0 新增**的能力 —— `Prefix` 与测试辅助包在 1.3.0 里都不存在 —— 因此没有东西需要迁移。
+> 两者都属于**1.4.0 新增**的能力（`Prefix` 与测试辅助包在 1.3.0 里都不存在），因此没有东西需要迁移。
 > 它们只相对未发布的 1.4.0 开发线算破坏性变更，对任何已发布版本都不成立。
 
 <a id="integration-entry-points"></a>
@@ -73,7 +73,7 @@ services.AddSwaggerGen(options => options.AddStronglyTypedIds());
 
 ## `Parse` 抛 `FormatException`
 
-`Parse` 过去对无法解析的文本抛 `ArgumentException`，现在抛 `FormatException` —— 这正是 BCL 里
+`Parse` 过去对无法解析的文本抛 `ArgumentException`，现在抛 `FormatException`，这正是 BCL 里
 `IParsable<TSelf>` 实现（`int.Parse`、`Guid.Parse`）的做法。`Create` 不变：仍抛 `ArgumentException`，
 或 `ExceptionType` 配置的类型。
 
@@ -138,7 +138,7 @@ catch (FormatException) { /* 文本非法 */ }
 - 生成的 `TypeConverter`：`ConvertFrom` 按不变文化解析，并忽略传给它的 culture，与 `ToString()` 保持
   一致。
 
-若你依赖过隐式取当前文化，请显式传入。注意字符串插值不受影响 —— `$"{id}"` 仍走 `IFormattable` 并
+若你依赖过隐式取当前文化，请显式传入。注意字符串插值不受影响：`$"{id}"` 仍走 `IFormattable` 并
 跟随当前文化。
 
 <a id="stia0011-warning"></a>
@@ -170,20 +170,20 @@ Id 而构建失败。要么把构造改走 `Create`，要么在 `.editorconfig` 
 
 以下内容升级时都不必动；每一项都是可选的，不用时既有产物不变。
 
-- **自定义基元** —— 实现 `IParsable<TSelf>`、`IComparable<TSelf>` 与非泛型 `IComparable`，并暴露公开
+- **自定义基元。** 实现 `IParsable<TSelf>`、`IComparable<TSelf>` 与非泛型 `IComparable`，并暴露公开
   静态 `Parse` / `TryParse` 的类型即可作为被包装的基元。Cysharp 的 `Ulid` 已满足契约，因此 ULID 无需
   额外代码。见[已知限制](limitations.md#primitive-types)。
-- **新增九种基元** —— `char`、`Int128`、`UInt128`、`Half`、`float`、`double`、`DateOnly`、`TimeOnly`
+- **新增九种基元。** `char`、`Int128`、`UInt128`、`Half`、`float`、`double`、`DateOnly`、`TimeOnly`
   与 `BigInteger`，连同 `enum` 共 24 种。
-- **更多集成** —— protobuf-net、HotChocolate（GraphQL）、MessagePack 与 MongoDB BSON。见
+- **更多集成。** protobuf-net、HotChocolate（GraphQL）、MessagePack 与 MongoDB BSON。见
   [集成](integrations.md#protobuf-net)。
-- **新的 Id 选项** —— `Normalizer`、`ExceptionType`、`RedactValidationMessage`、`Prefix` /
+- **新的 Id 选项。** `Normalizer`、`ExceptionType`、`RedactValidationMessage`、`Prefix` /
   `PrefixReadMode`、`JsonShape`、`Integrations` 与 `[StronglyTypedIdInstance]`，均可在程序集级设默认值。
   `Prefix` 是本次新增的，没有迁移负担：不设置时生成的代码逐字节不变。见
   [声明一个 Id](declaration.md#the-declaration)。
-- **显式 JSON 注册** —— System.Text.Json 与 Newtonsoft.Json 的 `options.AddStronglyTypedIds()`，以及
+- **显式 JSON 注册。** System.Text.Json 与 Newtonsoft.Json 的 `options.AddStronglyTypedIds()`，以及
   面向源生成 `JsonSerializerContext` 的 `WithStronglyTypedIds()`。见[序列化](serialization.md#serialization)。
-- **测试辅助包** —— `Len.StronglyTypedId.Testing` 以及 AutoFixture 与 Bogus 适配包。这些是新包，没有
+- **测试辅助包。** `Len.StronglyTypedId.Testing` 以及 AutoFixture 与 Bogus 适配包。这些是新包，没有
   1.3.0 的行为需要迁移；按种子生成的序列使用 SplitMix64，跨运行时复现。见[测试](testing.md#testing)。
 
 <a id="not-changed"></a>

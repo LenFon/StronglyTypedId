@@ -18,7 +18,7 @@ The generated members are the code you would have written by hand, so there is n
 - The JSON converters are generated types, not reflection-based ones, so serializing an id costs the same
   as serializing the primitive it wraps.
 
-There is no reflection and no boxing — a `record struct` id is a value type. The one allocation worth
+There is no reflection and no boxing, because a `record struct` id is a value type. The one allocation worth
 knowing about is a prefixed id: `ToString()` concatenates the prefix with the value, so that path allocates
 a string. Leave `Prefix` unset and nothing extra is allocated.
 
@@ -29,7 +29,7 @@ of ids you declare, not with the size of your reference set. It also caches what
 assembly, so an IDE that recompiles on every keystroke does not rescan the same assemblies each time.
 
 In practice the generator is rarely what makes a build slow. If you suspect it is, measure your own build
-first — the usual causes are other analyzers or a cold restore.
+first; the usual causes are other analyzers or a cold restore.
 
 ## For maintainers
 

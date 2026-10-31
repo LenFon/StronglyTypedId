@@ -1,15 +1,15 @@
 # StronglyTypedId
 
-> 📖 中文文档：[README.zh-CN.md](README.zh-CN.md) · 🌐 Docs site: [lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
+> 中文文档：[README.zh-CN.md](README.zh-CN.md) · Docs site: [lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
 
 [![codecov][badge-codecov]](https://app.codecov.io/gh/LenFon/StronglyTypedId/tree/main)
 [![NuGet][badge-nuget]][nuget-package]
 [![License: MIT][badge-license]][license-file]
 
-A source generator, analyzer and code fix provider that turns a one-line `record` declaration into a
-fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPrimitiveId>` implementation,
-`IParsable<TSelf>` support, and the JSON / Entity Framework Core / Swagger integrations for you — so a
-`Guid` cannot be passed where an `OrderId` is expected, and vice versa.
+A source generator, analyzer and code fix provider. Annotate a one-line `record` declaration and it
+becomes a complete strongly typed id: the `IStronglyTypedId<TSelf, TPrimitiveId>` implementation,
+`IParsable<TSelf>` support, and the JSON, Entity Framework Core and Swagger integrations. A `Guid` can
+then no longer be passed where an `OrderId` is expected, or the reverse.
 
 <a id="table-of-contents"></a>
 
@@ -27,21 +27,22 @@ fully featured strongly typed id. It generates the `IStronglyTypedId<TSelf, TPri
 
 ## Features <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
-- **One line to declare** — annotate a `partial record` (or `partial record struct`) with
-  `[StronglyTypedId]` and get a complete value type: parsing, formatting, comparison, `Create` /
-  `TryCreate`, deconstruction, JSON converters and a debugger view.
-- **A `Guid` can never stand in for an `OrderId`** — the compiler rejects the swap, and a built-in
-  analyzer rejects invalid declarations as errors, twenty-one of its twenty-six rules with a code fix.
-- **Twenty-three primitives, or your own** — every numeric type, `Guid`, `string`, dates and `BigInteger`,
-  plus any `enum` or any type that implements `IParsable<TSelf>` and `IComparable`. ULID works unchanged.
-- **Validation where the value enters** — point `Validator` and `Normalizer` at static methods and every
-  generated entry point (`Create`, `Parse`, JSON, EF Core, Dapper, model binding) enforces them.
-- **Eleven integrations, generated only when referenced** — System.Text.Json, Newtonsoft.Json, EF Core,
+- **One line to declare.** Annotate a `partial record` (or `partial record struct`) with
+  `[StronglyTypedId]` and the type gains parsing, formatting, comparison, `Create` / `TryCreate`,
+  deconstruction, JSON converters and a debugger view.
+- **A `Guid` can never stand in for an `OrderId`.** The compiler rejects the swap, and a built-in
+  analyzer rejects invalid declarations as errors; twenty-one of its twenty-six rules ship a code fix.
+- **Twenty-three primitives, or your own.** Every numeric type, `Guid`, `string`, dates and
+  `BigInteger` are built in, along with any `enum` and any type that implements `IParsable<TSelf>` and
+  `IComparable`. ULID works unchanged.
+- **Validation where the value enters.** Point `Validator` and `Normalizer` at static methods, and every
+  generated entry point enforces them: `Create`, `Parse`, JSON, EF Core, Dapper and model binding.
+- **Eleven integrations, generated only when referenced.** System.Text.Json, Newtonsoft.Json, EF Core,
   Dapper, Swashbuckle, ASP.NET Core MVC and OpenAPI, MessagePack, MongoDB, HotChocolate and protobuf-net.
-- **Native AOT, trimming, and zero third-party dependencies** — the runtime library loads no types by
-  name, and the package adds nothing to your dependency graph.
+- **Native AOT, trimming, and no third-party dependencies.** The runtime library loads no types by name,
+  and the package adds nothing to your dependency graph.
 
-The full inventory — every generated member, every configuration option, every integration — is in
+The full inventory, covering every generated member, configuration option and integration, is in
 [Features](docs/features.md).
 
 <a id="getting-started"></a>
@@ -57,7 +58,7 @@ The full inventory — every generated member, every configuration option, every
 
    One package is enough: `Len.StronglyTypedId` depends on `Len.StronglyTypedId.Generators`, which carries
    the generator, the analyzer and the code fixes. The dependency is transitive, so **every project that
-   references the main package also gets the analyzer** — see [Packages](docs/packages.md) for why, and for
+   references the main package also gets the analyzer**. See [Packages](docs/packages.md) for why, and for
    how to silence the diagnostics in a project that wants none of them.
 
 2. Declare a strongly typed id with a single primary constructor parameter named `Value`:
@@ -72,9 +73,8 @@ The full inventory — every generated member, every configuration option, every
    public partial record OrderId(Guid Value);
    ```
 
-   > **`record` vs `record struct`** — a value type versus a reference type, with exactly the same
-   > generated members either way. See [The declaration](docs/declaration.md#the-declaration) for the
-   > trade-off.
+   > **`record` vs `record struct`.** A value type versus a reference type, with the same generated
+   > members either way. See [The declaration](docs/declaration.md#the-declaration) for the trade-off.
 
    The generated type exposes `Value`, a static `Create(...)` factory, and `Parse` / `TryParse`.
    Use it anywhere you would otherwise pass a bare primitive:
@@ -129,10 +129,10 @@ The wrapped `Value` parameter may be one of:
 | any `enum`       | `record StatusId(Status Value)`                        |
 <!-- END GENERATED:primitive-types -->
 
-The type is matched by its name, so writing `System.Guid` (or an aliased using) works exactly the same.
-Only the types above are recognised — a type of your own that merely happens to be called `Guid` is not
-supported, and is rejected by [STIA0008](docs/diagnostics.md#diagnostics). Any `enum` is supported as well;
-how enum ids parse and which interfaces they skip is in
+The type is matched by its name, so writing `System.Guid` (or an aliased using) works the same. Only the
+types above are recognised. A type of your own that happens to be called `Guid` is not supported and is
+rejected by [STIA0008](docs/diagnostics.md#diagnostics). Any `enum` is supported as well; how enum ids
+parse and which interfaces they skip is in
 [Enum-backed ids](docs/generated-code.md#enum-backed-ids).
 
 <a id="custom-primitives"></a>
@@ -142,10 +142,10 @@ how enum ids parse and which interfaces they skip is in
 A type of your own is accepted as the primitive when it satisfies this contract:
 
 - implements `IParsable<TSelf>` and `IComparable<TSelf>` with itself as the type argument;
-- implements the non-generic `System.IComparable` — that is the actual constraint on `TPrimitiveId` in
-  `IStronglyTypedId<TSelf, TPrimitiveId>`, and `IComparable<T>` does not imply it;
+- implements the non-generic `System.IComparable`, which is the actual constraint on `TPrimitiveId` in
+  `IStronglyTypedId<TSelf, TPrimitiveId>`; `IComparable<T>` does not imply it;
 - exposes **public static** `Parse(string, IFormatProvider)` and
-  `TryParse(string, IFormatProvider, out TSelf)` — explicit interface implementations do not count,
+  `TryParse(string, IFormatProvider, out TSelf)`. Explicit interface implementations do not count,
   because the generated code calls them by type name;
 - is a non-abstract, non-static, non-generic struct or class, and is not `System.Uri`.
 
@@ -174,7 +174,7 @@ public partial record struct EmailId(Email Value);
 ```
 
 - **`ToString()` must produce text your own `Parse` can read back.** Every serialization path writes the
-  canonical text of the primitive — System.Text.Json, Newtonsoft.Json, MessagePack, BSON and Dapper all
+  canonical text of the primitive: System.Text.Json, Newtonsoft.Json, MessagePack, BSON and Dapper all
   use it, so an id never appears as one shape over REST and another in a database. Handing a custom type
   to a serializer would instead serialize its public properties and read back `default`.
 - **Named instances are validated at run time, not at compile time.** The generator runs on
@@ -184,7 +184,7 @@ public partial record struct EmailId(Email Value);
   `Len.StronglyTypedId.Testing` reports every broken instance at once.
 
 **ULID works with no code from this library.** Cysharp's [`Ulid`](https://www.nuget.org/packages/Ulid)
-is a third-party package you add yourself — this library does not depend on it and generates nothing
+is a third-party package you add yourself; this library does not depend on it and generates nothing
 special for it. It implements `IParsable<Ulid>`, `IComparable<Ulid>` and the non-generic `IComparable`,
 so it already satisfies the contract above:
 
@@ -198,18 +198,17 @@ public partial record struct OrderId(Ulid Value);
 ```
 
 Its canonical text is the 26-character Crockford Base32 form, so JSON, MessagePack, BSON, EF Core and
-Dapper all store it as that string. Note that ULIDs generated within the same millisecond are only
-ordered by their random component, which is not monotonic — "ULID is sortable" holds across milliseconds,
-not within one.
+Dapper all store it as that string. ULIDs generated within the same millisecond are only ordered by their
+random component, which is not monotonic: "ULID is sortable" holds across milliseconds, not within one.
 
 <a id="what-gets-generated"></a>
 
 ## What gets generated <a href="#table-of-contents" style="float:right">↑ Back to top</a>
 
-For each annotated type the generator emits a `partial` declaration in the **same namespace** as the id —
-nested ids are declared back inside their containing types instead (see
-[Nested types](docs/declaration.md#nested-types)) —
-your own declaration is never modified. What is emitted depends on what the compilation references:
+For each annotated type the generator emits a `partial` declaration in the **same namespace** as the id
+(nested ids are declared back inside their containing types; see
+[Nested types](docs/declaration.md#nested-types)), and your own declaration is never modified. What is
+emitted depends on what the compilation references:
 
 <!-- BEGIN GENERATED:generated-code -->
 | Condition in the compilation                                                                                       | Generated code                                                                                                                                                           |
@@ -228,9 +227,9 @@ your own declaration is never modified. What is emitted depends on what the comp
 | `Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade) | `AddStronglyTypedIds()` on `MvcOptions` and `RouteOptions` (also powers Minimal API route constraints)                                                                   |
 <!-- END GENERATED:generated-code -->
 
-The table above is the inventory. The generated file names, and what each generated member actually
-does — the interfaces it implements, how `Parse` treats a `null` provider, how `[Flags]` enums are
-tightened, what `ToString()` prints — are documented in [Generated code](docs/generated-code.md).
+The table above is the inventory. The generated file names and the behaviour of each generated member
+(the interfaces it implements, how `Parse` treats a `null` provider, how `[Flags]` enums are tightened,
+what `ToString()` prints) are documented in [Generated code](docs/generated-code.md).
 
 <a id="documentation"></a>
 
@@ -254,10 +253,10 @@ Everything past the quick start lives in `docs/`, and is published at
 | [Diagnostics](docs/diagnostics.md) | Every rule, its severity, and whether it ships a code fix. |
 | [Performance](docs/performance.md) | What the generator costs at build time, and what the generated code costs at run time. |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom-first: nothing generated, a missing integration, stale analyzers, parsing surprises. |
-| [Limitations](docs/limitations.md) | What a source generator cannot do — `Value` visibility, the closed primitive list, the unguarded constructor — and the workaround for each. |
+| [Limitations](docs/limitations.md) | What a source generator cannot do (`Value` visibility, the closed primitive list, the unguarded constructor) and the workaround for each. |
 | [FAQ](docs/faq.md) | The questions that come up most often. |
 | [Migrating from 1.3.0](docs/migration.md) | The four changes that need action in 1.4.0, the four that change behaviour without breaking the build, and what to adopt afterwards. |
-| [Future plans](docs/roadmap.md) | None at the moment — every planned direction has shipped. |
+| [Future plans](docs/roadmap.md) | None at the moment; every planned direction has shipped. |
 
 <a id="limitations"></a>
 

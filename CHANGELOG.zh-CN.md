@@ -7,7 +7,7 @@
 
 `1.3.0` 及更早的版本依据仓库 tag 重建：每条记录概述该版本交付的变更集合，而不是逐一复述每个提交。
 
-> 📖 英文版：[CHANGELOG.md](CHANGELOG.md)
+> 英文版：[CHANGELOG.md](CHANGELOG.md)
 
 ## [未发布]
 
@@ -24,20 +24,20 @@
 - **protobuf-net、GraphQL（HotChocolate ≥ 13）、MessagePack 与 MongoDB BSON 集成。** protobuf-net 无需
   注册（surrogate 由特性发现）；GraphQL 经 `AddStronglyTypedIds()` 注册 scalar；MessagePack 与 BSON
   写入基元值本身，不含文本前缀。
-- **每个 Id 都带调试器代理** —— 暴露 `Value` 与 `Text`（规范文本形，含前缀）；私有，运行期无开销。
-- **测试辅助包** —— `Len.StronglyTypedId.Testing`（`Any.Id<T>()`、可设定种子的序列、
+- **每个 Id 都带调试器代理**，暴露 `Value` 与 `Text`（规范文本形，含前缀）；私有，运行期无开销。
+- **测试辅助包**：`Len.StronglyTypedId.Testing`（`Any.Id<T>()`、可设定种子的序列、
   `Any.Register<T>(factory)`、`Any.Reset()`），以及同样遵守验证器的 AutoFixture 与 Bogus 适配包。
-- **新增九种基元类型** —— `char`、`Int128`、`UInt128`、`Half`、`float`、`double`、`DateOnly`、`TimeOnly`
-  与 `BigInteger` —— 连同 `enum` 共 24 种。
-- **Id 选项** —— `Normalizer`、`ExceptionType`、`RedactValidationMessage`、`Prefix` / `PrefixReadMode`、
+- **新增九种基元类型**：`char`、`Int128`、`UInt128`、`Half`、`float`、`double`、`DateOnly`、`TimeOnly`
+  与 `BigInteger`，连同 `enum` 共 24 种。
+- **Id 选项**：`Normalizer`、`ExceptionType`、`RedactValidationMessage`、`Prefix` / `PrefixReadMode`、
   `JsonShape`、`Integrations`（过滤器而非开关）、`[StronglyTypedIdInstance]` 与 `IStronglyTypedId<TSelf>`，
   均可在 `StronglyTypedIdDefaults` 设程序集级默认值。
-- **注册入口** —— System.Text.Json 与 Newtonsoft.Json 的 `options.AddStronglyTypedIds()`，以及面向源生成
+- **注册入口**：System.Text.Json 与 Newtonsoft.Json 的 `options.AddStronglyTypedIds()`，以及面向源生成
   `JsonSerializerContext` 的 `WithStronglyTypedIds()`（Native AOT 下可用）。
 - **诊断 `STIA0012`–`STIA0025`**，26 条规则中 21 条附带代码修复；
   `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>` 可静音分析器而不影响代码生成。
 - `record` 转强类型 Id 的重构、可运行示例（`SampleConsole`、`SampleIntegrations`、`Sample1`–`Sample4`、
-  `SampleGraphQL`）、路线图页、构建时校验的功能索引，以及「配置绑定」文档 —— Id 必须开
+  `SampleGraphQL`）、路线图页、构建时校验的功能索引，以及「配置绑定」文档：Id 必须开
   `TypeConverter = true` 才能被绑定，不开时 binder 静默失败。
 
 ### 变更
@@ -49,7 +49,7 @@
 - **破坏性变更：** 诊断 ID 从 `STIAO###`（字母 O）改名为 `STIA0###`（数字零）。
 - **对带前缀的 Id 属破坏性变更：** `ToString(format, provider)` 与 `TryFormat` 在 `format` 非空时也保留
   文本前缀。
-- 指定种子的生成改用 SplitMix64，序列跨运行时、跨平台可复现 —— **既有种子产出的值会变**。
+- 指定种子的生成改用 SplitMix64，序列跨运行时、跨平台可复现，**既有种子产出的值会变**。
 - Id 发现改读程序集元数据并按模块 MVID 缓存（分配量 −72%、耗时 −54%）；未引用 `Len.StronglyTypedId`
   的程序集直接跳过。
 - 格式提供程序为 `null` 时 `Parse` / `TryParse` 回退到不变文化；`STIA0011` 现在也报告 `new(...)` 与
@@ -64,23 +64,23 @@
 
 ### 修复
 
-- **序列化** —— 转换器不再把基元外包给 `JsonSerializer`；`BigInteger`、`Int128`、`UInt128`、`Half`、
+- **序列化。** 转换器不再把基元外包给 `JsonSerializer`；`BigInteger`、`Int128`、`UInt128`、`Half`、
   `DateOnly` 与 `TimeOnly` 在 System.Text.Json 与 Newtonsoft.Json 下都能正确往返；失败抛序列化库自己的
   异常；未定义的枚举取值在值路径上同样被拒；枚举字典键遵守 `DictionaryKeyPolicy`；声明程序集未引用
   Newtonsoft.Json 的 Id 会在消费方程序集得到转换器。
-- **OpenAPI** —— schema 与 JSON 的真实形态一致（数值、枚举与日期时间基元、`JsonShape.Object`），
+- **OpenAPI。** schema 与 JSON 的真实形态一致（数值、枚举与日期时间基元、`JsonShape.Object`），
   Minimal API 参数重新带上 `format`，路由约束不再阻断链接生成。
-- **EF Core 与 Dapper** —— 自定义基元映射为 `string`；Dapper 处理器改用非可空签名、为引用类型 Id 写入
+- **EF Core 与 Dapper。** 自定义基元映射为 `string`；Dapper 处理器改用非可空签名、为引用类型 Id 写入
   基元、转换驱动返回的值，并按不区分大小写解析枚举文本。
-- **比较与解析** —— 字符串型 Id 按序数比较，`SortedSet` / `SortedDictionary` 不再把不同 Id 塌成一条；
+- **比较与解析。** 字符串型 Id 按序数比较，`SortedSet` / `SortedDictionary` 不再把不同 Id 塌成一条；
   `null` 当作最小值；枚举解析拒绝未定义取值；`Half` 接受 `NaN`、`±Infinity` 与会舍入到最大有限值的文本。
-- **生成器** —— 关键字命名、泛型容器、嵌套 `TypeConverter` 路径、缩进、空注册类，以及未引用 JSON 库时
+- **生成器。** 关键字命名、泛型容器、嵌套 `TypeConverter` 路径、缩进、空注册类，以及未引用 JSON 库时
   的 JSON 入口均已修正。
-- **分析器与代码修复** —— `STIA0016` 不再退化为 O(N²)；分析器不再假定 `Constructors[0].Parameters[0]`；
+- **分析器与代码修复。** `STIA0016` 不再退化为 O(N²)；分析器不再假定 `Constructors[0].Parameters[0]`；
   `STIA0019` 覆盖 MessagePack 与 MongoDB；内联重构只删除真正的特性；`STIA0005` 与 `STIA0008` 的修复已
   修正；`file` 本地 Id 报 `STIA0025`。
-- **Native AOT** —— MessagePack 与 BSON 对全部基元可用，枚举 formatter 与 BSON 默认序列化器显式注册。
-- **测试与运行时辅助** —— 泛型容器里的 Id 不再崩溃；不再阻止可回收 `AssemblyLoadContext` 卸载；
+- **Native AOT。** MessagePack 与 BSON 对全部基元可用，枚举 formatter 与 BSON 默认序列化器显式注册。
+- **测试与运行时辅助。** 泛型容器里的 Id 不再崩溃；不再阻止可回收 `AssemblyLoadContext` 卸载；
   `Any.Id<T>()` 覆盖完整数值范围；`AddStronglyTypedIds(MvcOptions)` 幂等。
 
 ## [1.3.0] - 2026-10-07

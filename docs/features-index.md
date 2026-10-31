@@ -6,7 +6,7 @@ title: Feature index
 # Feature index
 
 Every feature, with a runnable sample and the page that explains it. This page answers "where can I
-see this work?" — for "what is this and why is it designed that way?", read [Features](features.md).
+see this work?"; for "what is this and why is it designed that way?", read [Features](features.md).
 
 The table is generated from the generator's own registration table and checked on every build: if a
 feature has no sample or its documentation anchor no longer exists, CI fails instead of leaving a

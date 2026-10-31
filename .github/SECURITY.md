@@ -8,7 +8,7 @@
 | 1.2.x and earlier | ❌ |
 
 Only the latest published version receives fixes. Because a strongly typed id ends up in persisted data,
-upgrading is expected to be cheap — the generated text form is stable across patch versions, and any
+upgrading is expected to be cheap: the generated text form is stable across patch versions, and any
 change to it is treated as a breaking change and called out in the changelog.
 
 ## Reporting a vulnerability
@@ -19,7 +19,7 @@ Use GitHub's private reporting: go to the [Security tab](https://github.com/lenf
 and choose **Report a vulnerability**. That opens a private advisory visible only to the maintainer.
 
 If private reporting is unavailable to you, contact the maintainer ([@LenFon](https://github.com/LenFon))
-through GitHub and ask for an alternative channel — do not include exploit details in a public thread.
+through GitHub and ask for an alternative channel; do not include exploit details in a public thread.
 
 Please include:
 
@@ -42,7 +42,7 @@ You will be credited in the advisory and the changelog unless you ask otherwise.
 
 ## Threat model
 
-Understanding what this library does — and does not do — makes triage faster.
+Knowing what this library does, and does not do, makes triage faster.
 
 **In scope**
 
@@ -81,4 +81,4 @@ Understanding what this library does — and does not do — makes triage faster
 
 `NuGetAuditMode` is `all` for the four shipped projects, so a vulnerable transitive dependency fails
 restore rather than sitting unnoticed. If you believe a dependency advisory applies but restore stays
-green, open a regular issue — that is a build-configuration bug, not a vulnerability report.
+green, open a regular issue; that is a build-configuration bug, not a vulnerability report.

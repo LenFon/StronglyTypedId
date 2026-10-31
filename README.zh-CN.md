@@ -1,14 +1,14 @@
 # StronglyTypedId
 
-> 📖 英文文档：[README.md](README.md) · 🌐 文档站：[lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
+> 英文文档：[README.md](README.md) · 文档站：[lenfon.github.io/StronglyTypedId](https://lenfon.github.io/StronglyTypedId/)
 
 [![codecov][badge-codecov]](https://app.codecov.io/gh/LenFon/StronglyTypedId/tree/main)
 [![NuGet][badge-nuget]][nuget-package]
 [![License: MIT][badge-license]][license-file]
 
-一个源码生成器、分析器与代码修复（Code Fix）工具，能用一行 `record` 声明就生成一个功能完备的强类型 Id。
-它会自动为你生成 `IStronglyTypedId<TSelf, TPrimitiveId>` 实现、`IParsable<TSelf>` 支持，以及对 JSON /
-Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId` 之间不会再互相误传。
+一个源码生成器、分析器与代码修复（Code Fix）工具。给一行 `record` 声明加上特性，就得到一个功能完备的
+强类型 Id：`IStronglyTypedId<TSelf, TPrimitiveId>` 实现、`IParsable<TSelf>` 支持，以及 JSON /
+Entity Framework Core / Swagger 集成。`Guid` 与 `OrderId` 从此不会互相误传。
 
 <a id="top"></a>
 
@@ -26,19 +26,19 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 
 ## 功能特性 <a href="#top" style="float:right">↑ 返回目录</a>
 
-- **一行声明** —— 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`），
-  就得到一个完整的值类型：解析、格式化、比较、`Create` / `TryCreate`、解构、JSON 转换器与调试器视图。
-- **`Guid` 再也冒充不了 `OrderId`** —— 编译器会拒绝这种替换；内建分析器把不合法的声明作为错误报出，
+- **一行声明。** 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`），
+  类型就具备解析、格式化、比较、`Create` / `TryCreate`、解构、JSON 转换器与调试器视图。
+- **`Guid` 冒充不了 `OrderId`。** 编译器会拒绝这种替换；内建分析器把不合法的声明作为错误报出，
   26 条规则里有 21 条附带代码修复。
-- **23 种基元，或你自己的类型** —— 全部数值类型、`Guid`、`string`、日期与 `BigInteger`，外加任意 `enum`，
-  或任何实现了 `IParsable<TSelf>` 与 `IComparable` 的类型。ULID 零改动即可用。
-- **在取值进入的地方校验** —— 把 `Validator` 与 `Normalizer` 指向静态方法，所有生成的入口
-  （`Create`、`Parse`、JSON、EF Core、Dapper、模型绑定）都会执行它们。
-- **11 个集成，只在引用对应包时才生成** —— System.Text.Json、Newtonsoft.Json、EF Core、Dapper、
+- **23 种基元，或你自己的类型。** 全部数值类型、`Guid`、`string`、日期与 `BigInteger` 都是内置的，
+  另外还支持任意 `enum`，以及任何实现了 `IParsable<TSelf>` 与 `IComparable` 的类型。ULID 零改动即可用。
+- **在取值进入的地方校验。** 把 `Validator` 与 `Normalizer` 指向静态方法，所有生成的入口都会执行它们：
+  `Create`、`Parse`、JSON、EF Core、Dapper 与模型绑定。
+- **11 个集成，只在引用对应包时才生成。** System.Text.Json、Newtonsoft.Json、EF Core、Dapper、
   Swashbuckle、ASP.NET Core MVC 与 OpenAPI、MessagePack、MongoDB、HotChocolate 与 protobuf-net。
-- **原生 AOT、裁剪，且零第三方依赖** —— 运行时库不按名字加载任何类型，包也不会往你的依赖图里塞东西。
+- **原生 AOT、裁剪，且零第三方依赖。** 运行时库不按名字加载任何类型，包也不会往你的依赖图里塞东西。
 
-完整清单 —— 每个生成成员、每个配置项、每个集成 —— 见[功能特性](docs/zh-CN/features.md)。
+完整清单（每个生成成员、每个配置项、每个集成）见[功能特性](docs/zh-CN/features.md)。
 
 <a id="getting-started"></a>
 
@@ -52,7 +52,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
    ```
 
    只需安装这一个包：`Len.StronglyTypedId` 已经依赖 `Len.StronglyTypedId.Generators`，生成器、分析器与
-   代码修复都在后者之中。该依赖是传递的，**每个引用主包的项目都会同时装上分析器** —— 为什么这么设计、
+   代码修复都在后者之中。该依赖是传递的，**每个引用主包的项目都会同时装上分析器**。为什么这么设计、
    以及不想要诊断时怎么关，见 [NuGet 包](docs/zh-CN/packages.md)。
 
 2. 用单一主构造函数参数（参数名必须为 `Value`）声明一个强类型 Id：
@@ -67,7 +67,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
    public partial record OrderId(Guid Value);
    ```
 
-   > **`record` 与 `record struct` 的取舍** —— 一个是值类型、一个是引用类型，生成的成员完全一致。
+   > **`record` 与 `record struct` 的取舍。** 一个是值类型、一个是引用类型，生成的成员完全一致。
    > 取舍依据见[声明形状](docs/zh-CN/declaration.md#the-declaration)。
 
    生成的类型会暴露 `Value`、静态的 `Create(...)` 工厂，以及 `Parse` / `TryParse`。
@@ -123,7 +123,7 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 | 任意 `enum`      | `record StatusId(Status Value)`                        |
 <!-- END GENERATED:primitive-types -->
 
-类型按名称匹配，因此写成 `System.Guid`（或使用别名/using）效果完全相同。仅识别上表中的类型——
+类型按名称匹配，因此写成 `System.Guid`（或使用别名/using）效果完全相同。仅识别上表中的类型。
 你自己定义的、恰好也叫 `Guid` 的类型并不受支持，会被 [STIA0008](docs/zh-CN/diagnostics.md#diagnostics) 拒绝。
 任意 `enum` 同样受支持；枚举 Id 如何解析、省略了哪些接口，见
 [枚举 Id](docs/zh-CN/generated-code.md#enum-backed-ids)。
@@ -135,9 +135,9 @@ Entity Framework Core / Swagger 的集成代码——从此 `Guid` 与 `OrderId`
 你自己写的类型只要满足以下契约，就可以作为基元：
 
 - 实现 `IParsable<TSelf>` 与 `IComparable<TSelf>`，且类型实参是自身；
-- 实现非泛型 `System.IComparable` —— 这才是 `IStronglyTypedId<TSelf, TPrimitiveId>` 对 `TPrimitiveId`
+- 实现非泛型 `System.IComparable`。这才是 `IStronglyTypedId<TSelf, TPrimitiveId>` 对 `TPrimitiveId`
   的实际约束，`IComparable<T>` 并不蕴含它；
-- 暴露**公开静态**的 `Parse(string, IFormatProvider)` 与 `TryParse(string, IFormatProvider, out TSelf)` ——
+- 暴露**公开静态**的 `Parse(string, IFormatProvider)` 与 `TryParse(string, IFormatProvider, out TSelf)`。
   显式接口实现不算，因为生成代码按类型名直呼它们；
 - 是非抽象、非静态、非泛型的 struct 或 class，且不是 `System.Uri`。
 
@@ -165,7 +165,7 @@ public readonly record struct Email(string Value)
 public partial record struct EmailId(Email Value);
 ```
 
-- **`ToString()` 必须产出你自己的 `Parse` 能读回的文本。** 所有序列化路径写的都是基元的规范文本 ——
+- **`ToString()` 必须产出你自己的 `Parse` 能读回的文本。** 所有序列化路径写的都是基元的规范文本：
   System.Text.Json、Newtonsoft.Json、MessagePack、BSON 与 Dapper 全都如此，因此同一个 Id 不会在 REST
   是一种形态、在数据库里是另一种。把自定义类型交给序列化器，它会按公开属性写出、读回 `default`。
 - **命名实例的值在运行期校验，不在编译期。** 生成器跑在 `netstandard2.0` 上，无法执行你的 `Parse`，
@@ -174,7 +174,7 @@ public partial record struct EmailId(Email Value);
   `StronglyTypedIdConformance.AssertAllInstancesValid(assembly)` 能一次报出全部坏实例。
 
 **ULID 不需要本库写任何代码。** Cysharp 的 [`Ulid`](https://www.nuget.org/packages/Ulid) 是第三方包，
-需要你自己引入 —— 本库不依赖它，也不会为它生成任何专属代码。它实现了 `IParsable<Ulid>`、
+需要你自己引入；本库不依赖它，也不会为它生成任何专属代码。它实现了 `IParsable<Ulid>`、
 `IComparable<Ulid>` 与非泛型 `IComparable`，因此已经满足上面的契约：
 
 ```shell
@@ -187,7 +187,7 @@ public partial record struct OrderId(Ulid Value);
 ```
 
 它的规范文本是 26 字符的 Crockford Base32，因此 JSON、MessagePack、BSON、EF Core 与 Dapper 存的都是
-这个字符串。注意同一毫秒内生成的 ULID 只按随机部分排序，而随机部分不保证单调 —— 「ULID 可排序」只在
+这个字符串。同一毫秒内生成的 ULID 只按随机部分排序，而随机部分不保证单调：「ULID 可排序」只在
 跨毫秒成立，同毫秒内不成立。
 
 <a id="what-gets-generated"></a>
@@ -215,8 +215,8 @@ public partial record struct OrderId(Ulid Value);
 | 引用了 `Microsoft.AspNetCore.Mvc` ≥ 2.0.0（或其 `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` 门面） | `MvcOptions` 与 `RouteOptions` 上的 `AddStronglyTypedIds()`（同时支撑 Minimal API 的路由约束）                                                                         |
 <!-- END GENERATED:generated-code -->
 
-上表是产物清单。生成的文件名，以及每个生成成员的具体语义——实现了哪些接口、`Parse` 如何处理
-`null` provider、`[Flags]` 枚举被如何收紧、`ToString()` 打印什么——见[生成产物](docs/zh-CN/generated-code.md)。
+上表是产物清单。生成的文件名，以及每个生成成员的具体语义（实现了哪些接口、`Parse` 如何处理
+`null` provider、`[Flags]` 枚举被如何收紧、`ToString()` 打印什么），见[生成产物](docs/zh-CN/generated-code.md)。
 
 <a id="documentation"></a>
 
@@ -240,10 +240,10 @@ public partial record struct OrderId(Ulid Value);
 | [诊断](docs/zh-CN/diagnostics.md) | 每一条规则、级别，以及是否带代码修复。 |
 | [性能](docs/zh-CN/performance.md) | 生成器在构建期的开销，以及生成代码在运行期的开销。 |
 | [故障排查](docs/zh-CN/troubleshooting.md) | 按症状索引：什么都没生成、集成缺失、分析器不刷新、解析出乎意料。 |
-| [已知限制](docs/zh-CN/limitations.md) | 源码生成器做不到的事 —— `Value` 的可见性、封闭的基元清单、不受保护的主构造函数 —— 以及各自的绕法。 |
+| [已知限制](docs/zh-CN/limitations.md) | 源码生成器做不到的事（`Value` 的可见性、封闭的基元清单、不受保护的主构造函数）以及各自的绕法。 |
 | [常见问题](docs/zh-CN/faq.md) | 最常被问到的问题。 |
 | [从 1.3.0 升级](docs/zh-CN/migration.md) | 1.4.0 中四处需要动手的变更、四处能编译通过但会改变行为的变化，以及升级后可按需采用的能力。 |
-| [未来规划](docs/zh-CN/roadmap.md) | 暂无 —— 计划中的方向已全部交付。 |
+| [未来规划](docs/zh-CN/roadmap.md) | 暂无；计划中的方向已全部交付。 |
 
 <a id="limitations"></a>
 

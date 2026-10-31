@@ -18,13 +18,13 @@ title: 原生 AOT 与裁剪
   的转换器都是嵌套类型；库不会为了造一个转换器去反射你的 Id。
 - **反射辅助是裁剪安全的。** `Type.GetPrimitiveIdType()`、`Type.TryGetPrimitiveIdType(out Type?)`、
   `Type.IsStronglyTypedId()` 是仅有的三个反射入口，每个参数都带
-  `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]`——正是这个标注让「识别强类型
+  `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]`，正是这个标注让「识别强类型
   Id」所需的接口元数据在裁剪后依然保留。
 
 ## AOT 下的 System.Text.Json
 
 `System.Text.Json` 在 Native AOT 下会禁用反射式序列化，因此 AOT 应用必须提供源生成的
-`JsonSerializerContext`。**这是 `System.Text.Json` 的要求，不是本库的特例**——生成的转换器和其他转换器
+`JsonSerializerContext`。**这是 `System.Text.Json` 的要求，不是本库的特例**；生成的转换器和其他转换器
 一样挂进那个上下文即可：
 
 ```csharp
@@ -35,7 +35,7 @@ internal sealed partial class AppJsonContext : JsonSerializerContext;
 var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Default };
 ```
 
-要登记每一个被你**当作根类型**序列化的类型 —— 上下文只服务从 `[JsonSerializable]` 根可达的类型，
+要登记每一个被你**当作根类型**序列化的类型。上下文只服务从 `[JsonSerializable]` 根可达的类型，
 因此 `JsonSerializer.Serialize(orderId, options)` 与其它根类型一样需要
 `[JsonSerializable(typeof(OrderId))]`。
 
@@ -43,7 +43,7 @@ var options = new JsonSerializerOptions { TypeInfoResolver = AppJsonContext.Defa
 （`Guid` 走 `WriteStringValue(Guid)`，数值走 `WriteNumberValue`），不经过 `JsonSerializer`，
 因此不需要基元类型的 `JsonTypeInfo`。这一点很重要：源生成的上下文只服务登记过的类型，
 而漏登记时报的是框架内部的 `NotSupportedException: JsonTypeInfo metadata for type 'System.Guid'
-was not provided`——从这条报错很难反推「少登记了一个基元类型」。
+was not provided`，从这条报错很难反推「少登记了一个基元类型」。
 
 少数基元没有对应的直写形式（`Int128`、`UInt128`、`Half`、`TimeSpan`、`DateOnly`、`TimeOnly`，
 以及读单字符的 `char`），它们仍由 `JsonSerializer` 处理，此时上下文需要为基元补一条
@@ -56,18 +56,18 @@ was not provided`——从这条报错很难反推「少登记了一个基元类
 **类型上的 `[JsonConverter]` 特性是否被取到**：
 
 - `Default` 模式下，源生成器会把类型上的 `[JsonConverter]` 展开成转换器；
-- `Metadata` 模式下走的是「按属性反射」那条路，特性不被取到——Id 会被当成普通对象按属性写出
+- `Metadata` 模式下走的是「按属性反射」那条路，特性不被取到，Id 会被当成普通对象按属性写出
   （`{"Value":"…"}`），而不是字符串。
 
 `Metadata` 是 AOT 场景的推荐配置（产物体积更小），因此在那种配置下要靠
-`options.AddStronglyTypedIds()` 把转换器注册进 `options.Converters`——
-那条路与源生成器的决策无关，是确定生效的。默认模式下类型上的特性已经够用，`AddStronglyTypedIds` 可有可无。
+`options.AddStronglyTypedIds()` 把转换器注册进 `options.Converters`，那条路与源生成器的决策无关，
+是确定生效的。默认模式下类型上的特性已经够用，`AddStronglyTypedIds` 可有可无。
 
 ### 让 context 写出同一种形态
 
 `AddStronglyTypedIds` 修的是「序列化器从 `options.Converters` 里找转换器」那条路，而源生成的 context 对被要求
 产出元数据的类型并不查这个列表：它自己发一份 `JsonTypeInfo`，按属性写出。结果是 context 写
-`{"Value":"…"}`、反射式序列化写 `"…"`——同一个 Id 两种形态，且不报任何错。
+`{"Value":"…"}`、反射式序列化写 `"…"`，同一个 Id 两种形态，且不报任何错。
 
 `WithStronglyTypedIds()` 补上这个缺口。它把你的 resolver 包一层，让 Id 的 `JsonTypeInfo`（由生成的
 转换器构造，零反射）先被问到：
@@ -90,21 +90,20 @@ var options = new JsonSerializerOptions
 两个目标框架都适用：`System.Text.Json` 的源生成器在 net8.0 与 net10.0 的引用包里都有，因此这个缺口
 与修复在两个 TFM 上同样成立。
 
-
 ## MessagePack 与 MongoDB.Bson 在 AOT 下
 
 生成的集成产物本身零反射，注册入口还会把 Id 包裹的**基元**一并覆盖：
 
-- **MessagePack** —— `MessagePackSerializerOptions.AddStronglyTypedIds()` 会为每个去重后的枚举
+- **MessagePack。** `MessagePackSerializerOptions.AddStronglyTypedIds()` 会为每个去重后的枚举
   基元追加 `GenericEnumFormatter<TEnum>`。MessagePack 在 AOT（禁用动态代码）下的 resolver 链里没有
-  任何枚举 resolver —— 走 IL Emit 的 `DynamicEnumResolver` 被排除在外 —— 不补这一项，枚举基元的 Id
+  任何枚举 resolver（走 IL Emit 的 `DynamicEnumResolver` 被排除在外），不补这一项，枚举基元的 Id
   连序列化都过不去。非枚举基元（`int`、`Guid` 等）由内置 resolver 提供，本身零反射。该格式化器与
   动态 resolver 写同样的底层数值载荷，线格式不变。
-- **MongoDB.Bson** —— `StronglyTypedIds.RegisterBsonSerializers()` 会为全部二进制路径基元（`int`、
+- **MongoDB.Bson。** `StronglyTypedIds.RegisterBsonSerializers()` 会为全部二进制路径基元（`int`、
   `char`、`decimal`、`string`、枚举等）预注册默认配置的序列化器。否则 BSON 的
   `PrimitiveSerializationProvider` 会经 `Activator` 反射创建 `Int32Serializer`、`EnumSerializer<T>`
   等实例，构造器被裁剪后在 AOT 下直接抛 `MissingMethodException`。注册的实例与 provider 创建的默认
-  实例配置一致，行为不变。它还会注册 BSON 的动态类型——`object`、`List<object>`、`ExpandoObject`——
+  实例配置一致，行为不变。它还会注册 BSON 的动态类型（`object`、`List<object>`、`ExpandoObject`），
   因为任何根序列化上下文都会取 `BsonDefaults.DynamicArraySerializer` 与
   `BsonDefaults.DynamicDocumentSerializer`，而它们是去注册表里查的。**`Guid` 是例外**：driver 3.0 起
   没有全局默认表示，应用必须按既有数据自行注册相应表示的 `GuidSerializer`。
@@ -131,11 +130,11 @@ var options = new JsonSerializerOptions
 ## AOT 应用的检查清单
 
 1. 用 `<PublishAot>true</PublishAot>`（或 `<PublishTrimmed>true</PublishTrimmed>`）发布。
-2. 如果要序列化 Id，提供一个源生成的 `JsonSerializerContext` 并设为 `TypeInfoResolver`——它本来也是你为
+2. 如果要序列化 Id，提供一个源生成的 `JsonSerializerContext` 并设为 `TypeInfoResolver`，它本来也是你为
    其他类型准备的那一个。用 `.WithStronglyTypedIds()` 包一层，Id 才会保持字符串形态而不是被写成对象。
 3. 保留裁剪分析器。若它在你把 `Type` 传进 `GetPrimitiveIdType` / `IsStronglyTypedId` 的调用点报警，请给
-   那个参数补上 `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]`，而不是压制警告
-   ——保住元数据的正是这个标注。
+   那个参数补上 `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]`，而不是压制警告，
+   保住元数据的正是这个标注。
 4. 没有第 4 步。生成器里不存在 AOT 专用开关。
 
 [<- 返回目录](index.md) · [English](../aot.md)

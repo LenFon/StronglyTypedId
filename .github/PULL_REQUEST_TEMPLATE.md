@@ -1,5 +1,5 @@
 <!--
-  Keep the summary short and the checklist honest — an unchecked box is a question the reviewer
+  Keep the summary short and the checklist honest. An unchecked box is a question the reviewer
   would otherwise have to ask.
 -->
 

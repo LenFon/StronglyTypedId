@@ -5,7 +5,7 @@ title: 生成产物
 
 # 生成产物
 
-生成器在 Id 所在的命名空间里补出一份 `partial` 声明（嵌套的 Id 会声明回其包含类型内部——见
+生成器在 Id 所在的命名空间里补出一份 `partial` 声明（嵌套的 Id 会声明回其包含类型内部，见
 [嵌套类型](declaration.md#nested-types)），你自己的声明永远不会被改写。**产出哪些文件**取决于编译期引用了
 什么：
 
@@ -35,7 +35,7 @@ title: 生成产物
   `IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
   `IComparisonOperators<TSelf, TSelf, bool>` 的实现。
 - `IFormattableStronglyTypedId<TSelf>`（继承 `IFormattable`）与 `ISpanFormattable`，按基元类型条件生成：
-  `string` 两者都没实现，枚举基元则两者都跳过——`System.Enum` 继承来的这两个接口成员带 `[Obsolete]`。
+  `string` 两者都没实现，枚举基元则两者都跳过，因为 `System.Enum` 继承来的这两个接口成员带 `[Obsolete]`。
   该标记接口让泛型代码在不知道基元类型的前提下统一格式化：
   `static string Render<TId>(TId id) where TId : IFormattableStronglyTypedId<TId>`。
   `IStronglyTypedId<TSelf>` 刻意不约束 `IFormattable`，因此仍能接受所有 Id。
@@ -46,15 +46,15 @@ title: 生成产物
 - `[DebuggerTypeProxy]` 特性，指向一个私有嵌套的 `{TypeName}DebugView`，改变调试器**展开**该 Id 时显示的
   内容：`Value`（裸基元值）与 `Text`（规范文本形，含 `Prefix`）。`DebuggerDisplay` 只覆盖折叠时那一行摘要，
   因此带前缀的 Id 在调试器里原本只看得到裸基元值。代理类是私有的，不构成 API 面；声明在泛型容器里的 Id
-  两者都不生成——特性实参不能引用携带容器类型参数的类型（CS0416）。
-- 静态的 `Create(TPrimitiveId value)` 工厂。配置了 `Validator` 时，它拒绝不合法的值——抛
-  `ArgumentException`（`The value '…' is not a valid OrderId.`）或你指定的 `ExceptionType`——
+  两者都不生成，因为特性实参不能引用携带容器类型参数的类型（CS0416）。
+- 静态的 `Create(TPrimitiveId value)` 工厂。配置了 `Validator` 时，它拒绝不合法的值：抛
+  `ArgumentException`（`The value '…' is not a valid OrderId.`）或你指定的 `ExceptionType`，
   因此经它无法构造出非法 Id。
-- 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂——`Create` 的不抛异常版本：
+- 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂，即 `Create` 的不抛异常版本：
   失败时返回 `false` 并把 `result` 置为 `default`。
 - 每个 `[StronglyTypedIdInstance]` 对应一个 `public static readonly TSelf` 字段，经 `Create` 初始化。
 - `Deconstruct(out TPrimitiveId value)`，因此 `id.Deconstruct(out var value);` 可解构出基元值。
-  （单元素的 `var (value) = id;` 不是合法 C# —— 解构声明至少要两个元素。）
+  （单元素的 `var (value) = id;` 不是合法 C#，解构声明至少要两个元素。）
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。`provider` 传 `null` 时按
   **不变文化**解析（而非当前文化），因此 `Parse(id.ToString())` 在任何区域设置下都能往返；需要按特定文化
   解析时显式传 provider。对于以 `string` 为基元的 Id，`TryParse` 不接受 `null` 与空字符串。`Parse` 对
@@ -64,7 +64,7 @@ title: 生成产物
   都可为 `null`，且 `null` 最小：`CompareTo(null)` 返回 `1`，`null < id` 为 `true`。运算符委托给私有的
   `CompareValues` 辅助方法，因此 `null` 操作数不会去解引用 `Value`。
   以 `string` 为基元的 Id 按**序数**比较（`string.CompareOrdinal`），而不是 `string.CompareTo(string)`：
-  后者区域性敏感，与 record 合成的 `Equals` 不一致——`"a\u00ADb"` 与 `"ab"` 比较结果为相等却并不相等，
+  后者区域性敏感，与 record 合成的 `Equals` 不一致（`"a\u00ADb"` 与 `"ab"` 比较结果为相等却并不相等），
   `"I"` 与 `"i"` 的顺序还会随区域翻转。`SortedSet<T>` 与 `SortedDictionary<TKey, TValue>` 正是靠
   `CompareTo` 判重的，区域性比较会在那里静默丢掉元素。序数比较让排序与相等性、以及与序列化写出的
   不变文化文本保持一致。
@@ -85,10 +85,10 @@ title: 生成产物
 
 枚举型 Id 保留 `IComparable<TSelf>`、`IParsable<TSelf>` 与 `ISpanParsable<TSelf>`（解析走
 `Enum.TryParse<TEnum>`），但刻意省略 `IFormattable`/`ISpanFormattable`，因为 `Enum` 的
-`ToString(string, IFormatProvider)` 已被标记过时——其 `ToString()` 直接返回底层值的文本。
+`ToString(string, IFormatProvider)` 已被标记过时，其 `ToString()` 直接返回底层值的文本。
 
 `Enum.TryParse` 会接受任意数字文本，因此生成的 `TryParse` 把它收紧了：普通枚举必须命中已定义的成员
-（`Enum.IsDefined`），`[Flags]` 枚举允许成员组合，但不许出现没有任何成员占用的位——`Read | Write` 能解析，
+（`Enum.IsDefined`），`[Flags]` 枚举允许成员组合，但不许出现没有任何成员占用的位，所以 `Read | Write` 能解析，
 `999` 不能。掩码在编译期由各成员常量算出并按枚举底层类型宽度裁剪，运行期只剩一次按位与；若某个枚举
 定义了全部位（典型是 `All = -1`），则完全不生成校验。
 
@@ -100,8 +100,8 @@ title: 生成产物
 
 ## 集成入口
 
-各集成入口统一生成到同一个类里——`Len.StronglyTypedId` 命名空间下的
-`internal static partial class StronglyTypedIds`——因此无论项目声明了多少个 Id，各个 `AddStronglyTypedIds`
+各集成入口统一生成到同一个类里，即 `Len.StronglyTypedId` 命名空间下的
+`internal static partial class StronglyTypedIds`，因此无论项目声明了多少个 Id，各个 `AddStronglyTypedIds`
 重载都并存于该类中。调用它们需要 `using Len.StronglyTypedId;`（声明特性时通常已经有了）。
 
 [<- 返回目录](index.md) · [English](../generated-code.md)

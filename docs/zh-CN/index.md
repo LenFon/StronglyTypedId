@@ -7,9 +7,9 @@ title: StronglyTypedId 中文文档
 
 [English](../index.md) · **中文**
 
-一个源生成器 + 分析器 + 代码修复器：把一行 `record` 声明变成一个功能完整的强类型 Id。它会生成
-`IStronglyTypedId<TSelf, TPrimitiveId>` 实现、`IParsable<TSelf>` 支持，以及 JSON / Entity Framework Core /
-Swagger 集成——于是 `Guid` 不能出现在本该是 `OrderId` 的位置，反之亦然。
+一个源码生成器、分析器与代码修复工具。给一行 `record` 声明加上特性，就得到一个功能完备的强类型 Id：
+`IStronglyTypedId<TSelf, TPrimitiveId>` 实现、`IParsable<TSelf>` 支持，以及 JSON /
+Entity Framework Core / Swagger 集成。`Guid` 与 `OrderId` 从此不会互相误传。
 
 ```csharp
 [StronglyTypedId]
@@ -33,18 +33,18 @@ public partial record struct OrderId(Guid Value);
 | [诊断](diagnostics.md) | 每一条规则、级别划分、是否带代码修复，以及如何配置命名后缀。 |
 | [性能](performance.md) | 生成器在构建期的开销，以及生成代码在运行期的开销。 |
 | [故障排查](troubleshooting.md) | 按症状索引：什么都没生成、集成缺失、分析器不刷新、解析出乎意料。 |
-| [已知限制](limitations.md) | 源码生成器做不到的事 —— `Value` 的可见性、封闭的基元清单、不受保护的主构造函数 —— 以及各自的绕法。 |
+| [已知限制](limitations.md) | 源码生成器做不到的事（`Value` 的可见性、封闭的基元清单、不受保护的主构造函数）以及各自的绕法。 |
 | [常见问题](faq.md) | 最常被问到的问题。 |
 | [从 1.3.0 升级](migration.md) | 1.4.0 中四处需要动手的变更、四处能编译通过但会改变行为的变化，以及升级后可按需采用的能力。 |
-| [未来规划](roadmap.md) | 暂无 —— 计划中的方向已全部交付。 |
+| [未来规划](roadmap.md) | 暂无；计划中的方向已全部交付。 |
 
 ## 其他入口
 
-- [README（中文）](https://github.com/LenFon/StronglyTypedId/blob/main/README.zh-CN.md) —— 功能特性、
+- [README（中文）](https://github.com/LenFon/StronglyTypedId/blob/main/README.zh-CN.md) 介绍功能特性、
   快速开始、支持的基元类型与生成产物。
-- [PACKAGE.md](https://github.com/LenFon/StronglyTypedId/blob/main/PACKAGE.md) —— 随 NuGet 包发布的精简版。
-- [CHANGELOG（中文）](https://github.com/LenFon/StronglyTypedId/blob/main/CHANGELOG.zh-CN.md) —— 变更记录。
-- [贡献指南](https://github.com/LenFon/StronglyTypedId/blob/main/.github/CONTRIBUTING.md) —— 构建、测试与 CI 门禁。
-- [安全策略](https://github.com/LenFon/StronglyTypedId/blob/main/.github/SECURITY.md) —— 支持版本、私有报告渠道，
+- [PACKAGE.md](https://github.com/LenFon/StronglyTypedId/blob/main/PACKAGE.md) 是随 NuGet 包发布的精简版。
+- [CHANGELOG（中文）](https://github.com/LenFon/StronglyTypedId/blob/main/CHANGELOG.zh-CN.md) 记录变更。
+- [贡献指南](https://github.com/LenFon/StronglyTypedId/blob/main/.github/CONTRIBUTING.md) 说明构建、测试与 CI 门禁。
+- [安全策略](https://github.com/LenFon/StronglyTypedId/blob/main/.github/SECURITY.md) 列出支持版本、私有报告渠道，
   以及如何核验你装到的包。
-- [NuGet 包](https://www.nuget.org/packages/Len.StronglyTypedId) —— 安装方式。
+- [NuGet 包](https://www.nuget.org/packages/Len.StronglyTypedId) 提供安装方式。

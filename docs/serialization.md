@@ -9,7 +9,7 @@ title: Serialization
 
 ## System.Text.Json
 
-The converter is applied via a generated `[JsonConverter]` attribute — no extra configuration required.
+The converter is applied via a generated `[JsonConverter]` attribute, so no extra configuration is required.
 
 ```csharp
 var json = JsonSerializer.Serialize(new OrderId(Guid.NewGuid())); // "..."
@@ -28,7 +28,7 @@ var id   = JsonConvert.DeserializeObject<OrderId>(json);
 ## Primitives the serializers do not know
 
 Six primitives have no native JSON representation in one of the two libraries, so their converters write
-the invariant-culture text instead of the raw value — the same text `ToString()` produces:
+the invariant-culture text instead of the raw value, the same text `ToString()` produces:
 
 | Primitive                                     | Library          | Raw value would…                                              |
 | --------------------------------------------- | ---------------- | ------------------------------------------------------------- |
@@ -42,12 +42,12 @@ JsonConvert.SerializeObject(HalfId.Create((Half)1.5));   // "1.5"
 
 Both directions go through the same canonical text, so the round trip is lossless; the only consequence
 is that these ids appear as JSON strings rather than numbers. Every other primitive keeps its natural
-shape (numbers stay numbers, `Guid` stays a string, enums stay numbers).
+shape: numbers stay numbers, `Guid` stays a string, enums stay numbers.
 
 ## Dictionary keys
 
-A `JsonConverter<T>` does not see dictionary keys by default — `System.Text.Json` only knows the built-in
-key types and throws `NotSupportedException` for anything else — so the generated converter overrides
+A `JsonConverter<T>` does not see dictionary keys by default (`System.Text.Json` only knows the built-in
+key types and throws `NotSupportedException` for anything else), so the generated converter overrides
 `ReadAsPropertyName` / `WriteAsPropertyName` as well:
 
 ```csharp
@@ -63,12 +63,12 @@ string round-trips; a key that cannot be parsed throws `JsonException`.
 
 An `enum`-backed id follows `System.Text.Json`'s own convention for enum keys: the key is the member name
 (`"Active"`), while the value is the underlying number (`1`) unless your `JsonSerializerOptions` say
-otherwise. The asymmetry is inherent to JSON — object keys can only be strings — and it is exactly what a
-plain `Dictionary<MyEnum, MyEnum>` produces, so ids and raw enums stay interchangeable in the same document.
-Enum keys are also the one case where `options.DictionaryKeyPolicy` applies: the key is a member name
-rather than data, so camel-casing it matches the built-in enum-key handling, and the read side parses
-case-insensitively to accept the rewritten key. Every other primitive keeps its key text verbatim — that
-text *is* the value, and rewriting it would make the document unreadable — and a prefixed id is excluded
+otherwise. The asymmetry is inherent to JSON, because object keys can only be strings, and it is exactly
+what a plain `Dictionary<MyEnum, MyEnum>` produces, so ids and raw enums stay interchangeable in the same
+document. Enum keys are also the one case where `options.DictionaryKeyPolicy` applies: the key is a member
+name rather than data, so camel-casing it matches the built-in enum-key handling, and the read side parses
+case-insensitively to accept the rewritten key. Every other primitive keeps its key text verbatim, because
+that text *is* the value and rewriting it would make the document unreadable; a prefixed id is excluded
 too, because the policy would mangle the prefix. Writing a `null` id as a property name throws
 `NotSupportedException`.
 
@@ -80,14 +80,14 @@ keys stay stable across cultures.
 
 Both converters serialize the id as its underlying primitive value rather than as an object, so the JSON
 payload keeps the same shape it had before the id was introduced. A `null` reference-type id is written
-as JSON `null`, and reading that `null` back yields `null` — but only for a `record` id. A `record struct`
+as JSON `null`, and reading that `null` back yields `null`, but only for a `record` id. A `record struct`
 id cannot represent `null`, so both converters reject the token instead of silently producing `default`
 (`JsonException` / `JsonSerializationException`).
 
 An `enum`-backed id validates its value on read exactly like its text form does: a number that names no
 member is rejected with the same framework exception, so `{"status": 999}` cannot produce an id whose
-value is `(Status)999`. This is the check `Id.TryParse("999")` already applies — and that the Dapper
-paths apply — closing the one entry point that used to accept it. `[Flags]` enums are checked against the
+value is `(Status)999`. This is the check `Id.TryParse("999")` already applies, and that the Dapper
+paths apply, closing the one entry point that used to accept it. `[Flags]` enums are checked against the
 undefined-bits mask instead, so any combination of defined members passes while `999` does not.
 
 ## Validation failures
@@ -106,7 +106,7 @@ deserialization in `catch (JsonException)` sees a malformed payload and a domain
 and never has to expect an `ArgumentException` from a serializer.
 
 `BigInteger`-backed ids read their payload as text, so a payload that is not a number is reported the same
-way — as `JsonException`, not as the `FormatException` that `BigInteger.Parse` would raise.
+way, as `JsonException` rather than the `FormatException` that `BigInteger.Parse` would raise.
 
 EF Core is the exception: its `ValueConverter` calls `Create`, so a rejected value surfaces as
 `ArgumentException`. Materializing an entity from a database row is a data-integrity boundary, where that
@@ -116,8 +116,8 @@ exception describes the problem more precisely than an ORM-specific wrapper woul
 
 By default an id is **shape-compatible with its primitive**: `OrderId` backed by `Guid` serializes to the
 same JSON string a bare `Guid` would, so introducing the id does not change the wire format. When an
-existing contract has already promised the object form — typically a client that sends
-`{ "value": "3f2c…" }` — opt into it per id:
+existing contract has already promised the object form (typically a client that sends
+`{ "value": "3f2c…" }`), opt into it per id:
 
 ```csharp
 [StronglyTypedId(JsonShape = JsonShape.Object)]
@@ -127,14 +127,14 @@ public partial record struct OrderId(Guid Value);
 // JsonShape.Object:             {"value":"3f2c…"}
 ```
 
-The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to the id's own value only —
+The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to the id's own value only;
 dictionary keys are always the primitive text, because a JSON object cannot be a key. `JsonShape.Object`
 reads and writes a single `value` property; a payload that is not an object, or an object without
 `value`, throws (`JsonException` / `JsonSerializationException`), and any other property is skipped.
 
 The property name is matched case-insensitively on both sides, which is what each serializer already does
 for an ordinary object: `{"value":…}`, `{"Value":…}` and `{"VALUE":…}` all read the same. Under
-`System.Text.Json` that follows `options.PropertyNameCaseInsensitive` — turn it off and only the exact
+`System.Text.Json` that follows `options.PropertyNameCaseInsensitive`, so turn it off and only the exact
 lowercase `value` is accepted. Under `Newtonsoft.Json` it is unconditional, because Newtonsoft's own
 POCO binding is case-insensitive and a converter that were stricter would reject payloads the rest of the
 document accepts. Because the primitive form is the default, existing payloads are unaffected unless you ask
@@ -142,8 +142,8 @@ for the object form.
 
 ## Text prefix
 
-Opt into a textual prefix per id. The prefix becomes part of the id's **canonical text form** —
-`ToString()` writes it, `Parse` / `TryParse` strip it — so every text-based path picks it up
+Opt into a textual prefix per id. The prefix becomes part of the id's **canonical text form**:
+`ToString()` writes it, `Parse` / `TryParse` strip it, so every text-based path picks it up
 automatically:
 
 ```csharp
@@ -164,8 +164,8 @@ The prefix is part of every text form, not just `ToString()`: `ToString(format, 
 
 Because the prefix lives in the canonical text form, integrations that go through text need no extra
 configuration: MVC model binding, route constraints and the generated `TypeConverter` all accept and emit
-the prefixed form. Integrations that go through the primitive **value** — EF Core, Dapper, MessagePack and
-MongoDB — are unaffected and keep storing the bare primitive, so existing columns, rows and documents stay
+the prefixed form. Integrations that go through the primitive **value** (EF Core, Dapper, MessagePack and
+MongoDB) are unaffected and keep storing the bare primitive, so existing columns, rows and documents stay
 valid. The one exception is the three primitives MessagePack and BSON have no native representation for
 (`BigInteger`, `Int128`, `UInt128`): those are stored as text, so their payload does carry the prefix.
 
@@ -185,7 +185,7 @@ OrderId.TryParse("3f2c…", null, out _);       // false
 > from a JSON number to a JSON string, because the prefixed form is text. Database storage is unaffected.
 > Leave `Prefix` unset and the generated code is byte-for-byte identical to before.
 
-An empty prefix is treated as "no prefix" and reported by nothing — the generated code is identical to
+An empty prefix is treated as "no prefix" and reported by nothing, and the generated code is identical to
 leaving `Prefix` unset. A whitespace-only prefix is treated as "no prefix" too, but reported as `STIA0013`,
 because it is almost certainly a typo.
 
@@ -194,7 +194,7 @@ because it is almost certainly a typo.
 The `[JsonConverter]` attribute covers the common case, but it is ignored when you supply your own
 `JsonSerializerOptions` / `JsonSerializerSettings` and want this library's converters attached to them anyway.
 Both serializers therefore expose a registration entry point, in
-parallel to the `AddStronglyTypedIds` family generated for the other integrations — see
+parallel to the `AddStronglyTypedIds` family generated for the other integrations. See
 [Integrations](integrations.md) for those, including the binary formats (MessagePack, MongoDB BSON), which
 are registered the same way:
 
@@ -212,7 +212,7 @@ Each entry point is generated only when the corresponding serializer is referenc
 compilation declares at least one id.
 
 Both are idempotent: a converter that is already in the list is left alone, so calling either one from
-several modules — or twice from the same one — does not grow the list. Converters you added yourself stay
+several modules, or twice from the same one, does not grow the list. Converters you added yourself stay
 where they are. Under `System.Text.Json` this also means a second call after the options have been used is a
 no-op rather than an `InvalidOperationException`; `JsonSerializerOptions` freezes on first use, and the
 entry point never touches the collection when everything is already registered.
@@ -220,8 +220,8 @@ entry point never touches the collection when everything is already registered.
 ### Source-generated `JsonSerializerContext`
 
 `AddStronglyTypedIds` registers converters in `options.Converters`, but a source-generated context does not consult
-that list for a type it was asked to generate metadata for. In `JsonSourceGenerationMode.Metadata` — the
-recommended mode for AOT — the context writes the id by its properties, so the same id serializes as
+that list for a type it was asked to generate metadata for. In `JsonSourceGenerationMode.Metadata`, the
+recommended mode for AOT, the context writes the id by its properties, so the same id serializes as
 `{"Value":"…"}` through the context and `"…"` through reflection.
 
 Wrap the context with `WithStronglyTypedIds()` to make the two agree:
@@ -248,7 +248,7 @@ both is harmless.
 The two serializers differ in where they put the converter:
 
 - The `System.Text.Json` converter is nested in the id, but `System.Text.Json.dll` lives in the
-  `Microsoft.NETCore.App` shared framework, so every net8.0+ project references it — **the assembly that
+  `Microsoft.NETCore.App` shared framework, so every net8.0+ project references it. **The assembly that
   declares the id always carries the converter**, and consumers never have to think about it.
 - `Newtonsoft.Json` is a separate NuGet package. If the assembly that declares the id (typically a domain
   layer) does not reference it, that id has no Newtonsoft converter at all: a nested converter can only be
@@ -258,7 +258,7 @@ The two serializers differ in where they put the converter:
   The consumer (the host app that does reference Newtonsoft) generates a **top-level** converter for such
   ids and registers it through `AddStronglyTypedIds`. Newtonsoft's `[JsonConverter]` attribute, however,
   takes precedence over `JsonSerializerSettings.Converters`, and an attribute can only sit on the type
-  itself — so **across assemblies you must call `AddStronglyTypedIds`**. Without it the id is written as an
+  itself, so **across assemblies you must call `AddStronglyTypedIds`**. Without it the id is written as an
   object (`{"Value":"…"}`) while `System.Text.Json` writes a string: the same data in two shapes, with no
   compiler warning and no exception at runtime.
 

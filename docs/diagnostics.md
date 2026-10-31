@@ -15,7 +15,7 @@ in `.editorconfig`. Diagnostics are localized for English and Chinese according 
 
 A few rules fire in narrower circumstances than their titles suggest:
 
-- `STIA0011` needs the id to declare a `Validator` or a `Normalizer` — without either, constructing it
+- `STIA0011` needs the id to declare a `Validator` or a `Normalizer`; without either, constructing it
   directly is not a bypass. It covers `new Xxx(...)`, target-typed `new(...)` and `default` / `default(T)`
   alike; a `default` that is only compared against (`id == default`) is not reported.
 - `STIA0014` is **off by default**. Enable it with `dotnet_diagnostic.STIA0014.severity = suggestion`.
@@ -59,13 +59,13 @@ explicit constructor, and `STIA0009` only when the containing type is actually m
 
 Five rules have no code fix, because the right repair depends on your intent:
 
-- `STIA0023` (prefix overlaps the primitive text) — the only mechanical repair is deleting `Prefix`, which
+- `STIA0023` (prefix overlaps the primitive text). The only mechanical repair is deleting `Prefix`, which
   changes the canonical text form and makes data already written with that prefix unreadable. Choosing a
   safe replacement is your decision.
-- `STIA0015` (name should end with `Id`) and `STIA0016` (several ids share a primitive) — renaming a type
+- `STIA0015` (name should end with `Id`) and `STIA0016` (several ids share a primitive). Renaming a type
   correctly means renaming every reference to it, and "these ids look alike" has no mechanical repair.
-- `STIA0022` (instance name should be PascalCase) — a style suggestion; you still choose the right name.
-- `STIA0012` (code generation failed) — raised by the generator rather than the analyzer, and no rewrite can
+- `STIA0022` (instance name should be PascalCase). A style suggestion; you still choose the right name.
+- `STIA0012` (code generation failed). Raised by the generator rather than the analyzer, and no rewrite can
   guess the intent.
 
 The integration and instance rules (`STIA0019`, `STIA0024`, `STIA0020`, `STIA0021`) do offer a fix that

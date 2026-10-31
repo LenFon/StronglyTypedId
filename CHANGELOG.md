@@ -1,6 +1,6 @@
 # Changelog
 
-> 📖 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
+> 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
 All notable changes to this project are documented in this file.
 
@@ -15,7 +15,7 @@ change set rather than reproducing every commit.
 ## [1.4.0] - 2026-10-30
 
 The integrations release: custom primitives (including ULID), protobuf-net and GraphQL integrations, a
-debugger proxy on every id, and serialization and analyzer fixes. Several changes are breaking — marked
+debugger proxy on every id, and serialization and analyzer fixes. Several changes are breaking, marked
 **Breaking** under **Changed**.
 
 ### Added
@@ -27,23 +27,23 @@ debugger proxy on every id, and serialization and analyzer fixes. Several change
 - **protobuf-net, GraphQL (HotChocolate ≥ 13), MessagePack and MongoDB BSON integrations.** protobuf-net
   needs no registration (the surrogate is discovered from the attribute); GraphQL registers its scalars
   through `AddStronglyTypedIds()`; MessagePack and BSON write the primitive value itself, prefix excluded.
-- **A debugger proxy on every id** — `Value` and `Text` (canonical text, prefix included); private, with no
+- **A debugger proxy on every id**: `Value` and `Text` (canonical text, prefix included), private, with no
   run-time cost.
-- **Testing packages** — `Len.StronglyTypedId.Testing` (`Any.Id<T>()`, seeded sequences,
+- **Testing packages**: `Len.StronglyTypedId.Testing` (`Any.Id<T>()`, seeded sequences,
   `Any.Register<T>(factory)`, `Any.Reset()`), plus AutoFixture and Bogus adapters that respect validators.
-- **Nine more primitives** — `char`, `Int128`, `UInt128`, `Half`, `float`, `double`, `DateOnly`, `TimeOnly`
-  and `BigInteger` — 24 in total including `enum`.
-- **Id options** — `Normalizer`, `ExceptionType`, `RedactValidationMessage`, `Prefix` / `PrefixReadMode`,
+- **Nine more primitives**: `char`, `Int128`, `UInt128`, `Half`, `float`, `double`, `DateOnly`, `TimeOnly`
+  and `BigInteger`, 24 in total including `enum`.
+- **Id options**: `Normalizer`, `ExceptionType`, `RedactValidationMessage`, `Prefix` / `PrefixReadMode`,
   `JsonShape`, `Integrations` (a filter, not a switch), `[StronglyTypedIdInstance]` and
   `IStronglyTypedId<TSelf>`, all with assembly-level defaults in `StronglyTypedIdDefaults`.
-- **Registration entry points** — `options.AddStronglyTypedIds()` for System.Text.Json and Newtonsoft.Json,
+- **Registration entry points**: `options.AddStronglyTypedIds()` for System.Text.Json and Newtonsoft.Json,
   and `WithStronglyTypedIds()` for a source-generated `JsonSerializerContext` (Native AOT safe).
 - **Diagnostics `STIA0012`–`STIA0025`**, with code fixes for 21 of the 26 rules;
   `<StronglyTypedIdEnableAnalyzers>false</StronglyTypedIdEnableAnalyzers>` mutes the analyzer without
   affecting generation.
 - A `record`-to-id refactoring, runnable samples (`SampleConsole`, `SampleIntegrations`, `Sample1`–`Sample4`,
   `SampleGraphQL`), a roadmap page, a build-verified feature index, and a documented "Configuration binding"
-  section — an id needs `TypeConverter = true` to bind, and without it the binder fails silently.
+  section: an id needs `TypeConverter = true` to bind, and without it the binder fails silently.
 
 ### Changed
 
@@ -54,8 +54,8 @@ debugger proxy on every id, and serialization and analyzer fixes. Several change
 - **Breaking:** diagnostic ids were renamed from `STIAO###` (letter O) to `STIA0###` (digit zero).
 - **Breaking for prefixed ids:** `ToString(format, provider)` and `TryFormat` keep the prefix for a non-empty
   `format` too.
-- Seeded generation uses SplitMix64, so sequences are reproducible across runtimes — **values produced by an
-  existing seed change**.
+- Seeded generation uses SplitMix64, so sequences are reproducible across runtimes, and **values produced by
+  an existing seed change**.
 - Id discovery reads assembly metadata and caches per module MVID (−72% allocations, −54% time); assemblies
   that do not reference `Len.StronglyTypedId` are skipped.
 - `Parse` / `TryParse` fall back to the invariant culture when the provider is `null`; `STIA0011` also
@@ -71,29 +71,29 @@ debugger proxy on every id, and serialization and analyzer fixes. Several change
 
 ### Fixed
 
-- **Serialization** — converters no longer delegate to `JsonSerializer`; `BigInteger`, `Int128`, `UInt128`,
+- **Serialization.** Converters no longer delegate to `JsonSerializer`; `BigInteger`, `Int128`, `UInt128`,
   `Half`, `DateOnly` and `TimeOnly` round-trip correctly under System.Text.Json and Newtonsoft.Json;
   failures throw the serializer's own exception; undefined enum values are rejected on the value path; enum
   dictionary keys honour `DictionaryKeyPolicy`; ids whose assembly lacks Newtonsoft.Json get a converter in
   the consuming assembly.
-- **OpenAPI** — schemas match the JSON actually written (numeric, enum and date/time primitives,
+- **OpenAPI.** Schemas match the JSON actually written (numeric, enum and date/time primitives,
   `JsonShape.Object`), Minimal API parameters regain `format`, and route constraints no longer block link
   generation.
-- **EF Core and Dapper** — custom primitives map to `string`; Dapper handlers use the non-nullable
+- **EF Core and Dapper.** Custom primitives map to `string`; Dapper handlers use the non-nullable
   signatures, write the primitive for reference-type ids, convert what the driver returns, and parse enum
   text case-insensitively.
-- **Comparison and parsing** — string-backed ids compare ordinally, so `SortedSet` / `SortedDictionary` no
+- **Comparison and parsing.** String-backed ids compare ordinally, so `SortedSet` / `SortedDictionary` no
   longer collapse distinct ids; `null` compares as the smallest value; enum parsing rejects undefined
   values; `Half` accepts `NaN`, `±Infinity` and values that round to the largest finite value.
-- **Generator** — keyword names, generic containers, nested `TypeConverter` paths, indentation, empty
+- **Generator.** Keyword names, generic containers, nested `TypeConverter` paths, indentation, empty
   registration classes and JSON entry points for assemblies without the JSON library are all fixed.
-- **Analyzer and code fixes** — `STIA0016` is no longer O(N²); the analyzer no longer assumes
+- **Analyzer and code fixes.** `STIA0016` is no longer O(N²); the analyzer no longer assumes
   `Constructors[0].Parameters[0]`; `STIA0019` covers MessagePack and MongoDB; the inline refactoring only
   removes the real attribute; the `STIA0005` and `STIA0008` fixes are corrected; `file`-local ids report
   `STIA0025`.
-- **Native AOT** — MessagePack and BSON work for every primitive, with enum formatters and BSON defaults
+- **Native AOT.** MessagePack and BSON work for every primitive, with enum formatters and BSON defaults
   registered explicitly.
-- **Testing and runtime helpers** — no crash on ids in generic containers; no pinned collectible
+- **Testing and runtime helpers.** No crash on ids in generic containers; no pinned collectible
   `AssemblyLoadContext`s; `Any.Id<T>()` covers the full numeric range; `AddStronglyTypedIds(MvcOptions)` is
   idempotent.
 
@@ -107,7 +107,7 @@ The modernisation release: the generator moved to an incremental pipeline and th
 - 14 primitive types plus any `enum`: `Guid`, `string`, `byte`, `sbyte`, `short`, `ushort`, `int`,
   `uint`, `long`, `ulong`, `decimal`, `DateTime`, `DateTimeOffset` and `TimeSpan`.
 - Factories and parsing: `Create` / `TryCreate`, `Parse` / `TryParse` (string and `ReadOnlySpan<char>`),
-  `IParsable<TSelf>`, and — when the primitive supports them — `IFormattable`, `ISpanFormattable`
+  `IParsable<TSelf>`, and, when the primitive supports them, `IFormattable`, `ISpanFormattable`
   and the UTF-8 span interfaces.
 - Comparison operators, `Deconstruct`, and an opt-in `TypeConverter` (`TypeConverter = true`).
 - `Validator` on `[StronglyTypedId]`: one rule shared by `Create`, `TryCreate` and `TryParse`;

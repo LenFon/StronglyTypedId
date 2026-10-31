@@ -8,7 +8,7 @@ title: Migrating from 1.3.0 to 1.4.0
 # Migrating from 1.3.0 to 1.4.0
 
 1.4.0 is the integrations release. Four changes require action on upgrade, and four more change behaviour
-without breaking the build. Everything else is additive — new primitives, new integrations, new options —
+without breaking the build. Everything else is additive (new primitives, new integrations, new options)
 and leaves existing output untouched unless you opt in.
 
 Work through the checklist, then read [Behaviour changes](#behaviour-changes) for the ones that compile
@@ -27,8 +27,8 @@ fine but can still alter results at run time.
 7. [Re-check `STIA0011` if warnings are errors](#stia0011-warning)
 
 > The changelog also marks two entries as breaking that do not affect a 1.3.0 upgrade: the prefix rule for
-> formatted output and the seeded-generation algorithm. Both belong to features that are **new in 1.4.0** —
-> `Prefix` and the testing packages did not exist in 1.3.0 — so there is nothing to migrate. They are
+> formatted output and the seeded-generation algorithm. Both belong to features that are **new in 1.4.0**
+> (`Prefix` and the testing packages did not exist in 1.3.0), so there is nothing to migrate. They are
 > breaking only against builds of the unreleased 1.4.0 line, not against any published version.
 
 <a id="integration-entry-points"></a>
@@ -52,7 +52,7 @@ The Dapper entry point also gained a parameterless overload, `StronglyTypedIds.A
 because the handler registry is process-wide rather than per connection. The `IDbConnection` overload is
 still generated for source compatibility and now ignores its argument.
 
-A method group such as `services.AddSwaggerGen(StronglyTypedIds.ApplyTo)` no longer compiles — write the
+A method group such as `services.AddSwaggerGen(StronglyTypedIds.ApplyTo)` no longer compiles, so write the
 lambda instead:
 
 ```csharp
@@ -146,7 +146,7 @@ Three paths that used to follow the ambient culture now use the invariant cultur
   is handed, matching `ToString()`.
 
 If you relied on the current culture being picked up implicitly, pass it explicitly. Note that string
-interpolation is not affected — `$"{id}"` still goes through `IFormattable` with the current culture.
+interpolation is not affected: `$"{id}"` still goes through `IFormattable` with the current culture.
 
 <a id="stia0011-warning"></a>
 
@@ -179,21 +179,21 @@ way.
 
 Nothing below is required to upgrade; each is opt-in and leaves existing output unchanged when unused.
 
-- **Custom primitives** — a type implementing `IParsable<TSelf>`, `IComparable<TSelf>` and the non-generic
+- **Custom primitives.** A type implementing `IParsable<TSelf>`, `IComparable<TSelf>` and the non-generic
   `IComparable`, with public static `Parse` / `TryParse`, can be the wrapped primitive. Cysharp's `Ulid`
   already qualifies, so ULID needs no extra code. See [Limitations](limitations.md#primitive-types).
-- **Nine more primitives** — `char`, `Int128`, `UInt128`, `Half`, `float`, `double`, `DateOnly`, `TimeOnly`
+- **Nine more primitives.** `char`, `Int128`, `UInt128`, `Half`, `float`, `double`, `DateOnly`, `TimeOnly`
   and `BigInteger`, 24 in total including `enum`.
-- **More integrations** — protobuf-net, HotChocolate (GraphQL), MessagePack and MongoDB BSON. See
+- **More integrations.** protobuf-net, HotChocolate (GraphQL), MessagePack and MongoDB BSON. See
   [Integrations](integrations.md#protobuf-net).
-- **New id options** — `Normalizer`, `ExceptionType`, `RedactValidationMessage`, `Prefix` /
+- **New id options.** `Normalizer`, `ExceptionType`, `RedactValidationMessage`, `Prefix` /
   `PrefixReadMode`, `JsonShape`, `Integrations` and `[StronglyTypedIdInstance]`, all with assembly-level
   defaults. `Prefix` is new in this release, so there is nothing to migrate: leaving it unset keeps the
   generated code byte-for-byte identical. See [Declaring an id](declaration.md#the-declaration).
-- **Explicit JSON registration** — `options.AddStronglyTypedIds()` for System.Text.Json and
+- **Explicit JSON registration.** `options.AddStronglyTypedIds()` for System.Text.Json and
   Newtonsoft.Json, and `WithStronglyTypedIds()` for a source-generated `JsonSerializerContext`. See
   [Serialization](serialization.md#serialization).
-- **Testing packages** — `Len.StronglyTypedId.Testing` plus the AutoFixture and Bogus adapters. These are
+- **Testing packages.** `Len.StronglyTypedId.Testing` plus the AutoFixture and Bogus adapters. These are
   new packages, so there is no 1.3.0 behaviour to migrate; seeded sequences use SplitMix64 and are
   reproducible across runtimes. See [Testing](testing.md#testing).
 

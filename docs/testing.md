@@ -20,27 +20,27 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 ```
 
 Values are derived from the primitive exposed by `IStronglyTypedId<TSelf, TPrimitiveId>`, so ids
-declared in any assembly work — including ones compiled after the testing package. Every supported
+declared in any assembly work, including ones compiled after the testing package. Every supported
 primitive is covered, plus `enum`. Values are deliberately ordinary (finite floats of either sign,
 non-empty strings, dates inside 1970–2100) to avoid failures unrelated to the code under test.
 
-- **Reproducible** — `Any.Id<OrderId>(seed: 42)` returns the same value across .NET versions and
+- **Reproducible.** `Any.Id<OrderId>(seed: 42)` returns the same value across .NET versions and
   platforms, not just within one runtime: the value source is a built-in SplitMix64, not `Random`, whose
   algorithm is an implementation detail. Use one `AnyIdGenerator` instance (or `Any.Ids<T>(count, seed)`)
   when a whole sequence must repeat. A long-lived generator takes the same seed through
   `new AnyIdOptions { Seed = 42 }`; without a seed it is seeded from the clock.
-- **Validator-aware** — generation retries up to `AnyIdOptions.MaxAttempts` (100 by default) and then
+- **Validator-aware.** Generation retries up to `AnyIdOptions.MaxAttempts` (100 by default) and then
   throws with a message pointing at `Any.Register<T>(factory)`. A rejection is recognised by exception
   type alone, so a validator that throws `ArgumentException` for an unrelated reason is retried too.
-- **Overridable** — `AnyIdOptions.PrimitiveValueFactory` replaces the value source per primitive type;
+- **Overridable.** `AnyIdOptions.PrimitiveValueFactory` replaces the value source per primitive type;
   returning `null` falls back to the built-in generator.
-- **Resettable** — `Any.Reset()` discards the shared generator together with every `Any.Register<T>(factory)`
+- **Resettable.** `Any.Reset()` discards the shared generator together with every `Any.Register<T>(factory)`
   made on it. Call it between tests that register conflicting factories.
-- **Configurable text** — `AnyIdOptions.StringLength` (8 by default) sets the length of generated `string`
+- **Configurable text.** `AnyIdOptions.StringLength` (8 by default) sets the length of generated `string`
   primitives; raise it for validators that demand longer input.
-- **Boundary-aware on demand** — `AnyIdOptions.IncludeBoundaryValues` mixes in the primitive's
+- **Boundary-aware on demand.** `AnyIdOptions.IncludeBoundaryValues` mixes in the primitive's
   `MinValue` / `MaxValue` (about one value in sixteen). Off by default: extremes make uniqueness
-  assertions flaky, and ordinary values are what most tests want. Integral and `decimal` primitives only —
+  assertions flaky, and ordinary values are what most tests want. Integral and `decimal` primitives only;
   the floating-point boundaries are `NaN` / `±Infinity`, which are never generated because they make JSON
   round-trips fail for reasons unrelated to the code under test.
 
@@ -49,8 +49,8 @@ Two more sources deserve a note: an `enum` draws from its declared members, and 
 still succeed inside the retry budget.
 
 `AnyIdGenerator.Create(Type)` is the non-generic form of `Any.Id<T>()`, for the cases where the id type is
-only known at run time — a theory over a `Type[]`, or a reflection-driven test. It throws `ArgumentException`
-for a type that is not a strongly typed id.
+only known at run time, such as a theory over a `Type[]` or a reflection-driven test. It throws
+`ArgumentException` for a type that is not a strongly typed id.
 
 ### Checking named instances
 
@@ -87,8 +87,8 @@ var faker = new Faker<Order>().WithStronglyTypedIds();
 Order order = faker.Generate();   // order.Id is a real id
 ```
 
-Bogus fills a member by its declared type, and a strongly typed id is a distinct type — without this
-adapter Bogus cannot produce one, so the member stays at its default value **without any error**. The
+Bogus fills a member by its declared type, and a strongly typed id is a distinct type, so without this
+adapter Bogus cannot produce one and the member stays at its default value **without any error**. The
 adapter registers Bogus' own type rules for every id type, so generation fills them like any other member.
 
 The id types are discovered from the assemblies loaded right now. When the assembly declaring an id is
@@ -118,7 +118,7 @@ are building:
 | `Len.StronglyTypedId.Sample2` | `net10.0` | Minimal API: `IParsable` binding, `[AsParameters]`, route constraints, JSON bodies and the built-in OpenAPI transformer (`AddOpenApi(options => options.AddStronglyTypedIds())`). |
 | `Len.StronglyTypedId.Sample3` | `net8.0` | MVC + Swashbuckle 10 (Microsoft.OpenApi 2.x) schema mapping. |
 | `Len.StronglyTypedId.Sample4` | `net8.0` | `net8.0` with `Microsoft.AspNetCore.OpenApi` 8.0.0: the built-in schema transformer needs 9.0+, so the document is produced by Swashbuckle instead. |
-| `Len.StronglyTypedId.SampleGraphQL` | `net8.0` | HotChocolate (`AddStronglyTypedIds()` on `IRequestExecutorBuilder`): the id is a `SCALAR` in the schema, and its literal kind follows the JSON form — `String` for `Guid` and prefixed ids, `Int` for integers and enums (by underlying value), `Float` for floating points. Also shows the variable path (`JsonElement`) and both failure paths. |
+| `Len.StronglyTypedId.SampleGraphQL` | `net8.0` | HotChocolate (`AddStronglyTypedIds()` on `IRequestExecutorBuilder`): the id is a `SCALAR` in the schema, and its literal kind follows the JSON form: `String` for `Guid` and prefixed ids, `Int` for integers and enums (by underlying value), `Float` for floating points. Also shows the variable path (`JsonElement`) and both failure paths. |
 
 Each sample is small and self-contained; the console ones print one section per feature, so you can read
 the output next to the code. Run them with:

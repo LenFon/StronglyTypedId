@@ -21,8 +21,8 @@ public class Repository<TId>
 ```
 
 Every id also implements the single-parameter `IStronglyTypedId<TSelf>`, so a constraint can say "some
-strongly typed id" without naming the primitive — useful for logging, caching and validation helpers that
-treat the id as an opaque value. That interface already extends `IParsable<TSelf>` and
+strongly typed id" without naming the primitive, which is useful for logging, caching and validation
+helpers that treat the id as an opaque value. That interface already extends `IParsable<TSelf>` and
 `IEqualityOperators<TSelf, TSelf, bool>`, so such a constraint can still call `TId.Parse(...)` and use
 `==` / `!=` without knowing the primitive. `IFormattableStronglyTypedId<TSelf>` narrows that to ids whose
 primitive can be formatted.
@@ -47,7 +47,7 @@ if (typeof(OrderId).IsStronglyTypedId())
 The check is based on the implemented interface, so it also recognises ids generated in other assemblies.
 Interfaces, abstract types, enums and arrays are never reported as strongly typed ids. A nullable id
 (`OrderId?`) is judged by its underlying id type, so `typeof(OrderId?)` reports the same primitive as
-`typeof(OrderId)` — the same answer the MVC model binder and the EF Core converters give.
+`typeof(OrderId)`, the same answer the MVC model binder and the EF Core converters give.
 
 Results are cached per `Type`, and the cache holds its keys weakly. Types loaded into a collectible
 `AssemblyLoadContext` (plugins, hot reload, test hosts that reload assemblies) therefore stay collectible:
