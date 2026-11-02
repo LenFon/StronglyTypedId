@@ -33,7 +33,7 @@
 		     不能引入需要商业授权的组件，故锁死 7.x 并停止跟随 dependabot 的 major 升级。
 		     7.2.0 已覆盖本仓用到的全部断言 API（Should/Throw/NotThrow/ContainSingle/OnlyContain 等）。
 		-->
-		<PackageVersion Include="FluentAssertions" Version="7.2.0" />
+		<PackageVersion Include="FluentAssertions" Version="7.2.2" />
 		<!--
 		     GraphQL 集成：HotChocolate 13.x 是当前 LTS 线。scalar 契约（ScalarType<T> 的
 		     TrySerialize / TryDeserialize / ParseLiteral）在 13 与 14 之间没有变化，但 14 改了
