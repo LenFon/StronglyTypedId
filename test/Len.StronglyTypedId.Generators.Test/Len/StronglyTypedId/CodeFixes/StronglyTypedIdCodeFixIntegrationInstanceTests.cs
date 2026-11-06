@@ -53,10 +53,14 @@ public class StronglyTypedIdCodeFixIntegrationInstanceTests
     #region STIA0024 —— 集成掩码含未定义位时删掉 Integrations 实参
 
     /// <summary>
-    /// <c>Integrations</c> 取值含有超出 <c>All</c> 的位（<c>(StronglyTypedIdIntegrations)2048</c>），STIA0024 触发；
+    /// <c>Integrations</c> 取值含有超出 <c>All</c> 的位（<c>(StronglyTypedIdIntegrations)1048576</c>），STIA0024 触发；
     /// 修复与 STIA0019 同源：删掉 <c>Integrations</c> 实参即去掉未定义的位。这里用轻量的「修复是否被提供」断言验证接线，
     /// 实际改写结果已由上面的 STIA0019 用例覆盖。
     /// </summary>
+    /// <remarks>
+    /// 取值必须真的在 <c>All</c> 之外：<c>2048</c> 曾是越界位，但加入 <c>Protobuf</c> 后它已是合法标志，
+    /// 继续用它会让这条用例在「诊断根本不会触发」的前提下空转。
+    /// </remarks>
     [Fact]
     public async Task CodeFix_ShouldOfferFix_WhenUnknownIntegrationBits()
     {
@@ -65,7 +69,7 @@ public class StronglyTypedIdCodeFixIntegrationInstanceTests
 
             namespace Len.StronglyTypedId.Tests;
 
-            [StronglyTypedId(Integrations = (StronglyTypedIdIntegrations)2048)]
+            [StronglyTypedId(Integrations = (StronglyTypedIdIntegrations)1048576)]
             public partial record OrderId(Guid Value);
             """;
 
