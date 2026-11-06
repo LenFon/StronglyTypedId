@@ -29,7 +29,7 @@ public static class StronglyTypedIdConformance
 
         var failures = new List<(Type IdType, string Message)>();
 
-        foreach (var type in assembly.GetTypes())
+        foreach (var type in AssemblyTypeReader.GetLoadableTypes(assembly))
         {
             if (!IsStronglyTypedId(type))
             {
