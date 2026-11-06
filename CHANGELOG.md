@@ -12,6 +12,8 @@ change set rather than reproducing every commit.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-06
+
 ### Changed
 
 - **GraphQL:** `Int128`, `UInt128` and `BigInteger` ids are strings on both input and output. The literal
@@ -357,7 +359,8 @@ _Published with this spelling; later releases use `preview`._
 
 - Calling `AddStronglyTypedId` twice no longer registers duplicate resolvers.
 
-[Unreleased]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...HEAD
+[Unreleased]: https://github.com/lenfon/StronglyTypedId/compare/1.4.1...HEAD
+[1.4.1]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.11...1.3.0
 [1.3.0-preview.11]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.10...1.3.0-preview.11

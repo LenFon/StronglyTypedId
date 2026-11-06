@@ -11,6 +11,8 @@
 
 ## [未发布]
 
+## [1.4.1] - 2026-11-06
+
 ### 变更
 
 - **GraphQL：** `Int128`、`UInt128`、`BigInteger` 的 Id 在输入输出两侧都是字符串。字面量改为
@@ -323,7 +325,8 @@ _以此拼写发布；后续版本改用 `preview`。_
 
 - 两次调用 `AddStronglyTypedId` 不再注册重复的解析器。
 
-[未发布]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...HEAD
+[未发布]: https://github.com/lenfon/StronglyTypedId/compare/1.4.1...HEAD
+[1.4.1]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.11...1.3.0
 [1.3.0-preview.11]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0-preview.10...1.3.0-preview.11
