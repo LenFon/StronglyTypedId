@@ -16,8 +16,9 @@
 - **GraphQL：** `Int128`、`UInt128`、`BigInteger` 的 Id 在输入输出两侧都是字符串。字面量改为
   `StringValueNode`，与响应一致。
 - **规范文本：** `DateTime`、`DateTimeOffset`、`TimeOnly`、`DateOnly` 改用 `"O"` 格式，空 `format`
-  也回退到它。默认格式会丢亚秒，`TimeOnly` 连秒都丢，不同的 Id 可能写出同一段文本，作 JSON 字典键时
-  塌缩成一个条目。
+  也回退到它。前三个的默认格式有损：会丢亚秒，`TimeOnly` 连秒都丢，不同的 Id 可能写出同一段文本，
+  作 JSON 字典键时塌缩成一个条目。`DateOnly` 本身无损，改用 `"O"` 是因为它的默认短日期形
+  （`01/02/2020`）与 System.Text.Json 写出的 ISO 形不一致，两个库会对同一个 Id 给出不同文本。
 - **集成：** `Integrations = Default` 改为跟随程序集默认值，不再归一成 `All` 而覆盖程序集级的
   `Integrations = None`。
 - **EF Core 与 Dapper：** `BigInteger`、`Int128`、`UInt128`、`Half` 改存规范文本。这四个基元没有数据库
@@ -27,12 +28,11 @@
 
 - **生成器：** `[StronglyTypedId]` 在多个 `partial` 段重复标注时抛 `CS8785`，现在只有第一个声明产出，
   `CS0579` 成为唯一错误。类型名与生成成员同名时编译失败（`CS0542`），现在报 `STIA0027` 并跳过生成。
-- **System.Text.Json：** 对象形态的 Id 读到 `{"value":null,"extra":1}` 会抛 `JsonException`，因为转换器
-  没读到右大括号就返回了。现在读到 `EndObject`。
+- **System.Text.Json：** 对象形态的 Id 拒绝 `null` 基元并抛 `JsonException`，于是
+  `{"value":null,"extra":1}` 读不回来 —— 尽管引用类型基元的写侧写出的正是 `{"value":null}`。转换器现在
+  接受该 `null` 并继续读到 `EndObject`。
 - **Newtonsoft.Json：** 对象形态的 Id 漏出 `FormatException` 与 `ArgumentException`，而不是
-  `JsonException`。像日期的值在转换器运行前就被解析，`DateTimeOffset` 的 Id 丢掉 offset、`string` 的 Id
-  值可能被替换，设 `DateParseHandling.None` 可避免。`decimal` 的 Id 丢精度且拒绝 `decimal.MaxValue`，
-  现在写文本，读侧仍接受 JSON number。
+  `JsonException`。`decimal` 的 Id 丢精度且拒绝 `decimal.MaxValue`，现在写文本，读侧仍接受 JSON number。
 - **HotChocolate：** 不同命名空间的同名 Id 导致 schema 构建失败。GraphQL 名现在回退到净化后的全名。
 - **生成代码：** 带 `Prefix` 的 Id 与 HotChocolate scalar 依赖消费方的 `using System;`，在
   `<ImplicitUsings>disable` 下报 `CS1061`。受影响的文件现在以 `using global::System;` 开头。
@@ -55,6 +55,13 @@
 - **集成辅助类：** 命名空间消歧后类名可能撞车，因为 `A.B.OrderId` 与 `A_B.OrderId` 都变成
   `A_B_OrderIdConverter`。最终类名相同时追加短哈希。
 - **重构：** 「Inline strongly typed id」误删 `global using`，导致其它文件报 `CS0246`。
+
+### 已知限制
+
+- **Newtonsoft.Json 会在转换器运行前解析像日期的值。** 因此 `DateTimeOffset` 的 Id 会丢掉 offset，
+  值像 ISO 日期的 `string` 基元 Id 会被替换成别的文本。这是 Newtonsoft 的限制，生成器无法修复：
+  转换器运行时原文已经丢了。把序列化器设成 `DateParseHandling = DateParseHandling.None` 可保留原始
+  字符串；详见[序列化](docs/zh-CN/serialization.md#date-like-values-are-parsed-before-the-converter-runs)。
 
 ## [1.4.0] - 2026-10-30
 

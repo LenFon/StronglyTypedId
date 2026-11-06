@@ -17,25 +17,27 @@ change set rather than reproducing every commit.
 - **GraphQL:** `Int128`, `UInt128` and `BigInteger` ids are strings on both input and output. The literal
   is a `StringValueNode`, matching the response.
 - **Canonical text:** `DateTime`, `DateTimeOffset`, `TimeOnly` and `DateOnly` use the `"O"` format, and an
-  empty `format` falls back to it. The default format drops sub-second ticks, and `TimeOnly` drops the
-  seconds, so distinct ids could produce the same text and collapse into one JSON dictionary key.
+  empty `format` falls back to it. For the first three the default format is lossy: it drops sub-second
+  ticks, and `TimeOnly` drops the seconds, so distinct ids could produce the same text and collapse into
+  one JSON dictionary key. `DateOnly` is lossless either way; it uses `"O"` because its default short
+  date (`01/02/2020`) differs from the ISO form System.Text.Json writes, so the two libraries would
+  disagree on the same id.
 - **Integrations:** `Integrations = Default` follows the assembly default instead of normalising to `All`,
   which overrode an assembly-level `Integrations = None`.
 - **EF Core and Dapper:** `BigInteger`, `Int128`, `UInt128` and `Half` are stored as canonical text. These
-  four have no database provider type; every other primitive keeps its native column type.
+  four have no database provider type; every other built-in primitive keeps its native column type.
 
 ### Fixed
 
 - **Generator:** A `[StronglyTypedId]` repeated across `partial` declarations threw `CS8785`; only the
   first declaration produces output now, leaving `CS0579`. An id named after a generated member failed with
   `CS0542`; it now reports `STIA0027` and generation is skipped.
-- **System.Text.Json:** Object-shape ids threw `JsonException` on `{"value":null,"extra":1}`, because the
-  converter returned before reading to the closing brace. It now reads to `EndObject`.
+- **System.Text.Json:** Object-shape ids rejected a `null` primitive with `JsonException`, so
+  `{"value":null,"extra":1}` could not be read back even though the writer emits `{"value":null}` for a
+  reference-type primitive. The converter accepts the null now and reads on to `EndObject`.
 - **Newtonsoft.Json:** Object-shape ids leaked `FormatException` and `ArgumentException` instead of a
-  `JsonException`. Date-like values were parsed before the converter ran, so a `DateTimeOffset` id lost its
-  offset and a `string` id could have its value replaced; set `DateParseHandling.None` to avoid it.
-  `decimal` ids lost precision and rejected `decimal.MaxValue`; they are written as text now, and a JSON
-  number is still accepted on read.
+  `JsonException`. `decimal` ids lost precision and rejected `decimal.MaxValue`; they are written as text
+  now, and a JSON number is still accepted on read.
 - **HotChocolate:** Same-named ids in different namespaces failed schema construction. The GraphQL name
   falls back to the sanitised full name.
 - **Generated code:** Ids with a `Prefix` and HotChocolate scalars depended on the consumer's `using
@@ -64,6 +66,15 @@ change set rather than reproducing every commit.
 - **Integration helpers:** Names could collide after namespace disambiguation, because `A.B.OrderId` and
   `A_B.OrderId` both became `A_B_OrderIdConverter`. A short hash is appended when the final names collide.
 - **Refactoring:** "Inline strongly typed id" deleted a `global using` and broke other files with `CS0246`.
+
+### Known limitations
+
+- **Newtonsoft.Json parses date-like values before the converter runs.** A `DateTimeOffset` id therefore
+  loses its offset, and a `string` id whose value looks like an ISO date-time has its value replaced.
+  This is a Newtonsoft limitation, not something the generator can fix: the original text is already
+  gone by the time the converter runs. Set `DateParseHandling = DateParseHandling.None` on the
+  serializer to keep the raw string; see
+  [Serialization](docs/serialization.md#date-like-values-are-parsed-before-the-converter-runs).
 
 ## [1.4.0] - 2026-10-30
 

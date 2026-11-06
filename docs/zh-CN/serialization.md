@@ -27,6 +27,8 @@ var id   = JsonConvert.DeserializeObject<OrderId>(json);
 
 ### 像日期的值会在转换器运行前被解析
 
+<a id="date-like-values-are-parsed-before-the-converter-runs"></a>
+
 Newtonsoft 在调用转换器 *之前* 就把「像日期」的字符串解析成了 `DateTime`，因此生成的转换器拿到的是
 本地时区的 `DateTime`，而不是原始文本。两类 Id 会受影响。
 

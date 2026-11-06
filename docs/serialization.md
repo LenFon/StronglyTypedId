@@ -27,6 +27,8 @@ var id   = JsonConvert.DeserializeObject<OrderId>(json);
 
 ### Date-like values are parsed before the converter runs
 
+<a id="date-like-values-are-parsed-before-the-converter-runs"></a>
+
 Newtonsoft parses a date-like string into a `DateTime` *before* it invokes a converter, so the generated
 converter receives a local-time `DateTime` rather than the original text. Two kinds of id are affected.
 
