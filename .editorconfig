@@ -218,6 +218,14 @@ dotnet_diagnostic.IDE0290.severity = error
 # `ImmutableArray.Create(…)` / `new List<T> { … }` 这类写法可写成 `[…]`。
 dotnet_diagnostic.IDE0303.severity = error
 
+# IDE0304（集合初始化可简化为集合表达式）：同属 dotnet_style_prefer_collection_expression。
+# `ImmutableArray.CreateBuilder<T>()` + 若干 `.Add(...)` + `.ToImmutable()` 可写成 `[.. items]`，
+# 省掉中间 builder 的分配。提升为 error，让「能用集合表达式就别留 builder」成为硬性约束。
+dotnet_diagnostic.IDE0304.severity = error
+
+# IDE0340（使用未绑定的泛型类型）：`typeof(Foo<,>)` 这类开放泛型写法可简化为 `typeof(Foo<>)`。
+dotnet_diagnostic.IDE0340.severity = error
+
 # IDE0017（简化对象初始化）：对应 dotnet_style_object_initializer。
 dotnet_diagnostic.IDE0017.severity = warning
 
