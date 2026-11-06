@@ -10,6 +10,13 @@
 		  「must be executable」。
 		-->
 		<OutputType>Exe</OutputType>
+
+		<!--
+		  语言版本与目标框架无关：net8.0 默认只给 C# 12，而本仓库的测试代码用到了更高版本的纯编译器特性
+		  （如 nameof 里的未绑定泛型类型，C# 14）。这些特性不需要运行时支持，net8.0 上同样可用，故显式
+		  钉到 latest，避免同一份源码在两个 TFM 腿下因语言版本不同而编译结果不一致。
+		-->
+		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 
 	<!--
