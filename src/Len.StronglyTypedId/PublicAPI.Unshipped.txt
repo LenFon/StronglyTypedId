@@ -1,4 +1,9 @@
 #nullable enable
+Len.StronglyTypedId.StronglyTypedIdFormatting
+static Len.StronglyTypedId.StronglyTypedIdFormatting.Format<T>(T value, string? format, System.IFormatProvider? formatProvider) -> string!
+static Len.StronglyTypedId.StronglyTypedIdFormatting.ToInvariantString<T>(T value) -> string!
+static Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormat<T>(T value, System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? formatProvider) -> bool
+static Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormatUtf8<T>(T value, System.Span<byte> utf8Destination, out int bytesWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? formatProvider) -> bool
 Len.StronglyTypedId.IFormattableStronglyTypedId<TSelf>
 Len.StronglyTypedId.IStronglyTypedId<TSelf>
 Len.StronglyTypedId.JsonShape

@@ -6,7 +6,8 @@
 internal enum TryFormatKind
 {
     /// <summary>
-    /// 只能经接口调用，值类型会装箱一次。仅在基元既无 4 参也无 3 参公开重载时使用。
+    /// 只能经接口调用。仅在基元既无 4 参也无 3 参公开重载时使用；生成代码改调泛型辅助方法，
+    /// 由 <c>constrained.</c> 调用避免值类型装箱。
     /// </summary>
     Interface,
 

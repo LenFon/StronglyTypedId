@@ -18,9 +18,12 @@ The generated members are the code you would have written by hand, so there is n
 - The JSON converters are generated types, not reflection-based ones, so serializing an id costs the same
   as serializing the primitive it wraps.
 
-There is no reflection and no boxing, because a `record struct` id is a value type. The one allocation worth
-knowing about is a prefixed id: `ToString()` concatenates the prefix with the value, so that path allocates
-a string. Leave `Prefix` unset and nothing extra is allocated.
+There is no reflection and no boxing, because a `record struct` id is a value type. Primitives that
+implement `IFormattable` explicitly — `char`, and wrapper types that keep only a parameterless
+`ToString()` public — are formatted through a generic helper rather than an interface cast, so they are
+not boxed either. The one allocation worth knowing about is a prefixed id: `ToString()` concatenates the
+prefix with the value, so that path allocates a string. Leave `Prefix` unset and nothing extra is
+allocated.
 
 ## At build time
 
