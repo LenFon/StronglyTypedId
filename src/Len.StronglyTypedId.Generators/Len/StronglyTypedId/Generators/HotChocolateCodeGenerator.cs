@@ -82,14 +82,26 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
         }
 
         var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
+        var collidingNames = IntegrationNaming.GetCollidingNames(stronglyTypedIds, ambiguousNames, "HotChocolateType");
+        var collidingGraphQlNames = IntegrationNaming.GetCollidingGraphQlTypeNames(stronglyTypedIds, ambiguousNames);
 
         var registrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var scalarName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "HotChocolateType");
+            var scalarName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "HotChocolateType", collidingNames);
 
-            var scalarCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
+            // GraphQL 的类型名有自己的一张全局表，与 C# 命名空间无关：两个不同命名空间的 OrderId
+            // 即使 C# 类名已消歧，注册到 schema 时仍会撞成同一个名字，构建期报
+            // 「An item with the same key has already been added. Key: OrderId」。
+            // 故 GraphQL 名单独消歧，与 C# 类名分开计算。
+            var graphQlName = IntegrationNaming.GetGraphQlTypeName(idInfo, ambiguousNames, collidingGraphQlNames);
+
+            // 整数与浮点字面量经 CreateNode 的 AsMemory() 构造，那是 System.MemoryExtensions 的扩展方法，
+            // 必须补 using；字符串字面量走 StringValueNode(string) 重载，不需要。
+            var scalarCode = GeneratedCode.Header(
+                "Len.StronglyTypedId",
+                NeedsSystemUsing(idInfo) ? GeneratedCode.SystemUsing : null) + $$"""
                 internal static partial class StronglyTypedIds
                 {
                     /// <summary>
@@ -105,7 +117,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
                         {{GeneratedCode.CompilerGeneratedAttribute}}
                         {{GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version)}}
                         public {{scalarName}}()
-                            : base("{{idInfo.Name}}")
+                            : base("{{graphQlName}}")
                         {
                         }
 
@@ -224,10 +236,19 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// <remarks>
     /// 变量路径上 HotChocolate 传进来的是 <c>TrySerialize</c> 的返回值（已序列化的形态），不是运行时值，
     /// 因此这里必须同时接受两种形态：Id 本身（直接调用路径）与已序列化的值。
+    /// <para>
+    /// 引用类型基元为 <see langword="null"/> 时，<c>Serialize</c> 会给出空串；这里改走
+    /// <c>NullValueNode</c>，与 <c>TrySerialize</c> 返回 <see langword="false"/> 的结论一致。
+    /// </para>
     /// </remarks>
     private static string GetParseResultMember(StronglyTypedIdInfo idInfo, string version)
-        => string.Join(
-            "\n",
+    {
+        var idArm = idInfo.IsReferenceTypePrimitive && !idInfo.HasPrefix
+            ? _nestedIndent + $"    {idInfo.FullyQualifiedName} {{ Value: null }} => global::HotChocolate.Language.NullValueNode.Default,"
+            : null;
+
+        var lines = new List<string>
+        {
             _statementIndent + "/// <inheritdoc/>",
             _statementIndent + GeneratedCode.CompilerGeneratedAttribute,
             _statementIndent + GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version),
@@ -235,9 +256,19 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
             _nestedIndent + "resultValue switch",
             _nestedIndent + "{",
             _nestedIndent + "    null => global::HotChocolate.Language.NullValueNode.Default,",
-            _nestedIndent + $"    {idInfo.FullyQualifiedName} id => CreateNode(ToText(Serialize(id))),",
-            _nestedIndent + "    _ => CreateNode(ToText(resultValue)),",
-            _nestedIndent + "};");
+        };
+
+        if (idArm is not null)
+        {
+            lines.Add(idArm);
+        }
+
+        lines.Add(_nestedIndent + $"    {idInfo.FullyQualifiedName} id => CreateNode(ToText(Serialize(id))),");
+        lines.Add(_nestedIndent + "    _ => CreateNode(ToText(resultValue)),");
+        lines.Add(_nestedIndent + "};");
+
+        return string.Join("\n", lines);
+    }
 
     /// <summary>
     /// 取 <c>TrySerialize</c> 成员的完整文本（含签名与成员级缩进）。
@@ -246,10 +277,16 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// 返回的必须是 HotChocolate 能原生写出的 CLR 值（<see cref="string"/> / 整型 / 浮点），
     /// 否则框架会报「Unable to infer or resolve a schema type」。引用类型 Id 的 <see langword="null"/>
     /// 返回 <see langword="false"/>，由框架写出 GraphQL <c>null</c>。
+    /// <para>
+    /// 引用类型基元为 <see langword="null"/> 时同样返回 <see langword="false"/>：文本形的
+    /// <c>ToString()</c> 会给出空串，而 System.Text.Json / Newtonsoft / MessagePack / BSON 都写
+    /// <c>null</c>，两侧形态必须一致。带前缀的 Id 例外 —— 它的文本是「前缀 + 空串」，永远非 null。
+    /// </para>
     /// </remarks>
     private static string GetTrySerializeMember(StronglyTypedIdInfo idInfo, string version)
-        => string.Join(
-            "\n",
+    {
+        var lines = new List<string>
+        {
             _statementIndent + "/// <inheritdoc/>",
             _statementIndent + GeneratedCode.CompilerGeneratedAttribute,
             _statementIndent + GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version),
@@ -257,13 +294,28 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
             _statementIndent + "{",
             _nestedIndent + $"if (runtimeValue is {idInfo.FullyQualifiedName} id)",
             _nestedIndent + "{",
-            _nestedIndent + "    resultValue = Serialize(id);",
-            _nestedIndent + "    return true;",
-            _nestedIndent + "}",
-            string.Empty,
-            _nestedIndent + "resultValue = null;",
-            _nestedIndent + "return false;",
-            _statementIndent + "}");
+        };
+
+        if (idInfo.IsReferenceTypePrimitive && !idInfo.HasPrefix)
+        {
+            lines.Add(_nestedIndent + "    if (id.Value is null)");
+            lines.Add(_nestedIndent + "    {");
+            lines.Add(_nestedIndent + "        resultValue = null;");
+            lines.Add(_nestedIndent + "        return false;");
+            lines.Add(_nestedIndent + "    }");
+            lines.Add(string.Empty);
+        }
+
+        lines.Add(_nestedIndent + "    resultValue = Serialize(id);");
+        lines.Add(_nestedIndent + "    return true;");
+        lines.Add(_nestedIndent + "}");
+        lines.Add(string.Empty);
+        lines.Add(_nestedIndent + "resultValue = null;");
+        lines.Add(_nestedIndent + "return false;");
+        lines.Add(_statementIndent + "}");
+
+        return string.Join("\n", lines);
+    }
 
     /// <summary>
     /// 取 <c>TryDeserialize</c> 成员的完整文本（含签名与成员级缩进）。
@@ -370,17 +422,13 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// 取整数基元的序列化表达式。
     /// </summary>
     /// <remarks>
-    /// <c>IntValueNode</c> 的数值重载最宽到 <c>ulong</c>，超出它的基元（<c>Int128</c> / <c>UInt128</c> /
-    /// <c>BigInteger</c>）按文本写出，由 <c>CreateNode</c> 的字节重载还原。
+    /// 只有 <c>byte</c> … <c>ulong</c> 与枚举会走到这里：<c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c>
+    /// 的字面量种类是 <see cref="LiteralKind.String"/>（见 <see cref="GetLiteralKind"/>），不经此处。
     /// </remarks>
     private static string GetIntegerSerializeExpression(StronglyTypedIdInfo idInfo)
         => idInfo.IsEnum
             ? $"({idInfo.EnumUnderlyingTypeName})id.Value"
-            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
-            {
-                "Int128" or "UInt128" or "BigInteger" => $"id.Value.ToString({InvariantCulture})",
-                _ => "id.Value",
-            };
+            : "id.Value";
 
     /// <summary>
     /// 取浮点基元的序列化表达式。
@@ -399,14 +447,43 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// <remarks>
     /// 口径与 JSON / OpenAPI 一致：带前缀时对外是规范文本形，数字基元也一样。直接复用
     /// <see cref="PrimitiveIdSchemaMap.Resolve"/>，避免 GraphQL 与 OpenAPI 两处各写一份基元分类而漂移。
+    /// <para>
+    /// <c>Int128</c> / <c>UInt128</c> 是例外：OpenAPI 那边它们是 JSON 数字（STJ 原生支持），但 HotChocolate
+    /// 的序列化器不认识这两个类型，<c>TrySerialize</c> 只能返回文本，写出来是字符串。字面量若仍是
+    /// <c>IntValueNode</c>，就会出现「输入按 Int、输出是 String」的不对称 —— 客户端把服务端返回的
+    /// <c>"42"</c> 原样传回会被拒。故这里把三者统一成字符串，输入输出对称。
+    /// </para>
     /// </remarks>
     private static LiteralKind GetLiteralKind(StronglyTypedIdInfo idInfo)
-        => PrimitiveIdSchemaMap.Resolve(idInfo).Type switch
-        {
-            PrimitiveIdSchemaMap.Integer => LiteralKind.Integer,
-            PrimitiveIdSchemaMap.Number => LiteralKind.Floating,
-            _ => LiteralKind.String,
-        };
+        => IsTextualBigInteger(idInfo)
+            ? LiteralKind.String
+            : PrimitiveIdSchemaMap.Resolve(idInfo).Type switch
+            {
+                PrimitiveIdSchemaMap.Integer => LiteralKind.Integer,
+                PrimitiveIdSchemaMap.Number => LiteralKind.Floating,
+                _ => LiteralKind.String,
+            };
+
+    /// <summary>
+    /// 判断该 Id 的基元是否属于「GraphQL 里只能按文本承载」的大整数。
+    /// </summary>
+    /// <remarks>
+    /// 带前缀的 Id 本来就是字符串（<see cref="PrimitiveIdSchemaMap.Resolve"/> 已处理），此处不必重复判断。
+    /// </remarks>
+    private static bool IsTextualBigInteger(StronglyTypedIdInfo idInfo)
+        => !idInfo.HasPrefix
+            && StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) is "Int128" or "UInt128" or "BigInteger";
+
+    /// <summary>
+    /// 判断该 Id 的产物是否需要 <c>using global::System;</c>。
+    /// </summary>
+    /// <remarks>
+    /// 只有整数与浮点字面量会经 <c>CreateNode</c> 的 <c>Encoding.UTF8.GetBytes(text).AsMemory()</c> 构造，
+    /// 而 <c>AsMemory</c> 是 <see cref="System.MemoryExtensions"/> 上的扩展方法。字符串字面量走
+    /// <c>StringValueNode(string)</c> 重载，不需要 using。
+    /// </remarks>
+    private static bool NeedsSystemUsing(StronglyTypedIdInfo idInfo)
+        => GetLiteralKind(idInfo) is LiteralKind.Integer or LiteralKind.Floating;
 
     /// <summary>
     /// 取该 Id 对应的 GraphQL 字面量节点类型全名。

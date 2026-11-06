@@ -12,7 +12,7 @@ namespace Len.StronglyTypedId.Analyzers;
 /// <remarks>
 /// 开关走 MSBuild → 分析器通道：消费方设 <c>&lt;StronglyTypedIdEnableAnalyzers&gt;false&lt;/…&gt;</c>，
 /// SDK 把它写进 <c>build_property.StronglyTypedIdEnableAnalyzers</c>，分析器读到「否」就不注册任何诊断动作。
-/// 只消费 <c>IStronglyTypedId&lt;,&gt;</c> 而不声明 Id 的项目要背 26 条规则的噪音，逐条 NoWarn 很笨拙，故提供这个总开关。
+/// 只消费 <c>IStronglyTypedId&lt;,&gt;</c> 而不声明 Id 的项目要背 27 条规则的噪音，逐条 NoWarn 很笨拙，故提供这个总开关。
 /// </remarks>
 public class StronglyTypedIdAnalyzerMutingTests
 {

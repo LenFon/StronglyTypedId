@@ -258,7 +258,7 @@ public class NewtonsoftJsonCodeGeneratorTests
         var code = generated["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
 
         code.Should()
-            .Contain("return valueToken.ToObject<string>() switch")
+            .Contain("return valueToken.ToObject<string>(serializer) switch")
             .And.Contain("{ } text when OrderId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,")
             .And.NotContain("valueToken.ToObject<global::System.Guid?>()");
     }
@@ -274,7 +274,7 @@ public class NewtonsoftJsonCodeGeneratorTests
         var code = generated["Len.StronglyTypedId.BigId.NewtonsoftJson.g.cs"];
 
         code.Should()
-            .Contain("return valueToken.ToObject<string>() switch")
+            .Contain("return valueToken.ToObject<string>(serializer) switch")
             .And.Contain("{ } text when BigId.TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,");
     }
 

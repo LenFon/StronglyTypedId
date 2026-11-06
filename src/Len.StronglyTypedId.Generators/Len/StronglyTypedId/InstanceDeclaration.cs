@@ -65,6 +65,16 @@ internal readonly struct InstanceDeclaration
         "EqualityContract",
         "SystemTextJsonConverter",
         "NewtonsoftJsonConverter",
+        // 生成的关系运算符在元数据里叫这些名字，而它们都是合法 C# 标识符：
+        // SyntaxFacts.IsValidIdentifier 放行，分析器运行时 GetMembers 又查不到（运算符此刻还没生成），
+        // 于是实例名撞上它们会直接 CS0102。实测 op_LessThan / op_GreaterThan / op_LessThanOrEqual /
+        // op_GreaterThanOrEqual 四个都会撞；op_Equality / op_Inequality 由 record 合成，一并保留以防将来生成。
+        "op_LessThan",
+        "op_GreaterThan",
+        "op_LessThanOrEqual",
+        "op_GreaterThanOrEqual",
+        "op_Equality",
+        "op_Inequality",
     ];
 
     /// <summary>
@@ -183,6 +193,10 @@ internal readonly struct InstanceDeclaration
         => name == type.Name
             || name == type.Name + "TypeConverter"
             || name == type.Name + "DebugView"
+            // protobuf-net 的 surrogate 也生成在同一个 partial 类型里（见 ProtobufCodeGenerator），
+            // 撞名即 CS0102。与上面两条一样无条件保留：只在引用 protobuf-net 时才真正冲突，
+            // 但保留名判定是编译期静态的，提前拦下比让产物编译失败好。
+            || name == type.Name + "Surrogate"
             || Array.IndexOf(_reservedNames, name) >= 0
             || (type.IsReferenceType && Array.IndexOf(_referenceTypeReservedNames, name) >= 0)
             || (SupportedPrimitiveTypes.IsCustomPrimitive(primitiveType) && Array.IndexOf(_customPrimitiveReservedNames, name) >= 0)

@@ -6,6 +6,13 @@
 		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<!--
+		     HotChocolate 包在 ImplicitUsings=enable 时会自动注入 global using HotChocolate / HotChocolate.Types /
+		     GreenDonut（见其 build/HotChocolate.AspNetCore.targets）。本工程大量使用 System.IO.Path、
+		     Microsoft.CodeAnalysis.Location / TypeKind，注入后全部变成 CS0104 二义性。
+		     本工程只需要 HotChocolate 的「程序集存在」与真实类型可被引用，不需要它的隐式 using。
+		-->
+		<HotChocolateImplicitUsings>disable</HotChocolateImplicitUsings>
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- 显式钉定 Roslyn 版本，与生成器/CodeFix 程序集保持一致（5.9.0），
@@ -22,6 +29,12 @@
 		     提供不了该特性，故必须引用真实程序集才能让生成器层用例编译通过。
 		-->
 		<PackageReference Include="protobuf-net" />
+		<!--
+		     HotChocolate：HotChocolateCodeGenerator 的产物里含 ScalarType<T> / IntValueNode 等真实类型，
+		     合成程序集提供不了。整数与浮点字面量的产物还会调 AsMemory()，那条「无 ImplicitUsings 也要能编译」
+		     的回归用例必须引用真实包才能 Emit。
+		-->
+		<PackageReference Include="HotChocolate.AspNetCore" />
 		<!-- ASP.NET Core 框架引用：使 AspNetCoreMvcCodeGenerator 在「真实引用 MVC」的消费者画像下可被触发，
 		     并为 MVC / 路由集成提供可编译的命名空间和类型（MvcOptions / IModelBinder / IRouteConstraint 等）。 -->
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -47,15 +60,15 @@
 	</ItemGroup>
 
 	<!--
-	  Analyzer / CodeFix 用例只在 net10.0 腿跑。
-	  Verify.ApplyDefaults 把引用程序集固定成 net8.0（Microsoft.NETCore.App.Ref 8.0.0），被测分析器与
-	  CodeFix 提供器本身都是 netstandard2.0 单一产物，所以这两个目录下的用例在两个宿主 TFM 下走的是
-	  完全相同的编译与诊断路径 —— 双跑等于把同一份工作做两遍，约占本工程一半墙钟。
-	  若将来分析器引入 #if NET10_0_OR_GREATER 之类与宿主相关的分支，必须撤销这条排除。
+	  Analyzer / CodeFix 用例在两个宿主 TFM 下都跑。
+
+	  这里曾经排除 net8.0 腿，理由是「两个宿主走完全相同的编译与诊断路径，双跑等于把同一份工作做两遍，
+	  约占本工程一半墙钟」。2026-11-05 实测该估计已不成立：net8.0 跑全部 1317 例 7.6s，排除后跑 1085 例
+	  6.9s —— 多跑 232 例只多花约 0.7s（≈10%），因为 Analyze 用例本身是内存带宽密集型、并行度足够高。
+
+	  而排除的代价是实打实的：net8.0 腿从此不再验证任何分析器 / CodeFix 行为，一旦有人引入
+	  #if NET8_0_OR_GREATER 之类的宿主相关分支，或 Roslyn 在两个宿主下的行为出现差异，CI 不会发现。
+	  收益远小于风险，故撤销排除。
 	-->
-	<ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-		<Compile Remove="Len\StronglyTypedId\Analyzers\**\*.cs" />
-		<Compile Remove="Len\StronglyTypedId\CodeFixes\**\*.cs" />
-	</ItemGroup>
 
 </Project>

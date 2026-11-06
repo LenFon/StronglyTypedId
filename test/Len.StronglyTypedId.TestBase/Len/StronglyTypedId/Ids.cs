@@ -254,9 +254,8 @@ public partial record struct StrictPrefixedObjectGuidId(Guid Value);
 [StronglyTypedId(Prefix = "pri_")]
 public partial record struct PrefixedPriorityId(SamplePriority Value);
 
-// K1：属性测试要覆盖「规范文本形有损」的时间基元。无参 ToString() 对 IFormattable 基元走
-// Value.ToString(null, InvariantCulture)，即默认格式串，DateTime / DateTimeOffset 的 "G" 丢亚秒、
-// TimeOnly 的 "t" 丢秒。这三个夹具把这条边界显式测出来：它们只能断言文本幂等，不能断言值往返。
+// K1：属性测试覆盖时间基元的规范文本形。这三个基元的默认格式串有损（DateTime / DateTimeOffset 的 "G"
+// 丢亚秒与 Kind，TimeOnly 的 "t" 连秒都丢），故生成器固定用 "O"：值往返与文本幂等都必须成立。
 [StronglyTypedId]
 public partial record struct DateTimeId(DateTime Value);
 
@@ -469,6 +468,39 @@ public partial record struct ObjectShapeMoneyId(Money Value);
 [StronglyTypedId]
 public partial record struct SlugId(Slug Value);
 
+// 显式实现 IFormattable 的自定义基元：封装类型的常见写法，公开面只留无参 ToString()。
+// 生成代码若按类型名直呼两参重载会 CS1501；若写成 ((IFormattable)value) 又会为值类型装箱。
+// 用 24 字节的基元（三个引用字段）测装箱：小结构体可能被 JIT 的逃逸分析消除，那样测不出问题。
+public readonly record struct ExplicitFormattableMoney(string Amount, string Currency, string Note)
+    : IParsable<ExplicitFormattableMoney>, IComparable<ExplicitFormattableMoney>, IComparable, IFormattable
+{
+    public static ExplicitFormattableMoney Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid ExplicitFormattableMoney.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out ExplicitFormattableMoney result)
+    {
+        if (decimal.TryParse(s, NumberStyles.Number, provider ?? CultureInfo.InvariantCulture, out var amount))
+        {
+            result = new ExplicitFormattableMoney(amount.ToString(CultureInfo.InvariantCulture), "CNY", string.Empty);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public int CompareTo(ExplicitFormattableMoney other) => string.CompareOrdinal(Amount, other.Amount);
+
+    public int CompareTo(object? obj) => obj is ExplicitFormattableMoney other ? CompareTo(other) : throw new ArgumentException("Object is not an ExplicitFormattableMoney.", nameof(obj));
+
+    public override string ToString() => Amount;
+
+    string IFormattable.ToString(string? format, IFormatProvider? formatProvider) => Amount;
+}
+
+[StronglyTypedId]
+public partial record struct ExplicitFormattableMoneyId(ExplicitFormattableMoney Value);
+
 // 自定义基元的命名实例：值只能在运行期校验，故生成 CreateInstance 包装。
 [StronglyTypedId]
 [StronglyTypedIdInstance("Zero", "0")]
@@ -480,3 +512,89 @@ public partial record struct MoneyInstanceId(Money Value);
 [StronglyTypedId]
 [StronglyTypedIdInstance("Broken", "not-a-money")]
 public partial record struct BrokenMoneyInstanceId(Money Value);
+
+// 引用类型基元（class）：实例可以是 null —— default(TId) 与 TryCreate / TryParse 失败的结果都是它。
+// 规范文本形与各序列化写出路径都必须容忍这一点，否则会在 ToString() 上抛 NullReferenceException。
+public sealed class ReferenceCode : IParsable<ReferenceCode>, IComparable<ReferenceCode>, IComparable
+{
+    private ReferenceCode(string value) => Value = value;
+
+    public string Value { get; }
+
+    public static ReferenceCode Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid ReferenceCode.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out ReferenceCode result)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            result = null;
+            return false;
+        }
+
+        result = new ReferenceCode(s);
+        return true;
+    }
+
+    public int CompareTo(ReferenceCode? other) => string.CompareOrdinal(Value, other?.Value);
+
+    public int CompareTo(object? obj) => CompareTo(obj as ReferenceCode);
+
+    public override string ToString() => Value;
+}
+
+[StronglyTypedId]
+public partial record struct ReferenceCodeId(ReferenceCode Value);
+
+[StronglyTypedId(Prefix = "rc_")]
+public partial record struct PrefixedReferenceCodeId(ReferenceCode Value);
+
+// 引用类型基元 + IFormattable / ISpanFormattable：带格式的 ToString 与 TryFormat 同样要容忍 null 基元，
+// 否则 default(TId).ToString("F", provider) 会在解引用时抛 NullReferenceException。
+public sealed class FormattableReferenceCode : IParsable<FormattableReferenceCode>, IComparable<FormattableReferenceCode>, IComparable, ISpanFormattable
+{
+    private FormattableReferenceCode(string value) => Value = value;
+
+    public string Value { get; }
+
+    public static FormattableReferenceCode Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid FormattableReferenceCode.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out FormattableReferenceCode result)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            result = null;
+            return false;
+        }
+
+        result = new FormattableReferenceCode(s);
+        return true;
+    }
+
+    public int CompareTo(FormattableReferenceCode? other) => string.CompareOrdinal(Value, other?.Value);
+
+    public int CompareTo(object? obj) => CompareTo(obj as FormattableReferenceCode);
+
+    public override string ToString() => Value;
+
+    public string ToString(string? format, IFormatProvider? formatProvider) => Value;
+
+    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    {
+        if (!Value.AsSpan().TryCopyTo(destination))
+        {
+            charsWritten = 0;
+            return false;
+        }
+
+        charsWritten = Value.Length;
+        return true;
+    }
+}
+
+[StronglyTypedId]
+public partial record struct FormattableReferenceCodeId(FormattableReferenceCode Value);
+
+[StronglyTypedId(Prefix = "fc_")]
+public partial record struct PrefixedFormattableReferenceCodeId(FormattableReferenceCode Value);

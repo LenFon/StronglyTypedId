@@ -523,7 +523,7 @@ public class StronglyTypedIdGeneratorTests
                             throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.", e);
                         }
 
-                        return OrderId.TryCreate(value, out var id)
+                        return global::Len.StronglyTypedId.OrderId.TryCreate(value, out var id)
                             ? id
                             : throw new global::System.Text.Json.JsonException($"Cannot convert the JSON value to a OrderId.");
                     }
@@ -576,7 +576,7 @@ public class StronglyTypedIdGeneratorTests
                     {
                         var propertyName = reader.GetString();
             
-                        if (OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))
+                        if (global::Len.StronglyTypedId.OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))
                         {
                             return id;
                         }
@@ -718,6 +718,123 @@ public class StronglyTypedIdGeneratorTests
             """";
 
         GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 同一 Id 在两个 partial 段各标一次 <c>[StronglyTypedId]</c> 时只产出一份产物。
+    /// </summary>
+    /// <remarks>
+    /// <c>ForAttributeWithMetadataName</c> 对每个特性应用各触发一次，两次都产出就会用同一个 hintName
+    /// 调两次 <c>AddSource</c>，抛 <see cref="ArgumentException"/> 并降级成 CS8785，该 Id 的全部产物随之丢失。
+    /// 编译器已用 CS0579 报出「特性重复」，生成器只需安静地生成一份。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_GenerateOnce_WhenAttributeIsRepeatedAcrossPartialDeclarations()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct OrderId
+            {
+                public string Display => Value.ToString();
+            }
+            """";
+
+        // GetGeneratedCodeByHint 内部用 ToDictionary 收集产物：hint 名重复会直接抛 ArgumentException，
+        // 这正是修复前 CS8785 的成因。能拿到核心产物即说明只生成了一份。
+        GetGeneratedCodeByHint(code).Should().ContainKey("Len.StronglyTypedId.OrderId.g.cs");
+    }
+
+    /// <summary>
+    /// 同一段里重复标注同一特性时同样只产出一份。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_GenerateOnce_WhenAttributeIsRepeatedOnSameDeclaration()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """";
+
+        GetGeneratedCodeByHint(code).Should().ContainKey("Len.StronglyTypedId.OrderId.g.cs");
+    }
+
+    /// <summary>
+    /// Id 名为 <c>var</c> 时不生成：该名字遮蔽隐式类型关键字，产物里的 <c>out var</c> / <c>var</c> 模式
+    /// 全部编译不过（CS1503 / CS8508）。分析器对同一写法报 STIA0026，两边判据必须一致。
+    /// </summary>
+    [Fact]
+    public void Generator_Should_ReturnEmpty_WhenIdIsNamedVar()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct @var(Guid Value);
+            """";
+
+        GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Id 名与生成器写进类型体的成员同名时不生成：C# 不允许成员与封闭类型同名（CS0542），
+    /// 产物必然编译不过。分析器对同一写法报 STIA0027，两边判据必须一致。
+    /// </summary>
+    [Theory]
+    [InlineData("Create")]
+    [InlineData("TryCreate")]
+    [InlineData("Parse")]
+    [InlineData("TryParse")]
+    [InlineData("CompareTo")]
+    [InlineData("TryFormat")]
+    [InlineData("CompareValues")]
+    [InlineData("SystemTextJsonConverter")]
+    public void Generator_Should_ReturnEmpty_WhenNameCollidesWithGeneratedMember(string typeName)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record {{typeName}}(Guid Value);
+            """";
+
+        GetGeneratedCode(code).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 条件性成员不撞名时照常生成：<c>CreateInstance</c> 只在「自定义基元 + 命名实例」时产出，
+    /// <c>CompareValues</c> 只给引用类型 Id 产出。
+    /// </summary>
+    [Theory]
+    [InlineData("public partial record CreateInstance(Guid Value);")]
+    [InlineData("public partial record struct CompareValues(Guid Value);")]
+    public void Generator_Should_Generate_WhenConditionalMemberIsNotProduced(string declaration)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            {{declaration}}
+            """";
+
+        GetGeneratedCode(code).Should().NotBeEmpty();
     }
 
     /// <summary>
@@ -980,6 +1097,39 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 生成代码在表达式位置引用 Id 类型时必须用全限定名：转换器里的 <c>value</c> / <c>id</c> /
+    /// <c>options</c> 等形参与局部变量会遮蔽同名 Id 类型，短名会被解析成那个变量（CS1061 / CS0841）。
+    /// </summary>
+    /// <remarks>
+    /// 声明位置（类型名、接口列表、返回类型）仍用短名：那里没有遮蔽问题，且改动会让所有既有产物变形。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_QualifyIdType_AtStaticCallSites()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(TypeConverter = true)]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        // 核心产物：TypeConverter 的 ConvertFrom 走静态 Parse。
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("global::Len.StronglyTypedId.OrderId.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture)");
+
+        // STJ 转换器：值路径与字典键路径都走静态 TryCreate / TryParse。
+        var json = generated["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        json.Should()
+            .Contain("global::Len.StronglyTypedId.OrderId.TryCreate(value, out var id)")
+            .And.Contain("global::Len.StronglyTypedId.OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id)");
+    }
+
+    /// <summary>
     /// 非 <c>string</c> 基元保持基元自身的强类型 <c>CompareTo</c>，不被序数分支波及。
     /// </summary>
     [Fact]
@@ -1232,7 +1382,7 @@ public class StronglyTypedIdGeneratorTests
     /// </summary>
     private static bool ShouldReferenceAssembly(Assembly assembly)
         => assembly.GetName().Name is not
-            ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi" or "Microsoft.AspNetCore.Mvc" or "Microsoft.AspNetCore.Mvc.Core" or "Microsoft.AspNetCore.Mvc.Abstractions" or "Microsoft.AspNetCore.OpenApi" or "Microsoft.AspNetCore.Routing");
+            ("Len.StronglyTypedId.TestBase" or "Microsoft.EntityFrameworkCore" or "Swashbuckle.AspNetCore.SwaggerGen" or "Microsoft.OpenApi" or "Microsoft.AspNetCore.Mvc" or "Microsoft.AspNetCore.Mvc.Core" or "Microsoft.AspNetCore.Mvc.Abstractions" or "Microsoft.AspNetCore.OpenApi" or "Microsoft.AspNetCore.Routing" or "HotChocolate.Types");
 
     /// <summary>
     /// 跑生成器、把产物并入原编译后整体产出为可加载程序集，返回其中 <paramref name="typeName"/> 对应的类型。
@@ -1323,7 +1473,10 @@ public class StronglyTypedIdGeneratorTests
 
         var converter = generated["Len.StronglyTypedId.OrderId.EntityFrameworkCore.g.cs"];
         converter.Should().Contain("public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)");
-        converter.Should().Contain("property.SetValueConverter(new OrderIdConverter());");
+        // 必须按 CLR 反射枚举属性：EF 的约定集不会把强类型 Id 属性加进模型，遍历 GetProperties() 会空转。
+        converter.Should().Contain("entityType.ClrType.GetProperties(");
+        converter.Should().Contain(".HasConversion(new OrderIdConverter());");
+        converter.Should().NotContain("foreach (var property in entityType.GetProperties())");
 
         generated["StronglyTypedIds.EntityFrameworkCore.g.cs"]
             .Should().Contain("public static global::Microsoft.EntityFrameworkCore.ModelBuilder AddStronglyTypedIds(this global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
@@ -1510,6 +1663,130 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("HaveConversion(typeof(Domain_Purchase_OrderIdConverter))");
     }
 
+    /// <summary>
+    /// 消歧名把 <c>.</c> 换成 <c>_</c> 本身会塌缩：<c>A.B.OrderId</c> 与 <c>A_B.OrderId</c> 都变成
+    /// <c>A_B_OrderIdConverter</c>，两个 Id 于是生成同一个类名（CS0102）。这类冲突必须追加稳定哈希。
+    /// </summary>
+    /// <remarks>
+    /// 无冲突场景的产物名保持不变（<c>Domain_OrderIdConverter</c>），只有真正塌缩时才加后缀。
+    /// </remarks>
+    [Fact]
+    public void EfCore_Should_DisambiguateConverterNames_WhenUnderscoreReplacementCollides()
+    {
+        var code = """
+            using Len.StronglyTypedId;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace A.B
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+
+            namespace A_B
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+
+            namespace Host
+            {
+                public class TestDbContext : DbContext
+                {
+                    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) { }
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
+
+        // 两个产物必须声明不同的类名，否则 CS0102。
+        var first = generated["A.B.OrderId.EntityFrameworkCore.g.cs"];
+        var second = generated["A_B.OrderId.EntityFrameworkCore.g.cs"];
+
+        first.Should().Contain("class A_B_OrderIdConverter_");
+        second.Should().Contain("class A_B_OrderIdConverter_");
+        first.Should().NotBe(second);
+
+        // 注册入口引用的名字必须与各自产物一致。
+        var registration = generated["StronglyTypedIds.EntityFrameworkCore.g.cs"];
+        registration.Should().Contain("A_B_OrderIdConverter_");
+    }
+
+    /// <summary>
+    /// 短名唯一的 Id 若恰好叫 <c>A_B_OrderId</c>，它的短名产物 <c>A_B_OrderIdConverter</c> 会与
+    /// <c>A.B.OrderId</c> 的消歧名逐字符相同。撞名判定只看「消歧名之间是否相同」会漏掉这一档，
+    /// 产物仍撞 CS0102。
+    /// </summary>
+    /// <remarks>
+    /// 三个 Id 必须得到三个不同的类名：两个同名 Id 走消歧名，短名唯一的那个走短名，三者互不相同。
+    /// </remarks>
+    [Fact]
+    public void EfCore_Should_DisambiguateConverterNames_WhenUniqueShortNameEqualsDisambiguatedName()
+    {
+        var code = """
+            using Len.StronglyTypedId;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace A.B
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+
+            namespace C
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+
+            namespace X
+            {
+                [StronglyTypedId]
+                public partial record struct A_B_OrderId(System.Guid Value);
+            }
+
+            namespace Host
+            {
+                public class TestDbContext : DbContext
+                {
+                    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) { }
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code, typeof(Microsoft.EntityFrameworkCore.DbContext));
+
+        var first = generated["A.B.OrderId.EntityFrameworkCore.g.cs"];
+        var second = generated["C.OrderId.EntityFrameworkCore.g.cs"];
+        var third = generated["X.A_B_OrderId.EntityFrameworkCore.g.cs"];
+
+        // 短名唯一的 X.A_B_OrderId 与 A.B.OrderId 的消歧名撞车，两者都必须追加哈希。
+        first.Should().Contain("class A_B_OrderIdConverter_");
+        third.Should().Contain("class A_B_OrderIdConverter_");
+
+        // 三个类名互不相同，否则 CS0102。
+        var names = new[] { first, second, third }
+            .Select(GetGeneratedConverterName)
+            .ToArray();
+
+        names.Should().OnlyHaveUniqueItems();
+        names.Should().NotContainNulls();
+    }
+
+    /// <summary>
+    /// 从生成的 EF Core 产物里取出转换器类名（<c>class {名字} :</c> 那一行）。
+    /// </summary>
+    private static string GetGeneratedConverterName(string source)
+    {
+        const string Marker = "class ";
+
+        var start = source.IndexOf(Marker, StringComparison.Ordinal) + Marker.Length;
+        var end = source.IndexOf(" :", start, StringComparison.Ordinal);
+
+        return source[start..end];
+    }
+
     [Fact]
     public void Swagger_Should_GenerateSchemaEntry_ForNestedId()
     {
@@ -1596,21 +1873,120 @@ public class StronglyTypedIdGeneratorTests
     /// <summary>
     /// 回归用例：全部生成产物在「<c>ImplicitUsings=disable</c> 的消费者」里必须能编译。
     /// </summary>
-    [Fact]
-    public void GeneratedCode_Should_Compile_WithoutImplicitUsings()
+    /// <remarks>
+    /// 覆盖的是「产物里用到 <c>System.MemoryExtensions</c> 扩展方法」的全部形态：带前缀的 Id 会生成
+    /// <c>StartsWith</c> / <c>AsSpan</c>，HotChocolate 的整数与浮点字面量会生成 <c>AsMemory</c>。
+    /// 这些调用只有在消费方开了 <c>ImplicitUsings</c>（因而有 <c>global using System;</c>）时才碰巧能编译，
+    /// 所以每个形态都要单独跑一遍 Emit。
+    /// </remarks>
+    [Theory]
+    [InlineData("""[StronglyTypedId] public partial record OrderId(Guid Value);""")]
+    [InlineData("""[StronglyTypedId(Prefix = "ord_")] public partial record OrderId(Guid Value);""")]
+    [InlineData("""[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)] public partial record OrderId(string Value);""")]
+    [InlineData("""[StronglyTypedId(Prefix = "ord_")] public partial record OrderId(int Value);""")]
+    [InlineData("""[StronglyTypedId(Prefix = "ord_")] public partial record OrderId(char Value);""")]
+    public void GeneratedCode_Should_Compile_WithoutImplicitUsings(string declaration)
     {
-        var code = """
+        var code = $$"""
             using System;
 
             namespace Len.StronglyTypedId;
 
-            [StronglyTypedId]
-            public partial record OrderId(Guid Value);
+            {{declaration}}
             """;
 
         var compilation = CreateDefaultCompilation(code);
 
         // 显式传入取消令牌：生成 + Emit 是本套件里最重的两步，xUnit1051 要求的正是这个。
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _, cancellationToken);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: cancellationToken);
+
+        var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
+    }
+
+    /// <summary>
+    /// HotChocolate 的整数与浮点字面量经 <c>AsMemory()</c> 构造节点，同样必须能在无 <c>ImplicitUsings</c> 时编译。
+    /// </summary>
+    /// <remarks>
+    /// 门控用合成程序集满足（生成器只按程序集名与主版本判定），但产物里引用了真实的
+    /// <c>HotChocolate.Language</c> 类型，故 Emit 必须引用真实的 HotChocolate 包。
+    /// </remarks>
+    [Theory]
+    [InlineData("int")]
+    [InlineData("float")]
+    [InlineData("double")]
+    [InlineData("decimal")]
+    public void GeneratedHotChocolateCode_Should_Compile_WithoutImplicitUsings(string primitive)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId({{primitive}} Value);
+            """;
+
+        // 注册入口产物用到 Microsoft.Extensions.DependencyInjection 的扩展方法（TryAddSingleton）、
+        // HotChocolate.Execution.Configuration.IRequestExecutorBuilder，以及 HotChocolate.Execution 里的
+        // BindRuntimeType 扩展方法，三者分属不同程序集，必须一并注入。
+        var compilation = CreateDefaultCompilation(
+            code,
+            typeof(HotChocolate.Types.ScalarType<>),
+            typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection),
+            typeof(HotChocolate.Execution.Configuration.IRequestExecutorBuilder),
+            typeof(HotChocolate.Execution.IRequestExecutor));
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _, cancellationToken);
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream, cancellationToken: cancellationToken);
+
+        var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
+
+        errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
+    }
+
+    /// <summary>
+    /// <c>using global::System;</c> 必须带 <c>global::</c>：产物声明在 Id 自己的命名空间下，
+    /// 裸 <c>using System;</c> 会被同级的 <c>Xxx.System</c> 命名空间遮蔽。
+    /// </summary>
+    /// <remarks>
+    /// 这是「补 using」方案唯一的隐性前提，用一条编译用例把它钉住，避免以后被「简化」成 <c>using System;</c>。
+    /// </remarks>
+    [Fact]
+    public void GeneratedCode_Should_Compile_WhenConsumerDeclaresSiblingSystemNamespace()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.System
+            {
+                // 与 BCL 的 System 同名的同级命名空间：裸 using System; 会解析到这里。
+                internal static class Decoy
+                {
+                }
+            }
+
+            namespace Len.StronglyTypedId
+            {
+                [StronglyTypedId(Prefix = "ord_")]
+                public partial record OrderId(Guid Value);
+            }
+            """;
+
+        var compilation = CreateDefaultCompilation(code);
         var cancellationToken = TestContext.Current.CancellationToken;
 
         CSharpGeneratorDriver
@@ -2232,7 +2608,7 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("writer.WritePropertyName(options.DictionaryKeyPolicy is null ? propertyName : options.DictionaryKeyPolicy.ConvertName(propertyName));")
             .And.Contain("if (global::System.Enum.TryParse<global::Len.StronglyTypedId.Status>(propertyName, ignoreCase: true, out var val)")
             .And.Contain("&& global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), val)")
-            .And.Contain("&& StatusId.TryCreate(val, out var id))");
+            .And.Contain("&& global::Len.StronglyTypedId.StatusId.TryCreate(val, out var id))");
     }
 
     /// <summary>
@@ -2261,7 +2637,7 @@ public class StronglyTypedIdGeneratorTests
 
         converter.Should()
             .Contain("var propertyName = reader.GetString();")
-            .And.Contain("return propertyName is not null && OrderId.TryCreate(propertyName, out var id)")
+            .And.Contain("return propertyName is not null && global::Len.StronglyTypedId.OrderId.TryCreate(propertyName, out var id)")
             .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{propertyName}' to a OrderId.\");")
             .And.NotContain("OrderId.Create(reader.GetString()!)");
     }
@@ -2276,7 +2652,7 @@ public class StronglyTypedIdGeneratorTests
 
         converter.Should()
             .Contain("var propertyName = reader.GetString();")
-            .And.Contain("if (OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))")
+            .And.Contain("if (global::Len.StronglyTypedId.OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))")
             .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{propertyName}' to a OrderId.\");");
     }
 
@@ -2291,7 +2667,7 @@ public class StronglyTypedIdGeneratorTests
 
         converter.Should()
             .Contain("value = reader.GetGuid();")
-            .And.Contain("return OrderId.TryCreate(value, out var id)")
+            .And.Contain("return global::Len.StronglyTypedId.OrderId.TryCreate(value, out var id)")
             .And.Contain("throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a OrderId.\");")
             .And.NotContain("OrderId.Create(");
     }
@@ -2347,6 +2723,21 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 写侧与读侧对称：委托给 <c>JsonSerializer</c> 的基元在上下文漏登记时，同样要把框架的
+    /// <c>NotSupportedException</c> 转成带指引的 <c>JsonException</c>。只包读侧的话，序列化方向仍然
+    /// 抛出那条看不出该补哪一条 <c>[JsonSerializable]</c> 的框架消息。
+    /// </summary>
+    [Fact]
+    public void SystemTextJson_Should_GiveActionableHint_WhenPrimitiveNeedsJsonTypeInfoOnWrite()
+    {
+        var converter = GetGeneratedCodeByHint(OrderIdSource("Int128"))["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);")
+            .And.Contain("Cannot write OrderId to JSON: the JSON source generation context does not provide metadata for 'global::System.Int128'. Add [JsonSerializable(typeof(global::System.Int128))] to that context.");
+    }
+
+    /// <summary>
     /// <c>BigInteger</c> 的文本解析也必须用 <c>TryParse</c>：<c>Parse</c> 的 <see cref="FormatException"/>
     /// 同样会穿透转换器。
     /// </summary>
@@ -2396,7 +2787,7 @@ public class StronglyTypedIdGeneratorTests
 
         var converter = GetGeneratedCodeByHint(source)["Len.StronglyTypedId.StatusId.SystemTextJson.g.cs"];
 
-        converter.Should().Contain("return StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value)");
+        converter.Should().Contain("return global::Len.StronglyTypedId.StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value)");
     }
 
     /// <summary>
@@ -2440,7 +2831,7 @@ public class StronglyTypedIdGeneratorTests
 
         var converter = GetGeneratedCodeByHint(source)["Len.StronglyTypedId.StatusId.SystemTextJson.g.cs"];
 
-        converter.Should().Contain("result = StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value)");
+        converter.Should().Contain("result = global::Len.StronglyTypedId.StatusId.TryCreate(value, out var id) && global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), value)");
     }
 
     /// <summary>
@@ -2564,7 +2955,7 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("writer.WritePropertyName(\"value\");")
             .And.Contain("writer.WriteEndObject();")
             // 对象形态的读入分支同样走 TryCreate，验证失败抛 JsonException 而不是穿透 ArgumentException。
-            .And.Contain("result = OrderId.TryCreate(value, out var id)");
+            .And.Contain("result = global::Len.StronglyTypedId.OrderId.TryCreate(value, out var id)");
     }
 
     /// <summary>
@@ -2606,21 +2997,39 @@ public class StronglyTypedIdGeneratorTests
     {
         var generated = GetGeneratedCodeByHint(OrderIdSource(primitive))["Len.StronglyTypedId.OrderId.g.cs"];
 
+        // DateTime 的默认格式有损（丢亚秒与 Kind），规范文本形固定用 "O"；其余基元保持 null。
+        var expectedFormat = primitive == "DateTime" ? "\"O\"" : "null";
+
+        // 有往返格式时，空格式必须回退到规范格式，否则 ToString(null, provider) / TryFormat(default) 会
+        // 退化成有损短格式，与 ToString() 写出两套文本。
+        var expectedFormatArgument = primitive == "DateTime"
+            ? "(global::System.String.IsNullOrEmpty(format) ? \"O\" : format)"
+            : "format";
+        var expectedSpanFormatArgument = primitive == "DateTime"
+            ? "(format.IsEmpty ? \"O\" : format)"
+            : "format";
+
         generated.Should()
             .Contain("global::System.IComparable<OrderId>")
             .And.Contain("global::System.Numerics.IComparisonOperators<OrderId, OrderId, bool>")
             .And.Contain("global::System.ISpanParsable<OrderId>")
             .And.Contain("global::Len.StronglyTypedId.IFormattableStronglyTypedId<OrderId>")
             .And.Contain("global::System.ISpanFormattable")
-            .And.Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;")
+            .And.Contain($"public override string ToString() => Value.ToString({expectedFormat}, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;")
+            .And.Contain($"Value.ToString({expectedFormatArgument}, formatProvider)")
             // 直呼基元的 TryFormat（Guid 走 3 参公开重载、其余走 4 参），不再经 ISpanFormattable 接口装箱。
-            .And.Contain("Value.TryFormat(destination, out charsWritten, format")
+            .And.Contain($"Value.TryFormat(destination, out charsWritten, {expectedSpanFormatArgument}")
             .And.NotContain("(global::System.ISpanFormattable)Value");
     }
 
     /// <summary>
     /// <c>string</c> 未实现 <c>IFormattable</c> / <c>ISpanFormattable</c>，因此 string 基元的 Id 也不实现它们。
     /// </summary>
+    /// <remarks>
+    /// <c>Value?.ToString()</c> 的 <c>?.</c> 是必需的：<c>string</c> 基元的 <c>default(TId)</c> 与
+    /// <c>TryCreate</c> 失败结果里 <c>Value</c> 都是 <see langword="null"/>，写成 <c>Value.ToString()</c>
+    /// 会抛 <see cref="NullReferenceException"/>，而 <c>?? string.Empty</c> 写在解引用之后是死代码。
+    /// </remarks>
     [Fact]
     public void Generator_Should_OmitFormattingInterfaces_ForStringPrimitive()
     {
@@ -2629,7 +3038,7 @@ public class StronglyTypedIdGeneratorTests
         generated.Should()
             .NotContain("IFormattable")
             .And.NotContain("TryFormat")
-            .And.Contain("public override string ToString() => Value.ToString() ?? string.Empty;");
+            .And.Contain("public override string ToString() => Value?.ToString() ?? string.Empty;");
     }
 
     /// <summary>
@@ -2823,6 +3232,40 @@ public class StronglyTypedIdGeneratorTests
         generated.Should()
             .NotContain("TypeConverter")
             .And.NotContain("OrderIdTypeConverter");
+    }
+
+    /// <summary>
+    /// 泛型容器里的 Id 不能挂 <c>[TypeConverter]</c>：特性实参含类型参数会 CS0416。
+    /// 转换器类本身照常生成（与 JSON 转换器一致，使用者可按闭合类型手动接线），只是不挂特性。
+    /// </summary>
+    /// <remarks>
+    /// 与 <c>[DebuggerTypeProxy]</c> 同源：同一份代码里那条有守卫、这条曾漏掉，产物在消费者侧直接编译失败。
+    /// </remarks>
+    [Fact]
+    public void TypeConverter_Should_SkipAttribute_WhenIdIsInGenericContainer()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId(TypeConverter = true)]
+                public partial record struct OrderId(Guid Value);
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        var core = generated.Values.Single(text => text.Contains("partial record struct OrderId :"));
+
+        core.Should()
+            .Contain("public sealed class OrderIdTypeConverter")
+            .And.NotContain("[global::System.ComponentModel.TypeConverter(");
+
+        // 文本断言不足以证明可用：含类型参数的特性实参只在消费者侧炸成 CS0416，必须真的编译一遍。
+        GeneratedCode_Should_Compile(code);
     }
 
     /// <summary>
@@ -3658,6 +4101,8 @@ public class StronglyTypedIdGeneratorTests
     [Theory]
     [InlineData("OrderIdDebugView")]
     [InlineData("OrderIdTypeConverter")]
+    // protobuf-net 的 surrogate 也生成在同一个 partial 类型里，撞名即 CS0102。
+    [InlineData("OrderIdSurrogate")]
     [InlineData("OrderId")]
     public async Task InstanceName_Should_BeRejected_WhenItCollidesWithGeneratedNestedType(string name)
     {

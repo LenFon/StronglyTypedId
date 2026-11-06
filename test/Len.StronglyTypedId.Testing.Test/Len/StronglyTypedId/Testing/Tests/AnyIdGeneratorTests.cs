@@ -506,6 +506,27 @@ public class AnyIdGeneratorTests
     }
 
     /// <summary>
+    /// 可空 Id 按底层类型生成：<c>IsStronglyTypedId(OrderId?)</c> 返回 <see langword="true"/>，
+    /// <c>Create</c> 就必须能给出值，否则两个 API 的结论互相矛盾。
+    /// </summary>
+    /// <remarks>
+    /// 返回的是底层 Id 实例（<c>Nullable&lt;T&gt;</c> 不实现 <c>IStronglyTypedId&lt;TSelf&gt;</c>），
+    /// 调用方按可空类型使用即可。
+    /// </remarks>
+    [Fact]
+    public void Create_Should_UnwrapNullableIdType()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261102 });
+
+        typeof(GuidId?).IsStronglyTypedId().Should().BeTrue();
+
+        var created = generator.Create(typeof(GuidId?));
+
+        created.Should().BeOfType<GuidId>();
+        ((GuidId)created).Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
     /// 泛型容器里的 Id 以开放泛型暴露，无法闭合构造。报错必须说清原因，
     /// 而不是把反射的「not fully instantiated」原样抛给调用方。
     /// </summary>
@@ -513,7 +534,7 @@ public class AnyIdGeneratorTests
     public void Create_Should_RejectOpenGenericIdType_WithActionableMessage()
     {
         var generator = new AnyIdGenerator();
-        var openType = typeof(Box<>).GetNestedType(nameof(Box<int>.BoxedId))!;
+        var openType = typeof(Box<>).GetNestedType(nameof(Box<>.BoxedId))!;
 
         var act = () => generator.Create(openType);
 
@@ -579,6 +600,22 @@ public class AnyIdGeneratorTests
         act.Should().Throw<NotSupportedException>()
             .WithMessage("*Email*")
             .WithMessage("*PrimitiveValueFactory*");
+    }
+
+    /// <summary>
+    /// 空枚举（<c>enum Empty { }</c>）没有任何成员可取值，必须给出可操作的提示，
+    /// 而不是让 <c>Enum.GetValues(...).GetValue(0)</c> 抛 <see cref="IndexOutOfRangeException"/>。
+    /// </summary>
+    [Fact]
+    public void Id_Should_ThrowHelpfulError_ForEmptyEnum()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 1 });
+
+        var act = () => generator.Create(typeof(EmptyEnumId));
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*EmptyEnum*")
+            .WithMessage("*no members*");
     }
 
     /// <summary>

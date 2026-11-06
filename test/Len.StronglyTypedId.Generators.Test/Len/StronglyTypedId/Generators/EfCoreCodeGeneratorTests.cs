@@ -147,6 +147,16 @@ public class EfCoreCodeGeneratorTests
         generated.Should().ContainKey("StronglyTypedIds.EntityFrameworkCore.g.cs");
     }
 
+    /// <summary>
+    /// 每个基元的转换器都经 <c>CreateFromProvider</c> 还原，且该方法走 <c>TryCreate</c> 并自己抛
+    /// <see cref="InvalidOperationException"/>。
+    /// </summary>
+    /// <remarks>
+    /// 校验不能直接写进 <c>base(…, val => …)</c> 的 lambda：那个 lambda 会被编译成表达式树，而表达式树不允许
+    /// <c>throw</c>（CS8188）。故生成一个普通辅助方法承载校验与拒绝异常，lambda 只调用它。
+    /// 这条对**所有**基元成立，不只是枚举 —— <c>Create</c> 的 <see cref="ArgumentException"/> 同样会穿透
+    /// EF Core 的物化管线。
+    /// </remarks>
     [Fact]
     public void EfCore_Should_GenerateValueConverterForId()
     {
@@ -157,13 +167,206 @@ public class EfCoreCodeGeneratorTests
         converter.Should().Contain(
             "class OrderIdConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<global::Len.StronglyTypedId.OrderId, global::System.Guid>")
             .And.Contain(
-                "public OrderIdConverter() : base(v => v.Value, val => global::Len.StronglyTypedId.OrderId.Create(val))")
+                "public OrderIdConverter() : base(v => v.Value, val => CreateFromProvider(val))")
+            .And.Contain(
+                "private static global::Len.StronglyTypedId.OrderId CreateFromProvider(global::System.Guid val)")
+            .And.Contain("global::Len.StronglyTypedId.OrderId.TryCreate(val, out var id)")
+            .And.Contain("throw new global::System.InvalidOperationException(")
             .And.Contain(
                 "public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder) =>")
             .And.Contain(
                 "configurationBuilder.Properties<global::Len.StronglyTypedId.OrderId>().HaveConversion(typeof(OrderIdConverter));");
     }
 
+    /// <summary>
+    /// 枚举基元的转换器必须校验已定义性，且不能把 <c>Create</c> 的 <see cref="ArgumentException"/> 漏给调用方。
+    /// </summary>
+    /// <remarks>
+    /// 校验不能直接写进 <c>base(…, val => …)</c> 的 lambda：那个 lambda 会被编译成表达式树，而表达式树不允许
+    /// <c>throw</c>（CS8188）。故生成一个普通辅助方法承载校验与拒绝异常，lambda 只调用它。
+    /// </remarks>
+    [Fact]
+    public void EfCore_Should_ValidateEnumDefinedness_WhenPrimitiveIsEnum()
+    {
+        var source = """
+            using System;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Len.StronglyTypedId;
+
+            public enum Status { Active = 0, Suspended = 1 }
+
+            [StronglyTypedId]
+            public partial record struct StatusId(Status Value);
+
+            public class TestDbContext : DbContext
+            {
+                protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+                {
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCode(source);
+
+        var converter = generated["Len.StronglyTypedId.StatusId.EntityFrameworkCore.g.cs"];
+
+        converter.Should()
+            // 构造 lambda 只调用辅助方法，不内联校验（表达式树不能 throw）。
+            .Contain("public StatusIdConverter() : base(v => v.Value, val => CreateFromProvider(val))")
+            .And.Contain("private static global::Len.StronglyTypedId.StatusId CreateFromProvider(global::Len.StronglyTypedId.Status val)")
+            // 走 TryCreate 而非 Create：验证器的 ArgumentException 不会穿透物化管线。
+            .And.Contain("global::Len.StronglyTypedId.StatusId.TryCreate(val, out var id)")
+            // 普通枚举查 IsDefined。
+            .And.Contain("global::System.Enum.IsDefined(typeof(global::Len.StronglyTypedId.Status), val)")
+            .And.Contain("throw new global::System.InvalidOperationException(");
+    }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举改判「不许出现未定义的位」，与其余集成共用同一份判据。
+    /// </summary>
+    [Fact]
+    public void EfCore_Should_ValidateFlagsBits_WhenPrimitiveIsFlagsEnum()
+    {
+        var source = """
+            using System;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Len.StronglyTypedId;
+
+            [Flags]
+            public enum Access { None = 0, Read = 1, Write = 2 }
+
+            [StronglyTypedId]
+            public partial record struct AccessId(Access Value);
+
+            public class TestDbContext : DbContext
+            {
+                protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+                {
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCode(source);
+
+        var converter = generated["Len.StronglyTypedId.AccessId.EntityFrameworkCore.g.cs"];
+
+        converter.Should()
+            .Contain("CreateFromProvider(val)")
+            .And.Contain("unchecked((ulong)val) & 0x00000000FFFFFFFCUL")
+            .And.NotContain("Enum.IsDefined");
+    }
+
+    /// <summary>
+    /// 非枚举基元同样经 <c>TryCreate</c> 还原：验证器拒绝时抛 <see cref="InvalidOperationException"/>，
+    /// 而不是让 <c>Create</c> 的 <see cref="ArgumentException"/> 穿透 EF Core 的物化管线。
+    /// </summary>
+    /// <remarks>
+    /// 这条与枚举用例的差别只在「没有已定义性校验」：<c>TryCreate</c> 本身就会跑用户配的 Validator。
+    /// </remarks>
+    [Fact]
+    public void EfCore_Should_UseTryCreate_WhenPrimitiveIsNotEnum()
+    {
+        var source = """
+            using System;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class TestDbContext : DbContext
+            {
+                protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+                {
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCode(source);
+
+        var converter = generated["Len.StronglyTypedId.OrderId.EntityFrameworkCore.g.cs"];
+
+        converter.Should()
+            .Contain("public OrderIdConverter() : base(v => v.Value, val => CreateFromProvider(val))")
+            .And.Contain("private static global::Len.StronglyTypedId.OrderId CreateFromProvider(global::System.Guid val)")
+            .And.Contain("global::Len.StronglyTypedId.OrderId.TryCreate(val, out var id)")
+            .And.Contain("throw new global::System.InvalidOperationException(")
+            // 非枚举基元不生成已定义性校验。
+            .And.NotContain("Enum.IsDefined")
+            .And.NotContain("unchecked((ulong)");
+    }
+
+    /// <summary>
+    /// 自定义基元的 provider 是规范文本，还原时先 <c>TryParse</c> 回基元再交给 <c>TryCreate</c>。
+    /// </summary>
+    [Fact]
+    public void EfCore_Should_ParseTextThenTryCreate_WhenPrimitiveIsCustom()
+    {
+        var source = """
+            using System;
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Len.StronglyTypedId;
+
+            public readonly struct Email : IParsable<Email>, IComparable<Email>, IComparable
+            {
+                public Email(string value) => Value = value;
+
+                public string Value { get; }
+
+                public static Email Parse(string s, IFormatProvider? provider) => new(s);
+
+                public static bool TryParse(string? s, IFormatProvider? provider, out Email result)
+                {
+                    result = new(s ?? string.Empty);
+                    return s is not null;
+                }
+
+                public int CompareTo(Email other) => string.CompareOrdinal(Value, other.Value);
+
+                public int CompareTo(object? obj) => obj is Email email ? CompareTo(email) : 1;
+
+                public override string ToString() => Value;
+            }
+
+            [StronglyTypedId]
+            public partial record struct EmailId(Email Value);
+
+            public class TestDbContext : DbContext
+            {
+                protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+                {
+                }
+            }
+            """;
+
+        var generated = GetGeneratedCode(source);
+
+        var converter = generated["Len.StronglyTypedId.EmailId.EntityFrameworkCore.g.cs"];
+
+        converter.Should()
+            // provider 类型是 string，落库的是规范文本。
+            .Contain("ValueConverter<global::Len.StronglyTypedId.EmailId, string>")
+            .And.Contain("private static global::Len.StronglyTypedId.EmailId CreateFromProvider(string val)")
+            .And.Contain("global::Len.StronglyTypedId.Email.TryParse(val, global::System.Globalization.CultureInfo.InvariantCulture, out var value)")
+            .And.Contain("global::Len.StronglyTypedId.EmailId.TryCreate(value, out var id)")
+            .And.Contain("throw new global::System.InvalidOperationException(");
+    }
+
+    /// <summary>
+    /// 模型扫描入口必须按 CLR 反射枚举属性，而不是遍历 <c>entityType.GetProperties()</c>。
+    /// </summary>
+    /// <remarks>
+    /// EF 的约定集不会把「既不是受支持基元、也不是合法实体类型」的 CLR 属性加进模型，强类型 Id
+    /// 正好落在这一档，于是遍历 <c>GetProperties()</c> 的写法永远空转 —— 实测该方法完全无效。
+    /// 同时要尊重用户用 <c>[NotMapped]</c> / fluent <c>Ignore</c> 排除的属性。
+    /// </remarks>
     [Fact]
     public void EfCore_Should_GenerateModelBuilderScanEntry()
     {
@@ -173,8 +376,16 @@ public class EfCoreCodeGeneratorTests
 
         converter.Should().Contain(
             "public static void ApplyTo(global::Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)")
-            .And.Contain(
-                "if (property.ClrType == typeof(global::Len.StronglyTypedId.OrderId))");
+            // 按 CLR 属性枚举，而不是遍历模型里已发现的属性。
+            .And.Contain("entityType.ClrType.GetProperties(")
+            .And.Contain("global::System.Nullable.GetUnderlyingType(clrProperty.PropertyType)")
+            // 可空 Id 属性要能匹配到。
+            .And.Contain("if (propertyType != typeof(global::Len.StronglyTypedId.OrderId))")
+            // 尊重 [NotMapped] / fluent Ignore。
+            .And.Contain("conventionEntityType.IsIgnored(clrProperty.Name)")
+            // 显式纳入模型并挂转换器。
+            .And.Contain(".HasConversion(new OrderIdConverter());")
+            .And.NotContain("foreach (var property in entityType.GetProperties())");
     }
 
     [Fact]

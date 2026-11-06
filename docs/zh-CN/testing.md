@@ -42,7 +42,9 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
   会因为与被测代码无关的原因失败。
 
 另有两类取值值得说明：`enum` 从已声明的成员里抽，`char` 从 68 个字符的字母表（字母、数字与
-`@ . - _ / :`）里抽，因此「必须含分隔符」这类验证器也能在重试预算内通过。
+`@ . - _ / :`）里抽，因此「必须含分隔符」这类验证器也能在重试预算内通过。没有任何成员的枚举
+（`enum Empty { }`）是合法的 C#，但没有取值可抽，`Any.Id<T>()` 会抛 `NotSupportedException` 并在
+消息里点名该枚举，而不是报一个看不出原因的索引错误。
 
 `AnyIdGenerator.Create(Type)` 是 `Any.Id<T>()` 的非泛型形式，用于 Id 类型只在运行期才知道的场合，
 例如对 `Type[]` 做 theory，或反射驱动的测试。传入不是强类型 Id 的类型时抛 `ArgumentException`。
@@ -65,6 +67,10 @@ IReadOnlyList<(Type IdType, string Message)> broken =
 自定义基元正是它存在的理由：生成器跑在 `netstandard2.0` 上，无法执行你的 `Parse`，所以这类实例值只能在
 运行期校验。
 
+扫描范围就是 `Assembly.GetTypes()` 的返回值。声明在泛型容器里的 Id 在那里只以开放泛型定义出现，因此它的
+命名实例不会被检查；需要覆盖时请对你实际使用的闭合类型单独断言（`typeof(Box<int>.BoxedId)`）。这与
+[泛型容器里的 Id 拿不到外部引用类集成](limitations.md#generic-containers)是同一类边界。
+
 配合 AutoFixture 使用时，加上 `Len.StronglyTypedId.Testing.AutoFixture` 并启用定制：
 
 ```csharp
@@ -83,6 +89,8 @@ Order order = faker.Generate();   // order.Id 已经是造好的 Id
 
 Bogus 按属性的声明类型填值，而强类型 Id 是一个独立的类型，没有这层适配，Bogus 无从下手，属性就停在
 默认值上，且**不报任何错**。适配之后，Bogus 会为每个 Id 类型登记自己的取值规则，生成时照常填上。
+可空 Id 属性（`OrderId?`）同样覆盖：适配器会额外为 `Nullable<OrderId>` 登记一条规则，因此它们会被填上，
+而不是留在 `null`。
 
 Id 类型默认从**当前已加载的程序集**里发现；某个 Id 所在的程序集尚未加载时，显式列出即可：
 

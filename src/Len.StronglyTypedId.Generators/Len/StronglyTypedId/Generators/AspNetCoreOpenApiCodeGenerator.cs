@@ -67,8 +67,10 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                     {
                         // 参数 schema 由基元的 JsonTypeInfo 驱动（Id 在 JSON 里本就是基元），
                         // 真正的 Id 类型只在 ParameterDescription 上；请求 / 响应体则相反。
-                        var parameterType = context.ParameterDescription?.Type;
-                        var jsonType = context.JsonTypeInfo?.Type;
+                        // 可空 Id（OrderId?）的 CLR 类型是 Nullable<OrderId>，不拆壳就查不到表，
+                        // 框架为它建的空 schema 会顶掉 OrderId 组件。与 MVC 绑定器、EF 转换器同一口径。
+                        var parameterType = UnwrapNullable(context.ParameterDescription?.Type);
+                        var jsonType = UnwrapNullable(context.JsonTypeInfo?.Type);
 
                         if ((parameterType is not null && _schemas.TryGetValue(parameterType, out var entry))
                             || (jsonType is not null && _schemas.TryGetValue(jsonType, out entry)))
@@ -93,6 +95,12 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
 
                         return global::System.Threading.Tasks.Task.CompletedTask;
                     }
+
+                    /// <summary>
+                    /// 可空 Id 按底层类型查表：<c>Nullable&lt;T&gt;</c> 不是 Id 类型本身，不拆壳就永远查不到。
+                    /// </summary>
+                    private static global::System.Type? UnwrapNullable(global::System.Type? type)
+                        => type is null ? null : global::System.Nullable.GetUnderlyingType(type) ?? type;
                 }
 
                 /// <summary>

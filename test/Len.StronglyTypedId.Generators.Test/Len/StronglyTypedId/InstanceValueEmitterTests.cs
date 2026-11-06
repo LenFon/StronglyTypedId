@@ -154,6 +154,29 @@ public class InstanceValueEmitterTests
     public void TryEmit_Should_RejectInvalidDateTime()
         => InstanceValueEmitter.TryEmit(GetPrimitive("DateTime"), "not-a-date", out _).Should().BeFalse();
 
+    /// <summary>
+    /// 带偏移的 <c>DateTime</c> 文本必须被拒：<c>RoundtripKind</c> 会返回 <c>Kind=Local</c>，
+    /// 而 ticks 是「换算到构建机器本地墙钟」后的值，同一份源码在不同时区的机器上会产出不同字面量。
+    /// </summary>
+    [Theory]
+    [InlineData("2020-01-01T00:00:00+08:00")]
+    [InlineData("2020-01-01T00:00:00+00:00")]
+    [InlineData("2020-01-01T00:00:00-05:00")]
+    public void TryEmit_Should_RejectDateTimeWithExplicitOffset(string text)
+        => InstanceValueEmitter.TryEmit(GetPrimitive("DateTime"), text, out _).Should().BeFalse();
+
+    /// <summary>
+    /// 无偏移的 <c>DateTime</c> 文本保持 <c>Unspecified</c>，与时区无关，必须接受。
+    /// </summary>
+    [Fact]
+    public void TryEmit_Should_AcceptDateTimeWithoutOffset()
+    {
+        InstanceValueEmitter.TryEmit(GetPrimitive("DateTime"), "2020-01-01T00:00:00", out var expression)
+            .Should().BeTrue();
+
+        expression.Should().Be("new global::System.DateTime(637134336000000000L, global::System.DateTimeKind.Unspecified)");
+    }
+
     [Fact]
     public void TryEmit_Should_TranslateDateTimeOffsetWithOffset()
     {
@@ -162,6 +185,16 @@ public class InstanceValueEmitterTests
 
         expression.Should().Be("new global::System.DateTimeOffset(637134336000000000L, new global::System.TimeSpan(288000000000L))");
     }
+
+    /// <summary>
+    /// 不带偏移的 <c>DateTimeOffset</c> 文本必须被拒：<c>DateTimeOffset.TryParse</c> 会用本地时区补偏移，
+    /// 产物同样随构建机器变化。
+    /// </summary>
+    [Theory]
+    [InlineData("2020-01-01T00:00:00")]
+    [InlineData("2020-01-01")]
+    public void TryEmit_Should_RejectDateTimeOffsetWithoutOffset(string text)
+        => InstanceValueEmitter.TryEmit(GetPrimitive("DateTimeOffset"), text, out _).Should().BeFalse();
 
     [Fact]
     public void TryEmit_Should_RejectInvalidDateTimeOffset()
@@ -242,7 +275,8 @@ public class InstanceValueEmitterTests
     {
         InstanceValueEmitter.TryEmit(GetPrimitive("Half"), "1.5", out var expression).Should().BeTrue();
 
-        expression.Should().Be("(global::System.Half)(1.5F)");
+        // 发射运行期 Half.Parse 而不是 double / float 字面量：字面量会先舍入，与 Parse 语义不一致。
+        expression.Should().Be("global::System.Half.Parse(\"1.5\", global::System.Globalization.CultureInfo.InvariantCulture)");
     }
 
     [Theory]
@@ -265,6 +299,18 @@ public class InstanceValueEmitterTests
     [InlineData("70000", false)]
     public void TryEmit_Should_ApplyHalfRoundingThreshold(string text, bool expected)
         => InstanceValueEmitter.TryEmit(GetPrimitive("Half"), text, out _).Should().Be(expected);
+
+    /// <summary>
+    /// 缺陷回归：<c>65519.9999</c> 与 <c>65519.999999999999</c> 在 <see cref="Half"/> 里都舍入成
+    /// <c>65504</c>（合法），但按 <c>float</c> / <c>double</c> 解析会先舍入成 <c>65520</c>，被溢出判定误拒。
+    /// 判定必须优先按 <see cref="decimal"/> 做。
+    /// </summary>
+    [Theory]
+    [InlineData("65519.9999")]
+    [InlineData("-65519.9999")]
+    [InlineData("65519.999999999999")]
+    public void TryEmit_Should_AcceptHalf_WhenFloatRoundingWouldLookLikeOverflow(string text)
+        => InstanceValueEmitter.TryEmit(GetPrimitive("Half"), text, out _).Should().BeTrue();
 
     [Fact]
     public void TryEmit_Should_RejectUnparseableHalf()

@@ -19,6 +19,9 @@
 		     内存库是最小的可复现载体（枚举列 long / char、Guid 列 string / decimal 列 double）。 -->
 		<PackageReference Include="Microsoft.Data.Sqlite" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" />
+		<!-- EF Core 的 SQLite 提供程序：AddStronglyTypedIds(ModelBuilder) 的运行时用例要真的建库并往返，
+		     只有 Microsoft.Data.Sqlite 拿不到 UseSqlite() 扩展方法。 -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
 		<!-- 二进制序列化集成：使 MessagePackCodeGenerator / MongoDbCodeGenerator 在本编译里被门控触发。 -->

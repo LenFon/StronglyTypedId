@@ -16,8 +16,22 @@ internal static partial class StronglyTypedIds
         /// </summary>
         [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
         [global::System.CodeDom.Compiler.GeneratedCodeAttribute("EfCoreCodeGenerator", "<version>")]
-        public OrderIdConverter() : base(v => v.Value, val => global::Probe.OrderId.Create(val))
+        public OrderIdConverter() : base(v => v.Value, val => CreateFromProvider(val))
         {
+        }
+        /// <summary>
+        /// 把数据库里的值还原成 OrderId；验证器拒绝或枚举取值未定义时抛 <see cref="global::System.InvalidOperationException"/>。
+        /// </summary>
+        [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+        [global::System.CodeDom.Compiler.GeneratedCodeAttribute("EfCoreCodeGenerator", "<version>")]
+        private static global::Probe.OrderId CreateFromProvider(global::System.Guid val)
+        {
+            if (global::Probe.OrderId.TryCreate(val, out var id))
+            {
+                return id;
+            }
+
+            throw new global::System.InvalidOperationException($"Cannot convert the database value '{val}' to a OrderId.");
         }
 
         /// <summary>
@@ -31,7 +45,7 @@ internal static partial class StronglyTypedIds
 
         /// <summary>
         /// 通过扫描模型把 OrderId 转换器应用到 Entity Framework Core。
-        /// 约定不可用时在 <c>OnModelCreating(ModelBuilder)</c> 末尾调用，只扫描已加入模型的实体类型。
+        /// 约定不可用时在 <c>OnModelCreating(ModelBuilder)</c> 末尾调用。
         /// </summary>
         /// <param name="modelBuilder"><see cref="global::Microsoft.EntityFrameworkCore.ModelBuilder"/></param>
         [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
@@ -40,12 +54,33 @@ internal static partial class StronglyTypedIds
         {
             foreach (var entityType in modelBuilder.Model.GetEntityTypes())
             {
-                foreach (var property in entityType.GetProperties())
+                // 不能遍历 entityType.GetProperties()：EF 的约定集不会把「既不是受支持基元、
+                // 也不是合法实体类型」的 CLR 属性加进模型，强类型 Id 正好落在这一档，
+                // 于是那个循环永远空转。必须按 CLR 反射枚举属性，再用 Property(...) 显式纳入模型。
+                foreach (var clrProperty in entityType.ClrType.GetProperties(
+                    global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.Instance))
                 {
-                    if (property.ClrType == typeof(global::Probe.OrderId))
+                    // 可空 Id 属性的声明类型是 Nullable<Id>，不拆壳就匹配不到。
+                    var propertyType = global::System.Nullable.GetUnderlyingType(clrProperty.PropertyType)
+                        ?? clrProperty.PropertyType;
+
+                    if (propertyType != typeof(global::Probe.OrderId))
                     {
-                        property.SetValueConverter(new OrderIdConverter());
+                        continue;
                     }
+
+                    // 用户用 [NotMapped] 或 fluent Ignore 明确排除的属性必须尊重：
+                    // Property(...) 会把它们重新拉回模型，等于推翻用户的决定。
+                    if (entityType is global::Microsoft.EntityFrameworkCore.Metadata.IConventionEntityType conventionEntityType
+                        && conventionEntityType.IsIgnored(clrProperty.Name))
+                    {
+                        continue;
+                    }
+
+                    // 可空属性挂非可空转换器：EF 自己处理 null，挂 ValueConverter<Id?, T?> 反而仍报「无法映射」。
+                    modelBuilder.Entity(entityType.ClrType)
+                        .Property(clrProperty.Name)
+                        .HasConversion(new OrderIdConverter());
                 }
             }
         }

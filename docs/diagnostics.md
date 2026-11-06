@@ -16,8 +16,9 @@ in `.editorconfig`. Diagnostics are localized for English and Chinese according 
 A few rules fire in narrower circumstances than their titles suggest:
 
 - `STIA0011` needs the id to declare a `Validator` or a `Normalizer`; without either, constructing it
-  directly is not a bypass. It covers `new Xxx(...)`, target-typed `new(...)` and `default` / `default(T)`
-  alike; a `default` that is only compared against (`id == default`) is not reported.
+  directly is not a bypass. It covers `new Xxx(...)`, target-typed `new(...)`, `default` / `default(T)`
+  and `id with { Value = … }` alike; a `default` that is only compared against (`id == default`) is not
+  reported, and neither is a `with` expression that does not assign `Value`.
 - `STIA0014` is **off by default**. Enable it with `dotnet_diagnostic.STIA0014.severity = suggestion`.
 - `STIA0016` reports once per group of ids sharing a primitive, on the ordinally first member.
 
@@ -50,14 +51,20 @@ A few rules fire in narrower circumstances than their titles suggest:
 | STIA0023 | Prefix overlaps the primitive text                                    | —                                                         |
 | STIA0024 | Integration mask contains undefined bits                              | Remove the 'Integrations' argument                        |
 | STIA0025 | Strongly typed id cannot be a file-local type                         | Remove the `file` modifier                                |
+| STIA0026 | Strongly typed id cannot be named 'var'                               | —                                                         |
+| STIA0027 | Strongly typed id name collides with a generated member               | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Most rules ship a code fix, so the light bulb usually repairs the declaration for you. A few offer it only
-when the repair is unambiguous: `STIA0003` appears only when the id itself is generic (removing the
-*containing* type's type parameters would change your design), `STIA0005` only when the type declares no
-explicit constructor, and `STIA0009` only when the containing type is actually missing `partial`.
+when the repair is unambiguous: `STIA0003` appears only when the id itself is generic and neither its
+primary constructor nor its members use the type parameter (removing the *containing* type's type
+parameters would change your design, and dropping a used `<T>` would leave undefined identifiers),
+`STIA0005` only when the type declares no body constructor (the fix replaces the whole parameter list
+with `(Guid Value)`, so it is also offered when a primary constructor has the wrong number of
+parameters), and `STIA0009` only when the containing
+type is actually missing `partial`.
 
-Five rules have no code fix, because the right repair depends on your intent:
+Seven rules have no code fix, because the right repair depends on your intent:
 
 - `STIA0023` (prefix overlaps the primitive text). The only mechanical repair is deleting `Prefix`, which
   changes the canonical text form and makes data already written with that prefix unreadable. Choosing a
@@ -65,6 +72,11 @@ Five rules have no code fix, because the right repair depends on your intent:
 - `STIA0015` (name should end with `Id`) and `STIA0016` (several ids share a primitive). Renaming a type
   correctly means renaming every reference to it, and "these ids look alike" has no mechanical repair.
 - `STIA0022` (instance name should be PascalCase). A style suggestion; you still choose the right name.
+- `STIA0026` (the id is named `var`). That name shadows the implicit-typing keyword, so every `out var` and
+  `var` pattern in the generated code stops compiling. No rewrite can pick a replacement name for you.
+- `STIA0027` (the type name collides with a generated member). C# forbids a member sharing its enclosing
+  type's name (CS0542), and the members are generated, so the only repair is renaming the type — a decision
+  about your domain vocabulary, not a mechanical rewrite.
 - `STIA0012` (code generation failed). Raised by the generator rather than the analyzer, and no rewrite can
   guess the intent.
 

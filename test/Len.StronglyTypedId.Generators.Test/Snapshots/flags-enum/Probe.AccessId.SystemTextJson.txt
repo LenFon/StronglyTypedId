@@ -37,7 +37,7 @@ partial record struct AccessId
                 throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a AccessId.", e);
             }
 
-            return AccessId.TryCreate(value, out var id) && (unchecked((ulong)value) & 0x00000000FFFFFFFCUL) == 0UL
+            return global::Probe.AccessId.TryCreate(value, out var id) && (unchecked((ulong)value) & 0x00000000FFFFFFFCUL) == 0UL
                 ? id
                 : throw new global::System.Text.Json.JsonException($"Cannot convert the JSON value to a AccessId.");
         }
@@ -93,7 +93,7 @@ partial record struct AccessId
 
             if (global::System.Enum.TryParse<global::Probe.Access>(propertyName, ignoreCase: true, out var val)
                 && (unchecked((ulong)val) & 0x00000000FFFFFFFCUL) == 0UL
-                && AccessId.TryCreate(val, out var id))
+                && global::Probe.AccessId.TryCreate(val, out var id))
             {
                 return id;
             }

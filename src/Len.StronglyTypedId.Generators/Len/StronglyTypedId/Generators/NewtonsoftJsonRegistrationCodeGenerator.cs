@@ -41,6 +41,8 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
 
         // 顶层转换器只在外部 Id 之间需要消歧：内嵌版嵌在各自 Id 内部，与顶层版不同层，不会撞名。
         var ambiguousNames = IntegrationNaming.GetAmbiguousNames(externalIds);
+        var collidingNames = IntegrationNaming.GetCollidingNames(
+            externalIds, ambiguousNames, "NewtonsoftJsonConverter");
 
         var registrations = stronglyTypedIds
             .Select(idInfo =>
@@ -48,7 +50,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                 // 有内嵌版的注册内嵌版（声明程序集自己就带转换器）；没有的注册消费方补出来的顶层版，
                 // 否则那个 Id 在 Newtonsoft 下会被写成对象形态，而 System.Text.Json 写的是字符串。
                 var converterType = idInfo.RequiresExternalNewtonsoftJsonConverter
-                    ? $"global::Len.StronglyTypedId.StronglyTypedIds.{IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "NewtonsoftJsonConverter")}"
+                    ? $"global::Len.StronglyTypedId.StronglyTypedIds.{IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "NewtonsoftJsonConverter", collidingNames)}"
                     : $"{idInfo.FullyQualifiedName}.NewtonsoftJsonConverter";
 
                 return $$"""
@@ -98,10 +100,12 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
         }
 
         var ambiguousNames = IntegrationNaming.GetAmbiguousNames(externalIds);
+        var collidingNames = IntegrationNaming.GetCollidingNames(
+            externalIds, ambiguousNames, "NewtonsoftJsonConverter");
 
         foreach (var idInfo in externalIds)
         {
-            var converterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "NewtonsoftJsonConverter");
+            var converterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "NewtonsoftJsonConverter", collidingNames);
 
             var code = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds

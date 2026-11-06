@@ -205,6 +205,34 @@ public class StronglyTypedIdRefactoringProviderTests
         (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
     }
 
+    /// <summary>
+    /// 已经是 <c>partial</c> 的 record 不能再补一个：<c>partial partial record</c> 是 CS1002。
+    /// 手写 partial 段、随后补特性的写法很常见，重构必须幂等。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_Should_NotDuplicatePartial_WhenAlreadyPartial()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial record OrderId(Guid Value);
+            """;
+
+        var expected = """
+            using System;
+            using Len.StronglyTypedId;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
     #endregion
 
     #region 正向：不提供的场景
@@ -498,6 +526,35 @@ public class StronglyTypedIdRefactoringProviderTests
             string.Empty,
             "public record OrderId(Guid Value);",
             string.Empty);
+
+        (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
+    }
+
+    /// <summary>
+    /// <c>global using Len.StronglyTypedId;</c> 必须保留：它的作用域是整个项目，本文件不再需要不代表
+    /// 别的文件也不需要。删掉它会让那些依赖它的文件报 CS0246，而单文件重构无从判断这一点。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_Should_KeepGlobalUsing_WhenInlining()
+    {
+        var code = """
+            global using Len.StronglyTypedId;
+            using System;
+
+            namespace Acme;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var expected = """
+            global using Len.StronglyTypedId;
+            using System;
+
+            namespace Acme;
+
+            public record OrderId(Guid Value);
+            """;
 
         (await Verify.ApplyRefactoringAsync(code)).Should().Be(expected);
     }

@@ -118,16 +118,24 @@ internal readonly record struct StronglyTypedIdInfo
     private const string BigIntegerTypeName = "System.Numerics.BigInteger";
 
     /// <summary>
-    /// Newtonsoft.Json 的 <c>JsonWriter.WriteValue</c> 不认识的基元：它们没有对应的
-    /// <c>PrimitiveTypeCode</c>，写出去会抛 <c>JsonWriterException</c>。
+    /// Newtonsoft.Json 下必须走规范文本形的基元。
     /// </summary>
+    /// <remarks>
+    /// 两类。第一类没有对应的 <c>PrimitiveTypeCode</c>，<c>JsonWriter.WriteValue</c> 会抛
+    /// <c>JsonWriterException</c>。第二类是 <c>decimal</c>：它有原生表示，但 Newtonsoft 在调用转换器
+    /// 之前就把数字 token 解析成了 <c>double</c>（<c>ReadForType</c> 见到转换器时只做 <c>reader.Read()</c>），
+    /// 转换器拿不到原始文本，超过约 15 位有效数字的值会被静默舍入，<c>decimal.MaxValue</c> /
+    /// <c>MinValue</c> 直接抛 <c>JsonSerializationException</c>。按文本写才能无损往返。
+    /// </remarks>
     private static readonly ImmutableHashSet<string> _newtonsoftTextPrimitives = ImmutableHashSet.Create(
         StringComparer.Ordinal,
         "System.Int128",
         "System.UInt128",
         "System.Half",
         "System.DateOnly",
-        "System.TimeOnly");
+        "System.TimeOnly",
+        // decimal 是 C# 关键字，ToDisplayString() 给出的是关键字形而非 System.Decimal。
+        "decimal");
 
     /// <summary>
     /// 二进制序列化（MessagePack / BSON）走规范文本形的基元。
@@ -164,6 +172,21 @@ internal readonly record struct StronglyTypedIdInfo
         "System.DateTimeOffset");
 
     /// <summary>
+    /// 数据库驱动（EF Core / Dapper）没有原生 provider 类型的基元，只能按规范文本存取。
+    /// </summary>
+    /// <remarks>
+    /// 实测 SQLite 8.0：<c>BigInteger</c> / <c>Int128</c> / <c>UInt128</c> / <c>Half</c> 作为 provider type
+    /// 一律报「The '…' property could not be mapped because the database provider does not support this type」，
+    /// 而 Dapper 把它们塞进 <c>DbParameter.Value</c> 会报「No mapping exists」。其余基元都有原生映射。
+    /// </remarks>
+    private static readonly ImmutableHashSet<string> _databaseTextPrimitives = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "System.Numerics.BigInteger",
+        "System.Int128",
+        "System.UInt128",
+        "System.Half");
+
+    /// <summary>
     /// 判断给定接口符号是否为运行时的 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c>。
     /// </summary>
     internal static bool IsStronglyTypedIdInterface(INamedTypeSymbol @interface)
@@ -198,6 +221,13 @@ internal readonly record struct StronglyTypedIdInfo
 
         IsStringPrimitive = primitiveIdType.SpecialType == SpecialType.System_String;
         IsCharPrimitive = primitiveIdType.SpecialType == SpecialType.System_Char;
+        // decimal 在 Newtonsoft 下按文本写出（见 _newtonsoftTextPrimitives），但读侧还要接受旧版写出的
+        // 数字载荷：Newtonsoft 会把数字 token 解析成 double，指数形（如 1E-05）用 NumberStyles.Number
+        // 读不回来。故读侧按 token 类型分流，见 NewtonsoftJsonCodeGenerator。
+        IsDecimalPrimitive = primitiveIdType.SpecialType == SpecialType.System_Decimal;
+        // 引用类型基元（string 与自定义 class）的实例可以是 null：default(TId) 与 TryCreate 失败的结果都是它。
+        // 规范文本形必须容忍这一点，否则 ToString() 会抛 NullReferenceException。
+        IsReferenceTypePrimitive = primitiveIdType.IsReferenceType;
         IsEnum = primitiveIdType.TypeKind == TypeKind.Enum;
         IsFlagsEnum = IsEnum && HasFlagsAttribute(primitiveIdType);
         FlagsEnumUndefinedBitsMask = IsFlagsEnum ? GetFlagsEnumUndefinedBitsMask(primitiveIdType) : null;
@@ -207,6 +237,14 @@ internal readonly record struct StronglyTypedIdInfo
         // 枚举继承的 IFormattable / ISpanFormattable 已被标记 [Obsolete]：透出会 CS0618，不透出又会 CS0535。
         IsFormattable = ImplementsInterface(primitiveIdType, FormattableName) && !IsEnum;
         IsSpanFormattable = ImplementsInterface(primitiveIdType, SpanFormattableName) && !IsEnum;
+        // 显式实现的 IFormattable.ToString(string, IFormatProvider) 不能按类型名直呼（CS1501），
+        // 只能经接口调用。char 与部分自定义基元都是这个形态，故单独记下「能否直呼」。
+        HasPublicToStringWithProvider = HasPublicInstanceToStringWithProvider(primitiveIdType);
+        // 同理：IComparable<TSelf>.CompareTo 也可能是显式接口实现，按类型名直呼会落到
+        // MemoryExtensions.CompareTo 扩展方法上（CS7036）。封装类型常把比较写成显式实现。
+        HasPublicCompareTo = HasPublicInstanceCompareTo(primitiveIdType);
+        // 这三个基元的默认格式是短格式，会丢亚秒与 Kind；规范文本形必须用 "O" 才能往返。
+        RoundTripFormat = GetRoundTripFormat(primitiveIdType);
         // BigInteger 实现了 IUtf8SpanParsable 却把 TryParse 做成显式接口实现，按类型名调用会 CS1501。
         IsUtf8SpanParsable = ImplementsInterface(primitiveIdType, Utf8SpanParsableName)
             && HasPublicStaticTryParse(primitiveIdType, SpecialType.System_Byte);
@@ -219,6 +257,8 @@ internal readonly record struct StronglyTypedIdInfo
         // 自定义基元（用户自己实现 IParsable + IComparable 的类型）比 BigInteger 更不可控：交给序列化器
         // 会按公开属性写出、读回 default。故一律走规范文本形，与 BigInteger 同一条路径。
         IsCustomPrimitive = SupportedPrimitiveTypes.IsCustomPrimitive(primitiveIdType);
+        // 自定义基元的 TryParse 首参可能声明成非可空 string；生成的 Id TryParse 转发 string? 前要先判空。
+        CustomPrimitiveTryParseAcceptsNull = IsCustomPrimitive && TryParseAcceptsNullText(primitiveIdType);
         // Newtonsoft.Json 的 JsonWriter.WriteValue 不认识这几个类型，会抛 JsonWriterException；
         // 读侧同理。它们的转换器因此也改走规范文本形。
         IsNewtonsoftTextPrimitive = IsCustomPrimitive || IsNewtonsoftTextPrimitiveCore(primitiveIdType);
@@ -227,6 +267,9 @@ internal readonly record struct StronglyTypedIdInfo
         // protobuf-net 的缺口集合与上面两处都不同，故单列一张表（见 _protobufTextPrimitives）。
         // 用不带 global:: 的显示名匹配：集合里存的就是这个形态。
         IsProtobufTextPrimitive = IsCustomPrimitive || _protobufTextPrimitives.Contains(primitiveIdType.ToDisplayString());
+        // 数据库驱动的缺口又是另一张表（见 _databaseTextPrimitives）：这几个基元没有 provider 类型，
+        // EF Core / Dapper 必须改存规范文本，否则属性根本无法映射。
+        IsDatabaseTextPrimitive = IsCustomPrimitive || _databaseTextPrimitives.Contains(primitiveIdType.ToDisplayString());
         // 属性只查一次：下面九项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做九遍。
         var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
         ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaults.ValidatorName;
@@ -380,6 +423,25 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsCharPrimitive { get; }
 
     /// <summary>
+    /// 基元类型是否为 <c>decimal</c>。
+    /// </summary>
+    /// <remarks>
+    /// Newtonsoft 下 <c>decimal</c> 按文本写出，但读侧必须同时接受旧版写出的数字载荷（见
+    /// <c>NewtonsoftJsonCodeGenerator.GetReadTail</c>）。
+    /// </remarks>
+    public bool IsDecimalPrimitive { get; }
+
+    /// <summary>
+    /// 基元类型是否为引用类型（<c>string</c> 或自定义 <c>class</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 引用类型基元的实例可以是 <see langword="null"/>：<c>default(TId)</c> 与 <c>TryCreate</c> / <c>TryParse</c>
+    /// 失败的结果都是它。规范文本形必须容忍这一点，否则 <c>ToString()</c> 会在解引用时抛
+    /// <see cref="NullReferenceException"/>，而 <c>?? string.Empty</c> 这类兜底写在解引用之后是死代码。
+    /// </remarks>
+    public bool IsReferenceTypePrimitive { get; }
+
+    /// <summary>
     /// 基元类型是否为 <c>System.Numerics.BigInteger</c>。
     /// </summary>
     /// <remarks>
@@ -416,6 +478,19 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsCustomPrimitive { get; }
 
     /// <summary>
+    /// 自定义基元的 <c>TryParse(string?, IFormatProvider?, out TSelf)</c> 是否接受 <see langword="null"/> 文本。
+    /// </summary>
+    /// <remarks>
+    /// <c>IParsable&lt;TSelf&gt;</c> 的成员签名首参是 <c>string?</c>，但实现方常写成非可空 <c>string</c>
+    /// （编译器只给 CS8767）。生成的 Id <c>TryParse</c> 形参是可空 <c>string?</c>，直接转发会在消费方
+    /// 构建里留下 CS8604；首参接受 null 的基元则不需要额外判空，加了反而改变它们对空文本的既定处理。
+    /// <para>
+    /// 非自定义基元恒为 <see langword="false"/>：它们走各自的分支，不读这个属性。
+    /// </para>
+    /// </remarks>
+    public bool CustomPrimitiveTryParseAcceptsNull { get; }
+
+    /// <summary>
     /// 基元的序列化载荷是否必须走规范文本形（<c>BigInteger</c> 或自定义基元）。
     /// </summary>
     public bool RequiresTextSerialization => IsBigIntegerPrimitive || IsCustomPrimitive;
@@ -431,25 +506,38 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsProtobufTextPrimitive { get; }
 
     /// <summary>
+    /// 基元在数据库集成（EF Core / Dapper）里是否只能按规范文本承载。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="IsBinaryTextPrimitive"/> / <see cref="IsProtobufTextPrimitive"/> 都不同：
+    /// <c>BigInteger</c> / <c>Int128</c> / <c>UInt128</c> / <c>Half</c> 没有数据库 provider 类型，
+    /// 直接作为 <c>ValueConverter</c> 的 provider type 会让 EF Core 拒绝映射整个属性，Dapper 绑定参数时也会失败。
+    /// 其余基元（含 <c>DateOnly</c> / <c>TimeOnly</c> / <c>decimal</c> / <c>char</c>）都有原生映射。
+    /// </remarks>
+    public bool IsDatabaseTextPrimitive { get; }
+
+    /// <summary>
     /// 把基元值写成 protobuf 文本载荷的表达式（不含结尾分号）。
     /// </summary>
     /// <remarks>
-    /// <c>DateTimeOffset</c> 必须用 <c>"O"</c> 格式：默认格式会丢掉亚秒精度（实测 <c>AddTicks(9)</c>
-    /// 往返后 ticks 不等），而 <c>"O"</c> 保留 ticks 与 offset 两者。其余基元的默认格式已是往返安全的
-    /// （<c>Half</c> 全 65536 个位模式实测零失配，<c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 亦然）。
+    /// 与其余文本路径共用同一份「往返格式」判据（见 <see cref="RoundTripFormat"/>）：<c>DateTimeOffset</c>
+    /// 的默认格式会丢掉亚秒精度（实测 <c>AddTicks(9)</c> 往返后 ticks 不等），而 <c>"O"</c> 保留 ticks 与 offset 两者。
+    /// 其余基元的默认格式已是往返安全的（<c>Half</c> 全 65536 个位模式实测零失配，<c>Int128</c> / <c>UInt128</c> /
+    /// <c>BigInteger</c> 亦然）。
     /// </remarks>
-    public string GetProtobufTextExpression(string variableName)
-        => PrimitiveIdTypeName == "global::System.DateTimeOffset"
-            ? $"{variableName}.ToString(\"O\", {GeneratedCode.InvariantCulture})"
-            : GetPrimitiveTextExpression(variableName);
+    public string GetProtobufTextExpression(string variableName) => GetPrimitiveTextExpressionOrNull(variableName);
 
     /// <summary>
     /// 把基元值写成规范文本的表达式（不含结尾分号），供各序列化生成器共用。
     /// </summary>
     /// <remarks>
-    /// 只有基元实现 <c>IFormattable</c> 时才能调 <c>ToString(null, provider)</c>；自定义基元可能只实现
+    /// 只有基元实现 <c>IFormattable</c> 时才能调 <c>ToString(format, provider)</c>；自定义基元可能只实现
     /// <c>IParsable</c>，此时按类型名直呼该重载会 CS1501，只能退回无参 <c>ToString()</c>。
     /// 两种形态都要求「<c>ToString()</c> 的结果能被自己的 <c>Parse</c> 读回」，这是自定义基元的文档契约。
+    /// <para>
+    /// 实现了 <c>IFormattable</c> 但把两参重载做成显式接口实现时，按类型名直呼同样 CS1501，
+    /// 故改经接口调用（见 <see cref="HasPublicToStringWithProvider"/>）。
+    /// </para>
     /// </remarks>
     public string PrimitiveTextExpression => GetPrimitiveTextExpression("primitiveId");
 
@@ -458,14 +546,77 @@ internal readonly record struct StronglyTypedIdInfo
     /// </summary>
     /// <param name="variableName">持有基元值的变量或成员访问表达式。</param>
     /// <remarks>
-    /// 只有基元实现 <c>IFormattable</c> 时才能调 <c>ToString(null, provider)</c>；自定义基元可能只实现
+    /// 只有基元实现 <c>IFormattable</c> 时才能调 <c>ToString(format, provider)</c>；自定义基元可能只实现
     /// <c>IParsable</c>，此时按类型名直呼该重载会 CS1501，只能退回无参 <c>ToString()</c>。
     /// 两种形态都要求「<c>ToString()</c> 的结果能被自己的 <c>Parse</c> 读回」，这是自定义基元的文档契约。
+    /// <para>
+    /// 实现了 <c>IFormattable</c> 但把两参重载做成显式接口实现时，按类型名直呼同样 CS1501。
+    /// 此时不能写 <c>((IFormattable)value).ToString(…)</c> —— 值类型会装箱，每次调用一次分配。
+    /// 改调运行时库的泛型辅助方法，由 <c>constrained.</c> 调用消除装箱（见
+    /// <see cref="HasPublicToStringWithProvider"/>）。
+    /// </para>
+    /// <para>
+    /// <see cref="RoundTripFormat"/> 非 <see langword="null"/> 时用它取代 <see langword="null"/> 格式：
+    /// 三个时间基元的默认格式有损，写成短格式会让不同的 Id 产生同一段文本。
+    /// </para>
     /// </remarks>
     public string GetPrimitiveTextExpression(string variableName)
-        => IsFormattable
-            ? $"{variableName}.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)"
-            : $"{variableName}.ToString()";
+        => !IsFormattable
+            ? $"{variableName}.ToString()"
+            : HasPublicToStringWithProvider
+                ? $"{variableName}.ToString({FormatArgument}, global::System.Globalization.CultureInfo.InvariantCulture)"
+                : RoundTripFormat is null
+                    ? $"global::Len.StronglyTypedId.StronglyTypedIdFormatting.ToInvariantString({variableName})"
+                    : $"global::Len.StronglyTypedId.StronglyTypedIdFormatting.Format({variableName}, {FormatArgument}, global::System.Globalization.CultureInfo.InvariantCulture)";
+
+    /// <summary>
+    /// 把基元值写成规范文本的表达式；引用类型基元为 <see langword="null"/> 时得到 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 供 JSON / 数据库 / protobuf 写出使用：引用类型基元（自定义 <c>class</c>）的实例可以是
+    /// <see langword="null"/>，此时应写出 <c>null</c>，而不是在 <c>ToString()</c> 上抛
+    /// <see cref="NullReferenceException"/>。与 <c>string</c> 基元的行为一致 —— 后者直接交给
+    /// <c>WriteStringValue</c>，null 即写出 null。
+    /// <para>
+    /// 用 <c>== null</c> 而非 <c>is null</c>：EF Core 的转换器 lambda 会被编译成表达式树，
+    /// 而表达式树不允许模式匹配运算符（CS8122）。
+    /// </para>
+    /// <para>
+    /// 值类型基元（含 <c>BigInteger</c> 与自定义 <c>struct</c>）的产物逐字节不变。
+    /// </para>
+    /// </remarks>
+    public string GetPrimitiveTextExpressionOrNull(string variableName)
+        => IsReferenceTypePrimitive
+            ? $"({variableName} == null ? null : {GetPrimitiveTextExpression(variableName)})"
+            : GetPrimitiveTextExpression(variableName);
+
+    /// <summary>
+    /// 传给 <c>ToString</c> / <c>Format</c> 的格式实参：有往返格式时是字面量，否则是 <see langword="null"/>。
+    /// </summary>
+    private string FormatArgument
+        => RoundTripFormat is null ? "null" : SymbolDisplay.FormatLiteral(RoundTripFormat, quote: true);
+
+    /// <summary>
+    /// 取「调用方给了格式就用它，没给就回退到规范格式」的表达式。
+    /// </summary>
+    /// <remarks>
+    /// <c>ToString()</c> 用 <c>"O"</c> 写出规范文本，而 <c>ToString(null, provider)</c> 与
+    /// <c>TryFormat(default, …)</c> 若把空格式原样转给基元，会退化成有损的短格式 —— 同一个 Id 于是有两套文本，
+    /// 插值、<c>string.Format</c> 与结构化日志都落在有损那一套上。这里把「空格式 → 规范格式」的归一化
+    /// 收敛到一处，供三个格式化成员共用。
+    /// <para>
+    /// <paramref name="isSpan"/> 为 <see langword="true"/> 时按 <c>ReadOnlySpan&lt;char&gt;</c> 的
+    /// <c>IsEmpty</c> 判定；字符串字面量到 span 有隐式转换，条件表达式按形参类型目标推断。
+    /// </para>
+    /// </remarks>
+    /// <param name="formatExpression">产物里持有调用方格式的表达式。</param>
+    /// <param name="isSpan">格式是否以 <c>ReadOnlySpan&lt;char&gt;</c> 传入。</param>
+    internal string GetEffectiveFormatExpression(string formatExpression, bool isSpan)
+        => RoundTripFormat is null
+            ? formatExpression
+            : isSpan
+                ? $"({formatExpression}.IsEmpty ? {FormatArgument} : {formatExpression})"
+                : $"(global::System.String.IsNullOrEmpty({formatExpression}) ? {FormatArgument} : {formatExpression})";
 
     /// <summary>
     /// 把规范文本读回基元的条件表达式（不含结尾分号），结果放在 <paramref name="variableName"/> 里。
@@ -474,6 +625,11 @@ internal readonly record struct StronglyTypedIdInfo
     /// 一律走基元自己的 <c>TryParse</c> 而非 <c>Parse</c>：文本不是合法取值时 <c>Parse</c> 抛的
     /// <c>FormatException</c> 会穿透各序列化库的转换器契约（它们要求失败一律抛自己的异常类型）。
     /// 自定义基元的契约保证该重载是公开静态成员（见 <c>SupportedPrimitiveTypes.IsCustomPrimitive</c>）。
+    /// <para>
+    /// 自定义基元把首参声明成非可空 <c>string</c> 时，调用点必须自己先挡 null（见
+    /// <see cref="CustomPrimitiveTryParseAcceptsNull"/>）：<paramref name="textExpression"/> 常来自可空的
+    /// provider 值，直接转发会在消费方构建里留下 CS8604。
+    /// </para>
     /// </remarks>
     public string GetPrimitiveTextTryParseCondition(string textExpression, string variableName)
         => $"{PrimitiveIdTypeName}.TryParse({textExpression}, global::System.Globalization.CultureInfo.InvariantCulture, out var {variableName})";
@@ -513,6 +669,45 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsFormattable { get; }
 
     /// <summary>
+    /// 基元是否暴露了公开的实例 <c>ToString(string?, IFormatProvider?)</c>，即能否按类型名直呼该重载。
+    /// </summary>
+    /// <remarks>
+    /// <c>IFormattable</c> 允许显式接口实现（<c>string IFormattable.ToString(…)</c>），此时按类型名直呼会
+    /// CS1501，只能经接口调用。<c>char</c> 与部分自定义基元都是这个形态。
+    /// 为 <see langword="false"/> 时，生成代码改调运行时库 <c>StronglyTypedIdFormatting</c> 的泛型辅助方法：
+    /// 泛型约束让编译器发出 <c>constrained.</c> 调用，值类型不装箱，因此比 <c>((IFormattable)value)</c> 少一次分配。
+    /// </remarks>
+    public bool HasPublicToStringWithProvider { get; }
+
+    /// <summary>
+    /// 基元是否暴露了公开的实例 <c>CompareTo(TSelf)</c>，即能否按类型名直呼该重载。
+    /// </summary>
+    /// <remarks>
+    /// <c>IComparable&lt;TSelf&gt;</c> 同样允许显式接口实现，此时按类型名直呼会绑定到
+    /// <c>MemoryExtensions.CompareTo(ReadOnlySpan&lt;char&gt;, ReadOnlySpan&lt;char&gt;, StringComparison)</c>
+    /// 这个扩展方法上，报 CS7036。为 <see langword="false"/> 时生成代码改走
+    /// <c>Comparer&lt;TPrimitive&gt;.Default.Compare(left, right)</c>：它对值类型走泛型特化、不装箱，
+    /// 且与 <c>IComparable&lt;T&gt;</c> 的语义完全一致。
+    /// </remarks>
+    public bool HasPublicCompareTo { get; }
+
+    /// <summary>
+    /// 规范文本形必须使用的往返格式串；<see langword="null"/> 表示基元的默认格式已是往返安全的。
+    /// </summary>
+    /// <remarks>
+    /// <c>DateTime</c> / <c>DateTimeOffset</c> / <c>TimeOnly</c> 的默认格式是短格式：前者丢亚秒与
+    /// <see cref="DateTimeKind"/>，<c>TimeOnly</c> 连秒都丢。规范文本形是 JSON 字典键、前缀文本、
+    /// <c>TypeConverter</c> 与 Newtonsoft 文本路径的共同载体，一旦有损，两个不同的 Id 会写出同一段文本，
+    /// 字典键随之塌缩。故这三个基元固定用 <c>"O"</c>。
+    /// <para>
+    /// <c>DateOnly</c> 的默认格式虽然无损，但它是区域性相关的短日期（不变文化下是 <c>01/02/2020</c>），
+    /// 而 System.Text.Json 写出的是 ISO 形 <c>2020-01-02</c>。同一个 Id 的值与字典键、两个 JSON 库之间
+    /// 因此会写出两段不同的文本，Newtonsoft 写出的文本 STJ 甚至读不回来。用 <c>"O"</c> 统一成 ISO 形。
+    /// </para>
+    /// </remarks>
+    public string? RoundTripFormat { get; }
+
+    /// <summary>
     /// 基元类型是否实现 <c>System.ISpanFormattable</c>。
     /// </summary>
     public bool IsSpanFormattable { get; }
@@ -528,12 +723,12 @@ internal readonly record struct StronglyTypedIdInfo
     public bool IsUtf8SpanFormattable { get; }
 
     /// <summary>
-    /// 基元 UTF-16 <c>TryFormat</c> 的直呼形态（决定是否经接口调用、是否装箱）。
+    /// 基元 UTF-16 <c>TryFormat</c> 的直呼形态（决定按类型名直呼还是改调泛型辅助方法）。
     /// </summary>
     public TryFormatKind CharTryFormatKind { get; }
 
     /// <summary>
-    /// 基元 UTF-8 <c>TryFormat</c> 的直呼形态（决定是否经接口调用、是否装箱）。
+    /// 基元 UTF-8 <c>TryFormat</c> 的直呼形态（决定按类型名直呼还是改调泛型辅助方法）。
     /// </summary>
     public TryFormatKind Utf8TryFormatKind { get; }
 
@@ -975,6 +1170,105 @@ internal readonly record struct StronglyTypedIdInfo
     internal static ulong ToBits(object constant) => EnumBitMath.ToBits(constant);
 
     /// <summary>
+    /// 判断给定类型是否暴露了公开的实例 <c>CompareTo(TSelf)</c> 重载。
+    /// </summary>
+    /// <remarks>
+    /// <c>IComparable&lt;TSelf&gt;</c> 的成员可以写成显式接口实现，此时按类型名直呼会绑定到
+    /// <c>MemoryExtensions.CompareTo</c> 扩展方法并报 CS7036。判据与
+    /// <see cref="HasPublicInstanceToStringWithProvider"/> 同款：沿基类链取成员，因为 <c>GetMembers</c>
+    /// 只返回声明成员。
+    /// </remarks>
+    internal static bool HasPublicInstanceCompareTo(ITypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (current.GetMembers("CompareTo").Any(member =>
+                member is IMethodSymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 1 } method
+                && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, type)
+                && method.ReturnType.SpecialType == SpecialType.System_Int32))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 取规范文本形必须使用的往返格式串；默认格式已往返安全时返回 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 只按「类型名 + 命名空间」判定，与 <see cref="SupportedPrimitiveTypes"/> 的白名单同源：
+    /// 自定义基元即使叫 <c>MyNs.DateTime</c> 也不会被误判成 BCL 的 <c>DateTime</c>。
+    /// <para>
+    /// <c>DateOnly</c> 也在表里：它的默认短日期形与 System.Text.Json 的 ISO 形不一致，
+    /// 用 <c>"O"</c> 才能让值、字典键与两个 JSON 库写出同一段文本。
+    /// </para>
+    /// </remarks>
+    internal static string? GetRoundTripFormat(ITypeSymbol type)
+    {
+        // 枚举的默认 ToString 是成员名，没有格式串可给。
+        if (type.TypeKind == TypeKind.Enum)
+        {
+            return null;
+        }
+
+        // DateTime 的 SpecialType 是 System_DateTime，故不能按「SpecialType 非 None 就排除」判定；
+        // 只认 System 命名空间下的这几个类型名。
+        var containingNamespace = type.ContainingNamespace?.ToDisplayString();
+
+        return containingNamespace == "System" && type.Name is "DateTime" or "DateTimeOffset" or "TimeOnly" or "DateOnly"
+            ? "O"
+            : null;
+    }
+
+    /// <summary>
+    /// 判断自定义基元的 <c>TryParse(string?, IFormatProvider?, out TSelf)</c> 是否接受 <see langword="null"/> 文本。
+    /// </summary>
+    /// <remarks>
+    /// 只看首参的可空标注：<c>string?</c>（<c>NullableAnnotation.Annotated</c>）接受 null，裸 <c>string</c>
+    /// （<c>NullableAnnotation.NotAnnotated</c>）不接受。oblivious（<c>NullableAnnotation.None</c>，
+    /// 即基元声明在未启用 nullable 的代码里）按「接受」处理 —— 那种调用本来就不会产生 CS8604，
+    /// 加守卫只会改变它对 null 文本的既定处理。
+    /// <para>
+    /// 找不到匹配重载时同样按「接受」处理：那种情况下生成的代码本来也编译不过（契约要求公开静态 TryParse），
+    /// 多一层判空只会掩盖真正的错误。
+    /// </para>
+    /// </remarks>
+    internal static bool TryParseAcceptsNullText(ITypeSymbol type)
+        => type.GetMembers("TryParse").Any(member =>
+            member is IMethodSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 3 } method
+            && method.Parameters[0].Type.SpecialType == SpecialType.System_String
+            && method.Parameters[0].NullableAnnotation != NullableAnnotation.NotAnnotated
+            && method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.IFormatProvider"
+            && method.Parameters[2].RefKind == RefKind.Out);
+
+    /// <summary>
+    /// 判断给定类型是否暴露了公开的实例 <c>ToString(string?, IFormatProvider?)</c> 重载。
+    /// </summary>
+    /// <remarks>
+    /// <c>IFormattable</c> 的成员可以写成显式接口实现，此时按类型名直呼会 CS1501。本库已有先例：
+    /// <c>char</c> 就是显式实现，生成器为它单列了分支；自定义基元同样可能这么写。
+    /// 沿基类链取成员，因为 <c>GetMembers</c> 只返回声明成员。
+    /// </remarks>
+    internal static bool HasPublicInstanceToStringWithProvider(ITypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (current.GetMembers("ToString").Any(member =>
+                member is IMethodSymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public, Parameters.Length: 2 } method
+                && method.Parameters[0].Type.SpecialType == SpecialType.System_String
+                && method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.IFormatProvider"
+                && method.ReturnType.SpecialType == SpecialType.System_String))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 判断给定类型是否暴露了公开的静态 <c>TryParse(ReadOnlySpan&lt;TElement&gt;, IFormatProvider, out T)</c> 重载。
     /// </summary>
     internal static bool HasPublicStaticTryParse(ITypeSymbol type, SpecialType spanElementType)
@@ -997,7 +1291,7 @@ internal readonly record struct StronglyTypedIdInfo
 
         // 沿基类链取成员：GetMembers 只返回声明成员。当前 24 种基元都是 sealed 值类型或 string，
         // 没有继承来的 TryFormat，但这条判定是「按成员名 + 参数形状」猜的，将来若加入某个自带
-        // TryFormat 的自定义结构体基元，漏看基类会静默落到 Interface 分支（每次格式化都装箱）。
+        // TryFormat 的自定义结构体基元，漏看基类会静默落到 Interface 分支（多一次泛型辅助方法调用）。
         var members = new List<ISymbol>();
         for (var current = type; current is not null; current = current.BaseType)
         {

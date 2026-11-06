@@ -79,14 +79,23 @@ internal static class IntegrationFlags
     internal const int All = EntityFrameworkCore | Dapper | SystemTextJson | NewtonsoftJson | Swagger | AspNetCoreOpenApi | AspNetCoreMvc | MessagePack | MongoDb | HotChocolate | Protobuf;
 
     /// <summary>
-    /// 把特性上的原始值规范成掩码：未指定返回 <see langword="null"/>，显式 <c>Default</c> 归一为
-    /// <see cref="All"/>，其余剔除 <see cref="None"/> 标记位。
+    /// 把特性上的原始值规范成掩码：未指定返回 <see langword="null"/>，显式 <c>Default</c> 同样返回
+    /// <see langword="null"/>（表示「跟随程序集默认值」），其余剔除 <see cref="None"/> 标记位。
     /// </summary>
+    /// <remarks>
+    /// <c>Default</c> 与「未指定」在元数据里可区分（前者读到 0，后者读到 <see langword="null"/>），
+    /// 但两者语义相同：都表示「没有逐类型指定，继续回退」。回退链的终点是 <see cref="All"/>，
+    /// 因此没有程序集默认值时显式 <c>Default</c> 仍等价于「引用了就生成」。
+    /// <para>
+    /// 不能把 0 归一为 <see cref="All"/>：那会让显式 <c>Default</c> 越过程序集默认值，
+    /// 与枚举自身的文档（「跟随程序集级默认值」）相反。
+    /// </para>
+    /// </remarks>
     internal static int? Normalize(int? raw)
         => raw switch
         {
             null => null,
-            0 => All,
+            0 => null,
             var value => value & ~None,
         };
 }

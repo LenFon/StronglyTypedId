@@ -60,12 +60,13 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
         }
 
         var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
+        var collidingNames = IntegrationNaming.GetCollidingNames(stronglyTypedIds, ambiguousNames, "MessagePackFormatter");
 
         var registrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var formatterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "MessagePackFormatter");
+            var formatterName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "MessagePackFormatter", collidingNames);
 
             var formatterCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
@@ -167,9 +168,28 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
             lines.Add(string.Empty);
         }
 
-        lines.Add(_nestedIndent + (idInfo.IsBinaryTextPrimitive
-            ? "writer.Write(value.ToString());"
-            : $"{FormatterResolverExtensions}.GetFormatterWithVerify<{idInfo.PrimitiveIdTypeName}>(options.Resolver).Serialize(ref writer, value.Value, options);"));
+        if (idInfo.IsBinaryTextPrimitive)
+        {
+            // 文本形写的是 value.ToString()，而引用类型基元为 null 时那是空串 —— 既不是合法取值，
+            // 也与 System.Text.Json 写出的 null 不同形。改与 string 基元一致地写 nil：
+            // 引用类型 Id 读回 null，值类型 Id 收到 nil 抛错（与 STJ 对 record struct 的处理一致）。
+            if (idInfo.IsReferenceTypePrimitive)
+            {
+                lines.Add(_nestedIndent + "if (value.Value is null)");
+                lines.Add(_nestedIndent + "{");
+                lines.Add(_nestedIndent + "    writer.WriteNil();");
+                lines.Add(_nestedIndent + "    return;");
+                lines.Add(_nestedIndent + "}");
+                lines.Add(string.Empty);
+            }
+
+            lines.Add(_nestedIndent + "writer.Write(value.ToString());");
+        }
+        else
+        {
+            lines.Add(_nestedIndent + $"{FormatterResolverExtensions}.GetFormatterWithVerify<{idInfo.PrimitiveIdTypeName}>(options.Resolver).Serialize(ref writer, value.Value, options);");
+        }
+
         lines.Add(_statementIndent + "}");
 
         return string.Join("\n", lines);
@@ -196,6 +216,13 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
         if (idInfo.TypeKindSuffix is null)
         {
             lines.Add(_nestedIndent + "    return default!;");
+        }
+        else if (idInfo.IsReferenceTypePrimitive)
+        {
+            // 值类型 Id 包装引用类型基元（string 或自定义 class）时，基元可以是 null，写侧已把它写成 nil。
+            // 读侧必须还原成 default（基元为 null 的 Id），否则「写出去就读不回来」。
+            // 与 STJ / Newtonsoft 同一口径：它们按基元是否为引用类型判定，与 Id 是 struct 还是 class 无关。
+            lines.Add(_nestedIndent + "    return default;");
         }
         else
         {

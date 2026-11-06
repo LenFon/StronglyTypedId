@@ -49,6 +49,20 @@ internal static class GeneratedCode
     public const string InvariantCulture = "global::System.Globalization.CultureInfo.InvariantCulture";
 
     /// <summary>
+    /// 产物里用到 <c>System.MemoryExtensions</c> 的扩展方法（<c>StartsWith</c> / <c>AsSpan</c> / <c>AsMemory</c>）
+    /// 时，文件头必须补的 using。
+    /// </summary>
+    /// <remarks>
+    /// 必须带 <c>global::</c>：产物声明在 Id 自己的命名空间下，裸 <c>using System;</c> 会先在同级命名空间里
+    /// 找 <c>Xxx.System</c>，找到就遮蔽 BCL 的 <c>System</c>（实测 <c>CS0246: 未能找到类型或命名空间名
+    /// "ReadOnlySpan&lt;&gt;"</c>）。<c>global::</c> 强制从全局命名空间起解析，绕开这条规则。
+    /// <para>
+    /// 不要「简化」成 <c>using System;</c>：只有消费方恰好没有同级 <c>System</c> 命名空间时才碰巧能编译。
+    /// </para>
+    /// </remarks>
+    public const string SystemUsing = "using global::System;";
+
+    /// <summary>
     /// 各生成器产出的源文件统一文件头：<c>// &lt;auto-generated /&gt;</c> 注释、命名空间声明与
     /// <c>#nullable enable</c>，并以两个空行收尾，便于直接拼接类型声明块。
     /// </summary>

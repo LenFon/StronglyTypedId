@@ -52,7 +52,7 @@ it is hard to work out that a *primitive* type went missing.
 A few primitives have no direct form (`Int128`, `UInt128`, `Half`, `TimeSpan`, `DateOnly`, `TimeOnly`,
 and reading a single `char`); those still go through `JsonSerializer`, so the context needs an entry
 for them. If it is missing, the library turns the framework's `NotSupportedException` into a
-`JsonException` that names the `[JsonSerializable]` to add.
+`JsonException` that names the `[JsonSerializable]` to add — on both the read and the write side.
 
 ### The two `GenerationMode` values differ
 

@@ -14,7 +14,8 @@ public enum StronglyTypedIdIntegrations
     /// 未指定。表示「跟随程序集级默认值；若也没有，则生成编译所引用的一切」。这是默认值。
     /// </summary>
     /// <remarks>
-    /// 它只用于区分「参数没写」与「写了但什么都没选」，因此 <see cref="None"/> 必须独占一个位。
+    /// 显式写 <c>Default</c> 与不写该参数同义：两者都继续回退到程序集级默认值，最终回退到
+    /// <see cref="All"/>。它因此不能用来「覆盖程序集默认值」——要恢复全部集成请写 <see cref="All"/>。
     /// </remarks>
     Default = 0,
 

@@ -42,3 +42,21 @@ public enum OrderStatus
     Pending = 0,
     Paid = 1,
 }
+
+/// <summary>
+/// 超出 GraphQL <c>Int</c> 承载范围的大整数：HotChocolate 的序列化器不认识它，输入输出都走文本。
+/// </summary>
+[StronglyTypedId]
+public partial record struct BigInt128Id(Int128 Value);
+
+/// <summary>
+/// 同上，无符号版本。
+/// </summary>
+[StronglyTypedId]
+public partial record struct BigUInt128Id(UInt128 Value);
+
+/// <summary>
+/// 同上，<c>BigInteger</c> 版本。
+/// </summary>
+[StronglyTypedId]
+public partial record struct BigBigIntegerId(System.Numerics.BigInteger Value);

@@ -41,7 +41,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
 
-    // Walks every entity's properties and assigns the generated converter wherever the CLR type is a strongly typed id.
+    // Reflects over each entity's CLR properties and maps every strongly typed id it finds.
     modelBuilder.AddStronglyTypedIds();
 }
 ```
@@ -50,16 +50,25 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 > integration, with no requirement that a `DbContext` override `ConfigureConventions`. `ModelConfigurationBuilder`
 > only exists from EF Core 7, which is why the version floor is higher here than elsewhere.
 >
-> `AddStronglyTypedIds(ModelBuilder)` scans the model as it stands at the moment of the call, so entity types
-> configured after it will not be picked up: call it at the **end** of `OnModelCreating`. The conventions
-> overload has no such ordering constraint and is the better default.
+> `AddStronglyTypedIds(ModelBuilder)` reflects over each entity's CLR properties rather than walking the
+> model's discovered properties: EF Core's conventions do not add a property whose CLR type is neither a
+> supported primitive nor a valid entity type, and a strongly typed id is exactly that, so a model walk
+> would find nothing. Nullable id properties (`OrderId?`) are mapped too, and properties excluded with
+> `[NotMapped]` or a fluent `Ignore` are left alone. Entity types configured after the call are still not
+> picked up, so invoke it at the end of `OnModelCreating`. The conventions overload has no such ordering
+> constraint and is the better default.
 
 Each id gets a `ValueConverter<{Id}, {Primitive}>` nested in the generated `StronglyTypedIds` class, named
 `{TypeName}Converter`. If two ids with the same short name exist in different namespaces, the converter
 names would collide inside that single class, so only then are they disambiguated as
-`{Namespace_With_Underscores}_{TypeName}Converter` (for example `Domain_OrderIdConverter`). The converters
-are implementation details of `AddStronglyTypedIds`, generated as private nested types, so you never
-reference them by name and no action is required from you in either case.
+`{Namespace_With_Underscores}_{TypeName}Converter` (for example `Domain_OrderIdConverter`). Because that
+replacement turns `.` into `_`, two ids can still end up with the same name — `A.B.OrderId` and
+`A_B.OrderId` both become `A_B_OrderIdConverter`; in that case a short stable hash of the id's full name is
+appended, so the two stay distinct. The same hash is appended when an id whose short name is unique happens
+to be called `A_B_OrderId`: its plain `A_B_OrderIdConverter` would otherwise be byte-identical to the
+disambiguated name of `A.B.OrderId`. The converters are implementation details of `AddStronglyTypedIds`,
+generated as private nested types, so you never reference them by name and no action is required from you in
+either case.
 
 For a built-in primitive the converter's provider type is that primitive, so the column type and the schema
 EF Core builds are the ones the primitive would have had on its own: introducing the id migrates nothing,
@@ -69,11 +78,24 @@ A **custom primitive** is the exception. The database provider does not know you
 type is fixed to `string` and the column stores the primitive's canonical text form, the same text the
 JSON, binary and Dapper paths use. Without that, EF Core rejects the property with
 `The '<Primitive>' property could not be mapped because the database provider does not support this type`.
-Built-in primitives are unaffected and their generated output is byte-for-byte unchanged.
 
-Reading a row back goes through `Create`, so the id's validators and normalizers run on every
-materialisation, and a stored value the validator rejects throws instead of producing an id that could never
-have been constructed in code.
+The same applies to four built-in primitives that have no provider type at all: `BigInteger`, `Int128`,
+`UInt128` and `Half`. Their ids also store the canonical text (`string`), because using the primitive itself
+as the provider type makes EF Core reject the whole property with the message above. The other built-in
+primitives — including `DateOnly`, `TimeOnly`, `decimal` and `char` — keep their native column type.
+
+Reading a row back runs the id's validators and normalizers on every materialisation, and a stored value the
+validator rejects throws instead of producing an id that could never have been constructed in code. Every
+converter — not just the enum-backed ones — calls `TryCreate` from a generated helper method and throws
+`InvalidOperationException` itself, so the `ArgumentException` from `Create` never reaches the caller. The
+helper exists because the converter's lambda is compiled into an expression tree, and expression trees cannot
+contain `throw`.
+
+An **enum**-backed id is checked against the enum's defined members as well, the same rule the other
+integrations apply: a non-`[Flags]` enum must name a defined member, a `[Flags]` enum may combine defined
+bits but not undefined ones. A stored `999` is rejected rather than materialised as `(Status)999`, which no
+`switch` would ever match. The check lives in a generated helper method rather than in the converter's
+lambda, because that lambda is compiled into an expression tree and expression trees cannot contain `throw`.
 
 > `AddStronglyTypedIds(ModelBuilder)` walks the model as it stands at the moment of the call, so invoke it after your
 > entities and `IEntityTypeConfiguration`s have been registered; entities added later are not scanned.
@@ -106,7 +128,8 @@ with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.
 | `uint`            | `integer`      | `uint32`    |
 | `long`            | `integer`      | `int64`     |
 | `ulong`           | `integer`      | `uint64`    |
-| `Int128`, `UInt128`, `BigInteger` | `integer` | —     |
+| `Int128`, `UInt128` | `integer`      | —           |
+| `BigInteger`      | `string`       | —           |
 | `decimal`         | `number`       | —           |
 | `double`          | `number`       | `double`    |
 | `float`           | `number`       | `float`     |
@@ -119,11 +142,18 @@ with both Microsoft.OpenApi 1.x (Swashbuckle 6.x–9.x) and 2.x (Swashbuckle 10.
 | any custom primitive (e.g. `Ulid`) | `string` | —  |
 
 The table describes what the converters actually write, not what the CLR type is called: `decimal` and
-the floating-point primitives are JSON numbers, an enum is its underlying number, and `Int128` /
-`UInt128` / `BigInteger` have no bounded `int64` / `uint64` range to advertise, so they get a bare
-`integer` with no `format`. An id with a `Prefix` is always `string` with no `format`, because its
+the floating-point primitives are JSON numbers, an enum is its underlying number, and `Int128` / `UInt128`
+have no bounded `int64` / `uint64` range to advertise, so they get a bare `integer` with no `format`.
+`BigInteger` is `string` because System.Text.Json has no built-in converter for it: writing it by value
+would emit `{"IsPowerOfTwo":…}`, so the generated converter writes the canonical text instead. An id with
+a `Prefix` is always `string` with no `format`, because its
 canonical text form is text. A custom primitive is `string` with no `format` for the same reason: its JSON
 form is the canonical text, so there is no `uuid`-style format to advertise.
+
+The mapping follows System.Text.Json. Under Newtonsoft.Json, `Int128`, `UInt128`, `Half` and `decimal` are
+written as strings instead (see [Serialization](serialization.md#primitives-the-serializers-do-not-know)),
+so a document served to a Newtonsoft client is one step off for those four primitives. The schema is
+emitted at compile time and cannot observe which serializer the host registers.
 
 One limitation of any compile-time mapping: an `enum`-backed id is documented as `integer` because that is
 what `System.Text.Json` writes by default. If you register a `JsonStringEnumConverter` globally, the
@@ -186,8 +216,13 @@ does not recognise your type and would throw `No mapping exists` while binding t
 the same one the JSON, binary and EF Core paths use, so an id never appears as one shape in one store and
 another elsewhere. Reading goes through the primitive's own `Parse`, so the round trip is lossless.
 
+The four built-in primitives with no provider type — `BigInteger`, `Int128`, `UInt128` and `Half` — take the
+same text path for the same reason. Every other built-in primitive is written as its CLR value.
+
 A `null` reference-type id is written as `DBNull.Value` rather than as a null object, so the column sees a
-real SQL `NULL`. The handler is registered with `SqlMapper.AddTypeHandler<T>`, which keys it by the id
+real SQL `NULL`. The same applies to a value-type id whose primitive is a reference type (a custom `class`):
+a `null` primitive is written as `DBNull.Value` instead of throwing. The handler is registered with
+`SqlMapper.AddTypeHandler<T>`, which keys it by the id
 type, so anonymous parameter objects, `Query<T>` / `QueryAsync<T>` mapping and multi-mapping all pick it up
 without per-call configuration.
 
@@ -195,8 +230,11 @@ Drivers rarely hand back the primitive's own CLR type: SQLite returns `long` for
 for `char` / `Guid` and `double` for `decimal`. The generated `Parse` therefore converts the incoming value
 to the primitive before calling `Create` (`System.Convert` for the numeric and date/time primitives,
 `Enum.TryParse` for enums, and the primitive's `IParsable` entry point for `Guid`,
-`DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Int128`, `UInt128`, `Half` and `BigInteger`). Values
-that already arrive as the primitive take a direct path, and `NULL`, either `DBNull` or a bare `null`,
+`DateTimeOffset`, `TimeSpan`, `Int128`, `UInt128`, `Half` and `BigInteger`). `DateOnly` and `TimeOnly` also
+accept the driver's own CLR shape: SQL Server returns `DateTime` for a `DATE` column and `TimeSpan` for a
+`TIME` column, and their `Parse` rejects text that carries the other component, so the generated handler
+converts from those types first. Values that already arrive as the primitive take a direct path, and `NULL`,
+either `DBNull` or a bare `null`,
 maps to `default`. An enum column may come back as its member name or as the underlying number; both shapes
 are accepted.
 
@@ -275,9 +313,12 @@ re-encoding.
 
 A `null` reference-type id is written as `nil` and read back as `null`; a value-type id that receives `nil`
 throws `MessagePackSerializationException` rather than silently becoming `default`, so a missing field cannot
-be mistaken for a legitimate `Guid.Empty`. A value rejected by the id's `Validator` is reported the same way:
-the formatter calls `TryCreate` and throws `MessagePackSerializationException` itself, so the
-`ArgumentException` from `Create` never reaches the caller.
+be mistaken for a legitimate `Guid.Empty`. An id whose wrapped primitive is `null` (a `string`-backed id or
+one backed by a custom `class`) is written as `nil` too, matching what System.Text.Json writes, instead of
+the empty string the text form would otherwise produce — and read back as `default`, so the write and the
+read stay symmetric whether the id itself is a `record struct` or a `record class`. A value rejected by the
+id's `Validator` is reported the same way: the formatter calls `TryCreate` and throws
+`MessagePackSerializationException` itself, so the `ArgumentException` from `Create` never reaches the caller.
 
 <a id="mongodb"></a>
 
@@ -338,9 +379,12 @@ The payload is the wrapped primitive value. `BigInteger`, `Int128` and `UInt128`
 those ids are stored as a BSON string holding the invariant-culture text form (prefix included) and read back
 through `TryParse`. **Custom primitives** are stored the same way, because the driver has no serializer for a
 type it does not know. A `null` reference-type id is stored as BSON `null`; a value-type id that meets BSON
-`null` throws `BsonSerializationException`. A value rejected by the id's `Validator` is reported the same
-way: the serializer calls `TryCreate` and throws `BsonSerializationException` itself, so the
-`ArgumentException` from `Create` never reaches the caller.
+`null` throws `BsonSerializationException`. An id whose wrapped primitive is `null` (a `string`-backed id or
+one backed by a custom `class`) is stored as BSON `null` too, matching what System.Text.Json writes, instead
+of the empty string the text form would otherwise produce — and read back as `default`, so the write and the
+read stay symmetric whether the id itself is a `record struct` or a `record class`. A value rejected by the
+id's `Validator` is reported the same way: the serializer calls `TryCreate` and throws
+`BsonSerializationException` itself, so the `ArgumentException` from `Create` never reaches the caller.
 
 For every other primitive the stored BSON value is the primitive's own, so existing documents stay readable
 and an id field is indistinguishable from a bare primitive field. Because the serializer is registered by
@@ -380,7 +424,8 @@ never written one way over REST and another over GraphQL:
 | --- | --- | --- |
 | `Guid`, `string`, `char`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly` | `String` | `"3fa85f64-…"` |
 | Any id with a `Prefix` | `String` (the canonical text form) | `"ord_3fa85f64-…"` |
-| `byte` … `ulong`, `Int128`, `UInt128`, `BigInteger` | `Int` | `42` |
+| `byte` … `ulong` | `Int` | `42` |
+| `Int128`, `UInt128`, `BigInteger` | `String` (the invariant-culture text form) | `"42"` |
 | `enum` | `Int`, the **underlying value**, not the member name | `1` |
 | `decimal`, `double`, `float`, `Half` | `Float` | `1.5` |
 | any custom primitive (e.g. `Ulid`) | `String` (the canonical text form) | `"01ARZ3NDEKTSV4RRFFQ69G5FAV"` |
@@ -390,15 +435,20 @@ GraphQL and `1` in JSON. HotChocolate's own enum scalars use the member name ins
 same value `"Paid"` on one side and `1` on the other. If you want member names in your schema, map the enum
 to a GraphQL enum type yourself and keep the id out of that path.
 
-`Int128`, `UInt128` and `BigInteger` exceed what GraphQL's `Int` can carry, so their literals are built from
-the invariant-culture text and parsed back through `TryParse`: the value round-trips exactly, it just is not
-a 32-bit `Int` on the wire.
+`Int128`, `UInt128` and `BigInteger` exceed what GraphQL's `Int` can carry, and HotChocolate's serializer
+does not recognise them either, so both the literal and the response are the invariant-culture text:
+`"42"` in, `"42"` out. Input and output are symmetric — what the server returns can be sent back verbatim.
+This differs from JSON, where `Int128` and `UInt128` are numbers; `BigInteger` is text in both, because
+System.Text.Json has no built-in converter for it.
 
 ### Input, output and failure
 
 - **Output** goes through `TrySerialize`, which returns the raw CLR value (`string`, an integer, a floating
   point) so HotChocolate writes it natively. A `null` reference-type id returns `false`, which the framework
-  writes as GraphQL `null`.
+  writes as GraphQL `null`; so does an id whose wrapped primitive is `null` (a `string`-backed id or one
+  backed by a custom `class`), matching what the other serializers write instead of the empty string the
+  text form would produce. A prefixed id is the exception, since its text is the prefix plus the empty
+  string and is never `null`.
 - **Input** arrives either as a literal (`ParseLiteral`) or as a variable (`TryDeserialize`). The variable
   path must accept both `string` and `System.Text.Json.JsonElement`: a real HTTP request hands the scalar a
   `JsonElement`, while `QueryRequestBuilder` hands it a `string`. The generated code handles both.
@@ -410,6 +460,11 @@ a 32-bit `Int` on the wire.
 Each id's scalar is named `{TypeName}HotChocolateType` and lives in the generated `StronglyTypedIds` class
 rather than being attached to the id, so ids that come from a referenced library get a scalar as well. Ids
 with the same short name in different namespaces are disambiguated the same way as Dapper's handlers.
+
+The GraphQL type name is a separate matter: GraphQL has one global type table, so two `OrderId` ids in
+different namespaces cannot both be called `OrderId` even though their C# names are distinct. When a short
+name is shared, the GraphQL name becomes the sanitised full name (`Domain_OrderId`), and a stable hash is
+appended if that still collides with another id's name. A unique short name is used unchanged.
 
 <a id="protobuf-net"></a>
 
@@ -469,10 +524,14 @@ Five primitives have no native representation and fall back to the invariant-cul
 | any custom primitive (e.g. `Ulid`) | canonical text (`string`) |
 
 `DateTimeOffset` uses the `"O"` format specifically: the default `ToString()` drops sub-second ticks, so a
-round-trip would silently truncate the value. `"O"` preserves both the ticks and the offset.
+round-trip would silently truncate the value. `"O"` preserves both the ticks and the offset. The same
+format is used for `DateTime` and `TimeOnly` everywhere their canonical text is written, for the same
+reason.
 
-A `Prefix` does **not** appear in the payload; it belongs to the text representation, not to the data. The
-same rule applies to MessagePack and BSON.
+A `Prefix` does **not** appear in the payload; it belongs to the text representation, not to the data.
+MessagePack and BSON follow the same rule for primitives with a native representation, but not for the
+text-form ones (`BigInteger`, `Int128`, `UInt128`): those are written as the id's `ToString()`, which
+carries the prefix.
 
 ### Failure and null
 
@@ -481,7 +540,13 @@ same rule applies to MessagePack and BSON.
   protobuf-net wraps anything else and the caller loses the reason.
 - A `null` reference-type id round-trips as `null`. protobuf-net writes a root-level `null` as an empty
   payload and reads it back as a surrogate with a `null` field, so the generated operator maps both shapes to
-  `null`.
+  `null`. For a reference-type id the surrogate's field is always nullable, including when the primitive is a
+  value type: a non-nullable field would make `null` and the primitive's default value (`Guid.Empty`, `0`, the
+  first enum member) produce the same empty payload, and `null` would silently come back as that default.
+- An id whose wrapped primitive is `null` (a `string`-backed id or one backed by a custom `class`) round-trips
+  as `default`, whether the id itself is a `record struct` or a `record class`. The empty payload is what the
+  write side produces for such an id, so the read side maps it back instead of throwing; this matches
+  System.Text.Json, Newtonsoft.Json, MessagePack and BSON.
 - Ids nested in a generic container are skipped: the attribute argument would contain a type parameter
   (`CS0416`), and without the attribute the surrogate is dead code.
 - If you already put `[ProtoContract]` on the id yourself, the generator skips it; attributes cannot be

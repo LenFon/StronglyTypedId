@@ -86,6 +86,9 @@ public readonly record struct IntegrationMoney(decimal Amount)
 [StronglyTypedId]
 public partial record struct IntegrationMoneyId(IntegrationMoney Value);
 
+// 显式实现 IFormattable 的自定义基元（ExplicitFormattableMoney / ExplicitFormattableMoneyId）
+// 声明在 TestBase 里，与运行时测试共用同一份定义。
+
 // ULID：第三方库提供的自定义基元，本库对它零改动。Cysharp 的 Ulid 同时实现 IParsable<Ulid>、
 // IComparable<Ulid> 与非泛型 IComparable，正好满足契约 —— 这里放一个真实 Id 是为了让
 // 「不需要为 ULID 加任何代码」这句话有可执行的证据。
@@ -105,6 +108,14 @@ public partial record struct InstanceIntegrationUlidId(Ulid Value);
 // 引用程序集里的 Id 拿不到 surrogate（特性只能加在本次编译声明的类型上），故这些必须声明在本工程。
 [StronglyTypedId]
 public partial record IntegrationProtobufReferenceId(string Value);
+
+// 引用类型 Id + 值类型基元：surrogate 字段必须可空，否则 protobuf-net 把根级 null 写成空载荷后，
+// 读回会得到一个「字段全为默认值」的 surrogate，null 静默变成 Guid.Empty。
+[StronglyTypedId]
+public partial record IntegrationProtobufGuidReferenceId(Guid Value);
+
+[StronglyTypedId]
+public partial record IntegrationProtobufIntReferenceId(int Value);
 
 [StronglyTypedId(Validator = nameof(Validate))]
 public partial record struct IntegrationValidatedGuidId(Guid Value)
@@ -143,3 +154,42 @@ public partial record struct IntegrationProtobufDecimalId(decimal Value);
 
 [StronglyTypedId]
 public partial record struct IntegrationProtobufCharId(char Value);
+
+// 引用类型基元（class）：二进制集成写文本形时，null 基元必须写 nil / BSON null，
+// 而不是空串（空串读回必然失败，且与 STJ 写出的 null 不同形）。
+public sealed class IntegrationReferenceCode : IParsable<IntegrationReferenceCode>, IComparable<IntegrationReferenceCode>, IComparable
+{
+    private IntegrationReferenceCode(string value) => Value = value;
+
+    public string Value { get; }
+
+    public static IntegrationReferenceCode Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid IntegrationReferenceCode.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out IntegrationReferenceCode result)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            result = null!;
+            return false;
+        }
+
+        result = new IntegrationReferenceCode(s);
+        return true;
+    }
+
+    public int CompareTo(IntegrationReferenceCode? other) => string.CompareOrdinal(Value, other?.Value);
+
+    public int CompareTo(object? obj) => CompareTo(obj as IntegrationReferenceCode);
+
+    public override string ToString() => Value;
+}
+
+[StronglyTypedId]
+public partial record IntegrationReferenceCodeId(IntegrationReferenceCode Value);
+
+// 值类型 Id 包装引用类型基元：基元可以是 null，写侧已把它写成 nil / BSON null / 空载荷，
+// 读侧必须还原成 default，否则「写出去就读不回来」。与上面那条（引用类型 Id）覆盖的是不同分支：
+// 那条走的是「Id 本身为 null」，这条走的是「Id 非 null 但基元为 null」。
+[StronglyTypedId]
+public partial record struct IntegrationReferenceCodeStructId(IntegrationReferenceCode Value);

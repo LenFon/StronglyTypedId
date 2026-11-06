@@ -60,7 +60,11 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         SourceProductionContext context,
         string version)
     {
-        var header = GeneratedCode.Header(idInfo.Namespace);
+        // 带前缀时产物会调 System.MemoryExtensions 的扩展方法（StartsWith / AsSpan），必须补 using。
+        // 无前缀时产物逐字节不变。
+        var header = GeneratedCode.Header(
+            idInfo.Namespace,
+            idInfo.HasPrefix ? GeneratedCode.SystemUsing : null);
 
         // Parse 的失败一律抛 FormatException（IParsable<TSelf> 的惯例，与 int.Parse / Guid.Parse 一致），
         // 而不是 ArgumentException：后者是「调用方传了不该传的东西」，前者才是「文本格式不对」。
@@ -209,29 +213,82 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     private static string GetToStringBody(StronglyTypedIdInfo idInfo)
     {
         // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现（CS1501），
-        // 而其无参 ToString() 本就与文化无关，直接调用即可。
+        // 而其无参 ToString() 本就与文化无关，直接调用即可。自定义基元若也把两参重载做成显式实现，
+        // 则改调泛型辅助方法——不能退回无参 ToString()，那会丢掉不变文化契约。
         var body = idInfo.IsCharPrimitive
             ? "Value.ToString()"
-            : idInfo.IsFormattable
-                ? "Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty"
-                : "Value.ToString() ?? string.Empty";
+            : !idInfo.IsFormattable
+                ? NullSafeInstanceCall(idInfo, "Value", "ToString()")
+                : idInfo.HasPublicToStringWithProvider
+                    ? NullSafeInstanceCall(idInfo, "Value", $"ToString({GetFormatArgument(idInfo)}, global::System.Globalization.CultureInfo.InvariantCulture)")
+                    : idInfo.RoundTripFormat is null
+                        ? NullSafeHelperCall(idInfo, "global::Len.StronglyTypedId.StronglyTypedIdFormatting.ToInvariantString(Value)")
+                        : $"global::Len.StronglyTypedId.StronglyTypedIdFormatting.Format(Value, {GetFormatArgument(idInfo)}, global::System.Globalization.CultureInfo.InvariantCulture)";
 
         // 前缀属于规范文本形，故直接外包一层字符串拼接；无前缀时返回原表达式，产物逐字节不变。
         return idInfo.HasPrefix ? $"{Literal(idInfo.Prefix!)} + ({body})" : body;
     }
 
     /// <summary>
+    /// 取一次基元实例方法调用，引用类型基元额外做 null 兜底。
+    /// </summary>
+    /// <remarks>
+    /// 引用类型基元（<c>string</c> 与自定义 <c>class</c>）的实例可以是 <see langword="null"/>：
+    /// <c>default(TId)</c> 与 <c>TryCreate</c> / <c>TryParse</c> 失败的结果都是它。
+    /// <c>Value.ToString() ?? string.Empty</c> 的兜底写在解引用之后，是死代码 —— 先抛
+    /// <see cref="NullReferenceException"/>，<c>??</c> 永远走不到。改成 <c>Value?.ToString()</c> 才真正生效。
+    /// </remarks>
+    private static string NullSafeInstanceCall(StronglyTypedIdInfo idInfo, string receiver, string call)
+        => idInfo.IsReferenceTypePrimitive
+            ? $"{receiver}?.{call} ?? string.Empty"
+            : $"{receiver}.{call} ?? string.Empty";
+
+    /// <summary>
+    /// 取一次泛型辅助方法调用，引用类型基元额外做 null 兜底。
+    /// </summary>
+    /// <remarks>
+    /// 辅助方法内部走 <c>constrained.</c> 调用以免值类型装箱，因此不能在它内部加 <c>value is null</c>
+    /// （那会让值类型装箱）；判空只能放在调用点。
+    /// </remarks>
+    private static string NullSafeHelperCall(StronglyTypedIdInfo idInfo, string call)
+        => idInfo.IsReferenceTypePrimitive
+            ? $"Value is null ? string.Empty : {call}"
+            : call;
+
+    /// <summary>
+    /// 取传给基元 <c>ToString</c> / <c>Format</c> 的格式实参。
+    /// </summary>
+    /// <remarks>
+    /// 三个时间基元的默认格式有损（见 <see cref="StronglyTypedIdInfo.RoundTripFormat"/>），
+    /// 规范文本形必须用 <c>"O"</c>；其余基元保持 <see langword="null"/>，产物逐字节不变。
+    /// </remarks>
+    private static string GetFormatArgument(StronglyTypedIdInfo idInfo)
+        => idInfo.RoundTripFormat is null ? "null" : Literal(idInfo.RoundTripFormat);
+
+    /// <summary>
     /// 生成基元 <c>TryFormat</c> 的调用表达式。
     /// </summary>
-    private static string GetTryFormatCall(TryFormatKind kind, bool isUtf8, string destination, string writtenArgument)
-        => kind switch
+    /// <remarks>
+    /// <see cref="TryFormatKind.Interface"/> 说明基元把 <c>TryFormat</c> 写成了显式接口实现，只能经接口调用。
+    /// 这里同样改调泛型辅助方法：<c>((ISpanFormattable)Value)</c> 对值类型会装箱，而泛型约束调用不会。
+    /// <para>
+    /// 空格式同样回退到规范格式（见 <see cref="StronglyTypedIdInfo.GetEffectiveFormatExpression"/>），
+    /// 否则 <c>TryFormat(default, …)</c> 写出的文本与 <c>ToString()</c> 不同形。
+    /// </para>
+    /// </remarks>
+    private static string GetTryFormatCall(StronglyTypedIdInfo idInfo, TryFormatKind kind, bool isUtf8, string destination, string writtenArgument)
+    {
+        var format = idInfo.GetEffectiveFormatExpression("format", isSpan: true);
+
+        return kind switch
         {
-            TryFormatKind.Direct => $"Value.TryFormat({destination}, out {writtenArgument}, format, provider)",
-            TryFormatKind.DirectWithoutProvider => $"Value.TryFormat({destination}, out {writtenArgument}, format)",
+            TryFormatKind.Direct => $"Value.TryFormat({destination}, out {writtenArgument}, {format}, provider)",
+            TryFormatKind.DirectWithoutProvider => $"Value.TryFormat({destination}, out {writtenArgument}, {format})",
             _ => isUtf8
-                ? $"((global::System.IUtf8SpanFormattable)Value).TryFormat({destination}, out {writtenArgument}, format, provider)"
-                : $"((global::System.ISpanFormattable)Value).TryFormat({destination}, out {writtenArgument}, format, provider)",
+                ? $"global::Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormatUtf8(Value, {destination}, out {writtenArgument}, {format}, provider)"
+                : $"global::Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormat(Value, {destination}, out {writtenArgument}, {format}, provider)",
         };
+    }
 
     /// <summary>
     /// 生成类型声明上方的前置特性：<see cref="System.Diagnostics.DebuggerDisplayAttribute"/> 与
@@ -253,7 +310,10 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             builder.Append($"[global::System.Diagnostics.DebuggerTypeProxy(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}DebugView))]").Append('\n');
         }
 
-        if (idInfo.HasTypeConverter)
+        // 泛型容器里的 Id 同样不能带 [TypeConverter]：特性实参必须是封闭类型，而
+        // Box<T>.BoxedId.BoxedIdTypeConverter 含类型参数，会 CS0416。与 [DebuggerTypeProxy] 同条件；
+        // 转换器类本身照常生成，使用者可按闭合类型手动接线（与 JSON 转换器一致）。
+        if (idInfo.HasTypeConverter && !idInfo.IsInGenericContainer)
         {
             // 必须用 FullyQualifiedName（含包含类型链，如 global::Ns.Outer.Inner）而不是
             // FullyQualifiedNamespace（只有命名空间）：嵌套 Id 的转换器挂在 Id 自己名下，
@@ -266,7 +326,8 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
     /// <summary>
     /// 追加嵌套的 <see cref="System.ComponentModel.TypeConverter"/> 实现，供 <c>TypeDescriptor</c>
-    /// 体系（<c>XmlSerializer</c>、<c>IConfiguration</c> 绑定、XAML / DataGrid）在字符串与强类型 Id 间往返。
+    /// 体系（<c>IConfiguration</c> 绑定、XAML / DataGrid、Newtonsoft 字典键读路径）在字符串与强类型 Id
+    /// 间往返。<c>XmlSerializer</c> 不走它：它按公开属性展开 Id，<c>record</c> 形态还会因缺无参构造函数失败。
     /// </summary>
     private static void AppendTypeConverter(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
@@ -281,7 +342,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         builder.Append("        public override bool CanConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Type sourceType) => sourceType == typeof(string);").Append('\n');
         builder.Append('\n');
         builder.Append($"        public override object? ConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object value) =>").Append('\n');
-        builder.Append($"            value is string text ? {idInfo.EscapedName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
+        builder.Append($"            value is string text ? {idInfo.FullyQualifiedName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
         builder.Append('\n');
         builder.Append("        public override object? ConvertTo(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object? value, global::System.Type? destinationType) =>").Append('\n');
         builder.Append("            destinationType == typeof(string) ? value?.ToString() : throw new global::System.NotSupportedException($\"Cannot convert to {destinationType}.\");").Append('\n');
@@ -432,11 +493,22 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             // 自定义基元的契约只保证 string 重载（IParsable<TSelf> 的成员签名），故 span 重载先转成字符串。
             // 不要求 span 重载是刻意的：要求它会排除掉只实现 IParsable 的常见写法。
             var parseArgument = isSpan ? "value.ToString()" : "value";
+            var tryParse = $"{idInfo.PrimitiveIdTypeName}.TryParse({parseArgument}, {ProviderOrDefault}, out var val)";
 
-            return $"{idInfo.PrimitiveIdTypeName}.TryParse({parseArgument}, {ProviderOrDefault}, out var val)";
+            // string 形参可空，而自定义基元的 TryParse 常把首参声明为非可空 string（IParsable 允许这样写，
+            // 只是会得到 CS8767）。直接把 string? 传进去会在消费方构建里留下 CS8604，故先挡 null。
+            // 首参本就接受 null 的基元不加这一档：那会改变它们对空文本的既定处理。
+            return isSpan || idInfo.CustomPrimitiveTryParseAcceptsNull
+                ? tryParse
+                : $"value is not null && {tryParse}";
         }
 
-        return $"{idInfo.PrimitiveIdTypeName}.TryParse(value, {ProviderOrDefault}, out var val)";
+        // DateTime 必须带 RoundtripKind：默认样式会把带 "Z" 的文本按本地时区解释，
+        // Kind 从 Utc 变 Local、时刻整体平移（实测 "…Z" 在 UTC+8 下 ticks 差 8 小时）。
+        // 与 InstanceValueEmitter.TryEmitDateTime 同一口径。
+        return idInfo.PrimitiveIdTypeName == "global::System.DateTime"
+            ? $"{idInfo.PrimitiveIdTypeName}.TryParse(value, {ProviderOrDefault}, global::System.Globalization.DateTimeStyles.RoundtripKind, out var val)"
+            : $"{idInfo.PrimitiveIdTypeName}.TryParse(value, {ProviderOrDefault}, out var val)";
     }
 
     /// <summary>
@@ -555,11 +627,23 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// <c>string</c> 基元必须走序数比较：<c>string.CompareTo</c> 是区域性敏感的，会把 <c>"a\u00ADb"</c> 与 <c>"ab"</c>
     /// 判为相等、让 <c>"I"</c> 与 <c>"i"</c> 的顺序随区域翻转，而 record 合成的 <c>Equals</c> 与序列化入口都是序数的。
     /// 两者不一致时 <c>SortedSet</c> / <c>SortedDictionary</c> 会把不相等的 Id 当成同一个键。
+    /// <para>
+    /// 自定义基元可能把 <c>IComparable&lt;TSelf&gt;.CompareTo</c> 写成显式接口实现，此时按类型名直呼会绑定到
+    /// <c>MemoryExtensions.CompareTo</c> 扩展方法并报 CS7036，故改走 <c>Comparer&lt;T&gt;.Default</c>。
+    /// 内置基元（含枚举）一律保持直呼：它们的产物必须逐字节不变。
+    /// </para>
+    /// <para>
+    /// 引用类型基元（自定义 <c>class</c>）的实例可以是 <see langword="null"/>，直呼 <c>left.CompareTo(right)</c>
+    /// 会在 <c>default(TId)</c> 上抛 <see cref="NullReferenceException"/>。同样改走 <c>Comparer&lt;T&gt;.Default</c>：
+    /// 它对引用类型按「null 最小」比较，与引用类型 Id 的 <c>CompareTo</c> 约定一致。
+    /// </para>
     /// </remarks>
     private static string GetComparisonExpression(StronglyTypedIdInfo idInfo, string left, string right)
         => idInfo.IsStringPrimitive
             ? $"global::System.String.CompareOrdinal({left}, {right})"
-            : $"{left}.CompareTo({right})";
+            : idInfo.IsReferenceTypePrimitive || (idInfo.IsCustomPrimitive && !idInfo.HasPublicCompareTo)
+                ? $"global::System.Collections.Generic.Comparer<{idInfo.PrimitiveIdTypeName}>.Default.Compare({left}, {right})"
+                : $"{left}.CompareTo({right})";
 
     /// <summary>
     /// 取 <c>CompareTo</c> 的表达式体。
@@ -624,20 +708,30 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.IsFormattable)
         {
-            // char 的 IFormattable.ToString(string, IFormatProvider) 是显式接口实现，只能经接口调用（多一次装箱）。
-            var formatCall = idInfo.IsCharPrimitive
-                ? "((global::System.IFormattable)Value).ToString(format, formatProvider)"
-                : "Value.ToString(format, formatProvider)";
+            // char 与显式实现 IFormattable 的自定义基元只能经接口调用；改调泛型辅助方法以免装箱。
+            // 空格式回退到规范格式：否则 ToString(null, provider) 会退化成有损短格式，与 ToString() 不一致。
+            var formatCall = idInfo.HasPublicToStringWithProvider
+                ? $"Value.ToString({idInfo.GetEffectiveFormatExpression("format", isSpan: false)}, formatProvider)"
+                : $"global::Len.StronglyTypedId.StronglyTypedIdFormatting.Format(Value, {idInfo.GetEffectiveFormatExpression("format", isSpan: false)}, formatProvider)";
+
+            // 引用类型基元可以是 null，直呼会抛 NRE。与无参 ToString() 保持一致：null 写出空串。
+            if (idInfo.IsReferenceTypePrimitive)
+            {
+                formatCall = $"Value is null ? string.Empty : {formatCall}";
+            }
 
             // 前缀属于规范文本形，任何 format 都必须带上：否则 $"{id:X}" 会悄悄退化成裸基元，
-            // 与 ToString() / 序列化写出的文本不同形。
+            // 与 ToString() / 序列化写出的文本不同形。条件表达式必须加括号，否则 `"ord_" + a ? b : c`
+            // 会被解析成 `("ord_" + a) ? b : c`。
             AppendMember(
                 members,
                 version,
                 ["<inheritdoc/>"],
                 "public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>",
                 idInfo.HasPrefix
-                    ? $"    {Literal(idInfo.Prefix!)} + {formatCall};"
+                    ? idInfo.IsReferenceTypePrimitive
+                        ? $"    {Literal(idInfo.Prefix!)} + ({formatCall});"
+                        : $"    {Literal(idInfo.Prefix!)} + {formatCall};"
                     : $"    {formatCall};");
         }
 
@@ -760,7 +854,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </summary>
     /// <remarks>
     /// 有前缀时前缀无条件先写，<c>format</c> 只作用于基元部分；无前缀时直接转发给基元的 <c>TryFormat</c>。
-    /// 有公开的实例重载就按具体类型直呼（省掉装箱），否则退回接口调用（见 <see cref="GetTryFormatCall"/>）。
+    /// 有公开的实例重载就按具体类型直呼，否则改调泛型辅助方法（见 <see cref="GetTryFormatCall"/>）。
     /// </remarks>
     private static void AppendTryFormatMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version, bool isUtf8)
     {
@@ -768,6 +862,15 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         var destinationName = isUtf8 ? "utf8Destination" : "destination";
         var writtenName = isUtf8 ? "bytesWritten" : "charsWritten";
         var kind = isUtf8 ? idInfo.Utf8TryFormatKind : idInfo.CharTryFormatKind;
+
+        // 引用类型基元可以是 null，直呼 TryFormat 会抛 NRE。与 ToString() 一致：null 写出空文本，
+        // 即成功写入 0 个字符（有前缀时只写前缀）。
+        if (idInfo.IsReferenceTypePrimitive)
+        {
+            AppendNullSafeTryFormatMember(builder, idInfo, version, destinationType, destinationName, writtenName, kind, isUtf8);
+
+            return;
+        }
 
         if (!idInfo.HasPrefix)
         {
@@ -780,7 +883,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                 $"    out int {writtenName},",
                 "    global::System.ReadOnlySpan<char> format,",
                 "    global::System.IFormatProvider? provider) =>",
-                $"    {GetTryFormatCall(kind, isUtf8, destinationName, writtenName)};");
+                $"    {GetTryFormatCall(idInfo, kind, isUtf8, destinationName, writtenName)};");
 
             return;
         }
@@ -807,7 +910,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             "        return false;",
             "    }",
             string.Empty,
-            $"    if ({GetTryFormatCall(kind, isUtf8, $"{destinationName}.Slice({prefixLength})", "var written")})",
+            $"    if ({GetTryFormatCall(idInfo, kind, isUtf8, $"{destinationName}.Slice({prefixLength})", "var written")})",
             "    {",
             $"        {writtenName} = {prefixLength} + written;",
             "        return true;",
@@ -816,6 +919,87 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             $"    {writtenName} = 0;",
             "    return false;",
             "}");
+    }
+
+    /// <summary>
+    /// 追加引用类型基元的 <c>TryFormat</c>：<c>Value</c> 为 <see langword="null"/> 时按空文本处理。
+    /// </summary>
+    /// <remarks>
+    /// 空文本就是「成功写入 0 个字符」，与 <c>ToString()</c> 写出空串一致；有前缀时前缀照常写入。
+    /// 表达式体写不出「先赋值 out 再返回」的分支，故这里用块体。
+    /// </remarks>
+    private static void AppendNullSafeTryFormatMember(
+        StringBuilder builder,
+        StronglyTypedIdInfo idInfo,
+        string version,
+        string destinationType,
+        string destinationName,
+        string writtenName,
+        TryFormatKind kind,
+        bool isUtf8)
+    {
+        var signature = new[]
+        {
+            "public bool TryFormat(",
+            $"    {destinationType} {destinationName},",
+            $"    out int {writtenName},",
+            "    global::System.ReadOnlySpan<char> format,",
+            "    global::System.IFormatProvider? provider)",
+        };
+
+        if (!idInfo.HasPrefix)
+        {
+            AppendMember(
+                builder,
+                version,
+                ["<inheritdoc/>"],
+                [.. signature,
+                 "{",
+                 "    if (Value is null)",
+                 "    {",
+                 $"        {writtenName} = 0;",
+                 "        return true;",
+                 "    }",
+                 string.Empty,
+                 $"    return {GetTryFormatCall(idInfo, kind, isUtf8, destinationName, writtenName)};",
+                 "}"]);
+
+            return;
+        }
+
+        var prefix = idInfo.Prefix!;
+        var prefixLength = isUtf8 ? Encoding.UTF8.GetByteCount(prefix) : prefix.Length;
+        var copyPrefix = isUtf8
+            ? $"{Literal(prefix)}u8.TryCopyTo({destinationName})"
+            : $"{Literal(prefix)}.AsSpan().TryCopyTo({destinationName})";
+
+        AppendMember(
+            builder,
+            version,
+            ["<inheritdoc/>"],
+            [.. signature,
+             "{",
+             $"    if (!{copyPrefix})",
+             "    {",
+             $"        {writtenName} = 0;",
+             "        return false;",
+             "    }",
+             string.Empty,
+             "    if (Value is null)",
+             "    {",
+             $"        {writtenName} = {prefixLength};",
+             "        return true;",
+             "    }",
+             string.Empty,
+             $"    if ({GetTryFormatCall(idInfo, kind, isUtf8, $"{destinationName}.Slice({prefixLength})", "var written")})",
+             "    {",
+             $"        {writtenName} = {prefixLength} + written;",
+             "        return true;",
+             "    }",
+             string.Empty,
+             $"    {writtenName} = 0;",
+             "    return false;",
+             "}"]);
     }
 
     /// <summary>

@@ -223,7 +223,15 @@ internal static class InstanceValueEmitter
             return false;
         }
 
-        // 用 ticks + Kind 发射：文本里的 "Z" / 偏移必须原样保留，否则 Utc 会被静默折成 Unspecified。
+        // 带偏移的文本（"+08:00"、"+00:00"）会让 RoundtripKind 返回 Kind=Local，且 ticks 是
+        // 「换算到构建机器本地墙钟」后的值 —— 同一份源码在 UTC+8 与 UTC 机器上会产出不同的字面量。
+        // 实例声明必须与构建环境无关，故只接受 Z（Kind=Utc）与无偏移（Kind=Unspecified）两种写法。
+        if (value.Kind == DateTimeKind.Local)
+        {
+            return false;
+        }
+
+        // 用 ticks + Kind 发射：文本里的 "Z" 必须原样保留，否则 Utc 会被静默折成 Unspecified。
         expression = $"new global::System.DateTime({Ticks(value.Ticks)}, global::System.DateTimeKind.{value.Kind})";
         return true;
     }
@@ -233,6 +241,14 @@ internal static class InstanceValueEmitter
         expression = null;
 
         if (!DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var value))
+        {
+            return false;
+        }
+
+        // 文本不带偏移时 DateTimeOffset.TryParse 用本地时区补偏移，产物同样随构建机器变化。
+        // 用 DateTime 的 Kind 判定文本是否真的写了偏移：Unspecified 说明没写，拒绝。
+        if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var probe)
+            && probe.Kind == DateTimeKind.Unspecified)
         {
             return false;
         }
@@ -259,39 +275,56 @@ internal static class InstanceValueEmitter
     {
         expression = null;
 
-        // netstandard2.0 没有 Half，先用 float 校验语法再显式转换。实测 (Half)float 与
-        // Half.Parse 对同一文本给出完全相同的值，故 float 只承担「文本是否是数字」这一层判定。
-        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        // netstandard2.0 没有 Half，只能借 BCL 的数值类型完成「文本是否是数字」与「是否越过溢出中点」
+        // 两层判定，产物再交给运行期 Half.Parse 还原。
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
         {
             return false;
         }
 
         // NaN 与 ±Infinity 是 Half 的合法取值（Half.Parse 也接受），直接发射对应常量。
-        if (float.IsNaN(value))
+        if (double.IsNaN(value))
         {
             expression = "global::System.Half.NaN";
             return true;
         }
 
-        if (float.IsInfinity(value))
+        if (double.IsInfinity(value))
         {
-            expression = float.IsPositiveInfinity(value)
+            expression = double.IsPositiveInfinity(value)
                 ? "global::System.Half.PositiveInfinity"
                 : "global::System.Half.NegativeInfinity";
             return true;
         }
 
-        // 只有「舍入后变成无穷」才算越界。Half 的最大有限值是 65504，但 (65504, 65520) 会舍入回 65504
-        // （实测 65519.9 → 65504），真正的溢出阈值是中点 65520（就近偶数舍入到无穷）。
-        // 拿 65504 当上限会比 Half.Parse 更严，把合法文本误判成非法。
-        if (Math.Abs(value) >= 65520F)
+        // 只有「舍入后变成无穷」才算越界。Half 的最大有限值是 65504，但 (65504, 65520) 会舍入回 65504，
+        // 真正的溢出阈值是中点 65520（就近偶数舍入到无穷）。拿 65504 当上限会比 Half.Parse 更严。
+        //
+        // 判定必须优先用 decimal：double 只有 53 位有效数字，65519.999999999999 会被舍入成 65520，
+        // 于是合法文本被误判成溢出。decimal 有 28–29 位，覆盖实际会写进源码的十进制字面量；
+        // 超出 decimal 量程的文本（如 1e100）必然远大于阈值，退回 double 判定即可。
+        if (ExceedsHalfOverflowMidpoint(text, value))
         {
             return false;
         }
 
-        expression = $"(global::System.Half)({value.ToString("R", CultureInfo.InvariantCulture)}F)";
+        // 不能发射 double / float 字面量：两者都会先舍入，65519.999999999999 会变成 65520 再转成无穷，
+        // 与 Half.Parse 给出的 65504 不一致。改为把原文交给运行期 Half.Parse，保证与 Parse 语义逐位一致。
+        expression = $"global::System.Half.Parse({Literal(text)}, {Invariant})";
         return true;
     }
+
+    /// <summary>
+    /// 判断文本的绝对值是否达到 <c>Half</c> 的溢出中点 65520。
+    /// </summary>
+    /// <remarks>
+    /// 优先按 <see cref="decimal"/> 精确比较；文本超出 decimal 量程时它必然远大于阈值，
+    /// 用已经解析好的 <see cref="double"/> 判定即可。
+    /// </remarks>
+    private static bool ExceedsHalfOverflowMidpoint(string text, double value)
+        => decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var exact)
+            ? Math.Abs(exact) >= 65520M
+            : Math.Abs(value) >= 65520D;
 
     /// <summary>
     /// 生成 <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 的表达式。

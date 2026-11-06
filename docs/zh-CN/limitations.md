@@ -69,4 +69,7 @@ public partial record struct ResourceUri(string Value)
 `[DebuggerTypeProxy]` 出于同样的原因被跳过，而且与转换器不同，它的代理类也不生成：代理类是私有的，
 没有手工接线的可能，调试器里展开该 Id 时只会显示 record 自己的成员。
 
+`[TypeConverter]` 同样出于这个原因被跳过。`TypeConverter = true` 仍会生成转换器类，但不发射特性，
+因为它的实参会带上容器的类型参数（CS0416）。需要 `TypeDescriptor` 支持时，请按闭合类型手工注册。
+
 [<- 返回目录](index.md) · [English](../limitations.md)

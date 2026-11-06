@@ -55,7 +55,11 @@ internal static partial class PackageReadmeVerifier
             return [$"{FileName} 不存在（它是 NuGet 详情页正文，由 common.props 的 PackageReadmeFile 引用）。"];
         }
 
-        var text = File.ReadAllText(path);
+        // 段落与章节边界按 "\n\n" / "\n## " 查找，而 PACKAGE.md 在 Windows 检出下是 CRLF。
+        // 不归一化时 "\r\n\r\n" 里没有 "\n\n"，Paragraph 会一路扫到文件末尾，把后续段落里的
+        // 反引号记号当成基元清单的一部分 —— 既会误报（"record" / "Validator" 被当成基元），
+        // 也会漏报（清单里删掉一个基元、而它在后文出现过时，漂移被静默吞掉）。
+        var text = File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
         var problems = new List<string>();
 
         problems.AddRange(Diff(

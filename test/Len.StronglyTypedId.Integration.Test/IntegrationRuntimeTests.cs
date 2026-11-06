@@ -7,6 +7,7 @@ using System.Reflection;
 using Dapper;
 using FluentAssertions;
 using Len.StronglyTypedId;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -260,6 +261,45 @@ public class IntegrationRuntimeTests
         expectedType.Should().NotBeNull("EF Core 的 ValueConverter 泛型类型必须可在真实包引用下解析");
         expectedType.Should().BeAssignableTo<Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter>(
             "生成的转换器必须继承 EF Core 的 ValueConverter 基类");
+    }
+
+    /// <summary>
+    /// <c>AddStronglyTypedIds(ModelBuilder)</c> 必须真的把 Id 属性映射上。
+    /// </summary>
+    /// <remarks>
+    /// 该重载此前遍历 <c>entityType.GetProperties()</c>，而 EF 的约定集不会把「既不是受支持基元、
+    /// 也不是合法实体类型」的 CLR 属性加进模型 —— 强类型 Id 正好落在这一档，于是循环永远空转，
+    /// 方法完全无效。这条用例真正构建模型并往返，锁住修复。
+    /// </remarks>
+    [Fact]
+    public void EfCore_ModelBuilderOverload_Should_MapIdPropertiesAndRoundTrip()
+    {
+        using var context = new ModelBuilderDbContext();
+
+        var entityType = context.Model.FindEntityType(typeof(ModelBuilderEntity))!;
+
+        entityType.FindProperty(nameof(ModelBuilderEntity.Required))!
+            .GetValueConverter().Should().NotBeNull("非可空 Id 属性必须被映射");
+        entityType.FindProperty(nameof(ModelBuilderEntity.Optional))!
+            .GetValueConverter().Should().NotBeNull("可空 Id 属性同样必须被映射");
+        entityType.FindProperty(nameof(ModelBuilderEntity.Ignored))!
+            .Should().BeNull("[NotMapped] 的属性必须保持排除");
+
+        context.Database.OpenConnection();
+        context.Database.EnsureCreated();
+
+        var required = IntegrationGuidId.Create(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        context.Set<ModelBuilderEntity>().Add(new ModelBuilderEntity { Required = required, Optional = null });
+        context.Set<ModelBuilderEntity>().Add(new ModelBuilderEntity { Required = required, Optional = required });
+        context.SaveChanges();
+        context.ChangeTracker.Clear();
+
+        var rows = context.Set<ModelBuilderEntity>().OrderBy(row => row.Id).ToList();
+
+        rows.Should().HaveCount(2);
+        rows[0].Required.Should().Be(required);
+        rows[0].Optional.Should().BeNull("可空 Id 的 null 必须原样往返");
+        rows[1].Optional.Should().Be(required);
     }
 
     #endregion
@@ -860,6 +900,41 @@ public class IntegrationRuntimeTests
     #endregion
 
     #region 辅助
+
+    /// <summary>
+    /// 走 <c>OnModelCreating(ModelBuilder)</c> 注册路径的上下文：真正调用生成的
+    /// <c>AddStronglyTypedIds(ModelBuilder)</c> 重载。
+    /// </summary>
+    private sealed class ModelBuilderDbContext : DbContext
+    {
+        public DbSet<ModelBuilderEntity> Entities => Set<ModelBuilderEntity>();
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+            => optionsBuilder.UseSqlite("Data Source=:memory:");
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // 生成的入口在 Len.StronglyTypedId 命名空间下，本文件已 using 该命名空间。
+            modelBuilder.AddStronglyTypedIds();
+        }
+    }
+
+    /// <summary>
+    /// 模型扫描路径的实体：非可空 Id、可空 Id 与 <c>[NotMapped]</c> 三种属性。
+    /// </summary>
+    private sealed class ModelBuilderEntity
+    {
+        public int Id { get; set; }
+
+        public IntegrationGuidId Required { get; set; }
+
+        public IntegrationGuidId? Optional { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public IntegrationGuidId Ignored { get; set; }
+    }
 
     /// <summary>
     /// 最小 <see cref="IDbDataParameter"/> 桩：生成的 TypeHandler.SetValue 只写 <c>Value</c>，不实际读写数据库，故其余成员给最小实现即可。

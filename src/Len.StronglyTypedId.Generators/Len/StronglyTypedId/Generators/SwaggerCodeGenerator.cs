@@ -105,7 +105,12 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
 
                         foreach (var parameterDescription in context.ApiDescription.ParameterDescriptions)
                         {
-                            if (!Schemas.TryGetValue(parameterDescription.Type, out var factory))
+                            // 可空 Id（OrderId?）的 CLR 类型是 Nullable<OrderId>，不拆壳就查不到表，
+                            // 参数会退回 Swashbuckle 的裸 string schema。与 MVC 绑定器、EF 转换器同一口径。
+                            var parameterType = global::System.Nullable.GetUnderlyingType(parameterDescription.Type)
+                                ?? parameterDescription.Type;
+
+                            if (!Schemas.TryGetValue(parameterType, out var factory))
                             {
                                 continue;
                             }

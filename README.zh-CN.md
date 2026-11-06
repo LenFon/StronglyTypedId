@@ -29,7 +29,7 @@ Entity Framework Core / Swagger 集成。`Guid` 与 `OrderId` 从此不会互相
 - **一行声明。** 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`），
   类型就具备解析、格式化、比较、`Create` / `TryCreate`、解构、JSON 转换器与调试器视图。
 - **`Guid` 冒充不了 `OrderId`。** 编译器会拒绝这种替换；内建分析器把不合法的声明作为错误报出，
-  26 条规则里有 21 条附带代码修复。
+  28 条规则里有 21 条附带代码修复。
 - **23 种基元，或你自己的类型。** 全部数值类型、`Guid`、`string`、日期与 `BigInteger` 都是内置的，
   另外还支持任意 `enum`，以及任何实现了 `IParsable<TSelf>` 与 `IComparable` 的类型。ULID 零改动即可用。
 - **在取值进入的地方校验。** 把 `Validator` 与 `Normalizer` 指向静态方法，所有生成的入口都会执行它们：
@@ -168,6 +168,11 @@ public partial record struct EmailId(Email Value);
 - **`ToString()` 必须产出你自己的 `Parse` 能读回的文本。** 所有序列化路径写的都是基元的规范文本：
   System.Text.Json、Newtonsoft.Json、MessagePack、BSON 与 Dapper 全都如此，因此同一个 Id 不会在 REST
   是一种形态、在数据库里是另一种。把自定义类型交给序列化器，它会按公开属性写出、读回 `default`。
+- **`IFormattable` 可以写成显式接口实现。** 与 `Parse` / `TryParse` 不同，`ToString(string?, IFormatProvider?)`
+  两种写法都支持：生成代码会探测基元是否暴露公开的两参重载，没有就改调泛型辅助方法 —— 泛型约束让编译器
+  发出 `constrained.` 调用，值类型因此不装箱。封装类型常见的「公开面只留无参 `ToString()`」不会让产物编译失败。
+- **`TryParse` 的首参可以声明成非可空 `string`。** `IParsable<TSelf>` 声明的是 `string?`，写成 `string`
+  只会在你自己的类型上得到 CS8767。生成的 Id `TryParse` 会先挡 null 再转发，消费该 Id 不会因此产生 CS8604。
 - **命名实例的值在运行期校验，不在编译期。** 生成器跑在 `netstandard2.0` 上，无法执行你的 `Parse`，
   所以 `[StronglyTypedIdInstance("Unknown", "…")]` 只在首次触碰该类型时才失败。失败是一个
   `InvalidOperationException`，消息里带实例名与 Id 类型名；`Len.StronglyTypedId.Testing` 的
@@ -257,7 +262,7 @@ public partial record struct OrderId(Ulid Value);
 并对大小写与默认端口做归一化，两个不同的 URI 会被判为相等、静默塌缩成同一个 Id。
 
 **主构造函数不受约束。** `new OrderId(...)` 会同时绕过 `Normalizer` 与 `Validator`，只有 `Create`、
-`Parse` 与 `TryParse` 会执行它们。
+`TryCreate`、`Parse` 与 `TryParse` 会执行它们。
 
 三条的绕法，以及泛型容器那条附加限制，见[已知限制](docs/zh-CN/limitations.md)。
 

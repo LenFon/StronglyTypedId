@@ -40,9 +40,10 @@ carries the same inventory without the file names, as a one-glance list.
   without naming its primitive: `static string Render<TId>(TId id) where TId : IFormattableStronglyTypedId<TId>`.
   `IStronglyTypedId<TSelf>` deliberately stays free of `IFormattable`, so it still accepts every id.
 - `IUtf8SpanFormattable` (available since net8.0) and `IUtf8SpanParsable<TSelf>`, also per primitive:
-  `Guid` implements the latter only from .NET 10, and `BigInteger` is excluded even though it implements
-  it, because its `TryParse` is an explicit interface implementation that cannot be called by type name.
-  Together they provide `ReadOnlySpan<byte>` `Parse` / `TryParse` and `TryFormat`.
+  `Guid` implements the latter only from .NET 10, and `BigInteger` and `char` are excluded even though
+  they implement it, because their `TryParse(ReadOnlySpan<byte>, …)` is an explicit interface
+  implementation that cannot be called by type name. Together they provide `ReadOnlySpan<byte>`
+  `Parse` / `TryParse` and `TryFormat`.
 - A `[DebuggerDisplay("{Value}")]` attribute, so the debugger shows the wrapped value rather than the
   record's expanded form.
 - A `[DebuggerTypeProxy]` attribute pointing at a private nested `{TypeName}DebugView`, which changes what
@@ -76,10 +77,25 @@ carries the same inventory without the file names, as a one-glance list.
   `"i"` flips between cultures. Because `SortedSet<T>` and `SortedDictionary<TKey, TValue>` use
   `CompareTo` to detect duplicates, a culture-sensitive comparison silently drops elements there. Ordinal
   comparison keeps ordering consistent with equality and with the invariant text the serializers write.
+  A custom reference-type primitive (`class`) can itself be `null` — `default(TId)` and a failed
+  `TryCreate` / `TryParse` both produce it — so the comparison goes through
+  `Comparer<T>.Default.Compare`, which sorts `null` lowest instead of dereferencing it.
 - `ToString()` returning the invariant-culture text of the wrapped value (not the record's
   `OrderId { Value = … }` form), so it matches what the serializers write and round-trips through
-  `Parse(id.ToString())`; use `ToString(string?, IFormatProvider?)` and
-  `TryFormat(...)` (where the primitive supports them) for culture-specific formatting.
+  `Parse(id.ToString())`. `DateTime`, `DateTimeOffset`, `TimeOnly` and `DateOnly` use the `"O"` format:
+  the first three because their default format drops sub-second ticks (and `TimeOnly` drops the seconds
+  too), which would make two different ids produce the same text, and `DateOnly` because its default
+  short date (`01/02/2020`) differs from the ISO form System.Text.Json writes. Use
+  `ToString(string?, IFormatProvider?)` and `TryFormat(...)` (where the primitive supports them) for
+  culture-specific formatting; an empty `format` falls back to the canonical one, so
+  `ToString(null, provider)` and `TryFormat(default, ...)` produce the same text as `ToString()`.
+  A `string`-backed id (or one backed by a custom `class`) whose `Value` is `null` — the `default` value,
+  and what `TryCreate` / `TryParse` return on failure — prints as the empty string, or as the bare
+  `Prefix` when one is configured; it does not throw. The same holds for the formatted overloads:
+  `ToString(format, provider)` returns the empty string (or the bare prefix) and `TryFormat` reports
+  success with zero characters written (or just the prefix). The serializers do **not** write that bare
+  prefix: they write JSON `null` (and `nil` / BSON `null` / GraphQL `null`), because stripping the prefix
+  from it leaves empty text that no read path accepts.
   A non-empty `format` is forwarded to the primitive and the text keeps its shape otherwise: on a
   `Guid`-backed id `ToString("N")` yields the dash-less GUID, and on a prefixed id the prefix is still
   there (`ord_d8ac85d4…`), so formatting never falls back to the bare primitive.

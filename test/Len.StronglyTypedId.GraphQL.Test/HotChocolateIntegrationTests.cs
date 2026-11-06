@@ -73,6 +73,48 @@ public class HotChocolateIntegrationTests
         GetId(result, "prefixed").GetString().Should().Be("ord_22222222-2222-2222-2222-222222222222");
     }
 
+    /// <summary>
+    /// 超出 GraphQL <c>Int</c> 的大整数，输入输出都是字符串。
+    /// </summary>
+    /// <remarks>
+    /// HotChocolate 的序列化器不认识 <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c>，<c>TrySerialize</c>
+    /// 只能返回文本。字面量若仍是 <c>IntValueNode</c>，就会出现「输入按 Int、输出是 String」的不对称 ——
+    /// 客户端把服务端返回的 <c>"42"</c> 原样传回会被拒。这条用例锁住对称性。
+    /// </remarks>
+    [Theory]
+    [InlineData("bigInt128", "12345678901234567890")]
+    [InlineData("bigUInt128", "12345678901234567890")]
+    [InlineData("bigBigInteger", "123456789012345678901234567890")]
+    public async Task Query_Should_RoundTripBigInteger_AsString(string field, string text)
+    {
+        var executor = await CreateExecutorAsync();
+
+        var result = await ExecuteAsync(executor, $"{{ {field}(id: \"{text}\") {{ id }} }}");
+
+        GetId(result, field).ValueKind.Should().Be(JsonValueKind.String);
+        GetId(result, field).GetString().Should().Be(text);
+    }
+
+    /// <summary>
+    /// 把上一条的输出原样作为字面量传回，必须被接受 —— 这是「输入输出对称」的直接证据。
+    /// </summary>
+    [Theory]
+    [InlineData("bigInt128", "12345678901234567890")]
+    [InlineData("bigUInt128", "12345678901234567890")]
+    [InlineData("bigBigInteger", "123456789012345678901234567890")]
+    public async Task Query_Should_AcceptItsOwnBigIntegerOutput(string field, string text)
+    {
+        var executor = await CreateExecutorAsync();
+
+        var first = await ExecuteAsync(executor, $"{{ {field}(id: \"{text}\") {{ id }} }}");
+        var echoed = GetId(first, field).GetString();
+
+        var second = await ExecuteAsync(executor, $"{{ {field}(id: \"{echoed}\") {{ id }} }}");
+
+        GetErrors(second).Should().BeEmpty();
+        GetId(second, field).GetString().Should().Be(text);
+    }
+
     #endregion
 
     #region 输入：字面量与变量
@@ -264,6 +306,35 @@ public class HotChocolateIntegrationTests
             .Should().Be("SCALAR");
     }
 
+    /// <summary>
+    /// 两个不同命名空间的同名 Id 必须都能注册：GraphQL 的类型名是一张全局表，与 C# 命名空间无关，
+    /// 都按短名注册会让 schema 构建直接失败。
+    /// </summary>
+    [Fact]
+    public async Task AddStronglyTypedIds_Should_DisambiguateSameNameInDifferentNamespaces()
+    {
+        var executor = await CreateExecutorAsync();
+
+        var result = await ExecuteAsync(executor, "{ invoice(id: \"55555555-5555-5555-5555-555555555555\") { id } }");
+
+        GetId(result, "invoice").GetString().Should().Be("55555555-5555-5555-5555-555555555555");
+    }
+
+    /// <summary>
+    /// 消歧后的两个 scalar 在 schema 里都必须是 <c>SCALAR</c>，且名字互不相同。
+    /// </summary>
+    [Fact]
+    public async Task AddStronglyTypedIds_Should_ExposeBothSameNamedScalars()
+    {
+        var executor = await CreateExecutorAsync();
+
+        var schema = executor.Schema.ToString();
+
+        schema.Should().Contain("scalar Len_StronglyTypedId_GraphQL_InvoiceId");
+        schema.Should().Contain("scalar Len_StronglyTypedId_GraphQL_Shipping_InvoiceId");
+        schema.Should().NotContain("scalar InvoiceId");
+    }
+
     #endregion
 
     #region 辅助
@@ -361,6 +432,16 @@ public sealed class Query
     public PrefixedDto Prefixed(PrefixedOrderId id) => new(id);
 
     public ValidatedDto Validated(ValidatedOrderId id) => new(id);
+
+    public BigInt128Dto BigInt128(BigInt128Id id) => new(id);
+
+    public BigUInt128Dto BigUInt128(BigUInt128Id id) => new(id);
+
+    public BigBigIntegerDto BigBigInteger(BigBigIntegerId id) => new(id);
+
+    public InvoiceDto Invoice(InvoiceId id) => new(id);
+
+    public ShippingInvoiceDto ShippingInvoice(Shipping.InvoiceId id) => new(id);
 }
 #pragma warning restore CA1822
 
@@ -373,3 +454,13 @@ public sealed record StatusDto(StatusId Id);
 public sealed record PrefixedDto(PrefixedOrderId Id);
 
 public sealed record ValidatedDto(ValidatedOrderId Id);
+
+public sealed record BigInt128Dto(BigInt128Id Id);
+
+public sealed record BigUInt128Dto(BigUInt128Id Id);
+
+public sealed record BigBigIntegerDto(BigBigIntegerId Id);
+
+public sealed record InvoiceDto(InvoiceId Id);
+
+public sealed record ShippingInvoiceDto(Shipping.InvoiceId Id);

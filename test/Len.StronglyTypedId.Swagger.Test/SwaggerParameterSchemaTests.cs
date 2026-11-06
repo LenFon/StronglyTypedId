@@ -49,6 +49,21 @@ public class SwaggerParameterSchemaTests
     }
 
     /// <summary>
+    /// 可空 Id 参数（<c>LayeredOrderId?</c>）的 CLR 类型是 <c>Nullable&lt;LayeredOrderId&gt;</c>，
+    /// 操作过滤器必须先拆壳再查表，否则参数会退回 Swashbuckle 的裸 <c>type: string</c>。
+    /// </summary>
+    [Fact]
+    public async Task NullableQueryParameter_Should_KeepTheIdSchema()
+    {
+        var document = await GetSwaggerDocumentAsync("/orders", (LayeredOrderId? id) => Results.Ok(id));
+
+        var schema = GetParameterSchema(document, "/orders", "id");
+
+        schema.GetProperty("type").GetString().Should().Be("string");
+        schema.GetProperty("format").GetString().Should().Be("uuid");
+    }
+
+    /// <summary>
     /// 请求体里的 Id 属性本来就被 <c>MapType</c> 照顾到；这条断言是为了守住「补参数没有把请求体弄坏」。
     /// </summary>
     [Fact]

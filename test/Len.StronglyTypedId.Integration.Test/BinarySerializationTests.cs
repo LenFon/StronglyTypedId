@@ -132,16 +132,47 @@ public class BinarySerializationTests
         }
     }
 
+    /// <summary>
+    /// 值类型 Id 收到 nil 时，只有「基元是值类型」的才按契约抛错：nil 只可能来自 <c>Nullable&lt;TId&gt;</c>
+    /// 的写入，静默落成 default 会把数据缺失伪装成合法值。
+    /// </summary>
+    /// <remarks>
+    /// 基元是引用类型（<c>string</c> 或自定义 <c>class</c>）的值类型 Id 不在此列：它的基元本就可以是 null，
+    /// 写侧已把这种实例写成 nil，读侧必须还原成 default，否则「写出去就读不回来」。
+    /// </remarks>
     [Fact]
     public void MessagePack_Should_RejectNil_ForValueTypeId()
     {
-        foreach (var idType in MessagePackFormatterIdTypes().Where(static type => type.IsValueType))
+        foreach (var idType in MessagePackFormatterIdTypes().Where(static type => type.IsValueType && PrimitiveOf(type).IsValueType))
         {
             Action deserialize = () => MessagePackSerializer.Deserialize(
                 idType, NilPayload, _messagePackOptions, TestContext.Current.CancellationToken);
 
             deserialize.Should().Throw<MessagePackSerializationException>(
                 $"{idType.Name}：值类型 Id 收到 nil 说明载荷与契约不符，静默落成 default 会把数据缺失伪装成合法值");
+        }
+    }
+
+    /// <summary>
+    /// 值类型 Id 包装引用类型基元时，nil 必须还原成基元为 null 的 Id，而不是抛错。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="MessagePack_Should_RejectNil_ForValueTypeId"/> 的分界就是「基元是否为引用类型」，
+    /// 与 Id 是 struct 还是 class 无关 —— 与 System.Text.Json / Newtonsoft 的既有口径一致。
+    /// </remarks>
+    [Fact]
+    public void MessagePack_Should_MapNil_ToDefault_ForValueTypeIdWithReferenceTypePrimitive()
+    {
+        var idTypes = MessagePackFormatterIdTypes()
+            .Where(static type => type.IsValueType && !PrimitiveOf(type).IsValueType)
+            .ToList();
+
+        idTypes.Should().NotBeEmpty("集成测试程序集里必须有「值类型 Id + 引用类型基元」才能覆盖这条分支");
+
+        foreach (var idType in idTypes)
+        {
+            MessagePackSerializer.Deserialize(idType, NilPayload, _messagePackOptions, TestContext.Current.CancellationToken)
+                .Should().Be(Activator.CreateInstance(idType), $"{idType.Name}：nil 必须还原成基元为 null 的 Id");
         }
     }
 
@@ -159,15 +190,37 @@ public class BinarySerializationTests
         }
     }
 
+    /// <summary>
+    /// 值类型 Id 收到 BSON null 时，只有「基元是值类型」的才按契约抛错（理由同 MessagePack 侧）。
+    /// </summary>
     [Fact]
     public void MongoDb_Should_RejectNull_ForValueTypeId()
     {
-        foreach (var idType in BsonSerializerIdTypes().Where(static type => type.IsValueType))
+        foreach (var idType in BsonSerializerIdTypes().Where(static type => type.IsValueType && PrimitiveOf(type).IsValueType))
         {
             Action deserialize = () => ReadValue(idType, BsonNull.Value);
 
             deserialize.Should().Throw<BsonSerializationException>(
                 $"{idType.Name}：值类型 Id 收到 BSON null 说明载荷与契约不符，静默落成 default 会把数据缺失伪装成合法值");
+        }
+    }
+
+    /// <summary>
+    /// 值类型 Id 包装引用类型基元时，BSON null 必须还原成基元为 null 的 Id，而不是抛错。
+    /// </summary>
+    [Fact]
+    public void MongoDb_Should_MapNull_ToDefault_ForValueTypeIdWithReferenceTypePrimitive()
+    {
+        var idTypes = BsonSerializerIdTypes()
+            .Where(static type => type.IsValueType && !PrimitiveOf(type).IsValueType)
+            .ToList();
+
+        idTypes.Should().NotBeEmpty("集成测试程序集里必须有「值类型 Id + 引用类型基元」才能覆盖这条分支");
+
+        foreach (var idType in idTypes)
+        {
+            ReadValue(idType, BsonNull.Value)
+                .Should().Be(Activator.CreateInstance(idType), $"{idType.Name}：BSON null 必须还原成基元为 null 的 Id");
         }
     }
 
@@ -182,6 +235,59 @@ public class BinarySerializationTests
         {
             ReadValue(idType, BsonNull.Value).Should().BeNull($"{idType.Name}：引用类型 Id 的 BSON null 必须还原成 null");
         }
+    }
+
+    /// <summary>
+    /// 引用类型基元（自定义 <c>class</c>）为 <see langword="null"/> 的 Id 必须写成 nil / BSON null，
+    /// 而不是文本形里的空串 —— 空串读回必然失败，且与 System.Text.Json 写出的 <c>null</c> 不同形。
+    /// </summary>
+    /// <remarks>
+    /// 用引用类型 Id：值类型 Id 无法表示 null，nil 读回会按契约抛错（与 STJ 对 <c>record struct</c> 一致）。
+    /// </remarks>
+    [Fact]
+    public void BinaryIntegrations_Should_WriteNil_ForNullReferenceTypePrimitive()
+    {
+        var messagePackBytes = MessagePackSerializer.Serialize(
+            (IntegrationReferenceCodeId?)null, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        messagePackBytes.ToArray().Should().Equal(NilPayload.ToArray(), "null 基元必须写成 MessagePack nil");
+
+        MessagePackSerializer.Deserialize<IntegrationReferenceCodeId?>(
+                messagePackBytes, _messagePackOptions, TestContext.Current.CancellationToken)
+            .Should().BeNull("nil 必须读回 null");
+
+        WriteDocument(typeof(IntegrationReferenceCodeId), null!)["v"]
+            .Should().Be(BsonNull.Value, "null 基元必须写成 BSON null");
+    }
+
+    /// <summary>
+    /// 值类型 Id 包装引用类型基元时，基元为 <see langword="null"/> 的实例同样要能往返：
+    /// 写侧写 nil / BSON null，读侧必须还原成 <c>default</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与上一条覆盖的是不同分支：那条的 Id 本身是 <see langword="null"/>（引用类型 Id），
+    /// 这条的 Id 非 null、只有基元为 null。判据是「基元是否为引用类型」，与 Id 是 struct 还是 class 无关 ——
+    /// 与 System.Text.Json / Newtonsoft 的既有口径一致。修复前这里写出去读不回来。
+    /// </remarks>
+    [Fact]
+    public void BinaryIntegrations_Should_RoundTripNullPrimitive_ForValueTypeId()
+    {
+        var id = default(IntegrationReferenceCodeStructId);
+
+        var messagePackBytes = MessagePackSerializer.Serialize(
+            id, _messagePackOptions, TestContext.Current.CancellationToken);
+
+        messagePackBytes.ToArray().Should().Equal(NilPayload.ToArray(), "null 基元必须写成 MessagePack nil");
+
+        MessagePackSerializer.Deserialize<IntegrationReferenceCodeStructId>(
+                messagePackBytes, _messagePackOptions, TestContext.Current.CancellationToken)
+            .Should().Be(id, "nil 必须还原成基元为 null 的 Id");
+
+        WriteDocument(typeof(IntegrationReferenceCodeStructId), id)["v"]
+            .Should().Be(BsonNull.Value, "null 基元必须写成 BSON null");
+
+        ReadValue(typeof(IntegrationReferenceCodeStructId), BsonNull.Value)
+            .Should().Be(id, "BSON null 必须还原成基元为 null 的 Id");
     }
 
     /// <summary>

@@ -38,6 +38,8 @@ internal static class Descriptors
     public const string AmbiguousPrefixId = "STIA0023";
     public const string UnknownIntegrationId = "STIA0024";
     public const string TypeCannotBeFileLocalId = "STIA0025";
+    public const string TypeNameCannotBeVarId = "STIA0026";
+    public const string TypeNameCollidesWithGeneratedMemberId = "STIA0027";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -321,6 +323,37 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// 强类型 Id 的类型名是 <c>var</c>。
+    /// </summary>
+    /// <remarks>
+    /// 类型名 <c>var</c> 会遮蔽隐式类型关键字，生成代码里的 <c>out var id</c> 与
+    /// <c>is { Value: var primitiveId }</c> 全部失效（CS1503 / CS8508）。这不是靠全限定名能绕开的：
+    /// 被遮蔽的是关键字本身，而不是某个类型引用。故与 file 本地类型同样处理 —— 报错并跳过生成。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor TypeNameCannotBeVar
+        = new(TypeNameCannotBeVarId,
+            new LocalizedString("TypeNameCannotBeVarTitle"),
+            new LocalizedString("TypeNameCannotBeVarMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
+    /// 强类型 Id 的类型名与生成器产出的成员名相同。
+    /// </summary>
+    /// <remarks>
+    /// C# 不允许成员名与封闭类型同名（CS0542）。这些成员由生成器写进同一个 partial 类型，
+    /// 用户在声明处看不到，编译器报错也只指向生成文件，故必须提前报出并跳过生成。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor TypeNameCollidesWithGeneratedMember
+        = new(TypeNameCollidesWithGeneratedMemberId,
+            new LocalizedString("TypeNameCollidesWithGeneratedMemberTitle"),
+            new LocalizedString("TypeNameCollidesWithGeneratedMemberMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -350,6 +383,8 @@ internal static class Descriptors
         InvalidInstanceValue,
         InstanceNameNotPascalCase,
         TypeCannotBeFileLocal,
+        TypeNameCannotBeVar,
+        TypeNameCollidesWithGeneratedMember,
     ];
 
     /// <summary>

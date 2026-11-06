@@ -44,10 +44,15 @@ public static class FakerExtensions
         {
             ArgumentNullException.ThrowIfNull(idType);
 
+            // 可空 Id（OrderId?）按底层类型注册：Nullable<T> 不实现 IStronglyTypedId<TSelf>，
+            // 直接传给 MakeGenericMethod 会报「violates the constraint of type 'TId'」。
+            // 与 AnyIdGenerator.Create、AutoFixture 的 specimen builder、MVC 绑定器同一口径。
+            var underlyingType = Nullable.GetUnderlyingType(idType) ?? idType;
+
             // 开放泛型（如 Box<T>.BoxedId）无法闭合，MakeGenericMethod 会抛「not fully instantiated」。
             // 自动发现时静默跳过：泛型容器里的 Id 本来就不会作为某个具体类型的属性出现；
             // 显式传入时报错，因为那说明调用方以为它会被填上。
-            if (idType.ContainsGenericParameters)
+            if (underlyingType.ContainsGenericParameters)
             {
                 if (idTypes is null or { Length: 0 })
                 {
@@ -55,12 +60,17 @@ public static class FakerExtensions
                 }
 
                 throw new ArgumentException(
-                    $"'{idType}' is an open generic type, so Bogus cannot create it. "
+                    $"'{underlyingType}' is an open generic type, so Bogus cannot create it. "
                     + "Pass a closed type such as Box<int>.BoxedId instead.",
                     nameof(idTypes));
             }
 
-            RegisterTypeRule(faker, idType, effectiveGenerator);
+            RegisterTypeRule(faker, underlyingType, effectiveGenerator);
+
+            // 可空属性（OrderId?）的声明类型是 Nullable<OrderId>，RuleForType(typeof(OrderId)) 匹配不到它，
+            // 属性会静默留在 null 上。再补一条针对可空类型的规则，取值来自底层 Id。
+            // 自动发现时也要补：发现结果里只有非可空 Id，可空属性同样需要这条规则才填得上。
+            RegisterNullableTypeRule(faker, underlyingType, effectiveGenerator);
         }
 
         return faker;
@@ -89,6 +99,34 @@ public static class FakerExtensions
         => faker.RuleForType(typeof(TId), _ => generator.Id<TId>());
 
     /// <summary>
+    /// 为可空 Id 类型（<c>Nullable&lt;TId&gt;</c>）注册 Bogus 的类型规则。
+    /// </summary>
+    /// <remarks>
+    /// 只有值类型 Id 才需要：引用类型 Id 的 <c>OrderId?</c> 在运行期就是 <c>OrderId</c>，
+    /// <see cref="RegisterTypeRuleCore{TTarget, TId}"/> 那条规则已经覆盖。
+    /// </remarks>
+    private static void RegisterNullableTypeRule<TTarget>(Faker<TTarget> faker, Type underlyingType, AnyIdGenerator generator)
+        where TTarget : class
+    {
+        // 引用类型 Id 的 T? 与 T 是同一个运行期类型，再注册一条只会重复。
+        if (!underlyingType.IsValueType)
+        {
+            return;
+        }
+
+        var method = typeof(FakerExtensions)
+            .GetMethod(nameof(RegisterNullableTypeRuleCore), BindingFlags.NonPublic | BindingFlags.Static)!
+            .MakeGenericMethod(typeof(TTarget), underlyingType);
+
+        method.Invoke(null, [faker, generator]);
+    }
+
+    private static void RegisterNullableTypeRuleCore<TTarget, TId>(Faker<TTarget> faker, AnyIdGenerator generator)
+        where TTarget : class
+        where TId : struct, IStronglyTypedId<TId>
+        => faker.RuleForType(typeof(TId?), _ => (TId?)generator.Id<TId>());
+
+    /// <summary>
     /// 查找当前已加载程序集中的全部强类型 Id 类型。
     /// </summary>
     /// <remarks>
@@ -98,31 +136,13 @@ public static class FakerExtensions
     {
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
-            foreach (var type in GetTypes(assembly))
+            foreach (var type in AssemblyTypeReader.GetLoadableTypes(assembly))
             {
                 if (type.IsStronglyTypedId())
                 {
                     yield return type;
                 }
             }
-        }
-    }
-
-    private static IEnumerable<Type> GetTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException exception)
-        {
-            // 部分类型加载失败（缺依赖）时，其余类型仍然可用。
-            return exception.Types.Where(static type => type is not null).Cast<Type>();
-        }
-        catch (Exception)
-        {
-            // 动态程序集与某些受限程序集连类型表都取不到；跳过即可，显式指定类型的那条路仍然可用。
-            return [];
         }
     }
 }

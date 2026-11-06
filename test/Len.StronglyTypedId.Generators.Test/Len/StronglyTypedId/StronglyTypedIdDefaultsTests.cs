@@ -97,11 +97,15 @@ public class StronglyTypedIdDefaultsTests
     }
 
     /// <summary>
-    /// 显式 <c>Integrations = Default</c>（0）归一为 <see cref="IntegrationFlags.All"/>，
-    /// 与「没写」区分开：前者是「跟随引用」，后者是「回退到逐类型」。
+    /// 显式 <c>Integrations = Default</c>（0）与「没写」同义，读出来是 <see langword="null"/>，
+    /// 由调用方继续回退到 <see cref="IntegrationFlags.All"/>。
     /// </summary>
+    /// <remarks>
+    /// 程序集级写 <c>Default</c> 若归一成 <see cref="IntegrationFlags.All"/>，会与枚举自身的文档
+    /// （「跟随程序集级默认值」）相反，并让分析器为每个 Id 报十条 STIA0019。
+    /// </remarks>
     [Fact]
-    public void Read_Should_NormalizeExplicitDefaultIntegrationsToAll()
+    public void Read_Should_ReturnNullIntegrations_WhenExplicitDefault()
     {
         var assembly = CreateCompilation("""
             using Len.StronglyTypedId;
@@ -116,7 +120,7 @@ public class StronglyTypedIdDefaultsTests
             }
             """).Assembly;
 
-        StronglyTypedIdDefaults.Read(assembly).Integrations.Should().Be(IntegrationFlags.All);
+        StronglyTypedIdDefaults.Read(assembly).Integrations.Should().BeNull();
     }
 
     /// <summary>

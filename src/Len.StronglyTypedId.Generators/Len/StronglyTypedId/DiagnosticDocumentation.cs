@@ -42,7 +42,11 @@ internal static class DiagnosticDocumentation
         new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, DocText.Empty),
-        new DiagnosticDocEntry(Descriptors.TypeCannotBeFileLocalId, new DocText("Remove the `file` modifier", "去掉 `file` 修饰符")));
+        new DiagnosticDocEntry(Descriptors.TypeCannotBeFileLocalId, new DocText("Remove the `file` modifier", "去掉 `file` 修饰符")),
+        // 无修复：改名会牵动所有引用点，且替代名字只能由人挑。
+        new DiagnosticDocEntry(Descriptors.TypeNameCannotBeVarId, DocText.Empty),
+        // 同上：类型名与生成成员同名，改名同样只能由人挑。
+        new DiagnosticDocEntry(Descriptors.TypeNameCollidesWithGeneratedMemberId, DocText.Empty));
 
     /// <summary>
     /// 单条诊断的文档条目。

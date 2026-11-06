@@ -24,7 +24,7 @@ partial record struct OrderId
         {
             if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)
             {
-                throw new global::System.Text.Json.JsonException($"Cannot convert the JSON token '{reader.TokenType}' to a OrderId.");
+                return default!;
             }
 
             string? text;
@@ -54,7 +54,7 @@ partial record struct OrderId
         {
             if (value is { Value: var primitiveId })
             {
-                writer.WriteStringValue(value.ToString());
+                writer.WriteStringValue(primitiveId is null ? null : value.ToString());
             }
             else
             {
@@ -72,6 +72,11 @@ partial record struct OrderId
         {
             if (value is { Value: var primitiveId })
             {
+                if (primitiveId is null)
+                {
+                    throw new global::System.NotSupportedException($"A null OrderId cannot be written as a JSON property name.");
+                }
+
                 writer.WritePropertyName(value.ToString());
             }
             else
@@ -90,7 +95,7 @@ partial record struct OrderId
         {
             var propertyName = reader.GetString();
 
-            if (OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))
+            if (global::Probe.OrderId.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))
             {
                 return id;
             }

@@ -467,6 +467,86 @@ public class StronglyTypedIdAnalyzerDeclarationTests
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
+    /// <summary>
+    /// 类型名为 <c>var</c> 时遮蔽隐式类型关键字，生成代码里的 <c>out var</c> / <c>var</c> 模式全部失效。
+    /// </summary>
+    /// <remarks>
+    /// 这不是全限定名能绕开的（被遮蔽的是关键字本身），故与 file 本地类型同样直接拦下并跳过生成。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenIdIsNamedVar()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct @var(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeNameCannotBeVar)
+            .WithSpan(5, 1, 6, 47).WithArguments("var");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 类型名与生成器写进类型体的成员同名时，C# 报 CS0542（成员名不能与封闭类型相同）。
+    /// </summary>
+    /// <remarks>
+    /// 这些成员由生成器产出，用户在声明处看不到，编译器只会把错误指向生成文件，故必须提前报出。
+    /// 判据与生成器的跳过条件同源，保证「报错的那条」就是「不生成的那条」。
+    /// </remarks>
+    [Theory]
+    [InlineData("Create")]
+    [InlineData("TryCreate")]
+    [InlineData("Parse")]
+    [InlineData("TryParse")]
+    [InlineData("CompareTo")]
+    [InlineData("TryFormat")]
+    [InlineData("CompareValues")]
+    [InlineData("SystemTextJsonConverter")]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNameCollidesWithGeneratedMember(string typeName)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record {{typeName}}(Guid Value);
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.TypeNameCollidesWithGeneratedMember)
+            .WithSpan(6, 23, 6, 23 + typeName.Length).WithArguments(typeName);
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 条件性成员不撞名时不得误报：<c>CreateInstance</c> 只在「自定义基元 + 命名实例」时生成，
+    /// <c>CompareValues</c> 只给引用类型 Id 生成。
+    /// </summary>
+    [Theory]
+    [InlineData("CreateInstance", "public partial record CreateInstance(Guid Value);")]
+    [InlineData("CompareValues", "public partial record struct CompareValues(Guid Value);")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenConditionalMemberIsNotGenerated(string typeName, string declaration)
+    {
+        _ = typeName;
+
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            {{declaration}}
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenCannotBeRecord()
     {

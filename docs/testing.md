@@ -46,7 +46,9 @@ non-empty strings, dates inside 1970–2100) to avoid failures unrelated to the 
 
 Two more sources deserve a note: an `enum` draws from its declared members, and `char` draws from a
 68-character alphabet (letters, digits and `@ . - _ / :`), so a validator that requires a separator can
-still succeed inside the retry budget.
+still succeed inside the retry budget. An enum with no members at all (`enum Empty { }`) is legal C# but
+has no value to draw, so `Any.Id<T>()` throws `NotSupportedException` naming the enum rather than failing
+with an index error.
 
 `AnyIdGenerator.Create(Type)` is the non-generic form of `Any.Id<T>()`, for the cases where the id type is
 only known at run time, such as a theory over a `Type[]` or a reflection-driven test. It throws
@@ -71,6 +73,12 @@ IReadOnlyList<(Type IdType, string Message)> broken =
 Custom primitives are the case this exists for: the generator runs on `netstandard2.0` and cannot execute
 your `Parse`, so their instance values are only validated at run time.
 
+The scan covers what `Assembly.GetTypes()` returns. An id declared inside a generic container appears there
+only as an open generic type definition, so its named instances are not checked; assert on the closed type
+you actually use (`typeof(Box<int>.BoxedId)`) if you need that coverage. This is the same boundary as
+[an id inside a generic container](limitations.md#generic-containers) getting no external-reference
+integrations.
+
 For AutoFixture, add `Len.StronglyTypedId.Testing.AutoFixture` and enable the customization:
 
 ```csharp
@@ -90,6 +98,8 @@ Order order = faker.Generate();   // order.Id is a real id
 Bogus fills a member by its declared type, and a strongly typed id is a distinct type, so without this
 adapter Bogus cannot produce one and the member stays at its default value **without any error**. The
 adapter registers Bogus' own type rules for every id type, so generation fills them like any other member.
+Nullable id members (`OrderId?`) are covered too: the adapter registers a rule for `Nullable<OrderId>` as
+well, so they are filled rather than left at `null`.
 
 The id types are discovered from the assemblies loaded right now. When the assembly declaring an id is
 not loaded yet, name the types explicitly:

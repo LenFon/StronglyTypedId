@@ -40,8 +40,9 @@ title: 生成产物
   `static string Render<TId>(TId id) where TId : IFormattableStronglyTypedId<TId>`。
   `IStronglyTypedId<TSelf>` 刻意不约束 `IFormattable`，因此仍能接受所有 Id。
 - `IUtf8SpanFormattable`（net8.0+ 即可用）与 `IUtf8SpanParsable<TSelf>`，同样按基元类型条件生成：
-  `Guid` 自 .NET 10 起才实现后者；`BigInteger` 虽然实现了它却被排除，因为它的 `TryParse` 是显式接口
-  实现，按类型名调用会 `CS1501`。两者共同提供 `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
+  `Guid` 自 .NET 10 起才实现后者；`BigInteger` 与 `char` 虽然实现了它却被排除，因为它们的
+  `TryParse(ReadOnlySpan<byte>, …)` 是显式接口实现，按类型名调用会 `CS1501`。两者共同提供
+  `ReadOnlySpan<byte>` 的 `Parse` / `TryParse` 与 `TryFormat`。
 - `[DebuggerDisplay("{Value}")]` 特性，调试器里直接显示被包装的值，而不是 record 展开后的形态。
 - `[DebuggerTypeProxy]` 特性，指向一个私有嵌套的 `{TypeName}DebugView`，改变调试器**展开**该 Id 时显示的
   内容：`Value`（裸基元值）与 `Text`（规范文本形，含 `Prefix`）。`DebuggerDisplay` 只覆盖折叠时那一行摘要，
@@ -68,9 +69,20 @@ title: 生成产物
   `"I"` 与 `"i"` 的顺序还会随区域翻转。`SortedSet<T>` 与 `SortedDictionary<TKey, TValue>` 正是靠
   `CompareTo` 判重的，区域性比较会在那里静默丢掉元素。序数比较让排序与相等性、以及与序列化写出的
   不变文化文本保持一致。
+  自定义引用类型基元（`class`）本身可以是 `null` —— `default(TId)` 与失败的 `TryCreate` / `TryParse`
+  都会产出它 —— 故比较改走 `Comparer<T>.Default.Compare`，把 `null` 按最小值处理而不是解引用。
 - 返回被包装值**不变文化**文本的 `ToString()`（不再是 record 默认的 `OrderId { Value = … }` 形式），
-  与序列化写出的文本一致，`Parse(id.ToString())` 可往返；需要按特定文化
-  格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`。
+  与序列化写出的文本一致，`Parse(id.ToString())` 可往返。`DateTime`、`DateTimeOffset`、`TimeOnly`
+  与 `DateOnly` 固定用 `"O"` 格式：前三个的默认格式有损（丢亚秒，`TimeOnly` 连秒都丢），
+  `DateOnly` 则是默认短日期（`01/02/2020`）与 System.Text.Json 写出的 ISO 形不一致。
+  需要按特定文化格式化时，用基元类型支持时的 `ToString(string?, IFormatProvider?)` 与 `TryFormat(...)`；
+  空 `format` 会回退到规范格式，故 `ToString(null, provider)` 与 `TryFormat(default, ...)` 写出的文本
+  与 `ToString()` 相同。
+  `string` 基元（或自定义 `class` 基元）的 `Value` 为 `null` 时——即 `default` 值，也是
+  `TryCreate` / `TryParse` 失败时返回的值——`ToString()` 写出空串；配了 `Prefix` 时写出裸前缀本身，
+  不会抛异常。带格式的重载同理：`ToString(format, provider)` 返回空串（或裸前缀），
+  `TryFormat` 报告成功且写入 0 个字符（或只写前缀）。序列化器**不**写那个裸前缀：它们写 JSON `null`
+  （以及 `nil` / BSON `null` / GraphQL `null`），因为从裸前缀里剥掉前缀只剩空文本，任何读路径都不接受。
   非空 `format` 只交给基元处理，文本形态不变：`Guid` 基元的 `ToString("N")` 得到去掉短横线的 GUID；
   带前缀的 Id 仍带前缀（`ord_d8ac85d4…`），格式化路径不会退化成裸基元。
   注意字符串插值**不等同于** `ToString()`：`$"{id}"` 走 `IFormattable.ToString(null, CultureInfo.CurrentCulture)`，

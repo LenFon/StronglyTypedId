@@ -37,7 +37,14 @@ internal sealed class PrimitiveValueFactory(DeterministicRandom random, int stri
         {
             var values = Enum.GetValues(type);
 
-            return values.GetValue(random.Next(values.Length));
+            // 空枚举（`enum Empty { }`）是合法的 C#，但没有任何成员可取值。不挡的话
+            // `GetValue(random.Next(0))` 会抛 IndexOutOfRangeException，消息里完全看不出是「这个枚举没有成员」。
+            return values.Length == 0
+                ? throw new NotSupportedException(
+                    $"'{type}' declares no members, so no value can be generated for it. "
+                    + $"Give the enum at least one member, or register an explicit factory with "
+                    + $"{nameof(AnyIdGenerator)}.{nameof(AnyIdGenerator.Register)}<TId>(...).")
+                : values.GetValue(random.Next(values.Length));
         }
 
         return Type.GetTypeCode(type) switch

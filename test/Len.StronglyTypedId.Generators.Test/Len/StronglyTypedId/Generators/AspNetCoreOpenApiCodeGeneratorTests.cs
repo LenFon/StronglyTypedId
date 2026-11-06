@@ -146,7 +146,8 @@ public class AspNetCoreOpenApiCodeGeneratorTests
     // 超出 int64 / uint64 范围，OpenAPI 没有对应 format。
     [InlineData("Int128", "integer", null)]
     [InlineData("UInt128", "integer", null)]
-    [InlineData("BigInteger", "integer", null)]
+    // BigInteger 的转换器写的是规范文本（STJ 没有它的内置转换器），schema 必须跟着写 string。
+    [InlineData("BigInteger", "string", null)]
     [InlineData("decimal", "number", null)]
     [InlineData("double", "number", "double")]
     [InlineData("float", "number", "float")]
@@ -220,6 +221,30 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
         generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (\"integer\", \"int32\", false),");
+    }
+
+    /// <summary>
+    /// 可空 Id（<c>OrderId?</c>）的 CLR 类型是 <c>Nullable&lt;OrderId&gt;</c>，查表前必须拆壳，
+    /// 否则可空参数与可空属性都拿不到 schema，框架为它们建的空 schema 还会顶掉 <c>OrderId</c> 组件。
+    /// </summary>
+    [Fact]
+    public void AspNetCoreOpenApi_Should_UnwrapNullableBeforeLookup()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """;
+
+        var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
+
+        generated.Should()
+            .Contain("UnwrapNullable(context.ParameterDescription?.Type)")
+            .And.Contain("UnwrapNullable(context.JsonTypeInfo?.Type)")
+            .And.Contain("global::System.Nullable.GetUnderlyingType(type) ?? type");
     }
 
     #endregion

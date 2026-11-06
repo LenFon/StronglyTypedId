@@ -53,12 +53,13 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
         }
 
         var ambiguousNames = IntegrationNaming.GetAmbiguousNames(stronglyTypedIds);
+        var collidingNames = IntegrationNaming.GetCollidingNames(stronglyTypedIds, ambiguousNames, "TypeHandler");
 
         var registrations = new StringBuilder();
 
         foreach (var idInfo in stronglyTypedIds)
         {
-            var handlerName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "TypeHandler");
+            var handlerName = IntegrationNaming.GetTypeName(idInfo, ambiguousNames, "TypeHandler", collidingNames);
 
             // 基类签名是 SetValue(IDbDataParameter, T?) / Parse(object) → T。值类型 T 的可空标注会被擦除，
             // 引用类型 T 必须照抄 T?，否则 CS8765。Parse 返回非可空 T，引用类型 Id 遇 NULL 时用 default! 表态。
@@ -68,14 +69,25 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
 
             // 两条分支都必须写出驱动认识的类型：DbParameter.Value 只接受驱动认识的 CLR 类型，
             // 直接塞 Id 包装对象会让 SqlClient / Sqlite 在绑定时抛「No mapping exists」。
-            // 自定义基元同样不被驱动认识，故写它的规范文本（与 JSON / 二进制集成的口径一致）。
-            var valueExpression = idInfo.IsCustomPrimitive
+            // 自定义基元与没有 provider 类型的基元（BigInteger / Int128 / UInt128 / Half）同样不被驱动认识，
+            // 故写它们的规范文本（与 JSON / 二进制集成的口径一致）。
+            var valueExpression = idInfo.IsDatabaseTextPrimitive
                 ? idInfo.GetPrimitiveTextExpression("value.Value")
                 : "value.Value";
 
-            var setValueBody = idInfo.TypeKindSuffix is null
-                ? $"parameter.Value = value is null ? (object)global::System.DBNull.Value : {valueExpression};"
-                : $"parameter.Value = {valueExpression};";
+            // 引用类型基元（string 或自定义 class）可以是 null：此时写 DBNull，而不是把 null 交给驱动。
+            // 值类型 Id 的基元也可能是引用类型（如 record struct CodeId(Code Value)），故两条分支都要判。
+            // 判据必须覆盖全部引用类型基元，不能只看 IsDatabaseTextPrimitive：string 基元不走文本形，
+            // 但它为 null 时同样要写 DBNull —— 否则 Microsoft.Data.Sqlite 会抛「Value must be set」。
+            var nullGuard = idInfo.IsReferenceTypePrimitive
+                ? idInfo.TypeKindSuffix is null
+                    ? "value is null || value.Value is null"
+                    : "value.Value is null"
+                : idInfo.TypeKindSuffix is null ? "value is null" : null;
+
+            var setValueBody = nullGuard is null
+                ? $"parameter.Value = {valueExpression};"
+                : $"parameter.Value = {nullGuard} ? (object)global::System.DBNull.Value : {valueExpression};";
 
             var handlerCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
             internal static partial class StronglyTypedIds
@@ -332,11 +344,59 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             return $"{idInfo.PrimitiveIdTypeName}.Parse(global::System.Convert.ToString(value, {InvariantCulture})!, {InvariantCulture})";
         }
 
+        // DateOnly / TimeOnly 例外：SQL Server 的 DATE / TIME 列经驱动返回 DateTime / TimeSpan，
+        // 而 DateOnly.Parse 拒绝带时间分量的文本（"01/02/2020 00:00:00" 直接抛 FormatException），
+        // TimeOnly.Parse 同样拒绝带日期的文本。先按驱动的 CLR 类型取分量，再退回文本入口。
+        if (GetTemporalConversionExpression(idInfo) is { } temporal)
+        {
+            return temporal;
+        }
+
         // 其余基元分两类：System.Convert 上有对应 ToXxx 的走转换（保留 DateTime 的 Tick 精度、
-        // 数值的溢出检查），没有的（Guid / DateTimeOffset / TimeSpan / DateOnly / TimeOnly / Int128 /
+        // 数值的溢出检查），没有的（Guid / DateTimeOffset / TimeSpan / Int128 /
         // UInt128 / Half / BigInteger）只能经 IParsable<TSelf> 的文本入口还原。
+        // DateTime 例外：它虽在 Convert 表里，但 ToDateTime 会按本地时区解释带 "Z" 的文本，
+        // 让 Kind 变 Local 且时刻平移；故改走带 RoundtripKind 的 Parse。
         return GetConvertExpression(primitiveShortName)
-            ?? $"{idInfo.PrimitiveIdTypeName}.Parse(global::System.Convert.ToString(value, {InvariantCulture})!, {InvariantCulture})";
+            ?? GetTextParseExpression(idInfo);
+    }
+
+    /// <summary>
+    /// 取 <c>DateOnly</c> / <c>TimeOnly</c> 从驱动 CLR 类型还原的表达式；其它基元返回 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 驱动返回的 CLR 类型与基元不一致时，直接按文本解析会失败：<c>DateOnly.Parse</c> 拒绝带时间分量的文本，
+    /// <c>TimeOnly.Parse</c> 拒绝带日期的文本。这两个类型都有从 <see cref="DateTime"/> / <see cref="TimeSpan"/>
+    /// 取分量的静态方法，先走那条路，文本入口只作为最后的兜底。
+    /// </remarks>
+    private static string? GetTemporalConversionExpression(StronglyTypedIdInfo idInfo)
+    {
+        var text = $"global::System.Convert.ToString(value, {InvariantCulture})!";
+
+        return idInfo.PrimitiveIdTypeName switch
+        {
+            "global::System.DateOnly" =>
+                $"value is global::System.DateTime dateTime ? global::System.DateOnly.FromDateTime(dateTime) : {idInfo.PrimitiveIdTypeName}.Parse({text}, {InvariantCulture})",
+            "global::System.TimeOnly" =>
+                $"value is global::System.TimeSpan timeSpan ? global::System.TimeOnly.FromTimeSpan(timeSpan) : value is global::System.DateTime dateTime ? global::System.TimeOnly.FromDateTime(dateTime) : {idInfo.PrimitiveIdTypeName}.Parse({text}, {InvariantCulture})",
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 取「把文本还原成基元」的表达式。
+    /// </summary>
+    /// <remarks>
+    /// <c>DateTime</c> 必须带 <c>DateTimeStyles.RoundtripKind</c>：驱动返回的 ISO 文本常带 <c>"Z"</c>，
+    /// 默认样式会把它按本地时区解释，Kind 从 <c>Utc</c> 变 <c>Local</c> 且 ticks 整体平移。
+    /// </remarks>
+    private static string GetTextParseExpression(StronglyTypedIdInfo idInfo)
+    {
+        var text = $"global::System.Convert.ToString(value, {InvariantCulture})!";
+
+        return idInfo.PrimitiveIdTypeName == "global::System.DateTime"
+            ? $"{idInfo.PrimitiveIdTypeName}.Parse({text}, {InvariantCulture}, global::System.Globalization.DateTimeStyles.RoundtripKind)"
+            : $"{idInfo.PrimitiveIdTypeName}.Parse({text}, {InvariantCulture})";
     }
 
     /// <summary>
@@ -362,7 +422,8 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
             "float" or "Single" => "ToSingle",
             "double" or "Double" => "ToDouble",
             "decimal" or "Decimal" => "ToDecimal",
-            "DateTime" => "ToDateTime",
+            // DateTime 刻意不在此列：Convert.ToDateTime 没有 styles 重载，会把带 "Z" 的文本按本地时区
+            // 解释（Kind 变 Local、ticks 平移）。它改走带 RoundtripKind 的 Parse，见 GetTextParseExpression。
             _ => null,
         };
 

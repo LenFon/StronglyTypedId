@@ -31,7 +31,7 @@ then no longer be passed where an `OrderId` is expected, or the reverse.
   `[StronglyTypedId]` and the type gains parsing, formatting, comparison, `Create` / `TryCreate`,
   deconstruction, JSON converters and a debugger view.
 - **A `Guid` can never stand in for an `OrderId`.** The compiler rejects the swap, and a built-in
-  analyzer rejects invalid declarations as errors; twenty-one of its twenty-six rules ship a code fix.
+  analyzer rejects invalid declarations as errors; twenty-one of its twenty-eight rules ship a code fix.
 - **Twenty-three primitives, or your own.** Every numeric type, `Guid`, `string`, dates and
   `BigInteger` are built in, along with any `enum` and any type that implements `IParsable<TSelf>` and
   `IComparable`. ULID works unchanged.
@@ -177,6 +177,14 @@ public partial record struct EmailId(Email Value);
   canonical text of the primitive: System.Text.Json, Newtonsoft.Json, MessagePack, BSON and Dapper all
   use it, so an id never appears as one shape over REST and another in a database. Handing a custom type
   to a serializer would instead serialize its public properties and read back `default`.
+- **`IFormattable` may be implemented explicitly.** Unlike `Parse` / `TryParse`,
+  `ToString(string?, IFormatProvider?)` works either way: the generator probes for a public two-argument
+  overload and, when there is none, routes through a generic helper whose `IFormattable` constraint lets
+  the compiler emit a `constrained.` call, so a value-type primitive is not boxed. A wrapper type that
+  keeps only a parameterless `ToString()` in its public surface therefore still compiles.
+- **`TryParse` may take a non-nullable `string`.** `IParsable<TSelf>` declares `string?`, but declaring
+  `string` only earns a CS8767 on your own type. The generated id `TryParse` then guards the null before
+  forwarding, so consuming the id does not produce a CS8604 of its own.
 - **Named instances are validated at run time, not at compile time.** The generator runs on
   `netstandard2.0` and cannot execute your `Parse`, so `[StronglyTypedIdInstance("Unknown", "…")]` only
   fails when the type is first touched. The failure is an `InvalidOperationException` whose message names
@@ -272,7 +280,7 @@ supported even though it meets that contract: `Uri.Equals` ignores the fragment 
 default ports, so two different URIs would compare equal and silently collapse into the same id.
 
 **The primary constructor is not guarded.** `new OrderId(...)` bypasses both `Normalizer` and `Validator`;
-only `Create`, `Parse` and `TryParse` enforce them.
+only `Create`, `TryCreate`, `Parse` and `TryParse` enforce them.
 
 Workarounds for all three, plus the generic-container caveat, are in [Limitations](docs/limitations.md).
 

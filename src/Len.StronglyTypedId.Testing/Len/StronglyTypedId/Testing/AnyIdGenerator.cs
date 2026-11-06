@@ -83,20 +83,28 @@ public sealed class AnyIdGenerator
     /// <summary>
     /// 创建指定运行时类型的强类型 Id。
     /// </summary>
+    /// <remarks>
+    /// 可空 Id（<c>OrderId?</c>）按底层类型生成，与 <see cref="StronglyTypedIdExtensions.IsStronglyTypedId"/>、
+    /// MVC 绑定器、EF 转换器一致。返回的是底层 Id 实例，调用方按可空类型使用即可。
+    /// </remarks>
     public object Create(Type idType)
     {
         ArgumentNullException.ThrowIfNull(idType);
 
+        // 先拆可空外壳：Nullable<T> 不实现 IStronglyTypedId<TSelf>，直接传给 MakeGenericMethod 会
+        // 报「violates the constraint of type 'TId'」，而 IsStronglyTypedId(OrderId?) 却返回 true。
+        var underlyingType = Nullable.GetUnderlyingType(idType) ?? idType;
+
         // 开放泛型（如 Box<T>.BoxedId）无法构造：MakeGenericMethod 会抛「not fully instantiated」，
         // 而那条消息完全看不出是「这个 Id 声明在泛型容器里」。按调用方实际能做的事报错。
-        return idType.ContainsGenericParameters
+        return underlyingType.ContainsGenericParameters
             ? throw new ArgumentException(
-                $"'{idType}' is an open generic type, so no value can be generated for it. "
+                $"'{underlyingType}' is an open generic type, so no value can be generated for it. "
                 + "Declare the id in a non-generic container, or request a closed type such as Box<int>.BoxedId.",
                 nameof(idType))
-            : _registered.TryGetValue(idType, out var registered)
+            : _registered.TryGetValue(underlyingType, out var registered)
                 ? registered()
-                : _factories.GetOrAdd(idType, BuildFactory)(this);
+                : _factories.GetOrAdd(underlyingType, BuildFactory)(this);
     }
 
     /// <summary>

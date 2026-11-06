@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using FluentAssertions;
 using Xunit;
 
@@ -95,6 +96,58 @@ public class StronglyTypedIdConformanceTests
         var failures = StronglyTypedIdConformance.FindBrokenInstances(typeof(NotAnId).Assembly);
 
         failures.Select(failure => failure.IdType).Should().NotContain(typeof(NotAnId));
+    }
+
+    /// <summary>
+    /// 程序集里有加载不了的类型时（缺依赖），必须退化成「能查多少查多少」，而不是让
+    /// <see cref="ReflectionTypeLoadException"/> 从「检查全部实例」这个入口冒出来。
+    /// </summary>
+    /// <remarks>
+    /// 用 <see cref="System.Reflection.Emit"/> 造一个基类无法解析的程序集：基类定义在另一个
+    /// 从未 <c>CreateType</c> 的动态程序集里，于是 <c>GetTypes()</c> 抛
+    /// <see cref="ReflectionTypeLoadException"/>。同包的 <c>FakerExtensions.GetTypes</c> 早有这层保护，
+    /// 两处必须一致。
+    /// </remarks>
+    [Fact]
+    public void FindBrokenInstances_Should_NotThrow_WhenSomeTypesFailToLoad()
+    {
+        var assembly = CreateAssemblyWithUnloadableType();
+
+        var act = () => StronglyTypedIdConformance.FindBrokenInstances(assembly);
+
+        act.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// 构造一个含「基类无法解析」类型的动态程序集。
+    /// </summary>
+    private static AssemblyBuilder CreateAssemblyWithUnloadableType()
+    {
+        var dependency = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName("ConformanceMissingDependency"),
+            AssemblyBuilderAccess.Run);
+        var dependencyType = dependency
+            .DefineDynamicModule("ConformanceMissingDependency.dll")
+            .DefineType("Missing.Widget", TypeAttributes.Public | TypeAttributes.Class);
+
+        // 刻意不 CreateType：依赖类型永远不可解析，消费者类型的基类因此加载失败。
+        var consumer = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName("ConformanceConsumer"),
+            AssemblyBuilderAccess.Run);
+        var consumerType = consumer
+            .DefineDynamicModule("ConformanceConsumer.dll")
+            .DefineType("Consumer.Broken", TypeAttributes.Public | TypeAttributes.Class, dependencyType);
+
+        try
+        {
+            consumerType.CreateType();
+        }
+        catch (NotSupportedException)
+        {
+            // 基类未创建时 CreateType 会失败，但类型已进入模块的类型表 —— 这正是我们要的形态。
+        }
+
+        return consumer;
     }
 }
 

@@ -190,8 +190,14 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
 
         var updated = record
             .WithLeadingTrivia(SyntaxFactory.EndOfLine(endOfLine))
-            .WithAttributeLists(record.AttributeLists.Insert(0, attributeList))
-            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword));
+            .WithAttributeLists(record.AttributeLists.Insert(0, attributeList));
+
+        // 已经是 partial 的 record 不能再加一个：`partial partial record` 是 CS1002。
+        // 这种写法在「先手写 partial 段、再补特性」的代码里很常见。
+        if (!record.Modifiers.Any(SyntaxKind.PartialKeyword))
+        {
+            updated = updated.AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword));
+        }
 
         var newRoot = AddUsingIfMissing(root.ReplaceNode(record, updated), endOfLine);
 
@@ -385,6 +391,10 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 摘掉 <c>using Len.StronglyTypedId;</c>（调用方负责先确认文件里再无强类型 Id）。
     /// </summary>
+    /// <remarks>
+    /// <c>global using</c> 一律保留：它的作用域是整个项目，本文件不再需要不代表别的文件也不需要。
+    /// 删掉它会让那些依赖它的文件报 CS0246，而单文件重构无从判断这一点。
+    /// </remarks>
     private static SyntaxNode RemoveUsingDirective(SyntaxNode root)
     {
         if (root is not CompilationUnitSyntax compilationUnit)
@@ -392,7 +402,8 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return root;
         }
 
-        var directive = compilationUnit.Usings.FirstOrDefault(usingDirective => usingDirective.Name?.ToString() == NamespaceName);
+        var directive = compilationUnit.Usings.FirstOrDefault(usingDirective =>
+            usingDirective.Name?.ToString() == NamespaceName && !usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword));
 
         return directive is null ? root : compilationUnit.WithUsings(compilationUnit.Usings.Remove(directive));
     }

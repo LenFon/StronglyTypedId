@@ -102,6 +102,57 @@ public class StronglyTypedIdCodeFixBypassTests
     }
 
     /// <summary>
+    /// 带对象初始化器时，修复必须保留初始化器：直接丢掉等于静默删掉用户代码。
+    /// 改写成 <c>Create(...) with { ... }</c>，语义与「先构造再赋 init 属性」等价。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_PreserveObjectInitializer_WhenReplacingNewWithCreate()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                public string? Note { get; init; }
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => new OrderId(Guid.NewGuid()) { Note = "x" };
+            }
+            """";
+
+        var fixedCode = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                public string? Note { get; init; }
+
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Builder
+            {
+                public OrderId Build() => OrderId.Create(Guid.NewGuid()) with { Note = "x" };
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate)
+            .WithArguments("OrderId").WithSpan(15, 31, 15, 73);
+
+        await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
+    }
+
+    /// <summary>
     /// <c>default</c> 不提供修复：改成 <c>Create(default)</c> 只会把编译期提示换成运行时异常。
     /// </summary>
     [Fact]

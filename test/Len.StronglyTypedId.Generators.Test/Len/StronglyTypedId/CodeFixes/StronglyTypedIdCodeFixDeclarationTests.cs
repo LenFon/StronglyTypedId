@@ -164,6 +164,56 @@ public class StronglyTypedIdCodeFixDeclarationTests
         await Verify.VerifyCodeFixAsync(code, expected, fixedCode);
     }
 
+    /// <summary>
+    /// 主构造参数的类型就是类型参数时不给修复：删掉 <c>&lt;T&gt;</c> 会留下 <c>OrderId(T Value)</c>（CS0246），
+    /// 而「T 该换成哪个基元」是业务决定。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldNotOfferFix_WhenTypeParameterIsUsedByPrimaryConstructor()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId<T>(T Value);
+            """;
+
+        var offered = await Verify.CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.TypeCannotBeGeneric,
+            "OrderId");
+
+        Assert.Empty(offered);
+    }
+
+    /// <summary>
+    /// 成员体里引用类型参数时同样不给修复：删掉 <c>&lt;T&gt;</c> 会让成员里的 <c>T</c> 变成未定义标识符。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_ShouldNotOfferFix_WhenTypeParameterIsUsedByMember()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId<T>(Guid Value)
+            {
+                public T? Extra { get; init; }
+            }
+            """;
+
+        var offered = await Verify.CountOfferedCodeFixesAsync(
+            code,
+            Descriptors.TypeCannotBeGeneric,
+            "OrderId");
+
+        Assert.Empty(offered);
+    }
+
     [Fact]
     public async Task CodeFix_Should_PreserveParameterAttribute_WhenRenamingParameter()
     {

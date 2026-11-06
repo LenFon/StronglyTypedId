@@ -59,6 +59,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
                 AnalyzeObjectCreation,
                 SyntaxKind.ObjectCreationExpression,
                 SyntaxKind.ImplicitObjectCreationExpression);
+            startContext.RegisterSyntaxNodeAction(AnalyzeWithExpression, SyntaxKind.WithExpression);
             startContext.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
         });
     }
@@ -182,6 +183,29 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             return null;
         }
 
+        // 名为 var 的类型会遮蔽隐式类型关键字，生成代码里的 `out var id` / `is { Value: var x }` 全部失效。
+        // 这不是全限定名能绕开的（被遮蔽的是关键字本身），故与 file 本地类型同样直接拦下。
+        var varNamed = records.FirstOrDefault(record => record.Identifier.ValueText == "var");
+
+        if (varNamed is not null)
+        {
+            Report(context, Descriptors.TypeNameCannotBeVar, varNamed.GetLocation(), type.Name);
+            return null;
+        }
+
+        // 类型名与生成成员同名会 CS0542。这些成员由生成器写进同一个 partial 类型，用户在声明处看不到，
+        // 编译器只会把错误指向生成文件，故必须在这里提前报出。判据与生成器的跳过条件同源
+        // （见 GeneratedMemberNames），保证「报错的那条」就是「不生成的那条」。
+        if (GeneratedMemberNames.MayCollide(type.Name) && CollidesWithGeneratedMember(context, type))
+        {
+            Report(
+                context,
+                Descriptors.TypeNameCollidesWithGeneratedMember,
+                records[0].Identifier.GetLocation(),
+                type.Name);
+            return null;
+        }
+
         var generic = records.FirstOrDefault(record => record.TypeParameterList is not null);
 
         if (generic is not null)
@@ -212,6 +236,36 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         }
 
         return records;
+    }
+
+    /// <summary>
+    /// 判断该 Id 的类型名是否与生成器产出的成员撞名（STIA0027）。
+    /// </summary>
+    /// <remarks>
+    /// 判据与生成器的跳过条件同源（<see cref="GeneratedMemberNames.CollidesWithGeneratedMember"/>）：
+    /// 两个转换器的名字取决于是否引用了对应程序集，其余成员只由 Id 自身属性决定。
+    /// 基元类型不可用时只判无条件成员 —— 那种写法会由 STIA0008 报出，这里不重复报。
+    /// </remarks>
+    private static bool CollidesWithGeneratedMember(SymbolAnalysisContext context, INamedTypeSymbol type)
+    {
+        if (GeneratedMemberNames.Core.Contains(type.Name))
+        {
+            return true;
+        }
+
+        var primitiveType = GetSingleParameterType(type);
+
+        if (primitiveType is null || !SupportedPrimitiveTypes.IsSupported(primitiveType))
+        {
+            return false;
+        }
+
+        var idInfo = new StronglyTypedIdInfo(type, StronglyTypedIdDefaults.Read(context.Compilation.Assembly));
+
+        return GeneratedMemberNames.CollidesWithGeneratedMember(
+            idInfo,
+            ReferencesAssembly(context.Compilation, "System.Text.Json"),
+            ReferencesAssembly(context.Compilation, "Newtonsoft.Json"));
     }
 
     /// <summary>
@@ -494,7 +548,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 判断是否存在某个基元取值，其文本形式以该前缀开头，即前缀与基元文本不可区分。
     /// </summary>
     /// <remarks>
-    /// 只看首字符就够了：多字符前缀只有在首字符可作开头时才需进一步考虑（<c>NaN</c> / <c>Infinity</c> 单独处理），故 <c>"DT-"</c> / <c>"INV-"</c> 不会被误伤。
+    /// 按基元真实的文本文法逐类判定，而不是把所有数值基元当成同一类：整数文本永远不以 <c>.</c> 开头，
+    /// 也永远不是 <c>NaN</c> / <c>Infinity</c>；日期时间类不接受正负号。把这些情况一并判为重叠会误报
+    /// <c>STIA0023</c>（Error 级，直接阻断编译），而 <c>Prefix = "N"</c> 配 <c>int</c> 其实是安全的。
+    /// <para>
+    /// 多字符前缀只有在首字符可作开头时才需进一步考虑（<c>NaN</c> / <c>Infinity</c> 单独处理），
+    /// 故 <c>"DT-"</c> / <c>"INV-"</c> 不会被误伤。
+    /// </para>
     /// </remarks>
     private static bool CanBeginPrimitiveText(string prefix, ITypeSymbol primitiveType)
     {
@@ -502,15 +562,27 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         return GetPrimitiveTextKind(primitiveType) switch
         {
-            // 数字、正负号、小数点都能开启一个数值文本；NaN / Infinity 按前缀逐字符比对，
+            // 有符号整数：数字与正负号都能开启一个合法文本。
+            PrimitiveTextKind.SignedInteger => IsAsciiDigit(first) || first is '+' or '-',
+
+            // 无符号整数：Parse 不接受 '-'，规范文本也从不以它开头。
+            PrimitiveTextKind.UnsignedInteger => IsAsciiDigit(first) || first == '+',
+
+            // decimal：Parse 接受以小数点开头的 ".5"，而剥掉 '.' 后得到的是另一个值。
+            PrimitiveTextKind.Decimal => IsAsciiDigit(first) || first is '+' or '-' or '.',
+
+            // 浮点：额外接受 NaN / Infinity（大小写不敏感），按前缀逐字符比对，
             // 而不是「首字母是 N 或 I 就拒」，后者会误伤 "INV-" 这类安全前缀。
-            PrimitiveTextKind.Numeric => IsAsciiDigit(first)
+            PrimitiveTextKind.Floating => IsAsciiDigit(first)
                 || first is '+' or '-' or '.'
                 || "NaN".StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
                 || "Infinity".StartsWith(prefix, StringComparison.OrdinalIgnoreCase),
 
-            // 不变文化下的日期时间与时间跨度都以数字开头；TimeSpan 的负值以 '-' 开头。
-            PrimitiveTextKind.Temporal => IsAsciiDigit(first) || first == '-',
+            // 日期时间类：不变文化下的规范文本恒以数字开头，Parse 不接受正负号。
+            PrimitiveTextKind.DateTimeLike => IsAsciiDigit(first),
+
+            // TimeSpan 的负值以 '-' 开头。
+            PrimitiveTextKind.TimeSpan => IsAsciiDigit(first) || first == '-',
 
             // Guid.ToString() 恒小写十六进制，但 Guid.Parse 大小写都收，故两种都要算重叠。
             PrimitiveTextKind.Guid => IsHexDigit(first),
@@ -548,20 +620,23 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             SpecialType.System_String => PrimitiveTextKind.Freeform,
             SpecialType.System_Char => PrimitiveTextKind.Char,
             SpecialType.System_Byte
-                or SpecialType.System_SByte
-                or SpecialType.System_Int16
                 or SpecialType.System_UInt16
-                or SpecialType.System_Int32
                 or SpecialType.System_UInt32
-                or SpecialType.System_Int64
-                or SpecialType.System_UInt64
-                or SpecialType.System_Decimal
-                or SpecialType.System_Single
-                or SpecialType.System_Double => PrimitiveTextKind.Numeric,
+                or SpecialType.System_UInt64 => PrimitiveTextKind.UnsignedInteger,
+            SpecialType.System_SByte
+                or SpecialType.System_Int16
+                or SpecialType.System_Int32
+                or SpecialType.System_Int64 => PrimitiveTextKind.SignedInteger,
+            SpecialType.System_Decimal => PrimitiveTextKind.Decimal,
+            SpecialType.System_Single
+                or SpecialType.System_Double => PrimitiveTextKind.Floating,
             _ => primitiveType.Name switch
             {
-                "Int128" or "UInt128" or "Half" or "BigInteger" => PrimitiveTextKind.Numeric,
-                "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly" or "TimeSpan" => PrimitiveTextKind.Temporal,
+                "Int128" or "BigInteger" => PrimitiveTextKind.SignedInteger,
+                "UInt128" => PrimitiveTextKind.UnsignedInteger,
+                "Half" => PrimitiveTextKind.Floating,
+                "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly" => PrimitiveTextKind.DateTimeLike,
+                "TimeSpan" => PrimitiveTextKind.TimeSpan,
                 "Guid" => PrimitiveTextKind.Guid,
                 _ => PrimitiveTextKind.Freeform,
             },
@@ -654,13 +729,14 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
             StronglyTypedIdInfo.IntegrationsArgumentName);
 
-        if (raw is null)
+        // 显式 Default（0）与「没写」同义：都表示「跟随程序集默认值」，不构成对任何集成的请求。
+        // 若把它当成 All，每个 Id 都会炸出十条 STIA0019，而用户其实什么都没要求。
+        if (IntegrationFlags.Normalize(raw) is not { } mask)
         {
             return;
         }
 
         var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.IntegrationsArgumentName) ?? records[0].GetLocation();
-        var mask = IntegrationFlags.Normalize(raw)!.Value;
 
         ReportUnknownIntegration(context, type.Name, mask, location);
 
@@ -693,10 +769,10 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         var attribute = AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName);
         var raw = AttributeReader.GetEnumValue(attribute, StronglyTypedIdInfo.IntegrationsArgumentName);
 
-        if (raw is not null)
+        // 显式 Default 与「没写」同义，不构成请求；否则程序集级写 Default 会让每个 Id 都报十条。
+        if (IntegrationFlags.Normalize(raw) is { } mask)
         {
             var location = attribute?.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation() ?? Location.None;
-            var mask = IntegrationFlags.Normalize(raw)!.Value;
             var unknown = mask & ~IntegrationFlags.All;
 
             // 程序集默认值走的是编译结束回调，这里没有 SymbolAnalysisContext，只能直接上报。
@@ -996,6 +1072,44 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
+    /// 检测 <c>id with { Value = … }</c> 产生的实例（STIA0011）。
+    /// </summary>
+    /// <remarks>
+    /// <c>with</c> 对 record 的语义是「复制后改写 init 成员」，它同样绕过 <c>Create</c> 的归一化与校验：
+    /// <c>id with { Value = Guid.Empty }</c> 能造出验证器明确拒绝的 Id。只报 <c>new</c> 与 <c>default</c>
+    /// 会让这条最容易被写出来的绕过路径完全静默。
+    /// <para>
+    /// 只认改写 <c>Value</c> 的写法：<c>id with { }</c> 与改写其它 init 属性的 <c>with</c> 不改变基元值，
+    /// 不构成绕过。基元值本身没变时，校验结论也不会变。
+    /// </para>
+    /// </remarks>
+    private static void AnalyzeWithExpression(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not WithExpressionSyntax withExpression
+            || !AssignsValueMember(withExpression.Initializer))
+        {
+            return;
+        }
+
+        var type = context.SemanticModel.GetTypeInfo(withExpression, context.CancellationToken).Type;
+
+        if (type is not INamedTypeSymbol namedType || !BypassesGuards(namedType, context.SemanticModel.Compilation))
+        {
+            return;
+        }
+
+        Report(context, Descriptors.BypassCreate, withExpression.GetLocation(), namedType.Name);
+    }
+
+    /// <summary>
+    /// 判断对象 / <c>with</c> 初始化器是否给 <c>Value</c> 赋值。
+    /// </summary>
+    private static bool AssignsValueMember(InitializerExpressionSyntax initializer)
+        => initializer.Expressions
+            .OfType<AssignmentExpressionSyntax>()
+            .Any(assignment => assignment.Left is IdentifierNameSyntax { Identifier.ValueText: "Value" });
+
+    /// <summary>
     /// 检测 <c>default</c> / <c>default(T)</c> 产生的零值实例（STIA0011）。
     /// </summary>
     private static void AnalyzeDefaultValue(OperationAnalysisContext context)
@@ -1012,8 +1126,13 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 判断 <c>default</c> 是否处在「与空值比较」的语境里（<c>x == default</c>、<c>x.Equals(default)</c>）。
+    /// 判断 <c>default</c> 是否处在「与空值比较」的语境里（<c>x == default</c>、<c>x.Equals(default)</c>、
+    /// <c>x.CompareTo(default)</c>、<c>x &gt; default</c>、<c>x is default</c>）。
     /// </summary>
+    /// <remarks>
+    /// 这些写法只读取零值，并不构造一个绕过校验的实例，报 STIA0011 会逼用户把合理的比较改成
+    /// <c>default(OrderId)</c> 之外的等价写法。判据按「父节点形态」逐类覆盖，新增比较形态时在此补一项。
+    /// </remarks>
     private static bool IsComparisonOperand(IDefaultValueOperation operation)
     {
         var current = operation.Parent;
@@ -1026,7 +1145,22 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         return current switch
         {
             IBinaryOperation { OperatorKind: BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals } => true,
-            IArgumentOperation { Parent: IInvocationOperation invocation } => invocation.TargetMethod.Name == "Equals",
+            // 关系运算符同样只读：id > default 是「与零值比较大小」，不是构造。
+            IBinaryOperation
+            {
+                OperatorKind: BinaryOperatorKind.LessThan
+                    or BinaryOperatorKind.GreaterThan
+                    or BinaryOperatorKind.LessThanOrEqual
+                    or BinaryOperatorKind.GreaterThanOrEqual,
+            } => true,
+            // x.Equals(default) 与 x.CompareTo(default) 都是只读比较。
+            IArgumentOperation { Parent: IInvocationOperation invocation } =>
+                invocation.TargetMethod.Name is "Equals" or "CompareTo",
+            // default(OrderId).Equals(x) 与 default(OrderId).CompareTo(x)：default 是接收者而不是实参，
+            // 同样只读取零值。漏掉这一档会让「与零值比较」的合理写法被报成绕过校验。
+            IInvocationOperation invocation => invocation.TargetMethod.Name is "Equals" or "CompareTo",
+            // x is default 走模式匹配，default 是模式而不是构造。
+            IConstantPatternOperation => true,
             _ => false,
         };
     }
@@ -1051,14 +1185,34 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     private enum PrimitiveTextKind
     {
         /// <summary>
-        /// 数字、正负号、小数点，或 <c>NaN</c> / <c>Infinity</c>。
+        /// 有符号整数：数字与正负号。
         /// </summary>
-        Numeric,
+        SignedInteger,
 
         /// <summary>
-        /// 数字开头（日期时间、时间跨度），负的时间跨度以 <c>-</c> 开头。
+        /// 无符号整数：数字与 <c>+</c>（<c>-</c> 不被接受）。
         /// </summary>
-        Temporal,
+        UnsignedInteger,
+
+        /// <summary>
+        /// <c>decimal</c>：数字、正负号与小数点（<c>".5"</c> 合法）。
+        /// </summary>
+        Decimal,
+
+        /// <summary>
+        /// 浮点：数字、正负号、小数点，或 <c>NaN</c> / <c>Infinity</c>。
+        /// </summary>
+        Floating,
+
+        /// <summary>
+        /// 日期时间类：规范文本恒以数字开头，Parse 不接受正负号。
+        /// </summary>
+        DateTimeLike,
+
+        /// <summary>
+        /// <c>TimeSpan</c>：数字开头，负值以 <c>-</c> 开头。
+        /// </summary>
+        TimeSpan,
 
         /// <summary>
         /// 十六进制数字（<c>Guid</c>）。

@@ -51,4 +51,26 @@ internal static class IntegrationSampleValues
         => primitiveType == typeof(BigInteger)
             || primitiveType == typeof(Int128)
             || primitiveType == typeof(UInt128);
+
+    /// <summary>
+    /// 数据库驱动没有 provider 类型、只能退回规范文本的基元（与生成器的
+    /// <c>StronglyTypedIdInfo.IsDatabaseTextPrimitive</c> 一一对应）。
+    /// </summary>
+    /// <remarks>
+    /// 实测 SQLite 8.0：这四个基元直接作为 <c>ValueConverter</c> 的 provider type 会让 EF Core 拒绝映射整个属性，
+    /// Dapper 绑定参数时也会报「No mapping exists」。故 EF / Dapper 两侧都改存不变文化文本。
+    /// </remarks>
+    public static bool IsDatabaseTextPrimitive(Type primitiveType)
+        => primitiveType == typeof(BigInteger)
+            || primitiveType == typeof(Int128)
+            || primitiveType == typeof(UInt128)
+            || primitiveType == typeof(Half);
+
+    /// <summary>
+    /// 取该基元在数据库集成里实际落库的值：文本基元是不变文化文本，其余是基元本身。
+    /// </summary>
+    public static object DatabaseProviderValue(Type primitiveType, object value)
+        => IsDatabaseTextPrimitive(primitiveType)
+            ? Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!
+            : value;
 }

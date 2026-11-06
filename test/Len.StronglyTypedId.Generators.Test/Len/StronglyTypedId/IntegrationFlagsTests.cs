@@ -69,12 +69,16 @@ public class IntegrationFlagsTests
         => IntegrationFlags.Normalize(null).Should().BeNull();
 
     /// <summary>
-    /// 显式写 <c>Default</c>（0）归一为 <see cref="IntegrationFlags.All"/>：这是「写了但什么都没选」
-    /// 与「没写」的区分点，一旦被当成「全部关闭」，所有集成都会静默消失。
+    /// 显式写 <c>Default</c>（0）与「没写」同义：都返回 <see langword="null"/>，让调用方继续回退到
+    /// 程序集默认值，最终回退到 <see cref="IntegrationFlags.All"/>。
     /// </summary>
+    /// <remarks>
+    /// 归一成 <see cref="IntegrationFlags.All"/> 会让显式 <c>Default</c> 越过程序集默认值，
+    /// 与枚举自身的文档（「跟随程序集级默认值」）相反；分析器还会据此为每个 Id 报十条 STIA0019。
+    /// </remarks>
     [Fact]
-    public void Normalize_Should_ReturnAll_WhenExplicitDefault()
-        => IntegrationFlags.Normalize(0).Should().Be(IntegrationFlags.All);
+    public void Normalize_Should_ReturnNull_WhenExplicitDefault()
+        => IntegrationFlags.Normalize(0).Should().BeNull();
 
     /// <summary>
     /// <c>None</c> 只是「已指定」的标记位，参与掩码时被剔除：<c>None | Dapper</c> 等价于 <c>Dapper</c>。

@@ -293,7 +293,6 @@ public class CodeGeneratorModuleGateTests
             ("UInt64Id", "ToUInt64"),
             ("SingleId", "ToSingle"),
             ("DoubleId", "ToDouble"),
-            ("DateTimeId", "ToDateTime"),
         };
 
         foreach (var (id, method) in expectations)
@@ -302,7 +301,12 @@ public class CodeGeneratorModuleGateTests
                 .Should().Contain($"global::System.Convert.{method}(value, global::System.Globalization.CultureInfo.InvariantCulture)");
         }
 
-        // TimeSpan 刻意不在映射表里：System.Convert 没有 ToTimeSpan，只能走文本入口。
+        // DateTime 刻意不在映射表里：Convert.ToDateTime 没有 styles 重载，会把带 "Z" 的文本按本地时区
+        // 解释（Kind 变 Local、ticks 平移）。它改走带 RoundtripKind 的 Parse。
+        generated["Len.StronglyTypedId.DateTimeId.Dapper.g.cs"]
+            .Should().Contain("global::System.DateTime.Parse(global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture)!, global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind)");
+
+        // TimeSpan 同理：System.Convert 没有 ToTimeSpan，只能走文本入口。
         generated["Len.StronglyTypedId.DurationId.Dapper.g.cs"]
             .Should().Contain("global::System.TimeSpan.Parse(global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture)!, global::System.Globalization.CultureInfo.InvariantCulture)");
     }

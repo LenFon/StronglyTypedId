@@ -48,7 +48,7 @@ was not provided`，从这条报错很难反推「少登记了一个基元类型
 少数基元没有对应的直写形式（`Int128`、`UInt128`、`Half`、`TimeSpan`、`DateOnly`、`TimeOnly`，
 以及读单字符的 `char`），它们仍由 `JsonSerializer` 处理，此时上下文需要为基元补一条
 `[JsonSerializable]`。若漏了，本库会把框架的 `NotSupportedException` 转成一条说得清楚的
-`JsonException`，直接告诉你该补哪一条。
+`JsonException`，直接告诉你该补哪一条 —— 读、写两个方向都是如此。
 
 ### 两种 `GenerationMode` 的差别
 

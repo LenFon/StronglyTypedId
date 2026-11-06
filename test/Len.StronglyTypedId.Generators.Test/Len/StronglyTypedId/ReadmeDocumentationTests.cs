@@ -118,6 +118,59 @@ public class ReadmeDocumentationTests
     }
 
     /// <summary>
+    /// 段落扫描必须止于空行，不能因为文件是 CRLF 就一路扫到文件末尾。
+    /// </summary>
+    /// <remarks>
+    /// <c>Paragraph</c> 按 <c>"\n\n"</c> 找段落边界，而 <c>PACKAGE.md</c> 在 Windows 检出下是 CRLF：
+    /// <c>"\r\n\r\n"</c> 里没有 <c>"\n\n"</c>，于是扫描越过段落。只要那一句不以 <c>". "</c> 结尾
+    /// （<c>Sentence</c> 的截断点），后续段落里的反引号记号就会被当成基元清单的一部分 ——
+    /// 既误报（把 <c>record</c> 当成基元），也漏报（清单里删掉的基元在后文出现过时，漂移被静默吞掉）。
+    /// </remarks>
+    [Fact]
+    public void PackageReadme_Should_StopAtParagraphBoundary_WhenFileUsesCrLf()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "StiPkgReadme." + Guid.NewGuid().ToString("N"));
+        var projectDirectory = Path.Combine(root, "src", "Len.StronglyTypedId");
+        Directory.CreateDirectory(projectDirectory);
+
+        var repositoryRoot = RepositoryRoot();
+        File.Copy(
+            Path.Combine(repositoryRoot, "src", "Len.StronglyTypedId", "Len.StronglyTypedId.csproj"),
+            Path.Combine(projectDirectory, "Len.StronglyTypedId.csproj"));
+
+        var text = File.ReadAllText(Path.Combine(repositoryRoot, "PACKAGE.md"))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        // 1) 真实漂移：从基元清单里删掉 Half。
+        // 2) 让那一句以冒号结尾，去掉 Sentence 的 ". " 截断点。
+        // 3) 在紧随其后的段落里提到 Half —— 扫描若越过段落边界，漂移就会被它掩盖。
+        text = text
+            .Replace("`decimal`, `Half`, `float`", "`decimal`, `float`", StringComparison.Ordinal)
+            .Replace(
+                "and any `enum`. Use `record struct` for a value type,\n`record` for a reference type.",
+                "and any `enum`:\n\nUse `record struct` for a value type, `record` for a reference type, or `Half` for a demo.",
+                StringComparison.Ordinal);
+
+        File.WriteAllText(Path.Combine(root, "PACKAGE.md"), text.Replace("\n", "\r\n", StringComparison.Ordinal));
+
+        try
+        {
+            var drift = PackageReadmeVerifier.FindDrift(root);
+
+            drift.Should().Contain(
+                problem => problem.Contains("`Half`", StringComparison.Ordinal),
+                "清单里删掉了 Half，即使后文提到它也必须报出漂移");
+            drift.Should().NotContain(
+                problem => problem.Contains("多出了", StringComparison.Ordinal),
+                "段落边界之后的反引号记号不属于基元清单，不得报成多余基元");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// 每条诊断都必须有文档条目，且不得登记描述符里不存在的规则 ID。
     /// </summary>
     [Fact]

@@ -68,10 +68,16 @@ internal class ProtobufCodeGenerator : ICoreCodeGenerator
 
         var surrogateName = $"{idInfo.EscapedName}Surrogate";
 
-        // 文本形的基元与 string 基元都用 string? 承载：前者是规范文本，后者本身可空。
+        // 引用类型 Id 的字段一律可空：protobuf-net 把根级 null 写成空载荷，读回时构造的是
+        // 「字段全为默认值」的 surrogate 而不是 null。字段不可空时无法区分「null」与「Guid.Empty」，
+        // 于是 null 会被静默还原成一个看起来合法的 Id（实测 Guid → Guid.Empty、int → 0、枚举 → 首成员）。
+        // 文本形的基元与 string 基元本来就用 string? 承载。
+        var isReferenceType = idInfo.TypeKindSuffix is null;
         var fieldType = idInfo.IsProtobufTextPrimitive || idInfo.IsStringPrimitive
             ? "string?"
-            : idInfo.PrimitiveIdTypeName;
+            : isReferenceType
+                ? $"{idInfo.PrimitiveIdTypeName}?"
+                : idInfo.PrimitiveIdTypeName;
 
         var declaration = $$"""
                 [global::ProtoBuf.ProtoContract(Surrogate = typeof({{idInfo.FullyQualifiedName}}.{{surrogateName}}))]
@@ -159,6 +165,7 @@ internal class ProtobufCodeGenerator : ICoreCodeGenerator
 
         // 文本形先按基元的 Parse 还原，再交给 TryCreate 跑归一化与校验；string 基元的字段可空，
         // 也要先挡 null（TryCreate 的形参是非空 string）。其余基元直接 TryCreate。
+        // 引用类型 Id 的值类型基元字段现在也是可空的（见 Generate），故要先解包再交给 TryCreate。
         var condition = idInfo.IsProtobufTextPrimitive
             ? "surrogate.Value is not null"
                 + $" && {idInfo.PrimitiveIdTypeName}.TryParse(surrogate.Value, {InvariantCulture}, out var value)"
@@ -166,7 +173,10 @@ internal class ProtobufCodeGenerator : ICoreCodeGenerator
             : idInfo.IsStringPrimitive
                 ? "surrogate.Value is not null"
                     + $" && {idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName, "surrogate.Value", "id")}"
-                : idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName, "surrogate.Value", "id");
+                : isReferenceType
+                    ? "surrogate.Value is { } value"
+                        + $" && {idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName, "value", "id")}"
+                    : idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName, "surrogate.Value", "id");
 
         var lines = new List<string>
         {
@@ -181,15 +191,23 @@ internal class ProtobufCodeGenerator : ICoreCodeGenerator
 
         if (isReferenceType)
         {
-            // 根级 null 被 protobuf-net 写成空载荷，读回时构造的是「Value 为 null 的 surrogate」而不是 null。
-            // 对引用类型 Id 来说，null 基元值本就构不成合法 Id，故两种形态都还原成 null。
-            var nullCheck = idInfo.IsStringPrimitive || idInfo.IsProtobufTextPrimitive
-                ? "surrogate is null || surrogate.Value is null"
-                : "surrogate is null";
-
-            lines.Add(_bodyIndent + $"if ({nullCheck})");
+            // 根级 null 被 protobuf-net 写成空载荷，读回时构造的是「字段为 null 的 surrogate」而不是 null。
+            // 字段现在一律可空（文本形是 string?，值类型基元是 T?），故两种形态都还原成 null。
+            lines.Add(_bodyIndent + "if (surrogate is null || surrogate.Value is null)");
             lines.Add(_bodyIndent + "{");
             lines.Add(_bodyIndent + "    return null;");
+            lines.Add(_bodyIndent + "}");
+            lines.Add(string.Empty);
+        }
+        else if (idInfo.IsReferenceTypePrimitive)
+        {
+            // 值类型 Id 包装引用类型基元（string 或自定义 class）时，基元可以是 null，写侧已把它写成空载荷。
+            // 读侧必须还原成 default（基元为 null 的 Id），否则「写出去就读不回来」。
+            // 与 STJ / Newtonsoft 同一口径：它们按基元是否为引用类型判定，与 Id 是 struct 还是 class 无关。
+            // 不走 TryCreate：写侧写出的正是 default 值，走 TryCreate 会让「验证器拒绝 null」的 Id 再次写读不对称。
+            lines.Add(_bodyIndent + "if (surrogate.Value is null)");
+            lines.Add(_bodyIndent + "{");
+            lines.Add(_bodyIndent + "    return default;");
             lines.Add(_bodyIndent + "}");
             lines.Add(string.Empty);
         }

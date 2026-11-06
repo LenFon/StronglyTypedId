@@ -44,7 +44,7 @@ internal static class IdentifierEscaping
         // 净化只会删字符，长度不变即代表一个字符都没动，此时保持 hint 名原样。
         return sanitized.Length == fullName.Length
             ? sanitized
-            : $"{sanitized}_{ComputeStableHash(fullName)}";
+            : $"{sanitized}_{StableHash(fullName)}";
     }
 
     /// <summary>
@@ -60,12 +60,12 @@ internal static class IdentifierEscaping
             or "value" or "notnull";                   // 访问器 / 泛型约束位置的上下文化标识符
 
     /// <summary>
-    /// 计算与进程无关的 32 位 FNV-1a 哈希，用作 hint 名的消歧后缀。
+    /// 计算与进程无关的 32 位 FNV-1a 哈希，用作 hint 名与消歧类名的后缀。
     /// </summary>
     /// <remarks>
     /// 不能用 <see cref="string.GetHashCode()"/>：它按进程随机化，会让同一份源码产出不同的 hint 名。
     /// </remarks>
-    private static string ComputeStableHash(string value)
+    internal static string StableHash(string value)
     {
         const uint OffsetBasis = 2166136261;
         const uint Prime = 16777619;

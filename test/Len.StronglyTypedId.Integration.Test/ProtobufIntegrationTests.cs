@@ -127,12 +127,37 @@ public class ProtobufIntegrationTests
     /// <summary>
     /// 引用类型 Id 的 <c>null</c> 必须能往返成 <c>null</c>。
     /// </summary>
-    [Fact]
-    public void ReferenceTypeId_Should_RoundTripNull()
+    /// <remarks>
+    /// 三种基元都要覆盖：<c>string</c> 的字段本来就是 <c>string?</c>，而值类型基元（<c>Guid</c> /
+    /// <c>int</c>）的字段此前是非可空类型，protobuf-net 把根级 <c>null</c> 写成空载荷后读回的是
+    /// 「字段全为默认值」的 surrogate，<c>null</c> 会静默变成 <c>Guid.Empty</c> / <c>0</c>。
+    /// </remarks>
+    [Theory]
+    [InlineData(typeof(IntegrationProtobufReferenceId))]
+    [InlineData(typeof(IntegrationProtobufGuidReferenceId))]
+    [InlineData(typeof(IntegrationProtobufIntReferenceId))]
+    public void ReferenceTypeId_Should_RoundTripNull(Type idType)
     {
-        var bytes = Serialize(null, typeof(IntegrationProtobufReferenceId));
+        var bytes = Serialize(null, idType);
 
-        Deserialize(bytes, typeof(IntegrationProtobufReferenceId)).Should().BeNull();
+        Deserialize(bytes, idType).Should().BeNull($"{idType.Name} 的 null 必须往返成 null");
+    }
+
+    /// <summary>
+    /// <c>null</c> 与基元默认值必须可区分：修复前两者的载荷都是 0 字节，读回后无法分辨。
+    /// </summary>
+    [Fact]
+    public void ReferenceTypeId_Should_DistinguishNullFromPrimitiveDefault()
+    {
+        var nullBytes = Serialize(null, typeof(IntegrationProtobufGuidReferenceId));
+        var emptyBytes = Serialize(
+            IntegrationProtobufGuidReferenceId.Create(Guid.Empty),
+            typeof(IntegrationProtobufGuidReferenceId));
+
+        nullBytes.Should().NotEqual(emptyBytes, "null 与 Guid.Empty 的载荷必须可区分");
+        Deserialize(nullBytes, typeof(IntegrationProtobufGuidReferenceId)).Should().BeNull();
+        Deserialize(emptyBytes, typeof(IntegrationProtobufGuidReferenceId))
+            .Should().Be(IntegrationProtobufGuidReferenceId.Create(Guid.Empty));
     }
 
     /// <summary>
@@ -165,6 +190,26 @@ public class ProtobufIntegrationTests
         var back = (IntegrationMoneyId)Deserialize(Serialize(id, typeof(IntegrationMoneyId)), typeof(IntegrationMoneyId))!;
 
         back.Value.Amount.Should().Be(12.5m);
+    }
+
+    /// <summary>
+    /// 值类型 Id 包装引用类型基元时，基元为 <see langword="null"/> 的实例同样要能往返：
+    /// 写侧写空载荷，读侧必须还原成 <c>default</c>。
+    /// </summary>
+    /// <remarks>
+    /// 判据是「基元是否为引用类型」，与 Id 是 <c>record struct</c> 还是 <c>record class</c> 无关 ——
+    /// 与 System.Text.Json / Newtonsoft 的既有口径一致。修复前这里写出去读不回来
+    /// （读侧只认「Id 本身为 null」，值类型 Id 收到空载荷就抛 <c>ProtoException</c>）。
+    /// </remarks>
+    [Fact]
+    public void ValueTypeId_Should_RoundTripNullReferenceTypePrimitive()
+    {
+        var id = default(IntegrationReferenceCodeStructId);
+
+        var bytes = Serialize(id, typeof(IntegrationReferenceCodeStructId));
+
+        Deserialize(bytes, typeof(IntegrationReferenceCodeStructId))
+            .Should().Be(id, "空载荷必须还原成基元为 null 的 Id");
     }
 
     /// <summary>

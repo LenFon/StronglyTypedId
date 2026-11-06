@@ -268,6 +268,43 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
+    /// 空格式必须回退到规范格式：<c>ToString(null, provider)</c>、<c>TryFormat(default)</c> 与
+    /// <c>IFormattable</c> 路径写出的文本必须与 <c>ToString()</c> 逐字符相同。
+    /// </summary>
+    /// <remarks>
+    /// 三个时间基元的默认格式有损（<c>DateTime</c> 丢亚秒与 Kind、<c>TimeOnly</c> 丢秒），
+    /// 若把空格式原样转给基元，插值、<c>string.Format</c> 与结构化日志会落到有损那一套，
+    /// 同一个 Id 于是有两套「规范文本」。
+    /// </remarks>
+    [Fact]
+    public void EmptyFormat_Should_FallBackToCanonicalText()
+    {
+        var id = DateTimeId.Create(new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc).AddTicks(1234567));
+        var canonical = id.ToString();
+
+        ((IFormattable)id).ToString(null, CultureInfo.InvariantCulture).Should().Be(canonical);
+        string.Format(CultureInfo.InvariantCulture, "{0}", id).Should().Be(canonical);
+
+        Span<char> destination = stackalloc char[64];
+        id.TryFormat(destination, out var charsWritten, default, CultureInfo.InvariantCulture).Should().BeTrue();
+        destination[..charsWritten].ToString().Should().Be(canonical);
+
+        // 规范文本必须能被 Parse 读回，且保留 Kind。
+        DateTimeId.Parse(canonical, CultureInfo.InvariantCulture).Value.Kind.Should().Be(DateTimeKind.Utc);
+    }
+
+    /// <summary>
+    /// 显式格式串仍原样转发：用户写了 <c>"yyyy-MM-dd"</c> 就按它输出，不被规范格式覆盖。
+    /// </summary>
+    [Fact]
+    public void ExplicitFormat_Should_StillBeForwarded()
+    {
+        var id = DateTimeId.Create(new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc));
+
+        id.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture).Should().Be("2020-01-02");
+    }
+
+    /// <summary>
     /// 格式化接口按基元类型条件生成：<c>string</c> 未实现 <c>IFormattable</c>，因此 string 基元的 Id 也不实现它。
     /// </summary>
     [Fact]

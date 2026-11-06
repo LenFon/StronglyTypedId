@@ -98,7 +98,7 @@ public class SerializationAndDeserializationTests
     }
 
     /// <summary>
-    /// C4：对象形态的反序列化往返。
+    /// 对象形态的反序列化往返。
     /// </summary>
     [Fact]
     public void ObjectJsonShape_Should_DeserializeFromObject_When()
@@ -113,6 +113,79 @@ public class SerializationAndDeserializationTests
 
         System.Text.Json.JsonSerializer.Deserialize<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
         Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeStringId>(stringJson).Value.Should().Be("Len");
+    }
+
+    /// <summary>
+    /// 对象形态 + 引用类型基元为 <see langword="null"/> 时必须写读对称：写出的
+    /// <c>{"value":null}</c> 要能读回「基元为 null 的 Id」，而不是抛异常。
+    /// </summary>
+    /// <remarks>
+    /// 值类型基元没有 null 可写，故只覆盖 <c>string</c> 基元（引用类型）。
+    /// </remarks>
+    [Fact]
+    public void ObjectJsonShape_Should_RoundTripNullPrimitive_When()
+    {
+        var id = default(ObjectShapeStringId);
+
+        var stjJson = System.Text.Json.JsonSerializer.Serialize(id);
+        stjJson.Should().Be("""{"value":null}""");
+        System.Text.Json.JsonSerializer.Deserialize<ObjectShapeStringId>(stjJson).Should().Be(id);
+
+        var newtonsoftJson = Newtonsoft.Json.JsonConvert.SerializeObject(id);
+        newtonsoftJson.Should().Be("""{"value":null}""");
+        Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeStringId>(newtonsoftJson).Should().Be(id);
+    }
+
+    /// <summary>
+    /// 对象形态下 <c>value</c> 为 <c>null</c> 且对象里还有后续属性时，读入必须成功。
+    /// </summary>
+    /// <remarks>
+    /// 修复前 STJ 转换器读到 null 令牌就 <c>return</c>，没有把对象读到 <c>EndObject</c>，
+    /// 于是 <c>{"value":null,"extra":1}</c> 抛「read too much or not enough」。转换器必须消费整个对象，
+    /// 否则客户端多带一个字段就会让整条载荷读不进来。
+    /// </remarks>
+    [Fact]
+    public void ObjectJsonShape_Should_ReadNullPrimitive_WhenMorePropertiesFollow()
+    {
+        var id = default(ObjectShapeStringId);
+
+        System.Text.Json.JsonSerializer
+            .Deserialize<ObjectShapeStringId>("""{"value":null,"extra":1}""")
+            .Should().Be(id);
+
+        System.Text.Json.JsonSerializer
+            .Deserialize<ObjectShapeStringId>("""{"extra":1,"value":null}""")
+            .Should().Be(id);
+
+        // 同一对象里既有 null 又有真实值时（重复键），保留真实值而不是丢掉它。
+        System.Text.Json.JsonSerializer
+            .Deserialize<ObjectShapeStringId>("""{"value":null,"value":"Len"}""")
+            .Should().Be(ObjectShapeStringId.Create("Len"));
+
+        // 非 null 值后面跟属性是修复前就正确的路径，一并钉住以免回归。
+        System.Text.Json.JsonSerializer
+            .Deserialize<ObjectShapeStringId>("""{"value":"Len","extra":1}""")
+            .Should().Be(ObjectShapeStringId.Create("Len"));
+    }
+
+    /// <summary>
+    /// 对象形态读到 JSON <c>null</c> 时，值类型 Id 必须抛框架自己的序列化异常，而不是把 <c>null</c>
+    /// 交给调用方（拆箱时变成 <see cref="NullReferenceException"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 与基元形态的 null 分支同一口径：值类型 Id 无法表示 null，静默落成 <c>default</c> 会把「数据缺失」
+    /// 伪装成合法值。引用类型 Id 仍读回 <c>null</c>。
+    /// </remarks>
+    [Fact]
+    public void ObjectJsonShape_Should_RejectNullToken_ForValueTypeId()
+    {
+        var stjDeserialize = () => System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>("null");
+
+        stjDeserialize.Should().Throw<System.Text.Json.JsonException>();
+
+        var newtonsoftDeserialize = () => Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeGuidId>("null");
+
+        newtonsoftDeserialize.Should().Throw<Newtonsoft.Json.JsonSerializationException>();
     }
 
     /// <summary>
@@ -166,6 +239,273 @@ public class SerializationAndDeserializationTests
         var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<CharId, int>>(expectedJson)!;
 
         roundTripped.Should().ContainKey(CharId.Create('k'));
+    }
+
+    /// <summary>
+    /// 时间基元作字典键时不得塌缩：规范文本形必须保留亚秒，否则两个不同的 Id 会写出同一个键。
+    /// </summary>
+    /// <remarks>
+    /// 默认格式串（<c>DateTime</c> 的 "G"、<c>TimeOnly</c> 的 "t"）会丢掉亚秒甚至秒，
+    /// 于是 <c>{"01/02/2020 03:04:05":1,"01/02/2020 03:04:05":2}</c> 这样的 JSON 读回来只剩一个键。
+    /// 生成器固定用 <c>"O"</c> 之后，两个键必须保持可区分。
+    /// </remarks>
+    [Fact]
+    public void TemporalIds_Should_KeepDistinctDictionaryKeys()
+    {
+        var first = DateTimeId.Create(new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc).AddTicks(1000000));
+        var second = DateTimeId.Create(new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc).AddTicks(2000000));
+
+        first.ToString().Should().NotBe(second.ToString(), "规范文本形必须保留亚秒，否则字典键会塌缩");
+
+        var dictionary = new Dictionary<DateTimeId, int> { [first] = 1, [second] = 2 };
+        var json = System.Text.Json.JsonSerializer.Serialize(dictionary);
+
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<DateTimeId, int>>(json)!;
+
+        roundTripped.Should().HaveCount(2, "两个不同的 Id 必须读回两个键（{0}）", json);
+        roundTripped.Should().ContainKey(first).And.ContainKey(second);
+
+        var timeFirst = TimeOnlyId.Create(new TimeOnly(13, 45, 30, 100));
+        var timeSecond = TimeOnlyId.Create(new TimeOnly(13, 45, 31, 900));
+
+        timeFirst.ToString().Should().NotBe(timeSecond.ToString(), "TimeOnly 的规范文本形必须保留秒与亚秒");
+
+        var timeJson = System.Text.Json.JsonSerializer.Serialize(
+            new Dictionary<TimeOnlyId, int> { [timeFirst] = 1, [timeSecond] = 2 });
+
+        System.Text.Json.JsonSerializer.Deserialize<Dictionary<TimeOnlyId, int>>(timeJson)!
+            .Should().HaveCount(2, "两个不同的 TimeOnly Id 必须读回两个键（{0}）", timeJson);
+    }
+
+    /// <summary>
+    /// <c>DateTime</c> 的文本解析必须保留 <see cref="DateTimeKind"/>：带 <c>"Z"</c> 的文本按 UTC 解释，
+    /// 不能按本地时区平移。
+    /// </summary>
+    /// <remarks>
+    /// 默认的 <c>DateTime.TryParse</c> 样式会把 <c>"…Z"</c> 折成本地时间（Kind 变 Local、ticks 整体平移），
+    /// 于是 <c>Parse(jsonText)</c> 与 JSON 转换器读出的值不一致。生成代码固定带
+    /// <c>DateTimeStyles.RoundtripKind</c>。
+    /// </remarks>
+    [Fact]
+    public void DateTimeId_Should_PreserveKind_WhenParsingRoundTripText()
+    {
+        var utc = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc).AddTicks(1234567);
+        var id = DateTimeId.Create(utc);
+
+        var parsed = DateTimeId.Parse("2020-01-02T03:04:05.1234567Z", System.Globalization.CultureInfo.InvariantCulture);
+
+        parsed.Value.Kind.Should().Be(DateTimeKind.Utc, "带 Z 的文本必须按 UTC 解释");
+        parsed.Value.Ticks.Should().Be(utc.Ticks, "Kind 与 ticks 都不能被本地时区平移");
+        parsed.Should().Be(id);
+    }
+
+    /// <summary>
+    /// <c>DateOnly</c> 的规范文本形必须是 ISO 形：与 System.Text.Json 写出的一致，
+    /// 且 Newtonsoft 写出的文本 STJ 也能读回。
+    /// </summary>
+    /// <remarks>
+    /// 默认短日期形（不变文化下是 <c>01/02/2020</c>）与 STJ 的 <c>2020-01-02</c> 不同，
+    /// 会让同一个 Id 的值与字典键、两个 JSON 库之间写出两段不同的文本。
+    /// </remarks>
+    [Fact]
+    public void DateOnlyId_Should_UseIsoTextForm_AcrossJsonLibraries()
+    {
+        var id = DateOnlyId.Create(new DateOnly(2020, 1, 2));
+
+        id.ToString().Should().Be("2020-01-02");
+        System.Text.Json.JsonSerializer.Serialize(id).Should().Be("\"2020-01-02\"");
+        Newtonsoft.Json.JsonConvert.SerializeObject(id).Should().Be("\"2020-01-02\"");
+
+        // 字典键与值同形，且与原生 DateOnly 的键文本一致。
+        System.Text.Json.JsonSerializer.Serialize(new Dictionary<DateOnlyId, int> { [id] = 1 })
+            .Should().Be("""{"2020-01-02":1}""");
+
+        // Newtonsoft 写出的文本 STJ 必须读得回来。
+        var newtonsoftText = Newtonsoft.Json.JsonConvert.SerializeObject(id);
+        System.Text.Json.JsonSerializer.Deserialize<DateOnlyId>(newtonsoftText).Should().Be(id);
+    }
+
+    /// <summary>
+    /// <c>decimal</c> 基元在 Newtonsoft 下必须按规范文本写出，否则超过约 15 位有效数字的值会被静默舍入，
+    /// <c>decimal.MaxValue</c> / <c>MinValue</c> 直接抛 <c>JsonSerializationException</c>。
+    /// </summary>
+    /// <remarks>
+    /// Newtonsoft 在调用转换器之前就把数字 token 解析成了 <c>double</c>（<c>ReadForType</c> 见到转换器时
+    /// 只做 <c>reader.Read()</c>），转换器拿不到原始文本，任何读侧写法都救不回来。故与
+    /// <c>Int128</c> / <c>UInt128</c> / <c>Half</c> 同走文本形 —— 代价是 Newtonsoft 写出的是 JSON 字符串，
+    /// 而 System.Text.Json 仍写数字，这与那几个基元既有的跨库差异一致。
+    /// </remarks>
+    [Fact]
+    public void DecimalId_Should_RoundTripPrecision_ThroughNewtonsoft()
+    {
+        decimal[] values = [decimal.MaxValue, decimal.MinValue, 123456789012345.67m, 123456789012345678.9m, 1.5m, 1.0m];
+
+        foreach (var value in values)
+        {
+            var id = DecimalId.Create(value);
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(id);
+
+            // 文本形：写出的是 JSON 字符串，且与规范文本一致。
+            json.Should().Be($"\"{value.ToString(null, System.Globalization.CultureInfo.InvariantCulture)}\"", $"{value} 必须按规范文本写出");
+
+            Newtonsoft.Json.JsonConvert.DeserializeObject<DecimalId>(json).Should().Be(id, $"{value} 必须无损读回");
+        }
+    }
+
+    /// <summary>
+    /// 升级前 Newtonsoft 把 <c>decimal</c> 写成 JSON number，那些既有载荷必须仍能读回 ——
+    /// 否则改一次线上格式就让历史数据全部失效。
+    /// </summary>
+    /// <remarks>
+    /// 数字 token 的精度仍受 Newtonsoft 的 <c>double</c> 解析限制（与修复前一致），故这里只断言
+    /// 「能读出来且值正确」的普通取值，不重复覆盖 <c>MaxValue</c> 那类本来就读不回来的边界。
+    /// </remarks>
+    [Fact]
+    public void DecimalId_Should_StillReadLegacyNumericPayload_ThroughNewtonsoft()
+    {
+        // 旧版 WriteValue(decimal) 的产物：普通值、指数形（Newtonsoft 对 1E-05 这类值会写指数）、整数形。
+        // 只用 double 能精确表示的取值 —— 旧路径本来就有精度上限，这里验证的是「不会因为改格式而读不出来」。
+        (string Json, decimal Expected)[] legacyPayloads =
+        [
+            ("1.5", 1.5m),
+            ("0.0", 0m),
+            ("1.0", 1m),
+            ("0.00001", 0.00001m),
+            ("1E-05", 0.00001m),
+            ("1000000000000000.0", 1000000000000000m),
+        ];
+
+        foreach (var (json, expected) in legacyPayloads)
+        {
+            Newtonsoft.Json.JsonConvert.DeserializeObject<DecimalId>(json).Value
+                .Should().Be(expected, $"旧载荷 {json} 必须仍能读回");
+        }
+    }
+
+    /// <summary>
+    /// Newtonsoft 在调用转换器之前就把「像日期」的字符串解析成了本地时区的 <see cref="DateTime"/>，
+    /// 故 <c>DateTimeOffset</c> 基元的 Id 读回来带的是机器本地 offset。时刻不变，offset 变了。
+    /// </summary>
+    /// <remarks>
+    /// 转换器内部无解：它运行时原文已经没了。把序列化器设成
+    /// <c>DateParseHandling.None</c> 才能保留原始字符串并让 offset 往返 —— 本用例把这两点都钉住，
+    /// 避免日后有人「顺手」把 <c>DateTimeOffset</c> 加进文本路径（那救不回来，只会改掉线上形态）。
+    /// </remarks>
+    [Fact]
+    public void DateTimeOffsetId_Should_LoseOffset_UnderNewtonsoft_UnlessDateParsingDisabled()
+    {
+        var value = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.FromHours(-5));
+        var id = DateTimeOffsetId.Create(value);
+
+        // 默认设置：时刻保留，offset 变成机器本地。
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(id);
+        var back = Newtonsoft.Json.JsonConvert.DeserializeObject<DateTimeOffsetId>(json);
+
+        back.Value.UtcTicks.Should().Be(value.UtcTicks, "时刻本身必须保留");
+        back.Value.Offset.Should().Be(TimeZoneInfo.Local.GetUtcOffset(value.UtcDateTime), "offset 会被归一成本地时区");
+
+        // 关掉日期解析：原文保留，offset 往返。
+        var settings = new Newtonsoft.Json.JsonSerializerSettings
+        {
+            DateParseHandling = Newtonsoft.Json.DateParseHandling.None,
+        };
+
+        var roundTripped = Newtonsoft.Json.JsonConvert.DeserializeObject<DateTimeOffsetId>(
+            Newtonsoft.Json.JsonConvert.SerializeObject(id, settings), settings);
+
+        roundTripped.Value.Should().Be(value, "DateParseHandling.None 下 offset 必须往返");
+
+        // System.Text.Json 不受影响。
+        var stj = System.Text.Json.JsonSerializer.Deserialize<DateTimeOffsetId>(
+            System.Text.Json.JsonSerializer.Serialize(id));
+
+        stj.Value.Should().Be(value);
+    }
+
+    /// <summary>
+    /// 同一机制还会毁掉 <c>string</c> 基元的 Id：值恰好长得像 ISO 日期时间时，Newtonsoft 把它解析成
+    /// <see cref="DateTime"/>，转换器再取字符串就只剩本地渲染。这比 offset 丢失更严重 —— 值本身变了。
+    /// </summary>
+    /// <remarks>
+    /// 手写的 <c>JsonConverter&lt;string&gt;</c> 同样如此，故这是 Newtonsoft 的限制而非本库引入的。
+    /// 关掉 <c>DateParseHandling</c> 后原文保留，值可往返。
+    /// </remarks>
+    [Fact]
+    public void StringId_Should_LoseDateLikeValue_UnderNewtonsoft_UnlessDateParsingDisabled()
+    {
+        const string value = "2020-01-02T03:04:05Z";
+        var id = StringId.Create(value);
+
+        // 默认设置：值被替换成本地渲染的日期文本（具体文本随当前区域变化，故只断言「不再是原字符串」）。
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(id);
+        var back = Newtonsoft.Json.JsonConvert.DeserializeObject<StringId>(json);
+
+        back.Value.Should().NotBe(value, "Newtonsoft 会先把像日期的字符串解析成 DateTime，转换器只能拿到本地渲染文本");
+        back.Value.Should().NotContain("T03:04:05", "原字符串的 ISO 形已经不存在了");
+
+        // 关掉日期解析：原文保留。
+        var settings = new Newtonsoft.Json.JsonSerializerSettings
+        {
+            DateParseHandling = Newtonsoft.Json.DateParseHandling.None,
+        };
+
+        var roundTripped = Newtonsoft.Json.JsonConvert.DeserializeObject<StringId>(
+            Newtonsoft.Json.JsonConvert.SerializeObject(id, settings), settings);
+
+        roundTripped.Value.Should().Be(value, "DateParseHandling.None 下原字符串必须保留");
+
+        // System.Text.Json 不受影响。
+        System.Text.Json.JsonSerializer.Deserialize<StringId>(
+            System.Text.Json.JsonSerializer.Serialize(id)).Value.Should().Be(value);
+    }
+
+    /// <summary>
+    /// 对象形态读到「类型不符」或「文本不合法」的值时，Newtonsoft 转换器同样必须抛
+    /// <see cref="Newtonsoft.Json.JsonSerializationException"/>，而不是把 <see cref="FormatException"/> /
+    /// <see cref="ArgumentException"/> 漏给调用方。
+    /// </summary>
+    /// <remarks>
+    /// <c>JToken.ToObject&lt;T&gt;()</c> 不传 <c>serializer</c> 时不会包装异常，会直接把基元的
+    /// <c>FormatException</c>（文本不合法）或 <c>ArgumentException</c>（token 类型不符）抛出去。
+    /// 基元形态走的是 <c>serializer.Deserialize&lt;T?&gt;</c>，本来就包装好了，故只有对象形态受影响。
+    /// </remarks>
+    [Fact]
+    public void ObjectJsonShape_Should_ThrowJsonSerializationException_WhenValueIsMalformed()
+    {
+        string[] malformedPayloads =
+        [
+            """{"value":"abc"}""",   // 文本不合法
+            """{"value":[]}""",      // token 类型不符
+            """{"value":1.5}""",     // 数字不是 Guid
+        ];
+
+        foreach (var json in malformedPayloads)
+        {
+            var newtonsoft = () => Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeGuidId>(json);
+
+            newtonsoft.Should().Throw<Newtonsoft.Json.JsonSerializationException>($"{json} 必须抛 JsonSerializationException");
+
+            // System.Text.Json 侧本来就收敛到 JsonException。
+            var systemTextJson = () => System.Text.Json.JsonSerializer.Deserialize<ObjectShapeGuidId>(json);
+
+            systemTextJson.Should().Throw<System.Text.Json.JsonException>();
+        }
+    }
+
+    /// <summary>
+    /// 对象形态的文本路径（<c>string</c> 基元）读到非字符串 token 时同样必须抛 Newtonsoft 自己的
+    /// 序列化异常，而不是把 <see cref="ArgumentException"/> 漏给调用方。
+    /// </summary>
+    /// <remarks>
+    /// 这里抛的是 <c>JsonReaderException</c>（<c>JsonException</c> 的子类），与基元形态一致：
+    /// 调用方按文档 <c>catch (JsonException)</c> 就能接住。
+    /// </remarks>
+    [Fact]
+    public void ObjectJsonShape_Should_ThrowJsonException_WhenStringValueIsNotAString()
+    {
+        var newtonsoft = () => Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectShapeStringId>("""{"value":[]}""");
+
+        newtonsoft.Should().Throw<Newtonsoft.Json.JsonException>();
     }
 
     /// <summary>
@@ -373,6 +713,32 @@ public class SerializationAndDeserializationTests
         act.Should().Throw<System.Text.Json.JsonException>();
     }
 
+    /// <summary>
+    /// 引用类型基元为 <see langword="null"/> 的 Id 不能作 JSON 字典键：JSON 属性名不允许 null。
+    /// 必须给出明确的 <see cref="NotSupportedException"/>，而不是在 <c>WritePropertyName</c> 里抛 NRE。
+    /// </summary>
+    /// <remarks>
+    /// 与「null Id 作键」同一处理口径。带前缀时键文本是「前缀 + 空串」，永远非 null，故不受影响。
+    /// </remarks>
+    [Theory]
+    [InlineData("ReferenceCodeId")]
+    [InlineData("StringId")]
+    [InlineData("PrefixedStringId")]
+    public void NullPrimitiveId_Should_ThrowNotSupported_When_UsedAsDictionaryKey(string idType)
+    {
+        var dictionary = idType switch
+        {
+            "ReferenceCodeId" => (object)new Dictionary<ReferenceCodeId, int> { [default] = 1 },
+            "PrefixedStringId" => new Dictionary<PrefixedStringId, int> { [default] = 1 },
+            _ => new Dictionary<StringId, int> { [default] = 1 },
+        };
+
+        var act = () => System.Text.Json.JsonSerializer.Serialize(dictionary);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage($"A null {idType} cannot be written as a JSON property name.*");
+    }
+
     #region C10 文本前缀：JSON 走规范文本形
 
     /// <summary>
@@ -410,6 +776,28 @@ public class SerializationAndDeserializationTests
 
         System.Text.Json.JsonSerializer.Deserialize<PrefixedStringId>(stringJson).Value.Should().Be("x");
         Newtonsoft.Json.JsonConvert.DeserializeObject<PrefixedStringId>(stringJson).Value.Should().Be("x");
+    }
+
+    /// <summary>
+    /// 带前缀 + 引用类型基元为 <see langword="null"/> 时必须写读对称：写出 JSON <c>null</c>，
+    /// 读回得到「基元为 null 的 Id」。
+    /// </summary>
+    /// <remarks>
+    /// 裸前缀（<c>"ord_"</c>）剥离后是空文本，读回必然失败；写 <c>null</c> 才能往返，
+    /// 也与无前缀路径的 null 写出保持一致。
+    /// </remarks>
+    [Fact]
+    public void Prefix_Should_RoundTripNullPrimitive_When()
+    {
+        var id = default(PrefixedStringId);
+
+        var stjJson = System.Text.Json.JsonSerializer.Serialize(id);
+        stjJson.Should().Be("null");
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedStringId>(stjJson).Should().Be(id);
+
+        var newtonsoftJson = Newtonsoft.Json.JsonConvert.SerializeObject(id);
+        newtonsoftJson.Should().Be("null");
+        Newtonsoft.Json.JsonConvert.DeserializeObject<PrefixedStringId>(newtonsoftJson).Should().Be(id);
     }
 
     /// <summary>

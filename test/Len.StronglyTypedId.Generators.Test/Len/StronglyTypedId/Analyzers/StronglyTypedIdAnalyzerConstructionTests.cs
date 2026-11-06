@@ -164,6 +164,65 @@ public class StronglyTypedIdAnalyzerConstructionTests
     }
 
     /// <summary>
+    /// <c>id with { Value = … }</c> 同样绕过 <c>Create</c> 的归一化与校验，应报告 STIA0011。
+    /// </summary>
+    /// <remarks>
+    /// <c>with</c> 对 record 的语义是「复制后改写 init 成员」，能直接造出验证器明确拒绝的 Id。
+    /// 只覆盖 <c>new</c> 与 <c>default</c> 会让这条最容易被写出来的绕过路径完全静默。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValueAssignedWithWithExpression()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public OrderId Build(OrderId id) => id with { Value = Guid.Empty };
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.BypassCreate).WithArguments("OrderId").WithSpan(13, 41, 13, 71);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 不改写 <c>Value</c> 的 <c>with</c> 不改变基元值，不构成绕过，不应报告 STIA0011。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenWithExpressionDoesNotAssignValue()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+
+                public string? Note { get; init; }
+            }
+
+            public class Usage
+            {
+                public OrderId Build(OrderId id) => id with { Note = "x" };
+
+                public OrderId Copy(OrderId id) => id with { };
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
     /// 与 <c>default</c> 做相等比较是合法的判空写法，不应报告 STIA0011。
     /// </summary>
     [Fact]
@@ -187,6 +246,79 @@ public class StronglyTypedIdAnalyzerConstructionTests
                 public bool IsNotEmpty(OrderId id) => default != id;
 
                 public bool IsEmptyByEquals(OrderId id) => id.Equals(default);
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 关系运算符、<c>CompareTo</c> 与 <c>is default</c> 同样只读取零值，不构造实例，不应报告 STIA0011。
+    /// </summary>
+    /// <remarks>
+    /// 这些写法在排序、范围检查与模式匹配里都很常见；误报会逼用户改成 <c>default(OrderId)</c> 之外的等价写法，
+    /// 或者干脆加 <c>#pragma</c> 把整条规则关掉。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenDefaultIsReadOnlyComparison()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+            }
+
+            public class Usage
+            {
+                public bool Greater(OrderId id) => id > default;
+
+                public bool Less(OrderId id) => id < default;
+
+                public bool GreaterOrEqual(OrderId id) => id >= default;
+
+                public bool LessOrEqual(OrderId id) => id <= default;
+
+                public int Compare(OrderId id) => id.CompareTo(default);
+
+                public bool IsDefault(OrderId id) => id is default;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>default</c> 作为 <c>Equals</c> / <c>CompareTo</c> 的接收者时同样只读取零值，不应报告 STIA0011。
+    /// </summary>
+    /// <remarks>
+    /// 接收者位置与实参位置在操作树里是两种形态：只覆盖实参会让 <c>default(OrderId).Equals(id)</c>
+    /// 这种「与零值比较」的写法被误报成绕过校验。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenDefaultIsComparisonReceiver()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+
+                // 分析器用例不跑生成器，CompareTo 得自己写，否则调用在语义模型里是 IInvalidOperation。
+                public int CompareTo(OrderId other) => 0;
+            }
+
+            public class Usage
+            {
+                public bool IsEmpty(OrderId id) => default(OrderId).Equals(id);
+
+                public int Compare(OrderId id) => default(OrderId).CompareTo(id);
             }
             """";
         await Verify.VerifyAnalyzerAsync(code);
@@ -534,6 +666,168 @@ public class StronglyTypedIdAnalyzerConstructionTests
             public partial record struct BookingId(DateTime Value);
             """";
         await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 整数文本永远不是 <c>NaN</c> / <c>Infinity</c>，故 <c>"N"</c> / <c>"I"</c> 对整数基元是安全前缀。
+    /// 把「数值」当成一个整体类别会误报 STIA0023（Error 级，直接阻断编译）。
+    /// </summary>
+    [Theory]
+    [InlineData("N", "int")]
+    [InlineData("I", "int")]
+    [InlineData("Inf", "long")]
+    [InlineData("NaN", "decimal")]
+    [InlineData("Infinity", "BigInteger")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenSpecialValuePrefixUsedWithIntegerPrimitive(string prefix, string primitive)
+    {
+        var code = $$""""
+            using System;
+            using System.Numerics;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "{{prefix}}")]
+            public partial record struct OrderId({{primitive}} Value);
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 整数文本永远不以小数点开头（<c>int.TryParse(".5")</c> 为 false），故 <c>"."</c> 对整数基元安全。
+    /// </summary>
+    [Theory]
+    [InlineData("int")]
+    [InlineData("long")]
+    [InlineData("Int128")]
+    [InlineData("BigInteger")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenDotPrefixUsedWithIntegerPrimitive(string primitive)
+    {
+        var code = $$""""
+            using System;
+            using System.Numerics;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = ".")]
+            public partial record struct OrderId({{primitive}} Value);
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 日期时间类基元的 Parse 不接受正负号（<c>DateTime.TryParse("-2020-01-02")</c> 为 false），
+    /// 故 <c>"-"</c> 对它们安全；只有 <c>TimeSpan</c> 的负值以 <c>-</c> 开头。
+    /// </summary>
+    [Theory]
+    [InlineData("DateTime")]
+    [InlineData("DateTimeOffset")]
+    [InlineData("DateOnly")]
+    [InlineData("TimeOnly")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenMinusPrefixUsedWithDateTimePrimitive(string primitive)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "-")]
+            public partial record struct BookingId({{primitive}} Value);
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 无符号整数不接受 <c>-</c>（<c>uint.TryParse("-5")</c> 为 false），故 <c>"-"</c> 对它们安全。
+    /// </summary>
+    [Theory]
+    [InlineData("byte")]
+    [InlineData("ushort")]
+    [InlineData("uint")]
+    [InlineData("ulong")]
+    [InlineData("UInt128")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenMinusPrefixUsedWithUnsignedPrimitive(string primitive)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "-")]
+            public partial record struct CounterId({{primitive}} Value);
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 对照：<c>TimeSpan</c> 的负值确实以 <c>-</c> 开头，同一前缀在这里必须照常报 STIA0023。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenMinusPrefixUsedWithTimeSpan()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "-")]
+            public partial record struct DurationId(TimeSpan Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments("-", "System.TimeSpan")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 对照：<c>decimal</c> 接受 <c>".5"</c>，故小数点前缀对它是真重叠。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenDotPrefixUsedWithDecimal()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = ".")]
+            public partial record struct AmountId(decimal Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments(".", "decimal")
+            .WithSpan(5, 18, 5, 30);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 对照：浮点接受 <c>NaN</c> / <c>Infinity</c>，故这两个前缀对 <c>double</c> / <c>Half</c> 仍要报。
+    /// </summary>
+    [Theory]
+    [InlineData("NaN", "double", "double")]
+    [InlineData("Infinity", "double", "double")]
+    [InlineData("NaN", "Half", "System.Half")]
+    [InlineData("Infinity", "Half", "System.Half")]
+    [InlineData("NaN", "float", "float")]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenSpecialValuePrefixUsedWithFloatingPrimitive(string prefix, string primitive, string displayName)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Prefix = "{{prefix}}")]
+            public partial record struct RatioId({{primitive}} Value);
+            """";
+
+        // 诊断落在 `Prefix = "…"` 整个实参上：18 列起，`Prefix = ""` 占 11 列，再加前缀长度。
+        var expected = Verify.Diagnostic(Descriptors.AmbiguousPrefix)
+            .WithArguments(prefix, displayName)
+            .WithSpan(5, 18, 5, 29 + prefix.Length);
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
     /// <summary>

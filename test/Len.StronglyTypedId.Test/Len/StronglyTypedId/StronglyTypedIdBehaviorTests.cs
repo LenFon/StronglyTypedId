@@ -265,6 +265,97 @@ public class StronglyTypedIdBehaviorTests
         StringIdV3.Create("V3").ToString().Should().Contain("V3");
     }
 
+    /// <summary>
+    /// <c>string</c> 基元的 <c>Value</c> 可以是 <see langword="null"/>：<c>default(TId)</c> 与
+    /// <c>TryCreate</c> / <c>TryParse</c> 失败的结果都是它。规范文本形必须容忍这一点。
+    /// </summary>
+    /// <remarks>
+    /// 旧产物写的是 <c>Value.ToString() ?? string.Empty</c>，兜底落在解引用之后，是死代码 ——
+    /// 先抛 <see cref="NullReferenceException"/>，<c>??</c> 永远走不到。
+    /// </remarks>
+    [Fact]
+    public void ToString_Should_ReturnEmpty_ForDefaultStringId()
+    {
+        default(StringId).ToString().Should().BeEmpty();
+
+        StringId.TryCreate(null!, out var failed).Should().BeTrue("string 基元没有验证器，null 也会被接受");
+        failed.Value.Should().BeNull();
+        failed.ToString().Should().BeEmpty();
+
+        default(PrefixedStringId).ToString().Should().Be("ord_", "前缀属于规范文本形，与基元值是否为 null 无关");
+    }
+
+    /// <summary>
+    /// 自定义引用类型基元（<c>class</c>）同样可以是 <see langword="null"/>，规范文本形与 JSON 写出都必须容忍。
+    /// </summary>
+    [Fact]
+    public void ToString_Should_ReturnEmpty_ForDefaultReferenceTypePrimitiveId()
+    {
+        default(ReferenceCodeId).ToString().Should().BeEmpty();
+        default(PrefixedReferenceCodeId).ToString().Should().Be("rc_");
+
+        // JSON 写出：null 基元写成 JSON null，而不是抛 NRE。带前缀时同样写 null —— 裸前缀剥离后是空文本，
+        // 读回必然失败，写 null 才能往返。
+        System.Text.Json.JsonSerializer.Serialize(default(ReferenceCodeId)).Should().Be("null");
+        System.Text.Json.JsonSerializer.Serialize(default(PrefixedReferenceCodeId)).Should().Be("null");
+
+        System.Text.Json.JsonSerializer.Deserialize<PrefixedReferenceCodeId>("null")
+            .Should().Be(default);
+    }
+
+    /// <summary>
+    /// 引用类型基元为 <see langword="null"/> 时，比较同样不能抛 <see cref="NullReferenceException"/>：
+    /// <c>default(TId)</c> 是合法值，排序、范围检查与 <c>SortedSet</c> 都会拿它参与比较。
+    /// </summary>
+    /// <remarks>
+    /// 约定与引用类型 Id 的 <c>CompareTo</c> 一致：<c>null</c> 最小。值类型 Id 的基元可以是引用类型
+    /// （<c>record struct CodeId(Code Value)</c>），故这条不能只按「Id 是引用类型」判定。
+    /// </remarks>
+    [Fact]
+    public void Comparison_Should_TreatNullPrimitiveAsSmallest()
+    {
+        var code = ReferenceCode.Parse("abc", CultureInfo.InvariantCulture);
+        var id = ReferenceCodeId.Create(code);
+        var empty = default(ReferenceCodeId);
+        var otherEmpty = default(ReferenceCodeId);
+
+        empty.CompareTo(id).Should().BeNegative();
+        id.CompareTo(empty).Should().BePositive();
+        empty.CompareTo(otherEmpty).Should().Be(0);
+
+        (empty < id).Should().BeTrue();
+        (id > empty).Should().BeTrue();
+        (empty <= otherEmpty).Should().BeTrue();
+        (id >= empty).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// 引用类型基元为 <see langword="null"/> 时，带格式的 <c>ToString</c> 与 <c>TryFormat</c> 也不能抛
+    /// <see cref="NullReferenceException"/>：它们与无参 <c>ToString()</c> 同属规范文本形。
+    /// </summary>
+    /// <remarks>
+    /// 空基元按空文本处理 —— <c>TryFormat</c> 成功写入 0 个字符，与 <c>ToString()</c> 写出空串一致；
+    /// 配了前缀时前缀照常写出，与 <c>ToString()</c> 的行为对齐。
+    /// </remarks>
+    [Fact]
+    public void FormattedToString_Should_ReturnEmpty_ForDefaultReferenceTypePrimitiveId()
+    {
+        var empty = default(FormattableReferenceCodeId);
+
+        empty.ToString("F", CultureInfo.InvariantCulture).Should().BeEmpty();
+        default(PrefixedFormattableReferenceCodeId).ToString("F", CultureInfo.InvariantCulture).Should().Be("fc_");
+
+        Span<char> buffer = stackalloc char[16];
+
+        empty.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture).Should().BeTrue();
+        written.Should().Be(0);
+
+        default(PrefixedFormattableReferenceCodeId)
+            .TryFormat(buffer, out var prefixedWritten, default, CultureInfo.InvariantCulture).Should().BeTrue();
+        prefixedWritten.Should().Be(3);
+        buffer[..prefixedWritten].ToString().Should().Be("fc_");
+    }
+
     #endregion
 
     #region C10 文本前缀

@@ -38,7 +38,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
 
-    // 遍历每个实体的属性，凡是 CLR 类型为强类型 Id 的就挂上生成的转换器。
+    // 按 CLR 反射枚举每个实体的属性，凡是强类型 Id 就映射上生成的转换器。
     modelBuilder.AddStronglyTypedIds();
 }
 ```
@@ -46,13 +46,19 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 > 两个重载都在引用了 EF Core ≥ 7.0.0 时生成，与其余集成同一个门控，并不要求某个 `DbContext` 重写
 > `ConfigureConventions`。`ModelConfigurationBuilder` 自 EF Core 7 起才存在，这才是此处版本下限更高的原因。
 >
-> `AddStronglyTypedIds(ModelBuilder)` 扫描的是**调用那一刻**的模型快照，因此之后再配置的实体类型不会被它看到：
-> 请在 `OnModelCreating` 的**末尾**调用。约定重载没有这个顺序约束，是更好的默认选择。
+> `AddStronglyTypedIds(ModelBuilder)` 按**CLR 反射**枚举每个实体的属性，而不是遍历模型里已发现的属性：
+> EF Core 的约定集不会把「既不是受支持基元、也不是合法实体类型」的属性加进模型，强类型 Id 正好是这一类，
+> 遍历模型会一无所获。可空 Id 属性（`OrderId?`）同样会被映射；用 `[NotMapped]` 或 fluent `Ignore`
+> 排除的属性保持排除。调用之后再配置的实体类型仍然不会被它看到，请在 `OnModelCreating` 的**末尾**调用。
+> 约定重载没有这个顺序约束，是更好的默认选择。
 
 每个 Id 都会得到一个嵌套在生成的 `StronglyTypedIds` 类中的 `ValueConverter<{Id}, {基元类型}>`，类名
 默认为 `{类型名}Converter`。若不同命名空间下存在同名 Id，两者在该类中的类名会相互冲突（CS0102），
 因此**仅在这种情况下**才会改名为 `{命名空间下划线连接}_{类型名}Converter`（例如 `Domain_OrderIdConverter`）。
-这些转换器是 `AddStronglyTypedIds` 的实现细节，以 private 嵌套类型生成，你不需要按名字引用它们，两种情况都无需你做任何事。
+把 `.` 换成 `_` 本身仍可能塌缩：`A.B.OrderId` 与 `A_B.OrderId` 都会变成 `A_B_OrderIdConverter`，此时会再
+追加原始全名的短稳定哈希，两者因此保持可区分。短名唯一、但恰好叫 `A_B_OrderId` 的 Id 同样要追加哈希：
+它的短名产物 `A_B_OrderIdConverter` 会与 `A.B.OrderId` 的消歧名逐字符相同。这些转换器是
+`AddStronglyTypedIds` 的实现细节，以 private 嵌套类型生成，你不需要按名字引用它们，两种情况都无需你做任何事。
 
 内置基元的转换器 provider 类型就是基元本身，因此 EF Core 建出的列类型与 schema 与该基元单独存在时完全一致：
 引入 Id 不会产生任何迁移，既有列继续可用。
@@ -60,12 +66,23 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 **自定义基元是例外**：数据库提供程序不认识你的 CLR 类型，因此 provider 类型固定为 `string`，列里存的是
 基元的规范文本形，与 JSON、二进制与 Dapper 各条路径写出的同一段文本。不这么做，EF Core 会以
 `The '<Primitive>' property could not be mapped because the database provider does not support this type`
-拒绝该属性。内置基元不受影响，产物逐字节不变。
+拒绝该属性。
 
-读回一行时走 `Create`，因此 Id 的校验器与归一化器在每次物化时都会执行，库里存着校验器不接受的值会抛异常，
-而不是造出一个在代码里根本无法构造的 Id。
+另有四个内置基元根本没有 provider 类型：`BigInteger`、`Int128`、`UInt128` 与 `Half`。它们的 Id 同样存
+规范文本（`string`），因为把基元本身当作 provider 类型会让 EF Core 以上述消息拒绝整个属性。其余内置基元
+（含 `DateOnly`、`TimeOnly`、`decimal`、`char`）保持原生列类型。
 
-> `AddStronglyTypedIds(ModelBuilder)` 按调用那一刻的模型快照扫描，所以要放在实体与 `IEntityTypeConfiguration`
+读回一行时，Id 的校验器与归一化器在每次物化时都会执行，库里存着校验器不接受的值会抛异常，而不是造出一个
+在代码里根本无法构造的 Id。**每个**转换器（不只是枚举基元）都经生成的辅助方法调用 `TryCreate` 并自行抛
+`InvalidOperationException`，`Create` 的 `ArgumentException` 不会传到调用方。辅助方法之所以存在，是因为
+转换器的 lambda 会被编译成表达式树，而表达式树不允许 `throw`。
+
+**枚举**基元的 Id 还会对照枚举的已定义成员校验，与其余集成同一套规则：非 `[Flags]` 枚举必须命中已定义成员，
+`[Flags]` 枚举可以组合已定义的位但不能含未定义的位。库里存着 `999` 会被拒绝，而不是物化成 `(Status)999`
+——那个取值任何 `switch` 都落不中。校验放在生成的辅助方法里而不是转换器的 lambda 里，因为那个 lambda 会被
+编译成表达式树，而表达式树不允许 `throw`。
+
+> `AddStronglyTypedIds(ModelBuilder)` 按 CLR 反射枚举属性，所以要放在实体与 `IEntityTypeConfiguration`
 > 都注册完之后调用；之后再添加的实体不会被扫描。
 
 <a id="swashbuckle"></a>
@@ -96,7 +113,8 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 | `uint`           | `integer`      | `uint32`    |
 | `long`           | `integer`      | `int64`     |
 | `ulong`          | `integer`      | `uint64`    |
-| `Int128`、`UInt128`、`BigInteger` | `integer` | —     |
+| `Int128`、`UInt128` | `integer`      | —           |
+| `BigInteger`     | `string`       | —           |
 | `decimal`        | `number`       | —           |
 | `double`         | `number`       | `double`    |
 | `float`          | `number`       | `float`     |
@@ -109,10 +127,15 @@ Microsoft.OpenApi 1.x（Swashbuckle 6.x–9.x）与 2.x（Swashbuckle 10.x 及�
 | 任意自定义基元（如 `Ulid`） | `string` | —   |
 
 这张表描述的是转换器**实际写出**的形态，而不是 CLR 类型叫什么：`decimal` 与各浮点基元是 JSON number，
-枚举是其底层数字，`Int128` / `UInt128` / `BigInteger` 没有 `int64` / `uint64` 那样的定长范围可标注，
-因此只给裸 `integer` 而不带 `format`。带 `Prefix` 的 Id 一律是 `string` 且不带 `format`，因为它的规范
-文本形就是文本。自定义基元同理是 `string` 且不带 `format`：它的 JSON 形就是规范文本，没有 `uuid` 那样的
-格式可标注。
+枚举是其底层数字，`Int128` / `UInt128` 没有 `int64` / `uint64` 那样的定长范围可标注，因此只给裸
+`integer` 而不带 `format`。`BigInteger` 是 `string`，因为 System.Text.Json 没有它的内置转换器：按值写会
+输出 `{"IsPowerOfTwo":…}`，生成的转换器改写成规范文本。带 `Prefix` 的 Id 一律是 `string` 且不带
+`format`，因为它的规范文本形就是文本。自定义基元同理是 `string` 且不带 `format`：它的 JSON 形就是规范
+文本，没有 `uuid` 那样的格式可标注。
+
+这张表跟随 System.Text.Json。在 Newtonsoft.Json 下，`Int128`、`UInt128`、`Half` 与 `decimal` 写的是
+字符串（见[序列化](serialization.md#primitives-the-serializers-do-not-know)），因此给 Newtonsoft 客户端提供的文档在这四个
+基元上会差一档。schema 在编译期发射，看不到宿主注册了哪个序列化器。
 
 任何编译期映射都有一处限制：枚举基元的 Id 记为 `integer`，因为 `System.Text.Json` 默认就写数字。若你
 全局注册了 `JsonStringEnumConverter`，生成的转换器会委托 `JsonSerializer`，实际报文变成成员名，而文档
@@ -166,16 +189,21 @@ connection.Execute("INSERT INTO Orders (Id) VALUES (@Id)", new { Id = OrderId.Cr
 `No mapping exists`。这段文本与 JSON、二进制、EF Core 各条路径写出的一致，因此同一个 Id 不会在一种存储里
 是一种形态、在另一种里又是另一种。读回时走基元自己的 `Parse`，往返无损。
 
-引用类型 Id 的 `null` 写成 `DBNull.Value` 而不是 null 对象，这样列上看到的是真正的 SQL `NULL`。处理器经
+没有 provider 类型的四个内置基元（`BigInteger`、`Int128`、`UInt128`、`Half`）出于同样原因也走文本路径；
+其余内置基元写入的是 CLR 值。
+
+引用类型 Id 的 `null` 写成 `DBNull.Value` 而不是 null 对象，这样列上看到的是真正的 SQL `NULL`。基元本身是
+引用类型（自定义 `class`）的值类型 Id 同理：基元为 `null` 时写 `DBNull.Value`，而不是抛异常。处理器经
 `SqlMapper.AddTypeHandler<T>` 按 Id 类型登记，因此匿名参数对象、`Query<T>` / `QueryAsync<T>` 映射与多映射
 都会自动命中，无需逐次调用配置。
 
 驱动很少原样返回基元的 CLR 类型：SQLite 对枚举列返回 `long`、对 `char` / `Guid` 列返回 `string`、对
 `decimal` 列返回 `double`。因此生成的 `Parse` 会先把入参转换成基元再调用 `Create`（数值与日期时间基元走
-`System.Convert`，枚举走 `Enum.TryParse`，`Guid`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、
-`TimeOnly`、`Int128`、`UInt128`、`Half`、`BigInteger` 走各自的 `IParsable` 文本入口）。已经是基元的值走
-直通分支；`NULL`（`DBNull` 或裸 `null`）映射为 `default`。枚举列可能以成员名文本返回，也可能以底层数字
-返回，两种形态都接受。
+`System.Convert`，枚举走 `Enum.TryParse`，`Guid`、`DateTimeOffset`、`TimeSpan`、`Int128`、
+`UInt128`、`Half`、`BigInteger` 走各自的 `IParsable` 文本入口）。`DateOnly` 与 `TimeOnly` 还会接受驱动
+自己的 CLR 形态：SQL Server 的 `DATE` 列返回 `DateTime`、`TIME` 列返回 `TimeSpan`，而它们的 `Parse` 拒绝
+带另一分量的文本，故生成的处理器先从这些类型取分量。已经是基元的值走直通分支；`NULL`（`DBNull` 或裸 `null`）映射为
+`default`。枚举列可能以成员名文本返回，也可能以底层数字返回，两种形态都接受。
 
 枚举文本按不区分大小写匹配，因为各驱动的大小写习惯不一致（Oracle 返回大写，PostgreSQL 返回存储时的拼写），
 而 `Enum.Parse` 区分大小写。文本还会对照枚举的已定义成员校验：`Enum.TryParse` 会接受 `"999"` 和 `"1,2"`，
@@ -239,8 +267,11 @@ Native AOT 下连序列化都过不去。注册的 `GenericEnumFormatter<TEnum>`
 
 引用类型 Id 的 `null` 写成 `nil`、读回为 `null`；值类型 Id 收到 `nil` 会抛
 `MessagePackSerializationException`，而不是悄悄落成 `default`，这样「字段缺失」就不会被误认成合法的
-`Guid.Empty`。被 Id 的 `Validator` 拒绝的值同样如此：格式化器走 `TryCreate` 并自行抛出
-`MessagePackSerializationException`，`Create` 的 `ArgumentException` 不会传到调用方。
+`Guid.Empty`。被包装基元为 `null` 的 Id（`string` 基元或自定义 `class` 基元）同样写成 `nil`，与
+System.Text.Json 写出的形态一致，而不是文本形本来会产出的空串 —— 读回时还原成 `default`，因此无论 Id
+本身是 `record struct` 还是 `record class`，写与读都保持对称。被 Id 的 `Validator` 拒绝的值同样如此：
+格式化器走 `TryCreate` 并自行抛出 `MessagePackSerializationException`，`Create` 的 `ArgumentException`
+不会传到调用方。
 
 <a id="mongodb"></a>
 
@@ -290,8 +321,11 @@ driver 3.0 起它没有全局默认表示，应用必须按既有数据自行注
 载荷是包裹的基元值本身。`BigInteger`、`Int128`、`UInt128` 没有 BSON 序列化器，这些 Id 存成承载不变文化
 文本形（含前缀）的 BSON string，读回时经 `TryParse`。**自定义基元**同样如此，因为驱动对它不认识的类型
 没有序列化器。引用类型 Id 的 `null` 存成 BSON `null`；值类型 Id 遇到 BSON `null` 会抛
-`BsonSerializationException`。被 Id 的 `Validator` 拒绝的值同样如此：序列化器走 `TryCreate` 并自行抛出
-`BsonSerializationException`，`Create` 的 `ArgumentException` 不会传到调用方。
+`BsonSerializationException`。被包装基元为 `null` 的 Id（`string` 基元或自定义 `class` 基元）同样存成
+BSON `null`，与 System.Text.Json 写出的形态一致，而不是文本形本来会产出的空串 —— 读回时还原成 `default`，
+因此无论 Id 本身是 `record struct` 还是 `record class`，写与读都保持对称。被 Id 的 `Validator`
+拒绝的值同样如此：序列化器走 `TryCreate` 并自行抛出 `BsonSerializationException`，`Create` 的
+`ArgumentException` 不会传到调用方。
 
 对其余基元，存下去的 BSON 值就是基元自身的值，因此既有文档继续可读，Id 字段与裸基元字段无法区分。由于
 序列化器按类型注册，LINQ 过滤器与投影（`Builders<Order>.Filter.Eq(x => x.Id, id)`）也会经它序列化，
@@ -328,7 +362,8 @@ GraphQL 两侧出现两种形态：
 | --- | --- | --- |
 | `Guid`、`string`、`char`、`DateTime`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、`TimeOnly` | `String` | `"3fa85f64-…"` |
 | 任何带 `Prefix` 的 Id | `String`（规范文本形） | `"ord_3fa85f64-…"` |
-| `byte` … `ulong`、`Int128`、`UInt128`、`BigInteger` | `Int` | `42` |
+| `byte` … `ulong` | `Int` | `42` |
+| `Int128`、`UInt128`、`BigInteger` | `String`（不变文化文本形） | `"42"` |
 | `enum` | `Int`，**底层数值**，不是成员名 | `1` |
 | `decimal`、`double`、`float`、`Half` | `Float` | `1.5` |
 | 任意自定义基元（如 `Ulid`） | `String`（规范文本形） | `"01ARZ3NDEKTSV4RRFFQ69G5FAV"` |
@@ -337,13 +372,17 @@ GraphQL 两侧出现两种形态：
 `"Paid"`、在 JSON 里是 `1`。本库两侧都保持底层数值；若你希望 schema 里出现成员名，请自行把枚举映射成
 GraphQL 枚举类型，并让 Id 不参与那条路径。
 
-`Int128`、`UInt128`、`BigInteger` 超出 GraphQL `Int` 的承载范围，因此它们的字面量按不变文化文本构造、
-再经 `TryParse` 读回，取值精确往返，只是线上不是 32 位 `Int`。
+`Int128`、`UInt128`、`BigInteger` 超出 GraphQL `Int` 的承载范围，HotChocolate 的序列化器也不认识它们，
+因此字面量与响应都是不变文化文本：输入 `"42"`、输出 `"42"`。输入输出对称 —— 服务端返回的值可以原样传回。
+这与 JSON 不同：`Int128` 与 `UInt128` 在 JSON 里是数字；`BigInteger` 两边都是文本，因为 System.Text.Json
+没有它的内置转换器。
 
 ### 输入、输出与失败
 
 - **输出**走 `TrySerialize`，返回原生 CLR 值（`string`、整数、浮点），由 HotChocolate 原生写出。
-  引用类型 Id 的 `null` 返回 `false`，框架据此写出 GraphQL `null`。
+  引用类型 Id 的 `null` 返回 `false`，框架据此写出 GraphQL `null`；被包装基元为 `null` 的 Id
+  （`string` 基元或自定义 `class` 基元）同样如此，与其余序列化器写出的形态一致，而不是文本形本来会
+  产出的空串。带前缀的 Id 是例外：它的文本是「前缀 + 空串」，永远非 `null`。
 - **输入**分两条：字面量走 `ParseLiteral`，变量走 `TryDeserialize`。变量路径必须同时接受 `string` 与
   `System.Text.Json.JsonElement`：真实 HTTP 请求交给 scalar 的是 `JsonElement`，而
   `QueryRequestBuilder` 交给它的是 `string`。生成的代码两者都处理。
@@ -353,6 +392,10 @@ GraphQL 枚举类型，并让 Id 不参与那条路径。
 
 每个 Id 的 scalar 名为 `{TypeName}HotChocolateType`，放在生成的 `StronglyTypedIds` 类里而不是挂在 Id 上，
 因此引用程序集里的 Id 也能拿到 scalar。不同命名空间的同名 Id 按与 Dapper 处理器相同的规则消歧。
+
+GraphQL 类型名是另一回事：GraphQL 只有一张全局类型表，两个不同命名空间的 `OrderId` 即使 C# 类名已区分，
+也不能都叫 `OrderId`。短名撞名时 GraphQL 名改用净化后的全名（`Domain_OrderId`），若仍与别的 Id 撞名
+再追加稳定哈希后缀；短名唯一时保持短名不变。
 
 <a id="protobuf-net"></a>
 
@@ -410,14 +453,21 @@ protobuf-net 对多数基元有原生支持，载荷就是基元值本身，与 
 `DateTimeOffset` 特意用 `"O"` 格式：默认的 `ToString()` 会丢掉亚秒 ticks，往返会静默截断；`"O"` 同时保留
 ticks 与 offset。
 
-`Prefix` **不**出现在载荷里，它属于文本表示而非数据本身。MessagePack 与 BSON 也是同一规则。
+`Prefix` **不**出现在载荷里，它属于文本表示而非数据本身。MessagePack 与 BSON 对有原生表示的基元
+同样如此，但文本形基元（`BigInteger`、`Int128`、`UInt128`）例外：它们写的是 Id 的 `ToString()`，
+前缀随之进入载荷。
 
 ### 失败与 null
 
 - 被 Id 的 `Validator` 拒绝的载荷抛 `ProtoBuf.ProtoException`，而不是 `ArgumentException`。生成的转换运算符
   走 `TryCreate` 再抛框架自己的异常类型，因为 protobuf-net 会把别的异常包一层，调用方就看不到原因了。
 - 引用类型 Id 的 `null` 往返成 `null`。protobuf-net 把根级 `null` 写成空载荷、读回时构造的是「字段为 null
-  的 surrogate」，故生成的运算符把两种形态都映射成 `null`。
+  的 surrogate」，故生成的运算符把两种形态都映射成 `null`。引用类型 Id 的 surrogate 字段一律可空，**包括
+  基元是值类型的情形**：字段不可空时，`null` 与基元默认值（`Guid.Empty`、`0`、枚举首成员）会产出同一段
+  空载荷，`null` 会静默变回那个默认值。
+- 被包装基元为 `null` 的 Id（`string` 基元或自定义 `class` 基元）往返成 `default`，无论 Id 本身是
+  `record struct` 还是 `record class`。空载荷正是写侧为这类 Id 产出的形态，故读侧把它映射回去而不是抛错；
+  这与 System.Text.Json、Newtonsoft.Json、MessagePack、BSON 的口径一致。
 - 泛型容器里的 Id 跳过：特性实参含类型参数会 `CS0416`，而没有特性接线时 surrogate 只是死代码。
 - 如果你自己已经给 Id 加了 `[ProtoContract]`，生成器会跳过，特性不允许重复（`CS0579`），以你的契约为准。
 

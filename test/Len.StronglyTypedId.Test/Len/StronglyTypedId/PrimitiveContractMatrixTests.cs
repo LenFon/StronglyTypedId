@@ -130,8 +130,11 @@ public class PrimitiveContractMatrixTests
         JsonConvert.SerializeObject(Int128Id.Create(42)).Should().Be("\"42\"");
         JsonConvert.SerializeObject(UInt128Id.Create(42)).Should().Be("\"42\"");
         JsonConvert.SerializeObject(HalfId.Create((Half)1.5)).Should().Be("\"1.5\"");
-        JsonConvert.SerializeObject(DateOnlyId.Create(new DateOnly(2020, 1, 2))).Should().Be("\"01/02/2020\"");
-        JsonConvert.SerializeObject(TimeOnlyId.Create(new TimeOnly(3, 4, 0))).Should().Be("\"03:04\"");
+        // DateOnly 走 "O"：默认短日期形（01/02/2020）与 System.Text.Json 的 ISO 形不一致，
+        // 会让同一个 Id 的值与字典键、两个 JSON 库之间写出不同的文本。
+        JsonConvert.SerializeObject(DateOnlyId.Create(new DateOnly(2020, 1, 2))).Should().Be("\"2020-01-02\"");
+        // TimeOnly 走 "O"：默认格式只到分钟，会让不同的 Id 写出同一段文本。
+        JsonConvert.SerializeObject(TimeOnlyId.Create(new TimeOnly(3, 4, 0))).Should().Be("\"03:04:00.0000000\"");
     }
 
     /// <summary>
@@ -172,13 +175,13 @@ public class PrimitiveContractMatrixTests
                 "DateTime",
                 new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc),
                 new DateTime(2020, 1, 2, 3, 4, 6, DateTimeKind.Utc),
-                "01/02/2020 03:04:05",
+                "2020-01-02T03:04:05.0000000Z",
                 "not-a-date"),
             Case<DateTimeOffsetId, DateTimeOffset>(
                 "DateTimeOffset",
                 new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.FromHours(8)),
                 new DateTimeOffset(2020, 1, 2, 3, 4, 6, TimeSpan.FromHours(8)),
-                "01/02/2020 03:04:05 +08:00",
+                "2020-01-02T03:04:05.0000000+08:00",
                 "not-a-date"),
             Case<TimeSpanId, TimeSpan>(
                 "TimeSpan",
@@ -190,13 +193,13 @@ public class PrimitiveContractMatrixTests
                 "DateOnly",
                 new DateOnly(2020, 1, 2),
                 new DateOnly(2020, 1, 3),
-                "01/02/2020",
+                "2020-01-02",
                 "not-a-date"),
             Case<TimeOnlyId, TimeOnly>(
                 "TimeOnly",
                 new TimeOnly(3, 4, 0),
                 new TimeOnly(3, 5, 0),
-                "03:04",
+                "03:04:00.0000000",
                 "not-a-time"),
             Case<BigIntegerId, BigInteger>("BigInteger", 42, 43, "42", "not-a-number"),
             Case<SampleStatusId, SampleStatus>("enum", SampleStatus.Active, SampleStatus.Suspended, "Active", "999"),

@@ -119,8 +119,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         => diagnostic.Id switch
         {
             // 只在靶子是 record（Id 自己泛型）时给修复；包含类型泛型删掉类型参数会改坏使用者的设计。
+            // 参数或成员引用了类型参数时也不给：删掉 <T> 会留下 `OrderId(T Value)` 这类 CS0246，
+            // 而「把 T 换成什么基元」是业务决定，机器猜不出来。
             Descriptors.TypeCannotBeGenericId =>
-                FindNode<TypeDeclarationSyntax>(root, diagnostic) is RecordDeclarationSyntax,
+                FindNode<TypeDeclarationSyntax>(root, diagnostic) is RecordDeclarationSyntax record
+                    && !ReferencesTypeParameter(record),
 
             // 只在缺 partial 时提供修复，否则会插出 file partial partial class。
             Descriptors.ContainingTypeMustBePartialId =>
@@ -273,6 +276,38 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 .WithParameterList(declaration.ParameterList?.WithoutTrailingTrivia());
     }
 
+    /// <summary>
+    /// 判断 record 的声明体里是否引用了它自己的类型参数。
+    /// </summary>
+    /// <remarks>
+    /// 引用时不能机械删掉 <c>&lt;T&gt;</c>：主构造参数 <c>T Value</c> 或成员里的 <c>T</c> 会变成未定义标识符（CS0246）。
+    /// 按标识符名比对即可 —— 这里只判断「有没有引用」，不做语义绑定，误判只会让修复少出现一次，不会产出坏代码。
+    /// <para>
+    /// 约束子句刻意排除在外：<c>where T : class</c> 里的 <c>T</c> 会随约束子句一起被删掉，不构成残留引用。
+    /// </para>
+    /// </remarks>
+    private static bool ReferencesTypeParameter(RecordDeclarationSyntax declaration)
+    {
+        if (declaration.TypeParameterList is not { Parameters: { Count: > 0 } parameters })
+        {
+            return false;
+        }
+
+        var names = new HashSet<string>(
+            parameters.Select(parameter => parameter.Identifier.ValueText),
+            StringComparer.Ordinal);
+
+        // 只看主构造函数与成员体：约束子句里的 T 会随约束一起被删掉，不算残留引用。
+        var candidates = declaration.ParameterList is { } parameterList
+            ? declaration.Members.Cast<SyntaxNode>().Prepend(parameterList)
+            : declaration.Members.Cast<SyntaxNode>();
+
+        return candidates
+            .SelectMany(node => node.DescendantNodesAndSelf())
+            .OfType<IdentifierNameSyntax>()
+            .Any(identifier => names.Contains(identifier.Identifier.ValueText));
+    }
+
     private static Task<Document> UpdateParameterNameToValueAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
         => ReplaceParameterAsync(context, diagnostic, token, stripNullableSuffix: false);
 
@@ -282,6 +317,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// <summary>
     /// 把诊断所在的 <c>new Xxx(value)</c> / <c>new(value)</c> 重写成 <c>Xxx.Create(value)</c>，使构造强制经过验证器。
     /// </summary>
+    /// <remarks>
+    /// 带对象初始化器时改写成 <c>Xxx.Create(value) with { … }</c>：直接丢掉初始化器会静默删掉用户代码，
+    /// 而 <c>with</c> 对 record 的语义与「先构造再赋 init 属性」等价。
+    /// </remarks>
     private static async Task<Document> ReplaceWithCreateAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
         var root = await context.Document.GetSyntaxRootAsync(token);
@@ -307,7 +346,17 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 SyntaxFactory.IdentifierName("Create")),
             argumentList);
 
-        var withTrivia = createInvocation.WithLeadingTrivia(creation.GetLeadingTrivia());
+        // `with` 的初始化器是 WithInitializerExpression 节点，与对象初始化器的 ObjectInitializerExpression
+        // 是两个不同种类；直接复用原节点会让产物语法树与源码文本对不上。大括号与其 trivia 原样搬过来。
+        ExpressionSyntax replacement = creation.Initializer is { } initializer
+            ? SyntaxFactory.WithExpression(
+                createInvocation,
+                SyntaxFactory.InitializerExpression(SyntaxKind.WithInitializerExpression, initializer.Expressions)
+                    .WithOpenBraceToken(initializer.OpenBraceToken)
+                    .WithCloseBraceToken(initializer.CloseBraceToken))
+            : createInvocation;
+
+        var withTrivia = replacement.WithLeadingTrivia(creation.GetLeadingTrivia());
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(creation, withTrivia));
     }

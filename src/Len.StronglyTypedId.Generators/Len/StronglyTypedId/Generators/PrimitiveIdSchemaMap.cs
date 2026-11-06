@@ -49,6 +49,14 @@ internal static class PrimitiveIdSchemaMap
             return (String, null);
         }
 
+        // BigInteger 没有内置 JSON 转换器：按值写会退化成 {"IsPowerOfTwo":…}，故转换器写的是规范文本
+        // （见 StronglyTypedIdInfo.RequiresTextSerialization）。schema 必须跟着写 string，否则客户端按
+        // integer 解析响应会失败。Int128 / UInt128 不同 —— STJ 原生支持它们，写出的确实是数字。
+        if (idInfo.IsBigIntegerPrimitive)
+        {
+            return (String, null);
+        }
+
         return StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
         {
             "Guid" => (String, "uuid"),
@@ -62,7 +70,8 @@ internal static class PrimitiveIdSchemaMap
             "long" => (Integer, "int64"),
             "ulong" => (Integer, "uint64"),
             // 超出 int64 / uint64 的范围，OpenAPI 没有对应 format，只能给裸 integer。
-            "Int128" or "UInt128" or "BigInteger" => (Integer, null),
+            // BigInteger 不在此列：它写的是字符串，见上面的提前返回。
+            "Int128" or "UInt128" => (Integer, null),
             "decimal" => (Number, null),
             "double" => (Number, "double"),
             "float" => (Number, "float"),

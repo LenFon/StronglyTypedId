@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Reflection.Emit;
 using Bogus;
 using FluentAssertions;
 using Xunit;
@@ -98,6 +100,38 @@ public class BogusIntegrationTests
     }
 
     /// <summary>
+    /// 显式传入可空 Id 类型（<c>OrderId?</c>）必须按底层类型注册，而不是把 <c>Nullable&lt;OrderId&gt;</c>
+    /// 直接交给 <c>MakeGenericMethod</c> 抛「violates the constraint of type 'TId'」。
+    /// </summary>
+    [Fact]
+    public void Faker_Should_AcceptExplicitNullableIdType()
+    {
+        var faker = new Faker<BogusNullableOrder>()
+            .WithStronglyTypedIds(new AnyIdGenerator(), typeof(GuidId?), typeof(GuidId));
+
+        var order = faker.Generate();
+
+        order.Id.Value.Should().NotBe(Guid.Empty);
+        order.OptionalId.Should().NotBeNull("可空 Id 属性必须被填上，而不是留在 null");
+        order.OptionalId!.Value.Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
+    /// 自动发现只看到非可空 Id，但可空属性（<c>GuidId?</c>）的声明类型是 <c>Nullable&lt;GuidId&gt;</c>，
+    /// 只注册 <c>RuleForType(typeof(GuidId))</c> 匹配不到它，属性会静默留在 null 上。
+    /// </summary>
+    [Fact]
+    public void Faker_Should_FillNullableIdProperty_WhenDiscovering()
+    {
+        var faker = new Faker<BogusNullableOrder>().WithStronglyTypedIds();
+
+        var order = faker.Generate();
+
+        order.OptionalId.Should().NotBeNull("自动发现也必须为可空 Id 属性注册规则");
+        order.OptionalId!.Value.Value.Should().NotBe(Guid.Empty);
+    }
+
+    /// <summary>
     /// 自动发现会看到泛型容器里的开放泛型 Id（<c>Box&lt;T&gt;.BoxedId</c>），它无法闭合。
     /// 适配必须静默跳过，而不是让 <c>MakeGenericMethod</c> 抛「not fully instantiated」。
     /// </summary>
@@ -117,10 +151,47 @@ public class BogusIntegrationTests
     [Fact]
     public void Faker_Should_RejectExplicitOpenGenericIdType()
     {
-        var openType = typeof(Box<>).GetNestedType(nameof(Box<int>.BoxedId))!;
+        var openType = typeof(Box<>).GetNestedType(nameof(Box<>.BoxedId))!;
 
         var act = () => new Faker<BogusOrder>().WithStronglyTypedIds(null, openType);
 
         act.Should().Throw<ArgumentException>().WithParameterName("idTypes");
+    }
+
+    /// <summary>
+    /// 自动发现要扫描 AppDomain 里的全部程序集，其中可能有加载不了的类型（缺依赖）。
+    /// 这条路径必须与 <c>StronglyTypedIdConformance.FindBrokenInstances</c> 共用同一份保护，
+    /// 否则同一个程序集在两个 API 上表现不同 —— 那正是这层保护曾经只存在于一侧的原因。
+    /// </summary>
+    [Fact]
+    public void Faker_Should_NotThrow_WhenSomeLoadedAssembliesHaveUnloadableTypes()
+    {
+        // 造一个基类无法解析的程序集并留在 AppDomain 里，让自动发现必然扫到它。
+        var dependency = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName("BogusMissingDependency"),
+            AssemblyBuilderAccess.Run);
+        var dependencyType = dependency
+            .DefineDynamicModule("BogusMissingDependency.dll")
+            .DefineType("Missing.Widget", TypeAttributes.Public | TypeAttributes.Class);
+
+        var consumer = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName("BogusConsumer"),
+            AssemblyBuilderAccess.Run);
+        var consumerType = consumer
+            .DefineDynamicModule("BogusConsumer.dll")
+            .DefineType("Consumer.Broken", TypeAttributes.Public | TypeAttributes.Class, dependencyType);
+
+        try
+        {
+            consumerType.CreateType();
+        }
+        catch (NotSupportedException)
+        {
+            // 基类未创建时 CreateType 会失败，但类型已进入模块的类型表 —— 这正是要的形态。
+        }
+
+        var act = () => new Faker<BogusOrder>().WithStronglyTypedIds().Generate();
+
+        act.Should().NotThrow();
     }
 }

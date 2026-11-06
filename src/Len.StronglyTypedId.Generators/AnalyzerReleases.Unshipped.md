@@ -16,6 +16,8 @@ STIA0022 | StronglyTypedIdAnalyzer | Info | Reported when a [StronglyTypedIdInst
 STIA0023 | StronglyTypedIdAnalyzer | Error | Reported when [StronglyTypedId(Prefix = ...)] can also begin the text form of the id's primitive type, so unprefixed text is silently stripped and read as a different value.
 STIA0024 | StronglyTypedIdAnalyzer | Warning | Reported when [StronglyTypedId(Integrations = ...)] (or the assembly-level default) sets bits that no integration uses; those bits are ignored and generate nothing.
 STIA0025 | StronglyTypedIdAnalyzer | Error | Reported when the id itself is declared as a file-local type: the generator must reopen its partial declaration in another file, which a file-local type cannot allow.
+STIA0026 | StronglyTypedIdAnalyzer | Error | Reported when the id type is named 'var': that name shadows the implicit-typing keyword, so the generated 'out var' / 'var' patterns stop compiling (CS1503 / CS8508).
+STIA0027 | StronglyTypedIdAnalyzer | Error | Reported when the id type name equals a member the generator emits into it (e.g. 'Create', 'Parse', 'TryFormat', 'SystemTextJsonConverter'): C# forbids a member sharing its enclosing type's name (CS0542), so the generated code cannot compile.
 
 ### Changed Rules
 

@@ -79,9 +79,14 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         // file 修饰符也要挡：容器循环只查了外层类型，record 自身是 file 局部类型时生成器放行就会产出
         // 跨文件的冲突 partial 声明（CS0535）。分析器对同一写法报 STIA0025，保证「报错的那条」就是「不生成的那条」。
+        // 名为 var 的类型同样要挡：它会遮蔽 var 关键字，生成代码里的 `out var id` / `is { Value: var x }`
+        // 全部失效（CS1503 / CS8508），而这不是靠全限定名能绕开的。分析器报 STIA0026。
+        // 与生成成员同名的类型也要挡：成员名不能与封闭类型相同（CS0542）。分析器报 STIA0027。
+        // 后者依赖基元类型与集成引用，只能在这里（已拿到符号与模块）判定。
         if (!modifiers.Any(SyntaxKind.PartialKeyword)
             || modifiers.Any(SyntaxKind.AbstractKeyword)
-            || modifiers.Any(SyntaxKind.FileKeyword))
+            || modifiers.Any(SyntaxKind.FileKeyword)
+            || record.Identifier.ValueText == "var")
         {
             return false;
         }
@@ -447,6 +452,16 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return null;
         }
 
+        // 同一类型在两个 partial 段各标一次 [StronglyTypedId] 时，ForAttributeWithMetadataName 会
+        // 对每个特性应用各触发一次（实测 TargetNode 的 span 不同、TargetSymbol 相同）。两次都产出
+        // 就会用同一个 hintName 调两次 AddSource，抛 ArgumentException 并降级成 CS8785，
+        // 该 Id 的全部产物随之丢失。编译器已用 CS0579 报出「特性重复」，生成器只需安静地生成一份。
+        // 判据取「本次触发落在该符号的第一个声明上」：无状态，不破坏按 Id 的增量性。
+        if (!IsFirstDeclaration(context.TargetNode, symbol))
+        {
+            return null;
+        }
+
         // 不能用 Constructors[0]：没有主构造函数的 record 会把合成的拷贝构造排在首位，于是参数类型
         // 绑到 record 自身，IsSupported 返回 false，生成器静默不产出任何代码。改为遍历实例构造、
         // 跳过参数类型等于自身的那个，与分析器 GetSingleParameterType 同一套判据。
@@ -460,8 +475,46 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
 
         var assembly = context.SemanticModel.Compilation.Assembly;
 
-        return SupportedPrimitiveTypes.IsSupported(ctorArgType)
-            ? new StronglyTypedIdInfo(symbol, StronglyTypedIdDefaults.Read(assembly))
-            : null;
+        if (!SupportedPrimitiveTypes.IsSupported(ctorArgType))
+        {
+            return null;
+        }
+
+        var info = new StronglyTypedIdInfo(symbol, StronglyTypedIdDefaults.Read(assembly));
+
+        // 类型名与生成成员同名会 CS0542。分析器报 STIA0027 并阻断构建，这里同步不产出，
+        // 免得在 IDE 里先看到一堆指向生成文件的编译错误。判据与分析器同源。
+        return GeneratedMemberNames.MayCollide(symbol.Name)
+            && GeneratedMemberNames.CollidesWithGeneratedMember(
+                info,
+                ReferencesAssembly(context.SemanticModel.Compilation, "System.Text.Json"),
+                ReferencesAssembly(context.SemanticModel.Compilation, "Newtonsoft.Json"))
+                ? null
+                : info;
     }
+
+    /// <summary>
+    /// 判断本次触发的语法节点是否为该符号的第一个声明。
+    /// </summary>
+    /// <remarks>
+    /// 同一类型可以在多个 partial 段上各标一次 <c>[StronglyTypedId]</c>（编译器报 CS0579，但生成器仍会被
+    /// 触发多次）。只让第一个声明产出，其余静默跳过，避免同一个 hintName 被添加两次。
+    /// <para>
+    /// 按 <see cref="ISymbol.DeclaringSyntaxReferences"/> 的顺序比较：Roslyn 保证它按源码位置排序，
+    /// 因此「第一个」是确定的，与触发顺序无关。
+    /// </para>
+    /// </remarks>
+    private static bool IsFirstDeclaration(SyntaxNode targetNode, INamedTypeSymbol symbol)
+    {
+        var declarations = symbol.DeclaringSyntaxReferences;
+
+        return declarations.Length <= 1
+            || declarations[0].Span == targetNode.Span;
+    }
+
+    /// <summary>
+    /// 判断编译是否引用了指定简单名的程序集。
+    /// </summary>
+    private static bool ReferencesAssembly(Compilation compilation, string simpleName)
+        => compilation.ReferencedAssemblyNames.Any(identity => string.Equals(identity.Name, simpleName, StringComparison.OrdinalIgnoreCase));
 }

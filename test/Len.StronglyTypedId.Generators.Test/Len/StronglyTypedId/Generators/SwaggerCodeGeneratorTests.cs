@@ -120,7 +120,8 @@ public class SwaggerCodeGeneratorTests
     // 超出 int64 / uint64 范围，OpenAPI 没有对应 format。
     [InlineData("Int128", "integer", null)]
     [InlineData("UInt128", "integer", null)]
-    [InlineData("BigInteger", "integer", null)]
+    // BigInteger 的转换器写的是规范文本（STJ 没有它的内置转换器），schema 必须跟着写 string。
+    [InlineData("BigInteger", "string", null)]
     [InlineData("decimal", "number", null)]
     [InlineData("double", "number", "double")]
     [InlineData("float", "number", "float")]
@@ -603,6 +604,7 @@ public class SwaggerCodeGeneratorTests
 
     /// <summary>
     /// 查表的键必须是<b>参数的真实类型</b>：框架换掉的 <c>ModelMetadata.ModelType</c> 在这里没有用。
+    /// 可空 Id 的 CLR 类型是 <c>Nullable&lt;T&gt;</c>，必须先拆壳再查表，否则参数会退回裸 string schema。
     /// </summary>
     [Fact]
     public void SwaggerOperationFilter_Should_LookUpByParameterType()
@@ -610,7 +612,8 @@ public class SwaggerCodeGeneratorTests
         var generated = GetSwaggerGeneratedCode(OperationFilterIdSource, Swagger6Reference);
 
         generated.Should()
-            .Contain("Schemas.TryGetValue(parameterDescription.Type, out var factory)")
+            .Contain("global::System.Nullable.GetUnderlyingType(parameterDescription.Type)")
+            .And.Contain("Schemas.TryGetValue(parameterType, out var factory)")
             .And.NotContain("Schemas.TryGetValue(parameterDescription.ModelMetadata");
     }
 

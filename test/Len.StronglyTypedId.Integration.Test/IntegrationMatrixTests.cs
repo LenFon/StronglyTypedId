@@ -71,7 +71,11 @@ public class IntegrationMatrixTests
             setValue.Invoke(handler, [parameter, id]);
 
             // 比对 Id 实际持有的值而不是样本值：归一化器可能改写它（"abc" → "ABC"）。
-            parameter.Value.Should().Be(ValueOf(id), $"{idType.Name}：SetValue 必须把基元值交给参数");
+            // 没有 provider 类型的基元（BigInteger / Int128 / UInt128 / Half）落库的是规范文本，
+            // 直接塞基元会让驱动在绑定时抛「No mapping exists」。
+            parameter.Value.Should().Be(
+                IntegrationSampleValues.DatabaseProviderValue(primitiveType, ValueOf(id)!),
+                $"{idType.Name}：SetValue 必须把驱动认识的形态交给参数");
         }
     }
 
@@ -93,17 +97,108 @@ public class IntegrationMatrixTests
         }
     }
 
+    /// <summary>
+    /// 值类型 Id 包装引用类型基元（<c>string</c> 或自定义 <c>class</c>）且基元为 <see langword="null"/> 时，
+    /// 同样必须写 <see cref="DBNull"/>：把 <c>null</c> 交给驱动会让 Microsoft.Data.Sqlite 抛
+    /// <c>Value must be set</c>，而不是把它当成 SQL NULL。
+    /// </summary>
+    /// <remarks>
+    /// 与上一条覆盖的是不同分支：那条的 Id 本身是 <see langword="null"/>，这条的 Id 非 null、只有基元为 null。
+    /// </remarks>
+    [Fact]
+    public void Dapper_Handler_Should_WriteDbNull_ForNullReferenceTypePrimitive()
+    {
+        var handlers = DapperHandlers()
+            .Where(handler => handler.IdType.IsValueType && !PrimitiveOf(handler.IdType).IsValueType)
+            .ToList();
+
+        handlers.Should().NotBeEmpty("集成测试程序集里必须有「值类型 Id + 引用类型基元」才能覆盖这条分支");
+
+        foreach (var (idType, _, handler) in handlers)
+        {
+            var setValue = handler.GetType().GetMethod("SetValue", BindingFlags.Public | BindingFlags.Instance)!;
+            var parameter = new StubParameter();
+
+            setValue.Invoke(handler, [parameter, Activator.CreateInstance(idType)]);
+
+            parameter.Value.Should().Be(DBNull.Value, $"{idType.Name}：null 基元必须写成 DBNull");
+        }
+    }
+
     [Fact]
     public void EfCore_Converter_Should_RoundTripEveryPrimitive()
     {
         foreach (var (idType, primitiveType, converter) in EfCoreConverters())
         {
             var id = CreateId(idType, SampleValues[primitiveType]);
+            var providerValue = IntegrationSampleValues.DatabaseProviderValue(primitiveType, ValueOf(id)!);
 
             // 同上：写出的必须是 Id 实际持有的值，归一化器可能已经改写过样本值。
-            converter.ConvertToProvider(id).Should().Be(ValueOf(id), $"{idType.Name}：ConvertToProvider 必须写出基元值");
-            converter.ConvertFromProvider(ValueOf(id)).Should().Be(id, $"{idType.Name}：ConvertFromProvider 必须还原 Id");
+            // 没有 provider 类型的基元（BigInteger / Int128 / UInt128 / Half）落库的是规范文本。
+            converter.ConvertToProvider(id).Should().Be(providerValue, $"{idType.Name}：ConvertToProvider 必须写出驱动认识的形态");
+            converter.ConvertFromProvider(providerValue).Should().Be(id, $"{idType.Name}：ConvertFromProvider 必须还原 Id");
         }
+    }
+
+    /// <summary>
+    /// EF Core 的枚举转换器同样必须拒绝未定义取值，与 Dapper / STJ / Newtonsoft / MessagePack / BSON 对齐。
+    /// </summary>
+    /// <remarks>
+    /// 数据库里一个脏的枚举列（手工改库、迁移脚本写错、上游写入未定义值）会让 Id 带着一个 <c>switch</c>
+    /// 永远落空的取值进入领域层。此前 EF 转换器走 <c>Create</c> 且无已定义性校验，同一份数据经 Dapper 读
+    /// 会被拒绝、经 EF 读却放行。
+    /// </remarks>
+    [Fact]
+    public void EfCore_Converter_Should_RejectUndefinedEnumValue()
+    {
+        var (_, _, converter) = EfCoreConverters().Single(c => c.IdType == typeof(SampleStatusId));
+
+        var act = () => converter.ConvertFromProvider((SampleStatus)999);
+
+        act.Should().Throw<InvalidOperationException>("未定义的枚举取值必须被拒绝");
+    }
+
+    /// <summary>
+    /// <c>[Flags]</c> 枚举的 EF 转换器按「不许出现未定义的位」校验，与 Dapper 的位校验同源。
+    /// </summary>
+    [Fact]
+    public void EfCore_Converter_Should_RejectUndefinedFlagsBits()
+    {
+        var (_, _, converter) = EfCoreConverters().Single(c => c.IdType == typeof(SampleAccessId));
+
+        // 已定义位的组合照常通过。
+        converter.ConvertFromProvider(SampleAccess.Read | SampleAccess.Write)
+            .Should().Be(SampleAccessId.Create(SampleAccess.Read | SampleAccess.Write));
+
+        // 含未定义的位必须拒绝。
+        var act = () => converter.ConvertFromProvider((SampleAccess)999);
+        act.Should().Throw<InvalidOperationException>("未定义的位必须被拒绝");
+    }
+
+    /// <summary>
+    /// 驱动返回的 CLR 类型与基元不一致时，<c>DateOnly</c> / <c>TimeOnly</c> 必须按分量还原。
+    /// </summary>
+    /// <remarks>
+    /// SQL Server 的 <c>DATE</c> 列返回 <see cref="DateTime"/>、<c>TIME</c> 列返回 <see cref="TimeSpan"/>，
+    /// 而 <c>DateOnly.Parse</c> 拒绝带时间分量的文本、<c>TimeOnly.Parse</c> 拒绝带日期的文本。
+    /// 只走文本入口会在物化时抛 <c>FormatException</c>，而文档承诺「驱动返回什么都能还原」。
+    /// </remarks>
+    [Fact]
+    public void Dapper_Handler_Should_ConvertDateTimeAndTimeSpan_ForTemporalPrimitives()
+    {
+        var (_, _, dateHandler) = DapperHandlers().Single(h => h.IdType == typeof(DateOnlyId));
+        var dateParse = dateHandler.GetType().GetMethod("Parse", BindingFlags.Public | BindingFlags.Instance)!;
+
+        dateParse.Invoke(dateHandler, [new DateTime(2020, 1, 2)])
+            .Should().Be(DateOnlyId.Create(new DateOnly(2020, 1, 2)), "SQL Server 的 DATE 列返回 DateTime");
+
+        var (_, _, timeHandler) = DapperHandlers().Single(h => h.IdType == typeof(TimeOnlyId));
+        var timeParse = timeHandler.GetType().GetMethod("Parse", BindingFlags.Public | BindingFlags.Instance)!;
+
+        timeParse.Invoke(timeHandler, [new TimeSpan(13, 45, 30)])
+            .Should().Be(TimeOnlyId.Create(new TimeOnly(13, 45, 30)), "SQL Server 的 TIME 列返回 TimeSpan");
+        timeParse.Invoke(timeHandler, [new DateTime(2020, 1, 2, 13, 45, 30)])
+            .Should().Be(TimeOnlyId.Create(new TimeOnly(13, 45, 30)), "某些驱动把 TIME 列返回成 DateTime");
     }
 
     /// <summary>

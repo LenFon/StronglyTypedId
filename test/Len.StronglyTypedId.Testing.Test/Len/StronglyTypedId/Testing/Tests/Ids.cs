@@ -88,6 +88,16 @@ public enum Color
 }
 
 /// <summary>
+/// 没有任何成员的空枚举：合法的 C#，但造不出取值。
+/// </summary>
+public enum EmptyEnum
+{
+}
+
+[StronglyTypedId]
+public partial record struct EmptyEnumId(EmptyEnum Value);
+
+/// <summary>
 /// 自定义基元：没有内置生成规则，必须由调用方提供工厂。
 /// </summary>
 /// <remarks>
@@ -166,6 +176,20 @@ public sealed class BogusOrder
     public StringId Customer { get; set; } = default!;
 
     public int Quantity { get; set; }
+}
+
+/// <summary>
+/// Bogus 用例的宿主类型：同时带非可空与可空 Id 属性。
+/// </summary>
+/// <remarks>
+/// 可空属性的声明类型是 <c>Nullable&lt;GuidId&gt;</c>，与 <c>GuidId</c> 是两个不同的运行期类型，
+/// 只注册 <c>RuleForType(typeof(GuidId))</c> 匹配不到它。
+/// </remarks>
+public sealed class BogusNullableOrder
+{
+    public GuidId Id { get; set; } = default!;
+
+    public GuidId? OptionalId { get; set; }
 }
 
 /// <summary>

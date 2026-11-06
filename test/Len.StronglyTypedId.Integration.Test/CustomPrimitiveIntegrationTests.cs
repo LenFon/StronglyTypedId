@@ -1,4 +1,5 @@
-﻿using Dapper;
+﻿using System.Globalization;
+using Dapper;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -90,4 +91,41 @@ public class CustomPrimitiveIntegrationTests
             typeof(Len.StronglyTypedId.StronglyTypedIds)
                 .Assembly
                 .GetType("Len.StronglyTypedId.StronglyTypedIds+IntegrationMoneyIdTypeHandler")!)!;
+
+    /// <summary>
+    /// 显式实现 <c>IFormattable</c> 的基元：规范文本仍取两参重载，不是无参 <c>ToString()</c>。
+    /// </summary>
+    /// <remarks>
+    /// 这条用例的价值在「能编译 + 结果正确」：显式实现不能按类型名直呼（CS1501），
+    /// 而退回无参 <c>ToString()</c> 又会丢掉不变文化契约。两者都靠生成代码改调泛型辅助方法来避免。
+    /// </remarks>
+    [Fact]
+    public void ExplicitFormattablePrimitive_Should_UseInvariantText()
+    {
+        var id = ExplicitFormattableMoneyId.Create(new ExplicitFormattableMoney("12.5", "CNY", string.Empty));
+
+        id.ToString().Should().Be("12.5");
+
+        // 格式化入口同样转发到基元：format 与 provider 都要生效。
+        ((IFormattable)id).ToString("F2", CultureInfo.InvariantCulture).Should().Be("12.5");
+    }
+
+    /// <summary>
+    /// 显式实现 <c>IFormattable</c> 的基元在 EF Core 转换器里同样按规范文本往返。
+    /// </summary>
+    [Fact]
+    public void EfCore_Should_RoundTripExplicitFormattablePrimitive()
+    {
+        var converter = (ValueConverter<ExplicitFormattableMoneyId, string>)Activator.CreateInstance(
+            typeof(Len.StronglyTypedId.StronglyTypedIds)
+                .Assembly
+                .GetType("Len.StronglyTypedId.StronglyTypedIds+ExplicitFormattableMoneyIdConverter")!)!;
+
+        var id = ExplicitFormattableMoneyId.Create(new ExplicitFormattableMoney("12.5", "CNY", string.Empty));
+
+        var provider = converter.ConvertToProvider(id);
+
+        provider.Should().Be("12.5");
+        converter.ConvertFromProvider(provider).Should().Be(id);
+    }
 }

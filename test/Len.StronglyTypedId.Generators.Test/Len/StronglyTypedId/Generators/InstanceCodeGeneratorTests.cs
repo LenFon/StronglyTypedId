@@ -210,14 +210,16 @@ public class InstanceCodeGeneratorTests
     }
 
     /// <summary>
-    /// <c>Half</c> 在生成器所在的 netstandard2.0 上不存在，只能先按 <c>float</c> 校验再显式转换。
+    /// <c>Half</c> 在生成器所在的 netstandard2.0 上不存在，产物改为把原文交给运行期 <c>Half.Parse</c>。
+    /// 不发射 <c>double</c> / <c>float</c> 字面量：两者都会先舍入，<c>65519.999999999999</c> 会变成
+    /// <c>65520</c> 再转成无穷，与 <c>Half.Parse</c> 给出的 <c>65504</c> 不一致。
     /// </summary>
     [Fact]
-    public void Core_Should_EmitHalf_AsConvertedSingle()
+    public void Core_Should_EmitHalf_AsRuntimeParse()
     {
         var generated = GetCore(Single("Half", "1.5"));
 
-        ShouldContainField(generated, "OrderId", "Sentinel", "(global::System.Half)(1.5F)");
+        ShouldContainField(generated, "OrderId", "Sentinel", "global::System.Half.Parse(\"1.5\", global::System.Globalization.CultureInfo.InvariantCulture)");
     }
 
     /// <summary>
@@ -244,7 +246,22 @@ public class InstanceCodeGeneratorTests
     {
         var generated = GetCore(Single("Half", "65510"));
 
-        ShouldContainField(generated, "OrderId", "Sentinel", "(global::System.Half)(65510F)");
+        ShouldContainField(generated, "OrderId", "Sentinel", "global::System.Half.Parse(\"65510\", global::System.Globalization.CultureInfo.InvariantCulture)");
+    }
+
+    /// <summary>
+    /// 缺陷回归：<c>65519.9999</c> 在 <see cref="Half"/> 里舍入成 <c>65504</c>（合法），但按 <c>float</c>
+    /// 解析会先舍入成 <c>65520</c>，被「≥ 65520 即溢出」的判定误拒。必须按 <c>double</c> 解析。
+    /// </summary>
+    [Theory]
+    [InlineData("65519.9999")]
+    [InlineData("-65519.9999")]
+    [InlineData("65519.999999999999")]
+    public void Core_Should_AcceptHalf_WhenFloatRoundingWouldLookLikeOverflow(string value)
+    {
+        var generated = GetCore(Single("Half", value));
+
+        generated.Should().Contain("Sentinel");
     }
 
     /// <summary>
@@ -346,6 +363,20 @@ public class InstanceCodeGeneratorTests
             "PlusEight",
             "new global::System.DateTimeOffset(637134336000000000L, new global::System.TimeSpan(288000000000L))");
     }
+
+    /// <summary>
+    /// 时区相关的写法必须被跳过：产物不能随构建机器的本地时区变化。
+    /// </summary>
+    /// <remarks>
+    /// <c>DateTime</c> 带偏移时 <c>RoundtripKind</c> 返回 <c>Kind=Local</c>，ticks 是本地墙钟；
+    /// <c>DateTimeOffset</c> 不带偏移时用本地时区补偏移。两者都会让同一份源码在不同机器上产出不同字面量。
+    /// </remarks>
+    [Theory]
+    [InlineData("DateTime", "2020-01-01T00:00:00+08:00")]
+    [InlineData("DateTime", "2020-01-01T00:00:00+00:00")]
+    [InlineData("DateTimeOffset", "2020-01-01T00:00:00")]
+    public void Core_Should_SkipInstance_WhenTextDependsOnLocalTimeZone(string primitiveType, string value) =>
+        GetCore(Single(primitiveType, value, "ZoneDependent")).Should().NotContain("ZoneDependent");
 
     [Fact]
     public void Core_Should_EmitTimeSpan_FromTicks()
@@ -634,6 +665,40 @@ public class InstanceCodeGeneratorTests
         generated.Should().NotContain("public static readonly OrderId CompareValues");
         // 辅助方法本身照常产出，证明「跳过实例」不是因为整套比较逻辑都没生成。
         generated.Should().Contain("private static int CompareValues(OrderId? left, OrderId? right)");
+    }
+
+    /// <summary>
+    /// 生成的关系运算符在元数据里叫 <c>op_LessThan</c> 等，而这些都是合法 C# 标识符：
+    /// 实例取这些名字会与运算符撞 CS0102，且分析器运行时查不到（运算符此刻还没生成）。
+    /// </summary>
+    /// <remarks>
+    /// 实测四个关系运算符都会撞；<c>op_Equality</c> / <c>op_Inequality</c> 由 record 合成，
+    /// 一并保留以防将来生成。
+    /// </remarks>
+    [Theory]
+    [InlineData("op_LessThan")]
+    [InlineData("op_GreaterThan")]
+    [InlineData("op_LessThanOrEqual")]
+    [InlineData("op_GreaterThanOrEqual")]
+    [InlineData("op_Equality")]
+    [InlineData("op_Inequality")]
+    public void Core_Should_SkipInstance_WhenNameCollidesWithOperatorMetadataName(string instanceName)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("{{instanceName}}", "0")]
+            public partial record struct OrderId(int Value);
+            """;
+
+        var generated = GetCore(code);
+
+        generated.Should().NotContain($"public static readonly OrderId {instanceName}");
+        // 运算符本身照常产出，证明「跳过实例」不是因为比较逻辑没生成。
+        generated.Should().Contain("public static bool operator <(OrderId left, OrderId right)");
     }
 
     /// <summary>

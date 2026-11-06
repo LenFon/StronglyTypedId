@@ -77,4 +77,8 @@ closed type you use by hand, see [Nested types](declaration.md#nested-types).
 generated either: it is private, so there is no way to wire it up by hand, and the id simply shows its
 record members when expanded in the debugger.
 
+`[TypeConverter]` is skipped for the same reason as well. `TypeConverter = true` still generates the
+converter class, but the attribute is not emitted, because its argument would carry the container's type
+parameter (CS0416). Register the closed type's converter by hand if you need `TypeDescriptor` support.
+
 [<- Back to the index](index.md) · [中文](zh-CN/limitations.md)

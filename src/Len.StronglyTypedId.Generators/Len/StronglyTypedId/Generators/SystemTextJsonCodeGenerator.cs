@@ -117,14 +117,21 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         // 原始字符串会剥掉闭合分隔符处的 16 个空格，故此处只需补足剥掉的那部分。
         const string Indent = "                ";
 
+        // 引用类型基元可以是 null（default(TId) 与失败的 TryCreate / TryParse），而 JSON 属性名不能为 null。
+        // 不拦下来会在 WritePropertyName 里抛 NRE；这里与「null Id 作键」一致地给出明确的 NotSupportedException。
+        // 带前缀时同样要拦：键文本是「前缀 + 空串」，读回时剥离前缀只剩空文本，必然失败。
+        var nullGuard = idInfo.IsReferenceTypePrimitive
+            ? $"{Indent}if (primitiveId is null)\n{Indent}{{\n{Indent}    throw new global::System.NotSupportedException($\"A null {idInfo.Name} cannot be written as a JSON property name.\");\n{Indent}}}\n\n"
+            : string.Empty;
+
         if (!ShouldApplyDictionaryKeyPolicy(idInfo))
         {
-            return $"{Indent}writer.WritePropertyName({GetPropertyNameExpression(idInfo)});";
+            return $"{nullGuard}{Indent}writer.WritePropertyName({GetPropertyNameExpression(idInfo)});";
         }
 
         // 枚举成员名是「名字」而非「数据」，DictionaryKeyPolicy 的语义恰好是命名风格转换，
         // 故与 STJ 的原生枚举键一致地应用它（原生 Dictionary<Status,int> 在 CamelCase 下写出 {"active":1}）。
-        return string.Join(
+        return nullGuard + string.Join(
             "\n",
             $"{Indent}var propertyName = {GetPropertyNameExpression(idInfo)};",
             $"{Indent}writer.WritePropertyName(options.DictionaryKeyPolicy is null ? propertyName : options.DictionaryKeyPolicy.ConvertName(propertyName));");
@@ -238,7 +245,9 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <param name="assignmentPrefix">赋值目标前缀：<c>return </c> 或 <c>result = </c>。</param>
     private static void AppendCreateFromValue(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string assignmentPrefix)
     {
-        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.GetTryCreateCondition(idInfo.EscapedName)).Append('\n');
+        // 用全限定名而非短名：转换器里 `value` / `id` / `options` 等形参与局部变量会遮蔽同名 Id 类型，
+        // 短名引用会被解析成那个变量（CS1061 / CS0841）。全限定名不受作用域影响。
+        builder.Append(indent).Append(assignmentPrefix).Append(idInfo.GetTryCreateCondition(idInfo.FullyQualifiedName)).Append('\n');
         builder.Append(indent).Append("    ? id").Append('\n');
         builder.Append(indent).Append("    : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON value to a ").Append(idInfo.Name).Append(".\");").Append('\n');
     }
@@ -256,9 +265,20 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             builder.Append("        {").Append('\n');
             builder.Append("            if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
             builder.Append("            {").Append('\n');
-            // 契约：转换器失败一律抛 JsonException（STJ 只会给它补 Path / LineNumber），
-            // 抛 InvalidOperationException 会让按契约 catch (JsonException) 的调用方漏掉这条路径。
-            builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+
+            if (idInfo.IsReferenceTypePrimitive)
+            {
+                // 写侧对 null 基元一律写 JSON null（含带前缀的情形），读侧必须接受它，
+                // 否则「写出去就读不回来」。值类型基元没有 null 可写，仍按契约拒绝。
+                builder.Append("                return default!;").Append('\n');
+            }
+            else
+            {
+                // 契约：转换器失败一律抛 JsonException（STJ 只会给它补 Path / LineNumber），
+                // 抛 InvalidOperationException 会让按契约 catch (JsonException) 的调用方漏掉这条路径。
+                builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+            }
+
             builder.Append("            }").Append('\n');
             builder.Append('\n');
 
@@ -291,6 +311,15 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("            }").Append('\n');
         builder.Append('\n');
         builder.Append("            ").Append(idInfo.EscapedName).Append("? result = null;").Append('\n');
+
+        // 引用类型基元的 null 值不能就地 return：转换器必须把整个对象读到 EndObject，
+        // 否则 {"value":null,"extra":1} 这类「value 后面还有属性」的载荷会让 STJ 报
+        // 「read too much or not enough」。故先记下「见过 null」，循环读完后统一返回 default。
+        if (idInfo.IsReferenceTypePrimitive)
+        {
+            builder.Append("            var hasNullPrimitive = false;").Append('\n');
+        }
+
         builder.Append('\n');
         builder.Append("            while (reader.Read())").Append('\n');
         builder.Append("            {").Append('\n');
@@ -313,6 +342,19 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
 
         if (idInfo.HasPrefix)
         {
+            // 写侧对 null 基元写 JSON null（含带前缀的情形），读侧必须接受它。
+            // 只记标记并 continue：循环顶部的 reader.Read() 会消费掉 null 令牌，
+            // 这里再读一次会跳过紧随其后的属性名。
+            if (idInfo.IsReferenceTypePrimitive)
+            {
+                builder.Append("                    if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
+                builder.Append("                    {").Append('\n');
+                builder.Append("                        hasNullPrimitive = true;").Append('\n');
+                builder.Append("                        continue;").Append('\n');
+                builder.Append("                    }").Append('\n');
+                builder.Append('\n');
+            }
+
             builder.Append("                    var text = global::System.Text.Json.JsonSerializer.Deserialize<string>(ref reader, options);").Append('\n');
             builder.Append('\n');
             builder.Append("                    result = text is not null && ").Append(idInfo.EscapedName).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id)").Append('\n');
@@ -321,12 +363,32 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         }
         else
         {
-            // 与基元形态同理：null 在这里显式拦下，故下面可以读非可空基元。
-            builder.Append("                    if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
-            builder.Append("                    {").Append('\n');
-            builder.Append("                        throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
-            builder.Append("                    }").Append('\n');
-            builder.Append('\n');
+            // 引用类型基元可以是 null，而写侧会把它写成 {"value":null}。读侧必须接受这个形态，
+            // 否则「写出去就读不回来」。直接返回 default（基元为 null 的 Id），而不是走 TryCreate：
+            // 写侧写出的正是 default 值，走 TryCreate 会让「验证器拒绝 null」的 Id 再次写读不对称。
+            // 值类型基元没有 null 可写，仍按契约拒绝 null 令牌。
+            // 不能就地 return：对象可能还有后续属性，转换器必须读到 EndObject，否则 STJ 报
+            // 「read too much or not enough」。故只记标记并 continue，由循环顶部的 reader.Read()
+            // 消费掉 null 令牌（这里再读一次会跳过紧随其后的属性名）。
+            if (idInfo.IsReferenceTypePrimitive)
+            {
+                builder.Append("                    if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
+                builder.Append("                    {").Append('\n');
+                builder.Append("                        hasNullPrimitive = true;").Append('\n');
+                builder.Append("                        continue;").Append('\n');
+                builder.Append("                    }").Append('\n');
+                builder.Append('\n');
+            }
+            else
+            {
+                // 与基元形态同理：null 在这里显式拦下，故下面可以读非可空基元。
+                builder.Append("                    if (reader.TokenType == global::System.Text.Json.JsonTokenType.Null)").Append('\n');
+                builder.Append("                    {").Append('\n');
+                builder.Append("                        throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\");").Append('\n');
+                builder.Append("                    }").Append('\n');
+                builder.Append('\n');
+            }
+
             AppendReadValueStatements(builder, idInfo, "                    ");
             builder.Append('\n');
             AppendCreateFromValue(builder, idInfo, "                    ", "result = ");
@@ -339,6 +401,18 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("                }").Append('\n');
         builder.Append("            }").Append('\n');
         builder.Append('\n');
+
+        if (idInfo.IsReferenceTypePrimitive)
+        {
+            // 见过 {"value":null} 就还原成 default（基元为 null 的 Id），与写侧对称。
+            // 只在 result 仍为空时才走这条：同一对象里既有 null 又有真实值时（重复键），保留真实值。
+            builder.Append("            if (result is null && hasNullPrimitive)").Append('\n');
+            builder.Append("            {").Append('\n');
+            builder.Append("                return default!;").Append('\n');
+            builder.Append("            }").Append('\n');
+            builder.Append('\n');
+        }
+
         builder.Append("            return result ?? throw new global::System.Text.Json.JsonException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append('\n');
         builder.Append("        }");
 
@@ -356,12 +430,21 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         // 其余基元优先直写：WriteStringValue / WriteNumberValue 不需要 options 里有 JsonTypeInfo，
         // 源生成的 JsonSerializerContext 因此不必为每个基元补 [JsonSerializable] 登记，输出与 STJ 默认逐字节相同。
         // 直写不了的少数类型（Int128 / UInt128 / Half / TimeSpan / DateOnly / TimeOnly / char）仍委托给 JsonSerializer。
+        // 引用类型基元为 null 时一律写 JSON null，带前缀也一样：ToString() 会给出裸前缀，而剥离前缀后是空文本，
+        // 读回必然失败。写 null 才能与「非前缀路径写 null」以及读侧的 null 分支对上。
+        // 非 null 时仍用 value.ToString()：它才带前缀。
         var writeValue = idInfo.HasPrefix
-            ? "writer.WriteStringValue(value.ToString());"
+            ? idInfo.IsReferenceTypePrimitive
+                ? "writer.WriteStringValue(primitiveId is null ? null : value.ToString());"
+                : "writer.WriteStringValue(value.ToString());"
             : idInfo.RequiresTextSerialization
-                ? $"writer.WriteStringValue({idInfo.PrimitiveTextExpression});"
-                : PrimitiveJsonIo.TryGetWriteExpression(idInfo)
-                    ?? "global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);";
+                // 引用类型基元为 null 时写 JSON null，而不是在 ToString() 上抛 NRE。
+                ? $"writer.WriteStringValue({idInfo.GetPrimitiveTextExpressionOrNull("primitiveId")});"
+                : PrimitiveJsonIo.TryGetWriteExpression(idInfo);
+
+        // 委托路径与读侧对称：源生成的上下文没登记该基元时，JsonSerializer 抛的是框架内部的
+        // NotSupportedException，调用方无从得知要补哪一条 [JsonSerializable]。
+        var delegatesToSerializer = writeValue is null;
 
         builder.Append('\n');
         builder.Append("        {").Append('\n');
@@ -372,12 +455,20 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         {
             builder.Append("                writer.WriteStartObject();").Append('\n');
             builder.Append("                writer.WritePropertyName(\"value\");").Append('\n');
-            builder.Append("                ").Append(writeValue).Append('\n');
-            builder.Append("                writer.WriteEndObject();").Append('\n');
+        }
+
+        if (delegatesToSerializer)
+        {
+            AppendDelegatedWrite(builder, idInfo);
         }
         else
         {
             builder.Append("                ").Append(writeValue).Append('\n');
+        }
+
+        if (idInfo.IsObjectJsonShape)
+        {
+            builder.Append("                writer.WriteEndObject();").Append('\n');
         }
 
         builder.Append("            }").Append('\n');
@@ -388,6 +479,28 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("        }");
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// 追加「把基元委托给 <c>JsonSerializer</c> 写出」的语句，并把「上下文没登记该基元」转成带指引的
+    /// <c>JsonException</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与读侧的委托路径对称：源生成的上下文只服务 <c>[JsonSerializable]</c> 登记过的类型，漏登记时
+    /// <c>JsonSerializer</c> 抛的是框架内部的 <c>NotSupportedException</c>，消息里不会出现该补哪一条。
+    /// </remarks>
+    private static void AppendDelegatedWrite(StringBuilder builder, StronglyTypedIdInfo idInfo)
+    {
+        const string Indent = "                ";
+
+        builder.Append(Indent).Append("try").Append('\n');
+        builder.Append(Indent).Append("{").Append('\n');
+        builder.Append(Indent).Append("    global::System.Text.Json.JsonSerializer.Serialize(writer, primitiveId, options);").Append('\n');
+        builder.Append(Indent).Append("}").Append('\n');
+        builder.Append(Indent).Append("catch (global::System.NotSupportedException e)").Append('\n');
+        builder.Append(Indent).Append("{").Append('\n');
+        builder.Append(Indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot write ").Append(idInfo.Name).Append(" to JSON: the JSON source generation context does not provide metadata for '").Append(idInfo.PrimitiveIdTypeName).Append("'. Add [JsonSerializable(typeof(").Append(idInfo.PrimitiveIdTypeName).Append("))] to that context.\", e);").Append('\n');
+        builder.Append(Indent).Append("}").Append('\n');
     }
 
     /// <summary>
@@ -421,7 +534,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
                 builder.Append($"                && {validity}").Append('\n');
             }
 
-            builder.Append($"                && {idInfo.EscapedName}.TryCreate(val, out var id))").Append('\n');
+            builder.Append($"                && {idInfo.FullyQualifiedName}.TryCreate(val, out var id))").Append('\n');
             builder.Append("            {").Append('\n');
             builder.Append("                return id;").Append('\n');
             builder.Append("            }").Append('\n').Append('\n');
@@ -432,7 +545,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
             // 它会穿透 JsonSerializer.Deserialize，而 STJ 的转换器契约要求失败一律抛 JsonException。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
-            builder.Append($"            return propertyName is not null && {idInfo.EscapedName}.TryCreate(propertyName, out var id)").Append('\n');
+            builder.Append($"            return propertyName is not null && {idInfo.FullyQualifiedName}.TryCreate(propertyName, out var id)").Append('\n');
             builder.Append("                ? id").Append('\n');
             builder.Append($"                : throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON property name '{{propertyName}}' to a {idInfo.Name}.\");").Append('\n');
         }
@@ -440,7 +553,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         {
             // 有前缀时键文本也带前缀，故一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
             builder.Append("            var propertyName = reader.GetString();").Append('\n').Append('\n');
-            builder.Append($"            if ({idInfo.EscapedName}.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))").Append('\n');
+            builder.Append($"            if ({idInfo.FullyQualifiedName}.TryParse(propertyName, global::System.Globalization.CultureInfo.InvariantCulture, out var id))").Append('\n');
             builder.Append("            {").Append('\n');
             builder.Append("                return id;").Append('\n');
             builder.Append("            }").Append('\n').Append('\n');

@@ -123,6 +123,40 @@ public class ProtobufCodeGeneratorTests
     }
 
     /// <summary>
+    /// 引用类型 Id + 值类型基元时，surrogate 字段也必须是可空类型。
+    /// </summary>
+    /// <remarks>
+    /// protobuf-net 把根级 <c>null</c> 写成空载荷，读回时构造的是「字段全为默认值」的 surrogate。
+    /// 字段不可空时无法区分 <c>null</c> 与 <c>Guid.Empty</c>，于是 <c>null</c> 会被静默还原成一个
+    /// 看起来合法的 Id（实测 <c>Guid</c> → <c>Guid.Empty</c>、<c>int</c> → <c>0</c>、枚举 → 首成员）。
+    /// </remarks>
+    [Theory]
+    [InlineData("Guid", "global::System.Guid?")]
+    [InlineData("int", "int?")]
+    [InlineData("DateOnly", "global::System.DateOnly?")]
+    public void ReferenceTypeIdWithValuePrimitive_Should_UseNullableField(string primitiveType, string expectedFieldType)
+    {
+        var generated = GetGeneratedCode(ReferenceTypeValuePrimitiveSource(primitiveType))["Probe.OrderId.Protobuf.g.cs"];
+
+        generated.Should().Contain($"public {expectedFieldType} Value {{ get; set; }}");
+        generated.Should().Contain("if (surrogate is null || surrogate.Value is null)");
+        generated.Should().Contain("surrogate.Value is { } value");
+    }
+
+    /// <summary>
+    /// 值类型 Id 的字段保持非可空：值类型 Id 本身不可能是 <c>null</c>，字段可空只会让
+    /// 「载荷缺失」与「基元默认值」变得无法区分。
+    /// </summary>
+    [Fact]
+    public void ValueTypeId_Should_KeepNonNullableField()
+    {
+        var generated = GetGeneratedCode()["Probe.OrderId.Protobuf.g.cs"];
+
+        generated.Should().Contain("public global::System.Guid Value { get; set; }");
+        generated.Should().NotContain("public global::System.Guid? Value { get; set; }");
+    }
+
+    /// <summary>
     /// 泛型容器里的 Id 不生成 surrogate：特性实参含类型参数会 CS0416，且没有接线时它只是死代码。
     /// </summary>
     [Fact]
@@ -214,6 +248,19 @@ public class ProtobufCodeGeneratorTests
 
         [StronglyTypedId]
         public partial record OrderId(string Value);
+        """;
+
+    /// <summary>
+    /// 引用类型 Id + 值类型基元：surrogate 字段必须可空，否则 <c>null</c> 会静默变成默认值。
+    /// </summary>
+    private static string ReferenceTypeValuePrimitiveSource(string primitiveType) => $$"""
+        using System;
+        using Len.StronglyTypedId;
+
+        namespace Probe;
+
+        [StronglyTypedId]
+        public partial record OrderId({{primitiveType}} Value);
         """;
 
     private const string GenericContainerSource = """

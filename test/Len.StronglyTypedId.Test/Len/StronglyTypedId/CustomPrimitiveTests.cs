@@ -115,6 +115,43 @@ public class CustomPrimitiveTests
         typeof(SlugId).GetMethod("TryFormat", [typeof(Span<char>), typeof(int).MakeByRefType(), typeof(ReadOnlySpan<char>), typeof(IFormatProvider)]).Should().BeNull();
     }
 
+    /// <summary>
+    /// 显式实现 <c>IFormattable</c> 的基元，格式化路径不得装箱。
+    /// </summary>
+    /// <remarks>
+    /// 这类基元只能经接口调用两参重载（按类型名直呼会 CS1501）。写成
+    /// <c>((IFormattable)Value).ToString(…)</c> 时 IL 里是一条 <c>box</c>，每次调用一次分配；
+    /// 生成代码改调泛型辅助方法后，<c>constrained.</c> 调用让值类型直接命中自己的实现。
+    /// <para>
+    /// 用 24 字节的基元测：小结构体可能被 JIT 的逃逸分析消除装箱，那样这条用例会失去意义。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Formatting_Should_NotBox_WhenPrimitiveImplementsIFormattableExplicitly()
+    {
+        var id = ExplicitFormattableMoneyId.Create(new ExplicitFormattableMoney("12.5", "CNY", string.Empty));
+
+        // 预热：让 JIT 完成分层编译，避免把编译开销算进分配量。
+        for (var index = 0; index < 20_000; index++)
+        {
+            _ = id.ToString();
+            _ = id.ToString("F2", CultureInfo.InvariantCulture);
+        }
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (var index = 0; index < 200_000; index++)
+        {
+            _ = id.ToString();
+        }
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // 每次调用都会产出新字符串（decimal 的文本），故只断言「没有额外的装箱分配」：
+        // 装箱会让每次调用多出 24 字节，200k 次即约 4.8 MB，与字符串本身的量级明显不同。
+        allocated.Should().BeLessThan(200_000 * 24, "格式化路径不应为基元值装箱");
+    }
+
     #endregion
 
     #region 序列化

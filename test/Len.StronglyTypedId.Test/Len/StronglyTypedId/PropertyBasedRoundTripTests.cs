@@ -79,14 +79,19 @@ public class PropertyBasedRoundTripTests
         AssertValueRoundTrip<BigIntegerId, BigInteger>(_genBigInteger, nameof(BigIntegerId));
     }
 
+    /// <summary>
+    /// 三个时间基元的规范文本形必须值往返。
+    /// </summary>
+    /// <remarks>
+    /// 它们的默认格式串有损：<c>DateTime</c> / <c>DateTimeOffset</c> 的 "G" 丢亚秒与 Kind，
+    /// <c>TimeOnly</c> 的 "t" 连秒都丢。生成器固定用 <c>"O"</c>，故这里可以断言值往返而不只是文本幂等。
+    /// </remarks>
     [Fact]
-    public void TextRoundTrip_Should_BeIdempotent_ForLossyTemporalPrimitives()
+    public void ValueRoundTrip_Should_Hold_ForTemporalPrimitives()
     {
-        // 这三个基元的无参 ToString() 用的是短格式，值本身不可还原；能守的是「文本形稳定」：
-        // 解析回来的 Id 再写一次，必须得到逐字符相同的文本。
-        AssertTextRoundTrip<DateTimeId, DateTime>(Gen.DateTime, nameof(DateTimeId));
-        AssertTextRoundTrip<DateTimeOffsetId, DateTimeOffset>(Gen.DateTimeOffset, nameof(DateTimeOffsetId));
-        AssertTextRoundTrip<TimeOnlyId, TimeOnly>(Gen.TimeOnly, nameof(TimeOnlyId));
+        AssertValueRoundTrip<DateTimeId, DateTime>(Gen.DateTime, nameof(DateTimeId));
+        AssertValueRoundTrip<DateTimeOffsetId, DateTimeOffset>(Gen.DateTimeOffset, nameof(DateTimeOffsetId));
+        AssertValueRoundTrip<TimeOnlyId, TimeOnly>(Gen.TimeOnly, nameof(TimeOnlyId));
     }
 
     [Fact]
@@ -117,24 +122,6 @@ public class PropertyBasedRoundTripTests
                 var text = id.ToString()!;
 
                 return TId.Parse(text, CultureInfo.InvariantCulture) == id;
-            },
-            iter: Iterations,
-            print: value => $"{label}: {value}");
-    }
-
-    /// <summary>
-    /// 断言「文本幂等」：<c>Parse(Create(value).ToString()).ToString()</c> 与原文本逐字符相同。
-    /// </summary>
-    private static void AssertTextRoundTrip<TId, TPrimitive>(Gen<TPrimitive> gen, string label)
-        where TId : IStronglyTypedId<TId, TPrimitive>
-        where TPrimitive : notnull, IComparable
-    {
-        gen.Sample(
-            value =>
-            {
-                var text = TId.Create(value).ToString()!;
-
-                return TId.Parse(text, CultureInfo.InvariantCulture).ToString() == text;
             },
             iter: Iterations,
             print: value => $"{label}: {value}");

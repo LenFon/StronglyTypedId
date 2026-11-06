@@ -115,6 +115,10 @@ public class HotChocolateCodeGeneratorTests
     /// 字符串类基元（<c>Guid</c> / <c>string</c> / <c>char</c> / 日期时间）在 GraphQL 里是 <c>String</c> 字面量，
     /// 与 JSON 的字符串形态一致。
     /// </summary>
+    /// <remarks>
+    /// <c>Int128</c> / <c>UInt128</c> / <c>BigInteger</c> 也在此列：HotChocolate 的序列化器不认识它们，
+    /// <c>TrySerialize</c> 只能返回文本，写出来就是字符串。字面量跟着用 <c>String</c>，输入输出才对称。
+    /// </remarks>
     [Theory]
     [InlineData("Guid")]
     [InlineData("string")]
@@ -124,6 +128,9 @@ public class HotChocolateCodeGeneratorTests
     [InlineData("TimeSpan")]
     [InlineData("DateOnly")]
     [InlineData("TimeOnly")]
+    [InlineData("Int128")]
+    [InlineData("UInt128")]
+    [InlineData("BigInteger")]
     public void HotChocolate_Should_UseStringLiteral_ForTextPrimitive(string primitive)
     {
         var generated = RunGenerator(IdSourceFor(primitive), HotChocolate13Reference);
@@ -136,6 +143,9 @@ public class HotChocolateCodeGeneratorTests
     /// 整数类基元在 GraphQL 里是 <c>Int</c> 字面量；枚举按底层整数（与 STJ 默认一致），
     /// 不按成员名 —— 否则同一个 Id 在 REST 与 GraphQL 两侧表示不同。
     /// </summary>
+    /// <remarks>
+    /// 只覆盖 <c>byte</c> … <c>ulong</c>：超出 <c>ulong</c> 的三个大整数走字符串，见上一条用例。
+    /// </remarks>
     [Theory]
     [InlineData("byte")]
     [InlineData("sbyte")]
@@ -145,9 +155,6 @@ public class HotChocolateCodeGeneratorTests
     [InlineData("uint")]
     [InlineData("long")]
     [InlineData("ulong")]
-    [InlineData("Int128")]
-    [InlineData("UInt128")]
-    [InlineData("BigInteger")]
     public void HotChocolate_Should_UseIntLiteral_ForIntegerPrimitive(string primitive)
     {
         var generated = RunGenerator(IdSourceFor(primitive), HotChocolate13Reference);
@@ -197,6 +204,70 @@ public class HotChocolateCodeGeneratorTests
 
     #endregion
 
+    #region GraphQL 类型名消歧
+
+    /// <summary>
+    /// GraphQL 的类型名是一张全局表，与 C# 命名空间无关。两个不同命名空间的同名 Id 若都用短名注册，
+    /// schema 构建期会抛「An item with the same key has already been added. Key: OrderId」。
+    /// </summary>
+    [Fact]
+    public void HotChocolate_Should_DisambiguateGraphQlTypeNames_WhenSameNameInDifferentNamespaces()
+    {
+        var generated = RunGenerator(SameNameInTwoNamespacesSource, HotChocolate13Reference);
+
+        generated["Domain.OrderId.HotChocolate.g.cs"]
+            .Should().Contain(": base(\"Domain_OrderId\")")
+            .And.NotContain(": base(\"OrderId\")");
+
+        generated["Contracts.OrderId.HotChocolate.g.cs"]
+            .Should().Contain(": base(\"Contracts_OrderId\")")
+            .And.NotContain(": base(\"OrderId\")");
+    }
+
+    /// <summary>
+    /// 短名唯一时 GraphQL 名保持短名，产物与加入消歧规则之前逐字符一致。
+    /// </summary>
+    [Fact]
+    public void HotChocolate_Should_KeepShortGraphQlTypeName_WhenNameIsUnique()
+    {
+        var generated = RunGenerator(IdSource, HotChocolate13Reference);
+
+        generated["Len.StronglyTypedId.OrderId.HotChocolate.g.cs"]
+            .Should().Contain(": base(\"OrderId\")");
+    }
+
+    /// <summary>
+    /// 短名唯一的 Id 恰好叫 <c>Domain_OrderId</c> 时，它的 GraphQL 名与 <c>Domain.OrderId</c> 的消歧名
+    /// 逐字符相同，两侧都必须追加哈希后缀才能区分。
+    /// </summary>
+    [Fact]
+    public void HotChocolate_Should_DisambiguateGraphQlTypeNames_WhenUniqueShortNameEqualsDisambiguatedName()
+    {
+        var generated = RunGenerator(UniqueShortNameEqualsDisambiguatedSource, HotChocolate13Reference);
+
+        var domainName = GetGraphQlScalarName(generated["Domain.OrderId.HotChocolate.g.cs"]);
+        var uniqueName = GetGraphQlScalarName(generated["Other.Domain_OrderId.HotChocolate.g.cs"]);
+
+        domainName.Should().NotBe(uniqueName);
+        domainName.Should().StartWith("Domain_OrderId_");
+        uniqueName.Should().StartWith("Domain_OrderId_");
+    }
+
+    /// <summary>
+    /// 取 scalar 构造函数里传给基类的 GraphQL 类型名。
+    /// </summary>
+    private static string GetGraphQlScalarName(string source)
+    {
+        const string Marker = ": base(\"";
+
+        var start = source.IndexOf(Marker, StringComparison.Ordinal) + Marker.Length;
+        var end = source.IndexOf('"', start);
+
+        return source[start..end];
+    }
+
+    #endregion
+
     #region 失败路径与可空性
 
     /// <summary>
@@ -224,6 +295,25 @@ public class HotChocolateCodeGeneratorTests
 
         generated["Len.StronglyTypedId.OrderClassId.HotChocolate.g.cs"]
             .Should().Contain("if (runtimeValue is global::Len.StronglyTypedId.OrderClassId id)");
+    }
+
+    /// <summary>
+    /// 引用类型基元为 <see langword="null"/> 时，<c>TrySerialize</c> 必须返回 <see langword="false"/>，
+    /// 让 HotChocolate 写出 GraphQL <c>null</c> —— 文本形的 <c>ToString()</c> 会给出空串，
+    /// 而 System.Text.Json / Newtonsoft / MessagePack / BSON 都写 <c>null</c>，两侧形态必须一致。
+    /// </summary>
+    /// <remarks>
+    /// 带前缀的 Id 例外：它的文本是「前缀 + 空串」，永远非 null，故不生成这一档。
+    /// </remarks>
+    [Fact]
+    public void HotChocolate_Should_SerializeNull_ForNullReferenceTypePrimitive()
+    {
+        var generated = RunGenerator(ReferencePrimitiveIdSource, HotChocolate13Reference);
+
+        generated["Len.StronglyTypedId.OrderId.HotChocolate.g.cs"]
+            .Should().Contain("if (id.Value is null)")
+            .And.Contain("resultValue = null;")
+            .And.Contain("global::Len.StronglyTypedId.OrderId { Value: null } => global::HotChocolate.Language.NullValueNode.Default,");
     }
 
     /// <summary>
@@ -264,6 +354,39 @@ public class HotChocolateCodeGeneratorTests
         public partial record OrderClassId(Guid Value);
         """;
 
+    /// <summary>
+    /// 引用类型基元（自定义 <c>class</c>）：实例可以是 <see langword="null"/>，序列化必须写 GraphQL null。
+    /// </summary>
+    private const string ReferencePrimitiveIdSource = """
+        using System;
+
+        namespace Len.StronglyTypedId;
+
+        public sealed class Code : IParsable<Code>, IComparable<Code>, IComparable
+        {
+            private Code(string value) => Value = value;
+
+            public string Value { get; }
+
+            public static Code Parse(string s, IFormatProvider? provider) => new(s);
+
+            public static bool TryParse(string? s, IFormatProvider? provider, out Code result)
+            {
+                result = new Code(s ?? string.Empty);
+                return s is not null;
+            }
+
+            public int CompareTo(Code? other) => string.CompareOrdinal(Value, other?.Value);
+
+            public int CompareTo(object? obj) => CompareTo(obj as Code);
+
+            public override string ToString() => Value;
+        }
+
+        [StronglyTypedId]
+        public partial record struct OrderId(Code Value);
+        """;
+
     private const string EnumIdSource = """
         namespace Len.StronglyTypedId;
 
@@ -299,6 +422,47 @@ public class HotChocolateCodeGeneratorTests
 
         [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
         public partial record struct OrderId(Guid Value);
+        """;
+
+    private const string SameNameInTwoNamespacesSource = """
+        using System;
+        using Len.StronglyTypedId;
+
+        namespace Domain
+        {
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+        }
+
+        namespace Contracts
+        {
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+        }
+        """;
+
+    private const string UniqueShortNameEqualsDisambiguatedSource = """
+        using System;
+        using Len.StronglyTypedId;
+
+        namespace Domain
+        {
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+        }
+
+        namespace Contracts
+        {
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+        }
+
+        namespace Other
+        {
+            // 短名唯一，但恰好等于 Domain.OrderId 的消歧名。
+            [StronglyTypedId]
+            public partial record struct Domain_OrderId(Guid Value);
+        }
         """;
 
     private static string IdSourceFor(string primitive)
