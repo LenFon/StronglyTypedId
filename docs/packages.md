@@ -13,7 +13,7 @@ One package to install. Four more exist, and you may want three of them.
 | --- | --- | --- | --- |
 | `Len.StronglyTypedId` | `net8.0`, `net10.0` | The runtime library: `IStronglyTypedId<,>`, the reflection helpers, and the types the generated code builds on | Always, because this is the one you reference from code |
 | `Len.StronglyTypedId.Generators` | `netstandard2.0` | The source generator, the analyzer and the code fixes | Never directly: the main package depends on it |
-| `Len.StronglyTypedId.Testing` | `net8.0`, `net10.0` | `Any.Id<T>()`, `Any.Ids`, `Any.Register`, `Any.Reset`, `AnyIdGenerator` and `AnyIdOptions` | Test projects that need plausible ids; see [Testing](testing.md#testing) |
+| `Len.StronglyTypedId.Testing` | `net8.0`, `net10.0` | `Any.Id<T>()`, `Any.Ids`, `Any.Register`, `Any.Reset`, `AnyIdGenerator`, `AnyIdOptions` and `StronglyTypedIdConformance` | Test projects that need plausible ids; see [Testing](testing.md#testing) |
 | `Len.StronglyTypedId.Testing.AutoFixture` | `net8.0`, `net10.0` | `WithStronglyTypedIds()`, which teaches AutoFixture to fill ids | Test projects already using AutoFixture |
 | `Len.StronglyTypedId.Testing.Bogus` | `net8.0`, `net10.0` | `WithStronglyTypedIds()`, which teaches Bogus to fill ids | Test projects already using Bogus |
 
@@ -56,7 +56,7 @@ project file:
 
 The property travels from MSBuild to the analyzer through the analyzer config the SDK writes for the
 compilation (`build_property.StronglyTypedIdEnableAnalyzers`); when it reads "no" the analyzer registers
-**no diagnostic action at all**, so none of the 26 rules report, and the code fixes disappear with them
+**no diagnostic action at all**, so none of the 28 rules report, and the code fixes disappear with them
 (there is nothing left to fix).
 
 The three states:

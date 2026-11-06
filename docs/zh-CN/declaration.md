@@ -41,8 +41,9 @@ public partial record struct OrderId(Guid Value);
   时不重复插入；换行沿用文档自身的行尾。
 - **Inline strongly typed id** 是反向操作。它摘掉 `[StronglyTypedId]` 与 `partial`，并在文件里再无
   需要该命名空间的地方时一并摘掉 `using Len.StronglyTypedId;`。判断依据不只是「还有没有别的 Id」，
-  还包括 `IStronglyTypedId<,>`、`StronglyTypedIdIntegrations` 这类同命名空间导出的类型。生成的成员随
-  特性一起消失，回到最初的普通 record。
+  还包括 `IStronglyTypedId<,>`、`StronglyTypedIdIntegrations` 这类同命名空间导出的类型。
+  `global using Len.StronglyTypedId;` 则**一律保留**：它的作用域是整个项目，本文件不再需要不代表别的
+  文件也不需要，删掉会让那些文件报 `CS0246`。生成的成员随特性一起消失，回到最初的普通 record。
 
 正向动作只在结果确实是一个合法 Id 时才提供，因此不会产出立刻被分析器判错的声明：主构造函数恰好一个
 参数、参数名为 `Value`、类型属于[受支持的基元](https://github.com/LenFon/StronglyTypedId/blob/main/README.zh-CN.md#supported-primitive-types)，
@@ -75,8 +76,8 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // 返回 false，不抛�
 方法必须是该 Id 的静态成员，签名形如 `static bool Validate(TPrimitiveId value)`，取值合法时返回 `true`。
 生成代码会在 `Create`、`TryCreate` 与全部 `TryParse` 重载（string、span、UTF-8）里调用它，因此 `TryParse`
 依旧遵守约定：失败返回 `false` 而不抛异常。JSON 转换器与 Entity Framework Core 集成都会在反序列化时
-执行校验：EF Core 经 `Create` 构造，两个 JSON 转换器则经 `TryCreate` 构造，再把拒绝转成各自的框架异常，
-所以反序列化同样会拒绝非法值。
+执行校验：三者都经 `TryCreate` 构造，再把拒绝转成各自的框架异常（`JsonException`、
+`JsonSerializationException` 与 EF Core 的 `InvalidOperationException`），所以反序列化同样会拒绝非法值。
 
 源码生成器唯一做不到的是拦截你声明的主构造函数：`new OrderId(...)` 会绕过校验。当取值来自你的代码
 之外（用户输入、数据库、报文）时，请让它经过 `Create` 或解析成员。
@@ -152,7 +153,8 @@ EmailAddress.Create("  Alice@Example.COM  ").Value;  // "alice@example.com"
 不会被执行两次。
 
 不设置 `Normalizer` 时完全不生成归一化代码。与 `Validator` 一样，它也可以用
-`[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]` 在程序集级统一设置。
+`[assembly: StronglyTypedIdDefaults(Normalizer = "Canonical")]` 在程序集级统一设置 —— 名字是逐个 Id
+解析的，因此程序集里每个 Id 都要自己声明一个 `Canonical` 方法。
 
 <a id="named-instances"></a>
 
@@ -173,8 +175,9 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 
 取值是**基元值**的不变文化文本形，**不带** `Prefix`：前缀装饰的是规范文本形，而实例承载的是基元值。
 它在编译期就被校验；对多数基元还会翻译成字面量或构造函数调用，运行期不再解析。例外有两类：
-`Int128`、`UInt128`、`BigInteger`（生成器跑在 `netstandard2.0` 上，那里没有这些类型，故它手工校验文本、
-再对已校验的字符串发射一次运行期 `Parse`），以及自定义基元（它们的 `Parse` 在编译期根本无法执行）。
+`Int128`、`UInt128`、`BigInteger` 与 `Half`（生成器跑在 `netstandard2.0` 上，那里没有这些类型，故它手工
+校验文本、再对已校验的字符串发射一次运行期 `Parse`），以及自定义基元（它们的 `Parse` 在编译期
+根本无法执行）。
 
 多数基元接受的就是它自己 `Parse` 接受的那种文本，因此 `int` 基元写 `[StronglyTypedIdInstance("X", " 1 ")]`
 没有问题。少数基元接受更严的形式，因为它们的 `Parse` 宽松到会让声明产生歧义：`"2020-1-1"` 与 `"2020-01-01"`
@@ -185,11 +188,18 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 | `Int128`、`UInt128`、`BigInteger` | 可选正负号 + 纯数字 | 前后空白（`" 1 "`） |
 | `DateOnly` | 恰好 `yyyy-MM-dd` | `"2020-1-1"`、`"2020/01/01"` |
 | `TimeOnly` | `HH:mm`、`HH:mm:ss` 或 `HH:mm:ss.f`–`fffffff` | `"1:02"`（小时只有一位） |
-| `Half` | `float` 接受的一切，且低于 65520 溢出中点 | `"65520"`（会舍入成无穷）、`"1,000"` |
+| `DateTime` | `Z` 或不带偏移 | 显式偏移（`"2020-01-01T00:00:00+08:00"`） |
+| `DateTimeOffset` | 显式偏移（`Z` 或 `±hh:mm`） | 不带偏移（`"2020-01-01T00:00:00"`） |
+| `Half` | `double` 接受的一切，且低于 65520 溢出中点 | `"65520"`（会舍入成无穷）、`"1,000"` |
 | `float`、`double` | 指数、`NaN`、`Infinity`；不接受千位分隔符 | `"1,000"` |
 
-其余基元跟随自身语义：`char` 恰好一个字符，`decimal` 接受千位分隔符，`Guid` / `DateTime` /
-`DateTimeOffset` / `TimeSpan` 接受各自惯常的灵活写法，枚举接受成员名、数值或逗号分隔的成员组合。
+`DateTime` 与 `DateTimeOffset` 更严是另一个原因：它们的解释依赖**构建机器的时区**。带偏移的文本经
+`RoundtripKind` 解析后 `Kind` 是 `Local`，ticks 是本地墙钟；不带偏移的 `DateTimeOffset` 文本会用本地
+时区补偏移。两种写法都会让同一份声明在不同时区的机器上产出不同的字面量，故一律拒绝。`DateTime` 请写
+`Z` 或不带偏移，`DateTimeOffset` 请始终写出偏移。
+
+其余基元跟随自身语义：`char` 恰好一个字符，`decimal` 接受千位分隔符，`Guid` / `TimeSpan` 接受各自
+惯常的灵活写法，枚举接受成员名、数值或逗号分隔的成员组合。
 
 每个实例都经 `Create` 构造，这正是保证成立的原因：实例不是特权值，它与任何其它取值一样经过
 `Normalizer` 与 `Validator`，因此 `Parse(instance.ToString())` 必定读得回来。被验证器拒绝的取值不会在
@@ -223,7 +233,7 @@ var same = OrderId.Parse(utf8, CultureInfo.InvariantCulture); // IUtf8SpanParsab
 
 ## 类型转换器（TypeConverter）
 
-默认只生成 JSON 转换器。需要经 `TypeDescriptor` 在字符串与 Id 间往返时（配置绑定、`XmlSerializer`、
+默认只生成 JSON 转换器。需要经 `TypeDescriptor` 在字符串与 Id 间往返时（配置绑定、
 Newtonsoft 字典键读路径等），用 `TypeConverter = true` 逐类型开启：
 
 ```csharp
@@ -262,19 +272,26 @@ var settings = configuration.GetSection("Order").Get<OrderSettings>();
 
 ## 程序集级默认设置（StronglyTypedIdDefaults）
 
-同一程序集里很多 Id 想共用同一个验证器时，可用程序集特性统一设置默认 `Validator`，免去逐个标注：
+同一程序集里很多 Id 想共用同一个验证器时，可用程序集特性统一设置默认 `Validator`，免去逐个标注。
+取值是**成员名**而非限定名：它逐个 Id 解析，因此程序集里每个 Id 都要声明同名方法。
 
 ```csharp
-[assembly: StronglyTypedIdDefaults(Validator = "MyValidators.NonEmpty")]
+[assembly: StronglyTypedIdDefaults(Validator = "NonEmpty")]
+
+[StronglyTypedId]
+public partial record struct OrderId(Guid Value)
+{
+    private static bool NonEmpty(Guid value) => value != Guid.Empty;
+}
 ```
 
 `StronglyTypedIdDefaults.Validator` 仅作为**默认**：单个 Id 上写了 `[StronglyTypedId(Validator = ...)]`
 时，以该 Id 自己的为准；都没写时才回落到程序集默认值。
 
-`Normalizer` 遵循同样的优先级规则：
+`Normalizer` 遵循同样的优先级规则，也同样只认成员名：
 
 ```csharp
-[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
+[assembly: StronglyTypedIdDefaults(Normalizer = "Canonical")]
 ```
 
 `ExceptionType` 同样遵循这一规则：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
@@ -324,6 +341,7 @@ public partial record struct OrderId(Guid Value);           // 恰好这两类
 | 取值 | 效果 |
 | --- | --- |
 | *（不写）* | 引用了什么就生成什么，与引入本选项之前完全一致 |
+| `Default` | 与不写相同：继续回退到程序集默认值，再回退到 `All`。它不能覆盖程序集默认值，要恢复请写 `All` |
 | `None` | 不生成任何集成代码；核心实现不受影响 |
 | `Dapper \| SystemTextJson` | 只生成列出的这几类（仍需已引用对应包） |
 | `All` | 显式全开；用于在程序集默认 `None` 时把单个 Id 捞回来 |
@@ -363,14 +381,15 @@ var id = OrderAggregate.OrderId.Create(value);   // 按嵌套名使用，与普�
 
 前置条件只有一条：**包含类型必须都能被生成代码原样重开**，链上每一层都必须是 `partial`、
 也不是 `file` 本地类型。不满足时由 [STIA0009](diagnostics.md#diagnostics)（缺 `partial`，或 `file` 本地类型）
-报错，并附带补 `partial` 的代码修复。
+报错。缺 `partial` 时附带补 `partial` 的代码修复；`file` 本地容器没有修复，因为那个修饰符不能
+从被跨文件使用的类型上直接摘掉。
 
 **泛型容器。** 包含类型可以是泛型（例如 `Outer<T>`）：生成器会带着它的类型参数表把声明重开，
-因此声明在泛型容器里的 Id 能正常编译，并保留核心生成器产出的能力：比较与排序、格式化与 span
-解析、System.Text.Json 字典键。**JSON 是唯一的例外**：转换器类照常生成，但挂不上
+因此声明在泛型容器里的 Id 能正常编译，并保留核心生成器产出的非 JSON 能力：比较与排序、
+格式化与 span 解析。**JSON 是唯一的例外**，值与字典键两条路径都受影响：转换器类照常生成，但挂不上
 `[JsonConverter]` 特性（特性实参不能引用携带容器类型参数的转换器，会 CS0416），
 `AddStronglyTypedIds` 入口也会跳过它（开放泛型不能作类型实参）。请按实际使用的闭合类型
-手动注册：
+手动注册，值与字典键两条路径都会随之恢复：
 
 ```csharp
 options.Converters.Add(new Outer<int>.InnerId.SystemTextJsonConverter());

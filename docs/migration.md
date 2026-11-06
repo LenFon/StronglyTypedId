@@ -35,8 +35,11 @@ fine but can still alter results at run time.
 
 ## Integration entry points are now extension methods
 
-Every integration used to be a static method on a generated `StronglyTypedIds` class. It is now an
-extension method on the object being configured, and it returns that object so calls chain.
+Every integration that used to be a static method on a generated `StronglyTypedIds` class is now an
+extension method on the object being configured. The ones that take a configuration object return it, so
+calls chain; the ones that fill a process-wide registry return `void` instead — `settings.AddStronglyTypedIds()`
+for Newtonsoft.Json, the parameterless `StronglyTypedIds.AddStronglyTypedIds()` for Dapper, and
+`StronglyTypedIds.RegisterBsonSerializers()` for MongoDB.
 
 | 1.3.0 | 1.4.0 |
 | --- | --- |
@@ -153,9 +156,9 @@ interpolation is not affected: `$"{id}"` still goes through `IFormattable` with 
 ### `STIA0011` is a warning and covers more shapes
 
 `STIA0011` ("strongly typed id constructed directly") was informational and only reported `new Xxx(...)`.
-It is now a **warning** and also reports target-typed `new(...)` and `default` / `default(T)`. A project
-that treats warnings as errors will start failing on ids that bypass `Create`. Either route construction
-through `Create` or set the severity back down in `.editorconfig`.
+It is now a **warning** and also reports target-typed `new(...)`, `default` / `default(T)` and
+`id with { Value = … }`. A project that treats warnings as errors will start failing on ids that bypass
+`Create`. Either route construction through `Create` or set the severity back down in `.editorconfig`.
 
 <a id="analyzer-muting"></a>
 

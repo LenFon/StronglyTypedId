@@ -23,7 +23,7 @@ there points at a runnable sample.
   reverse **Inline strongly typed id** undoes it. The forward action appears only when the result would be a
   valid id; see [Converting an existing record](declaration.md#converting-an-existing-record).
 - **Compile-time safety.** A built-in analyzer rejects invalid declarations as errors, and twenty-one of
-  its twenty-six rules ship a code fix that repairs the declaration for you. See
+  its twenty-eight rules ship a code fix that repairs the declaration for you. See
   [Diagnostics](diagnostics.md#diagnostics).
 - **Twenty-three built-in primitives.** Every numeric type including `Int128`, `UInt128` and `Half`, plus
   `Guid`, `string`, `char`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`
@@ -52,7 +52,7 @@ there points at a runnable sample.
   `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
   `IComparisonOperators<TSelf, TSelf, bool>`. See [Runtime](runtime.md#using-the-interface).
 - **Parsing.** `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`. A `null` provider means
-  the invariant culture, so `Parse(id.ToString())` always round-trips. See
+  the invariant culture, so `Parse(id.ToString())` round-trips. See
   [Generated code](generated-code.md).
 - **Formatting.** `IFormattable` and `ISpanFormattable` whenever the primitive itself implements them.
   `string` implements neither, and enum-backed ids skip both.
@@ -70,7 +70,9 @@ there points at a runnable sample.
   so the id keeps its string shape instead of being written as an object. The generated resolver consults
   the id's converter first, without reflection. See [Native AOT and trimming](aot.md).
 - **`TypeConverter`.** Opt in with `[StronglyTypedId(TypeConverter = true)]` to round-trip through
-  `TypeDescriptor`, covering config binding and `XmlSerializer`. See
+  `TypeDescriptor`, which is what configuration binding and the Newtonsoft dictionary-key read path use.
+  `XmlSerializer` does **not** go through it: it reflects over the id's public properties and writes
+  `<Value>…</Value>` (a `record` id fails outright, because it has no parameterless constructor). See
   [TypeConverter](declaration.md#type-converter). Without it, `IConfiguration` binding leaves the property
   at `default` instead of failing.
 - **Debugger view.** `[DebuggerDisplay]` shows the value when collapsed; `[DebuggerTypeProxy]` shows both
@@ -122,7 +124,10 @@ there points at a runnable sample.
   `RegisterBsonSerializers()`. protobuf-net needs none, because the surrogate is discovered from the
   attribute. See [Integrations](integrations.md).
 - **Binary payloads carry the primitive.** MessagePack, BSON and protobuf-net write the primitive value
-  itself; the text prefix belongs to the text form and never reaches the payload.
+  itself, so the text prefix does not reach the payload. The exception is the primitives with no native
+  binary representation (`BigInteger`, `Int128`, `UInt128`, plus `Half` and `DateTimeOffset` for
+  protobuf-net): those are stored as canonical text. For MessagePack and BSON that text is the id's
+  `ToString()`, so the prefix travels with it; protobuf-net writes the primitive's own text instead.
 
 <a id="testing-and-deployment"></a>
 

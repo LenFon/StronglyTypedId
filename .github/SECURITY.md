@@ -4,8 +4,8 @@
 
 | Version | Supported |
 | --- | --- |
-| 1.3.x (current pre-release line) | ✅ |
-| 1.2.x and earlier | ❌ |
+| 1.4.x (current) | ✅ |
+| 1.3.x and earlier | ❌ |
 
 Only the latest published version receives fixes. Because a strongly typed id ends up in persisted data,
 upgrading is expected to be cheap: the generated text form is stable across patch versions, and any
@@ -79,6 +79,6 @@ Knowing what this library does, and does not do, makes triage faster.
 
 ## Dependency vulnerabilities
 
-`NuGetAuditMode` is `all` for the four shipped projects, so a vulnerable transitive dependency fails
+`NuGetAuditMode` is `all` for the five shipped projects, so a vulnerable transitive dependency fails
 restore rather than sitting unnoticed. If you believe a dependency advisory applies but restore stays
 green, open a regular issue; that is a build-configuration bug, not a vulnerability report.

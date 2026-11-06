@@ -133,8 +133,10 @@ var faker = new Faker<Order>()
     .WithStronglyTypedIds(new AnyIdGenerator(), typeof(OrderId), typeof(CustomerId));
 ```
 
-Pass a seeded `AnyIdGenerator` for reproducible data. The adapter never overwrites a rule you wrote
-yourself; Bogus keeps it.
+Pass a seeded `AnyIdGenerator` for reproducible data.
+
+Bogus applies rules in registration order, so the last one wins. Call `WithStronglyTypedIds` **before** any
+`RuleFor` you write for an id property, or your rule is the one that gets overridden.
 
 ## Notes
 

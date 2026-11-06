@@ -11,6 +11,51 @@
 
 ## [未发布]
 
+### 变更
+
+- **GraphQL：** `Int128`、`UInt128`、`BigInteger` 的 Id 在输入输出两侧都是字符串。字面量改为
+  `StringValueNode`，与响应一致。
+- **规范文本：** `DateTime`、`DateTimeOffset`、`TimeOnly`、`DateOnly` 改用 `"O"` 格式，空 `format`
+  也回退到它。默认格式会丢亚秒，`TimeOnly` 连秒都丢，不同的 Id 可能写出同一段文本，作 JSON 字典键时
+  塌缩成一个条目。
+- **集成：** `Integrations = Default` 改为跟随程序集默认值，不再归一成 `All` 而覆盖程序集级的
+  `Integrations = None`。
+- **EF Core 与 Dapper：** `BigInteger`、`Int128`、`UInt128`、`Half` 改存规范文本。这四个基元没有数据库
+  provider 类型；其余内置基元保持原生列类型。
+
+### 修复
+
+- **生成器：** `[StronglyTypedId]` 在多个 `partial` 段重复标注时抛 `CS8785`，现在只有第一个声明产出，
+  `CS0579` 成为唯一错误。类型名与生成成员同名时编译失败（`CS0542`），现在报 `STIA0027` 并跳过生成。
+- **System.Text.Json：** 对象形态的 Id 读到 `{"value":null,"extra":1}` 会抛 `JsonException`，因为转换器
+  没读到右大括号就返回了。现在读到 `EndObject`。
+- **Newtonsoft.Json：** 对象形态的 Id 漏出 `FormatException` 与 `ArgumentException`，而不是
+  `JsonException`。像日期的值在转换器运行前就被解析，`DateTimeOffset` 的 Id 丢掉 offset、`string` 的 Id
+  值可能被替换，设 `DateParseHandling.None` 可避免。`decimal` 的 Id 丢精度且拒绝 `decimal.MaxValue`，
+  现在写文本，读侧仍接受 JSON number。
+- **HotChocolate：** 不同命名空间的同名 Id 导致 schema 构建失败。GraphQL 名现在回退到净化后的全名。
+- **生成代码：** 带 `Prefix` 的 Id 与 HotChocolate scalar 依赖消费方的 `using System;`，在
+  `<ImplicitUsings>disable` 下报 `CS1061`。受影响的文件现在以 `using global::System;` 开头。
+- **OpenAPI 与 Swagger：** `BigInteger` 的 schema 标成 `integer`，而转换器写的是文本。可空 Id 因查表时
+  没拆 `Nullable<T>` 而丢掉 schema。
+- **可空 Id：** `AnyIdGenerator.Create(typeof(OrderId?))` 抛异常而没有拆壳。Bogus 把 `OrderId?` 属性留在
+  `null`，显式传入 `typeof(OrderId?)` 时还会抛异常。
+- **EF Core：** 非枚举基元的转换器抛 `ArgumentException`，而不是文档承诺的 `InvalidOperationException`，
+  现在走 `TryCreate`。`AddStronglyTypedIds(ModelBuilder)` 是空操作，因为模型永远不会把强类型 Id 当作
+  属性发现，现在按 CLR 反射枚举实体属性。
+- **Dapper：** SQL Server 以 `DateTime` 与 `TimeSpan` 返回的 `DateOnly` 与 `TimeOnly` 列会被拒绝。
+- **分析器：** `STIA0011` 在 `id.CompareTo(default)`、`id is default` 这类只读比较上误报。
+- **测试辅助：** `AnyIdGenerator` 遇空枚举抛 `IndexOutOfRangeException`。
+- **自定义基元：** 把 `IComparable<TSelf>.CompareTo` 写成显式接口实现时报五处 `CS7036`。
+- **`DateTime`：** 文本解析对以 `"Z"` 结尾的文本丢掉 `DateTimeKind`，现在用
+  `DateTimeStyles.RoundtripKind`。
+- **protobuf-net：** 引用类型 Id 的 `null` 读回成基元默认值。
+- **命名实例：** 叫 `op_LessThan` 之类的名字会产生 `CS0102`，现在列为保留名。`DateTime` 与
+  `DateTimeOffset` 取值依赖构建机器时区，两种写法现在都被拒绝（`STIA0021`）。
+- **集成辅助类：** 命名空间消歧后类名可能撞车，因为 `A.B.OrderId` 与 `A_B.OrderId` 都变成
+  `A_B_OrderIdConverter`。最终类名相同时追加短哈希。
+- **重构：** 「Inline strongly typed id」误删 `global using`，导致其它文件报 `CS0246`。
+
 ## [1.4.0] - 2026-10-30
 
 集成版本：自定义基元（含 ULID）、protobuf-net 与 GraphQL 集成、每个 Id 的调试器代理，以及序列化与

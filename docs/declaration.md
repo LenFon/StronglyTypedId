@@ -44,8 +44,10 @@ refactoring menu (the light bulb; `Ctrl+.` in Visual Studio, `Ctrl+Shift+R` in V
   their place; an existing `using` is not duplicated; the file's own line endings are preserved.
 - **Inline strongly typed id** is the reverse. It removes `[StronglyTypedId]` and `partial`, and drops
   `using Len.StronglyTypedId;` when nothing else in the file needs it, neither another id nor any other
-  type from that namespace, such as `IStronglyTypedId<,>` or `StronglyTypedIdIntegrations`. The generated
-  members disappear along with the attribute, leaving the plain record you started from.
+  type from that namespace, such as `IStronglyTypedId<,>` or `StronglyTypedIdIntegrations`. A
+  `global using Len.StronglyTypedId;` is always kept: its scope is the whole project, so this file no
+  longer needing it says nothing about the others, and deleting it would break them with `CS0246`. The
+  generated members disappear along with the attribute, leaving the plain record you started from.
 
 The forward action is offered only when the result would be a valid id, so it never produces a declaration
 that immediately fails the analyzer: exactly one positional parameter, named `Value`, of a
@@ -81,9 +83,10 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // false, no exception
 The method must be a static member of the id with the signature `static bool Validate(TPrimitiveId value)`,
 returning `true` for an acceptable value. It is called from `Create`, `TryCreate` and every `TryParse`
 overload (string, span and UTF-8), so `TryParse` keeps its contract and returns `false` instead of throwing.
-The JSON converters and the Entity Framework Core integration both validate on read: EF Core constructs
-through `Create`, while the two JSON converters construct through `TryCreate` and rethrow the rejection as
-their own framework exception. Deserialization therefore rejects invalid values as well.
+The JSON converters and the Entity Framework Core integration both validate on read: all three construct
+through `TryCreate` and rethrow the rejection as their own framework exception (`JsonException`,
+`JsonSerializationException`, and EF Core's `InvalidOperationException`). Deserialization therefore rejects
+invalid values as well.
 
 One thing a source generator cannot do is intercept your primary constructor: `new OrderId(...)` bypasses
 the validator. Route values through `Create` (or the parsing members) when they come from outside your
@@ -168,7 +171,8 @@ The normalizer runs exactly once per entry point: the result is kept in a local 
 normalizer that appends a prefix cannot apply it twice.
 
 Leaving `Normalizer` unset emits no normalization code at all. Like `Validator`, it can also be set for the
-whole assembly with `[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]`.
+whole assembly with `[assembly: StronglyTypedIdDefaults(Normalizer = "Canonical")]` — the name is resolved on
+each id, so every id in the assembly must declare its own `Canonical` method.
 
 <a id="named-instances"></a>
 
@@ -191,9 +195,9 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 The value is the **primitive** value in its invariant text form, **without** the `Prefix`, because a prefix
 decorates the canonical text form while an instance carries a primitive value. It is checked at compile time
 and, for most primitives, translated into a literal or a constructor call, so nothing is parsed at run time.
-The exceptions are `Int128`, `UInt128` and `BigInteger` (the generator runs on `netstandard2.0`, where those
-types do not exist, so it validates the text by hand and emits a run-time `Parse` of the already-checked
-string) and custom primitives, whose `Parse` cannot be executed at compile time at all.
+The exceptions are `Int128`, `UInt128`, `BigInteger` and `Half` (the generator runs on `netstandard2.0`,
+where those types do not exist, so it validates the text by hand and emits a run-time `Parse` of the
+already-checked string) and custom primitives, whose `Parse` cannot be executed at compile time at all.
 
 Most primitives accept exactly what their own `Parse` accepts, so `[StronglyTypedIdInstance("X", " 1 ")]` is
 fine for an `int`. A few accept a stricter form, because their `Parse` is loose enough to make the
@@ -205,12 +209,21 @@ same instance be written two ways.
 | `Int128`, `UInt128`, `BigInteger` | optional sign, then digits only | surrounding whitespace (`" 1 "`) |
 | `DateOnly` | exactly `yyyy-MM-dd` | `"2020-1-1"`, `"2020/01/01"` |
 | `TimeOnly` | `HH:mm`, `HH:mm:ss`, or `HH:mm:ss.f`–`fffffff` | `"1:02"` (single-digit hour) |
-| `Half` | anything `float` accepts, below the 65520 overflow midpoint | `"65520"` (rounds to infinity), `"1,000"` |
+| `DateTime` | `Z` or no offset | an explicit offset (`"2020-01-01T00:00:00+08:00"`) |
+| `DateTimeOffset` | an explicit offset (`Z` or `±hh:mm`) | no offset (`"2020-01-01T00:00:00"`) |
+| `Half` | anything `double` accepts, below the 65520 overflow midpoint | `"65520"` (rounds to infinity), `"1,000"` |
 | `float`, `double` | exponents, `NaN`, `Infinity`; no thousands separators | `"1,000"` |
 
+`DateTime` and `DateTimeOffset` are stricter for a different reason: their interpretation depends on the
+**build machine's time zone**. `DateTime.TryParse` with `RoundtripKind` returns `Kind = Local` for text that
+carries an offset, and the ticks are then the local wall clock; `DateTimeOffset.TryParse` fills in the local
+offset when the text has none. Either way the same declaration would produce a different literal on a
+machine in another time zone, so both forms are rejected. Write `Z` (or no offset) for `DateTime`, and always
+write an offset for `DateTimeOffset`.
+
 Everything else follows its primitive: `char` takes exactly one character, `decimal` accepts thousands
-separators, `Guid` / `DateTime` / `DateTimeOffset` / `TimeSpan` take their usual flexible forms, and an enum
-takes a member name, a numeric value, or a comma-separated combination of members.
+separators, `Guid` / `TimeSpan` take their usual flexible forms, and an enum takes a member name, a numeric
+value, or a comma-separated combination of members.
 
 Every instance is built through `Create`, and that is what makes the guarantee hold: an instance is never
 a privileged value, so it goes through the same `Normalizer` and `Validator` as any other value, and
@@ -247,7 +260,7 @@ var same = OrderId.Parse(utf8, CultureInfo.InvariantCulture); // IUtf8SpanParsab
 ## TypeConverter
 
 By default only JSON converters are generated. When you need round-tripping through `TypeDescriptor` (config
-binding, `XmlSerializer`, the Newtonsoft dictionary-key read path, and so on), enable it per type with
+binding, the Newtonsoft dictionary-key read path, and so on), enable it per type with
 `TypeConverter = true`:
 
 ```csharp
@@ -291,20 +304,27 @@ way.
 ## Assembly-level defaults (StronglyTypedIdDefaults)
 
 When many ids in an assembly share the same validator, set a default at the assembly level instead of repeating
-it on each one:
+it on each one. The value is a **member name**, not a qualified name: it is resolved against each id, so every
+id in the assembly must declare a method with that name.
 
 ```csharp
-[assembly: StronglyTypedIdDefaults(Validator = "MyValidators.NonEmpty")]
+[assembly: StronglyTypedIdDefaults(Validator = "NonEmpty")]
+
+[StronglyTypedId]
+public partial record struct OrderId(Guid Value)
+{
+    private static bool NonEmpty(Guid value) => value != Guid.Empty;
+}
 ```
 
 `StronglyTypedIdDefaults.Validator` is only a **default**: an id that declares
-`[StronglyTypedId(Validator = ...)]` keeps its own validator; the assembly default is used only when neither
-the attribute nor the assembly default is set.
+`[StronglyTypedId(Validator = ...)]` keeps its own validator; the assembly default applies only to ids that
+do not set one.
 
-`Normalizer` follows the same precedence rule:
+`Normalizer` follows the same precedence rule, and the same member-name rule:
 
 ```csharp
-[assembly: StronglyTypedIdDefaults(Normalizer = "MyNormalizers.Canonical")]
+[assembly: StronglyTypedIdDefaults(Normalizer = "Canonical")]
 ```
 
 `ExceptionType` follows it too: `[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
@@ -358,6 +378,7 @@ not referenced is reported as [STIA0019](diagnostics.md#diagnostics) so the mist
 | Value | Effect |
 | --- | --- |
 | *(not set)* | Generate everything the referenced packages allow, which is the behaviour before this option existed |
+| `Default` | Same as not setting it: fall through to the assembly default, then to `All`. It cannot override an assembly default; use `All` for that |
 | `None` | No integration code at all; the core implementation is unaffected |
 | `Dapper \| SystemTextJson` | Only the listed integrations (still requires the packages) |
 | `All` | Explicitly everything; useful to restore a single id under an assembly default of `None` |
@@ -401,16 +422,19 @@ var id = OrderAggregate.OrderId.Create(value);   // used through its nested name
 
 The only prerequisite is that **every containing type can be reopened verbatim** by the generated code:
 each level must be `partial` and not a `file`-local type. Violations are reported by
-[STIA0009](diagnostics.md#diagnostics) (missing `partial`, or `file`-local), which comes with a code fix that adds `partial`.
+[STIA0009](diagnostics.md#diagnostics) (missing `partial`, or `file`-local). A missing `partial` comes with a
+code fix that adds it; a `file`-local container has no fix, because the modifier cannot simply be dropped
+from a type that is used across files.
 
 **Generic containers.** The containing type may be generic (for example `Outer<T>`): the generator
 reopens it with its type parameter list, so an id declared inside a generic container compiles and keeps
-every capability the core generator produces: comparison and ordering, formatting and span parsing, and
-System.Text.Json dictionary keys. JSON is the one exception. The converter classes are generated, but the
-`[JsonConverter]` attribute cannot be emitted (an attribute argument may not reference a converter that
-carries the container's type parameter, CS0416), and the `AddStronglyTypedIds` entry points
-skip such ids because an open generic type cannot be passed as a type argument. Register the converter
-yourself for the closed type you use:
+every non-JSON capability the core generator produces: comparison and ordering, formatting and span
+parsing. **JSON is the one exception**, and it covers both the value shape and dictionary keys. The
+converter classes are generated, but the `[JsonConverter]` attribute cannot be emitted (an attribute
+argument may not reference a converter that carries the container's type parameter, CS0416), and the
+`AddStronglyTypedIds` entry points skip such ids because an open generic type cannot be passed as a type
+argument. Register the converter yourself for the closed type you use, which restores both the value shape
+and dictionary-key support:
 
 ```csharp
 options.Converters.Add(new Outer<int>.InnerId.SystemTextJsonConverter());

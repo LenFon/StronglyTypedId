@@ -25,23 +25,88 @@ var json = JsonConvert.SerializeObject(new OrderId(Guid.NewGuid()));
 var id   = JsonConvert.DeserializeObject<OrderId>(json);
 ```
 
+### 像日期的值会在转换器运行前被解析
+
+Newtonsoft 在调用转换器 *之前* 就把「像日期」的字符串解析成了 `DateTime`，因此生成的转换器拿到的是
+本地时区的 `DateTime`，而不是原始文本。两类 Id 会受影响。
+
+`DateTimeOffset` 基元的 Id 读回来时带的是机器本地 offset，不是写出去的那个：
+
+```csharp
+var id = TimestampId.Create(new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.FromHours(-5)));
+
+var json = JsonConvert.SerializeObject(id);          // "2020-01-02T03:04:05-05:00"
+var back = JsonConvert.DeserializeObject<TimestampId>(json);
+
+back.Value.Offset;                                   // UTC+8 的机器上是 +08:00，不是 -05:00
+```
+
+时刻本身没丢 —— `back.Value.UtcTicks` 与原值相同 —— 但 offset 变了，且变成什么取决于机器。
+
+`string` 基元的 Id 更糟：若它的值恰好长得像 ISO 日期时间，值本身会被替换成该时刻的本地渲染：
+
+```csharp
+var id = TokenId.Create("2020-01-02T03:04:05Z");
+
+var json = JsonConvert.SerializeObject(id);          // "2020-01-02T03:04:05Z"
+var back = JsonConvert.DeserializeObject<TokenId>(json);
+
+back.Value;                                          // "01/02/2020 03:04:05" —— 原字符串没了
+```
+
+两者都是「经过转换器」才有的问题：普通的 `DateTimeOffset` 或 `string` 属性是能正确往返的。转换器内部
+无解 —— 它运行时原文已经没了，改写成规范文本也没用，token 照样会被当成日期解析。手写的
+`JsonConverter<string>` 也会遇到同样的事，所以这是 Newtonsoft 的限制，不是本库引入的。
+
+把序列化器设成 `DateParseHandling = DateParseHandling.None` 可保留原始字符串，两种情况都能往返：
+
+```csharp
+var settings = new JsonSerializerSettings { DateParseHandling = DateParseHandling.None };
+
+var json = JsonConvert.SerializeObject(id, settings);
+var back = JsonConvert.DeserializeObject<TimestampId>(json, settings);
+
+back.Value.Offset;                                   // -05:00
+```
+
+该设置对整个序列化器生效，但对其他基元安全：`DateTime` 的 `Kind` 保持不变，`DateOnly` / `TimeOnly` /
+`TimeSpan` 写出的字符串本来就不会被 Newtonsoft 当成日期。System.Text.Json 不受影响，始终保留原值。
+
 ## 序列化器不认识的基元
 
-有六个基元在其中一方库里没有原生 JSON 表示，它们的转换器改为写出不变文化文本，也就是 `ToString()`
+<a id="primitives-the-serializers-do-not-know"></a>
+
+有七个基元在其中一方库里没有原生 JSON 表示，它们的转换器改为写出不变文化文本，也就是 `ToString()`
 产出的那段文本：
 
 | 基元                                          | 库               | 按值写会怎样                                                   |
 | --------------------------------------------- | ---------------- | -------------------------------------------------------------- |
 | `BigInteger`                                  | System.Text.Json | 退化成 `{"IsPowerOfTwo":false,…,"Sign":1}`，读回来是 `default`  |
 | `Int128`、`UInt128`、`Half`、`DateOnly`、`TimeOnly` | Newtonsoft.Json | 抛 `JsonWriterException: Unsupported type`                     |
+| `decimal`                                     | Newtonsoft.Json | 超过约 15 位有效数字时静默舍入，`decimal.MaxValue` / `MinValue` 直接抛异常 |
 
 ```csharp
 JsonSerializer.Serialize(BigIntegerId.Create(42));       // "42"
 JsonConvert.SerializeObject(HalfId.Create((Half)1.5));   // "1.5"
+JsonConvert.SerializeObject(MoneyId.Create(1.5m));       // "1.5"
 ```
 
 读写两侧走同一段规范文本，往返无损；唯一的差别是这些 Id 在 JSON 里呈现为字符串而不是数字。其余基元
 保持自然形态（数字仍是数字、`Guid` 仍是字符串、枚举仍是数字）。
+
+`decimal` 上榜的原因与其余几个不同：Newtonsoft 能写它，但在调用转换器之前就把数字 token 解析成了
+`double`，转换器拿不到原始文本。`123456789012345.67` 读回来是 `123456789012346`，`decimal.MaxValue`
+直接抛 `JsonSerializationException`。读侧任何写法都救不回已丢掉的位数，故转换器改写成规范文本。代价与
+`Int128` 已经承担的一样：Newtonsoft 写出 JSON 字符串，而 System.Text.Json 写数字，一方写出的载荷另一方
+读不了。同一个契约只用一种库，或把 Id 的基元声明成 `string`，才能共享线上格式。
+
+读侧刻意放宽：JSON number 仍然接受，因此旧版本（写数字）产出的载荷不会失效。这些数字仍走原来的
+`double` 解析，精度上限与修复前一致 —— 只有文本形是无损的。
+
+`DateTime`、`DateTimeOffset`、`TimeOnly` 与 `DateOnly` 的规范文本用 `"O"` 格式：前三个的默认格式有损
+（丢掉亚秒，`TimeOnly` 连秒都丢），拿它做字典键会把两个不同的 Id 塌缩成同一个条目；`DateOnly` 本身
+无损，但默认短日期（`01/02/2020`）与 System.Text.Json 写出的 ISO 形不一致，两个库会对同一个 Id
+给出不同文本。
 
 ## 字典键
 
@@ -64,7 +129,9 @@ var back = JsonSerializer.Deserialize<Dictionary<OrderId, int>>(json);
 枚举键也是 `options.DictionaryKeyPolicy` 唯一生效的情形：键是「名字」而非数据，按 camelCase 改写它与
 内建枚举键的行为一致，读路径则忽略大小写解析以接受被改写过的键。其余基元的键文本原样保留，因为那段文本
 **就是**值本身，改写它会让文档读不回来；带前缀的 Id 同样排除在外，因为策略会把前缀一起改写。把 `null`
-的 Id 当属性名写出会抛 `NotSupportedException`。
+的 Id 当属性名写出会抛 `NotSupportedException`；被包装的基元为 `null`（`string` 基元或自定义 `class`
+基元）时同样如此，因为 JSON 属性名本身不允许 `null`。带前缀的 Id 也不例外：它的键文本会是裸前缀，
+读回时剥掉前缀只剩空文本，任何读路径都不接受。
 
 Newtonsoft.Json 的字典键走的是 `TypeConverter` / `ToString()`，并不经过 `JsonConverter`，因此生成的
 转换器接管不到它。请在 Id 上开启 `TypeConverter = true`，Newtonsoft 才能在读路径还原键。键文本与转换器
@@ -97,8 +164,9 @@ Id 无法表示 `null`，因此两种转换器都会拒绝该 token，而不是�
 以 `BigInteger` 为基元的 Id 按文本读入载荷，因此「载荷不是数字」也按同一方式报告：抛 `JsonException`，
 而不是 `BigInteger.Parse` 原本会抛的 `FormatException`。
 
-EF Core 是例外：它的 `ValueConverter` 调用 `Create`，被拒绝的值以 `ArgumentException` 呈现。从数据库行
-物化实体属于数据完整性边界，那里用 `ArgumentException` 比套一层 ORM 专属异常更能说明问题。
+EF Core 是另一种意义上的例外：它的 `ValueConverter` 同样经 `TryCreate` 构造，但把被拒绝的值报成
+`InvalidOperationException`，而不是某个序列化库专属的异常类型。从数据库行物化实体属于数据完整性边界，
+那里用这个异常比套一层 ORM 专属包装更能说明问题。
 
 ## JSON 形态
 
@@ -117,11 +185,14 @@ public partial record struct OrderId(Guid Value);
 该设置对 `System.Text.Json` 与 `Newtonsoft.Json` 同时生效，且只作用于 Id 自身的值：字典键永远是基元
 文本，因为 JSON 的对象键不可能是对象。`JsonShape.Object` 读写单个 `value` 属性；载荷不是对象、或对象
 缺少 `value` 时会抛异常（`JsonException` / `JsonSerializationException`），其余属性一律跳过。
+被包装基元为 `null` 的 Id（`string` 基元或自定义 `class` 基元）写出 `{"value":null}`，读回得到同一个
+default Id，因此对象形态同样可往返。若整个值位置是裸 JSON `null` 而不是对象，`record struct` 的 Id 会像
+基元形态那样抛框架自己的序列化异常，而不是把 `null` 交回去（拆箱时会失败）。
 
-两侧的属性名匹配都不区分大小写，这与它们各自处理普通对象时的行为一致：`{"value":…}`、`{"Value":…}`、
-`{"VALUE":…}` 读到的是同一个值。`System.Text.Json` 下这跟随 `options.PropertyNameCaseInsensitive`，
-关掉它就只接受精确的小写 `value`。`Newtonsoft.Json` 下则是无条件的，因为 Newtonsoft 自己的 POCO 绑定
-本就大小写不敏感，转换器若更严就会拒绝文档其余部分都能接受的载荷。由于基元形态是默认值，除非你主动选择
+`System.Text.Json` 下属性名跟随 `options.PropertyNameCaseInsensitive`，它默认是 `false`：
+只接受精确的小写 `value`，除非你打开它 —— 打开后 `{"value":…}`、`{"Value":…}`、`{"VALUE":…}`
+读到的是同一个值。`Newtonsoft.Json` 下则是无条件的，因为 Newtonsoft 自己的 POCO 绑定本就大小写
+不敏感，转换器若更严就会拒绝文档其余部分都能接受的载荷。由于基元形态是默认值，除非你主动选择
 对象形态，既有载荷不受影响。
 
 ## 文本前缀

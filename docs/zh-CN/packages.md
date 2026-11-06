@@ -13,7 +13,7 @@ title: NuGet 包
 | --- | --- | --- | --- |
 | `Len.StronglyTypedId` | `net8.0`、`net10.0` | 运行时库：`IStronglyTypedId<,>`、反射辅助，以及生成代码所依赖的类型 | 总是，因为代码里引用的就是它 |
 | `Len.StronglyTypedId.Generators` | `netstandard2.0` | 源码生成器、分析器与代码修复 | 永不直接装：主包已依赖它 |
-| `Len.StronglyTypedId.Testing` | `net8.0`、`net10.0` | `Any.Id<T>()`、`Any.Ids`、`Any.Register`、`Any.Reset`、`AnyIdGenerator` 与 `AnyIdOptions` | 需要造可信 Id 的测试工程，见[测试](testing.md#testing) |
+| `Len.StronglyTypedId.Testing` | `net8.0`、`net10.0` | `Any.Id<T>()`、`Any.Ids`、`Any.Register`、`Any.Reset`、`AnyIdGenerator`、`AnyIdOptions` 与 `StronglyTypedIdConformance` | 需要造可信 Id 的测试工程，见[测试](testing.md#testing) |
 | `Len.StronglyTypedId.Testing.AutoFixture` | `net8.0`、`net10.0` | `WithStronglyTypedIds()`，教 AutoFixture 填充 Id | 已经在用 AutoFixture 的测试工程 |
 | `Len.StronglyTypedId.Testing.Bogus` | `net8.0`、`net10.0` | `WithStronglyTypedIds()`，教 Bogus 填充 Id | 已经在用 Bogus 的测试工程 |
 
@@ -53,7 +53,7 @@ dotnet add package Len.StronglyTypedId
 
 这条属性走 MSBuild → 分析器这条通道：SDK 把它写进编译用的 analyzer config 的全局段
 （`build_property.StronglyTypedIdEnableAnalyzers`），分析器读到「否」就**一个诊断动作都不注册**，
-26 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
+28 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
 
 三态语义：
 

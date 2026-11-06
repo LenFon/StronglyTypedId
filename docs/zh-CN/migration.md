@@ -32,8 +32,10 @@ title: 从 1.3.0 升级到 1.4.0
 
 ## 集成入口改为扩展方法
 
-过去每个集成都是生成类 `StronglyTypedIds` 上的静态方法。现在它是被配置对象上的扩展方法，并返回该
-对象，因此可以链式调用。
+过去每个集成都是生成类 `StronglyTypedIds` 上的静态方法。现在它变成了被配置对象上的扩展方法。
+接收配置对象的那些返回该对象，因此可以链式调用；往进程级注册表里填东西的那些返回 `void` ——
+Newtonsoft.Json 的 `settings.AddStronglyTypedIds()`、Dapper 的无参 `StronglyTypedIds.AddStronglyTypedIds()`
+以及 MongoDB 的 `StronglyTypedIds.RegisterBsonSerializers()`。
 
 | 1.3.0 | 1.4.0 |
 | --- | --- |
@@ -146,8 +148,8 @@ catch (FormatException) { /* 文本非法 */ }
 ### `STIA0011` 升级为警告，且覆盖面更广
 
 `STIA0011`（「直接构造强类型 Id」）过去是提示级，且只报 `new Xxx(...)`。现在它是**警告**，还会报
-目标类型推断的 `new(...)` 以及 `default` / `default(T)`。把警告当错误的项目会开始因绕过 `Create` 的
-Id 而构建失败。要么把构造改走 `Create`，要么在 `.editorconfig` 里把级别调回去。
+目标类型推断的 `new(...)`、`default` / `default(T)` 以及 `id with { Value = … }`。把警告当错误的项目会
+开始因绕过 `Create` 的 Id 而构建失败。要么把构造改走 `Create`，要么在 `.editorconfig` 里把级别调回去。
 
 <a id="analyzer-muting"></a>
 

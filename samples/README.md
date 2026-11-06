@@ -1,6 +1,7 @@
 # 示例
 
-九个示例工程，按「想学什么」挑一个看即可。全部随解决方案一起编译，`dotnet build Len.StronglyTypedId.slnx` 之后可直接运行。
+八个示例工程，外加一个被它们共用的领域类库。按「想学什么」挑一个看即可。全部随解决方案一起编译，
+`dotnet build Len.StronglyTypedId.slnx` 之后可直接运行。
 
 | 工程 | 形态 | 演示重点 |
 | --- | --- | --- |

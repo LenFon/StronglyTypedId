@@ -25,24 +25,100 @@ var json = JsonConvert.SerializeObject(new OrderId(Guid.NewGuid()));
 var id   = JsonConvert.DeserializeObject<OrderId>(json);
 ```
 
+### Date-like values are parsed before the converter runs
+
+Newtonsoft parses a date-like string into a `DateTime` *before* it invokes a converter, so the generated
+converter receives a local-time `DateTime` rather than the original text. Two kinds of id are affected.
+
+A `DateTimeOffset` id comes back with the machine's local offset instead of the one that was written:
+
+```csharp
+var id = TimestampId.Create(new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.FromHours(-5)));
+
+var json = JsonConvert.SerializeObject(id);          // "2020-01-02T03:04:05-05:00"
+var back = JsonConvert.DeserializeObject<TimestampId>(json);
+
+back.Value.Offset;                                   // +08:00 on a machine in UTC+8, not -05:00
+```
+
+The instant is preserved — `back.Value.UtcTicks` equals the original — but the offset is not, and which
+offset you get depends on the machine.
+
+A `string`-backed id is worse: if its value happens to look like an ISO date-time, the value itself is
+replaced by the local-time rendering of that instant:
+
+```csharp
+var id = TokenId.Create("2020-01-02T03:04:05Z");
+
+var json = JsonConvert.SerializeObject(id);          // "2020-01-02T03:04:05Z"
+var back = JsonConvert.DeserializeObject<TokenId>(json);
+
+back.Value;                                          // "01/02/2020 03:04:05" — the string is gone
+```
+
+Both are specific to going through a converter: a plain `DateTimeOffset` or `string` property round-trips
+correctly. There is no fix inside the converter — the original text is already gone by the time it runs,
+and writing the canonical text instead does not help, because the token is parsed as a date either way.
+The same thing happens to any hand-written `JsonConverter<string>`, so it is a Newtonsoft limitation rather
+than something this library introduces.
+
+Set `DateParseHandling = DateParseHandling.None` on the serializer to keep the raw string, and both cases
+round-trip:
+
+```csharp
+var settings = new JsonSerializerSettings { DateParseHandling = DateParseHandling.None };
+
+var json = JsonConvert.SerializeObject(id, settings);
+var back = JsonConvert.DeserializeObject<TimestampId>(json, settings);
+
+back.Value.Offset;                                   // -05:00
+```
+
+The setting is global to the serializer, but it is safe for the other primitives: `DateTime` keeps its
+`Kind`, and `DateOnly` / `TimeOnly` / `TimeSpan` are written as strings that Newtonsoft never treated as
+dates in the first place. System.Text.Json is unaffected and always preserves the value.
+
 ## Primitives the serializers do not know
 
-Six primitives have no native JSON representation in one of the two libraries, so their converters write
+<a id="primitives-the-serializers-do-not-know"></a>
+
+Seven primitives have no native JSON representation in one of the two libraries, so their converters write
 the invariant-culture text instead of the raw value, the same text `ToString()` produces:
 
 | Primitive                                     | Library          | Raw value would…                                              |
 | --------------------------------------------- | ---------------- | ------------------------------------------------------------- |
 | `BigInteger`                                  | System.Text.Json | serialize as `{"IsPowerOfTwo":false,…,"Sign":1}` and read back as `default` |
 | `Int128`, `UInt128`, `Half`, `DateOnly`, `TimeOnly` | Newtonsoft.Json | throw `JsonWriterException: Unsupported type`                  |
+| `decimal`                                     | Newtonsoft.Json | lose precision above ~15 significant digits, and throw on `decimal.MaxValue` / `MinValue` |
 
 ```csharp
 JsonSerializer.Serialize(BigIntegerId.Create(42));       // "42"
 JsonConvert.SerializeObject(HalfId.Create((Half)1.5));   // "1.5"
+JsonConvert.SerializeObject(MoneyId.Create(1.5m));       // "1.5"
 ```
 
 Both directions go through the same canonical text, so the round trip is lossless; the only consequence
 is that these ids appear as JSON strings rather than numbers. Every other primitive keeps its natural
 shape: numbers stay numbers, `Guid` stays a string, enums stay numbers.
+
+`decimal` is on the list for a different reason than the others: Newtonsoft *can* write it, but it parses
+the number token into a `double` before the converter runs, so the converter never sees the original text.
+`123456789012345.67` came back as `123456789012346`, and `decimal.MaxValue` threw
+`JsonSerializationException`. No read-side code can recover the lost digits, so the converter writes the
+canonical text instead. The trade-off is the same one `Int128` already makes: Newtonsoft writes a JSON
+string where System.Text.Json writes a number, so a payload written by one library is not read by the
+other. Use one library per contract, or declare the id's primitive as `string` if the wire format must be
+shared.
+
+Reading is deliberately lenient: a JSON number is still accepted, so payloads written by an earlier
+version (which wrote numbers) keep working. Those numbers go through the same `double` parse as before, so
+they carry the same precision limit — only the text form is lossless.
+
+The canonical text of `DateTime`, `DateTimeOffset`, `TimeOnly` and `DateOnly` uses the `"O"` format.
+For the first three the default format is lossy (it drops sub-second ticks, and `TimeOnly` drops the
+seconds), so a dictionary key built from it would collapse two different ids into one entry. `DateOnly`
+is lossless either way, but its default short date (`01/02/2020`) differs from the ISO form
+System.Text.Json writes, so the two libraries would disagree on the same id.
 
 ## Dictionary keys
 
@@ -70,7 +146,10 @@ name rather than data, so camel-casing it matches the built-in enum-key handling
 case-insensitively to accept the rewritten key. Every other primitive keeps its key text verbatim, because
 that text *is* the value and rewriting it would make the document unreadable; a prefixed id is excluded
 too, because the policy would mangle the prefix. Writing a `null` id as a property name throws
-`NotSupportedException`.
+`NotSupportedException`; so does an id whose wrapped primitive is `null` (a `string`-backed id or one
+backed by a custom `class`), since a JSON property name cannot be `null` either. That includes a prefixed
+id: its key text would be the bare prefix, and stripping the prefix on read leaves empty text that no read
+path accepts.
 
 Newtonsoft.Json routes dictionary keys through `TypeConverter` / `ToString()` rather than through
 `JsonConverter`, so its keys never reach the generated converter. Enable `TypeConverter = true` on the id so
@@ -108,9 +187,10 @@ and never has to expect an `ArgumentException` from a serializer.
 `BigInteger`-backed ids read their payload as text, so a payload that is not a number is reported the same
 way, as `JsonException` rather than the `FormatException` that `BigInteger.Parse` would raise.
 
-EF Core is the exception: its `ValueConverter` calls `Create`, so a rejected value surfaces as
-`ArgumentException`. Materializing an entity from a database row is a data-integrity boundary, where that
-exception describes the problem more precisely than an ORM-specific wrapper would.
+EF Core is the exception in a different way: its `ValueConverter` also constructs through `TryCreate`, but
+reports a rejected value as `InvalidOperationException` rather than a serializer-specific type. Materializing
+an entity from a database row is a data-integrity boundary, where that exception describes the problem more
+precisely than an ORM-specific wrapper would.
 
 ## JSON shape
 
@@ -131,14 +211,17 @@ The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to the
 dictionary keys are always the primitive text, because a JSON object cannot be a key. `JsonShape.Object`
 reads and writes a single `value` property; a payload that is not an object, or an object without
 `value`, throws (`JsonException` / `JsonSerializationException`), and any other property is skipped.
+An id whose wrapped primitive is `null` (a `string`-backed id or one backed by a custom `class`) writes
+`{"value":null}` and reads it back as that same default id, so the object form round-trips too. A bare
+JSON `null` in place of the object is rejected for a `record struct` id with the same framework exception
+as the primitive form, rather than being handed back as `null` (which would fail on unboxing).
 
-The property name is matched case-insensitively on both sides, which is what each serializer already does
-for an ordinary object: `{"value":…}`, `{"Value":…}` and `{"VALUE":…}` all read the same. Under
-`System.Text.Json` that follows `options.PropertyNameCaseInsensitive`, so turn it off and only the exact
-lowercase `value` is accepted. Under `Newtonsoft.Json` it is unconditional, because Newtonsoft's own
-POCO binding is case-insensitive and a converter that were stricter would reject payloads the rest of the
-document accepts. Because the primitive form is the default, existing payloads are unaffected unless you ask
-for the object form.
+Under `System.Text.Json` the property name follows `options.PropertyNameCaseInsensitive`, which is
+`false` by default: only the exact lowercase `value` is accepted unless you turn it on, and then
+`{"value":…}`, `{"Value":…}` and `{"VALUE":…}` all read the same. Under `Newtonsoft.Json` the match is
+unconditional, because Newtonsoft's own POCO binding is case-insensitive and a converter that were
+stricter would reject payloads the rest of the document accepts. Because the primitive form is the default,
+existing payloads are unaffected unless you ask for the object form.
 
 ## Text prefix
 

@@ -30,8 +30,9 @@ dotnet build Len.StronglyTypedId.slnx -t:Rebuild
 # Full test run (Microsoft.Testing.Platform, both TFMs).
 dotnet test --solution Len.StronglyTypedId.slnx
 
-# A single test class, when iterating.
-dotnet test --solution Len.StronglyTypedId.slnx --filter-class "*StronglyTypedIdAnalyzer*Tests"
+# A single test class, when iterating. Use --project, not --solution: with --solution every
+# module without a match reports "zero tests" and the run exits with code 8.
+dotnet test --project test/Len.StronglyTypedId.Generators.Test --filter-class "*StronglyTypedIdAnalyzer*Tests"
 ```
 
 Two practical notes:
@@ -57,7 +58,7 @@ Two practical notes:
 | --- | --- | --- |
 | Build | `dotnet build Len.StronglyTypedId.slnx -t:Rebuild` | 0 warnings, 0 errors |
 | Tests | `dotnet test --solution Len.StronglyTypedId.slnx` | Behaviour, both TFMs |
-| Docs | `dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify` | README tables match the source |
+| Docs | `dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify` | The generated tables in README and `docs/` match the source |
 | Package readme | `dotnet run --project tools/Len.StronglyTypedId.DocGen -- --verify-package-readme` | `PACKAGE.md` matches the source |
 | Packaging | `Len.StronglyTypedId.Packaging.Test` | The `.nupkg` actually carries the generator, the readme and the icon |
 | API compat | `dotnet pack -c Release` | No accidental breaking change against the published baseline |
@@ -109,7 +110,7 @@ these, check the rest:
 
 | You changed | Also update |
 | --- | --- |
-| A diagnostic (id, severity, title, message, fixability) | `Descriptors.cs`, `AnalyzerReleases.Shipped.md` / `.Unshipped.md`, and the README diagnostics table (regenerate with DocGen; never hand-edit it) |
+| A diagnostic (id, severity, title, message, fixability) | `Descriptors.cs`, `AnalyzerReleases.Shipped.md` / `.Unshipped.md`, and the diagnostics table in `docs/diagnostics.md` + `docs/zh-CN/diagnostics.md` (regenerate with DocGen; never hand-edit it) |
 | A supported primitive type | `SupportedPrimitiveTypes.DocumentedTypes`, the README primitive table (DocGen), and the serializer gaps noted in `Limitations` |
 | An integration's availability condition | The README "What gets generated" table (DocGen) and `PACKAGE.md` |
 | A `build` / `buildTransitive` `.props` or `.targets` file | Its file name must match the package ID exactly, because NuGet only auto-imports files named after the package. A mismatch ships the file without importing it, so the property silently never reaches the analyzer |
@@ -130,7 +131,7 @@ rather than inventing a shorter path:
 | 1 | `src/Len.StronglyTypedId/…/StronglyTypedIdIntegrations.cs` | Add the public enum bit and fold it into `All` |
 | 2 | `src/Len.StronglyTypedId.Generators/…/IntegrationFlags.cs` | Add the **mirrored** constant. The generator does not reference the runtime assembly, so it matches by integer bit, and the two must agree bit for bit |
 | 3 | `src/Len.StronglyTypedId.Generators/…/Generators/<Xxx>CodeGenerator.cs` | The new generator, implementing `IIntegrationCodeGenerator` (`Order` decides execution order) |
-| 4 | `…/Generators/StronglyTypedIdGenerator.cs` | One `CodeGeneratorRegistration` in `_generatorCatalog` (assembly gate + English and Chinese `DocText`), a `GenerateXxxCode` method, and one `RegisterSourceOutput` line |
+| 4 | `…/Generators/StronglyTypedIdGenerator.cs` | One `CodeGeneratorRegistration` in `_generatorCatalog` (assembly gate + English and Chinese `DocText`). The catalog loop registers every non-core entry itself, so no per-integration `RegisterSourceOutput` line is needed |
 | 5 | `…/Generators/PrimitiveIdSchemaMap.cs` | If the integration exposes an OpenAPI schema, the mapping goes here; Swashbuckle and the built-in OpenAPI share it, so the two cannot drift |
 | 6 | `docs/integrations.md` + `docs/zh-CN/integrations.md` | The integration's section. DocGen `--verify` checks the README table against the registration entries |
 | 7 | `test/…/Generators/` + `test/Len.StronglyTypedId.Integration.Test/` | Generator unit tests plus an end-to-end round-trip |

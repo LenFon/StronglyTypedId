@@ -12,6 +12,59 @@ change set rather than reproducing every commit.
 
 ## [Unreleased]
 
+### Changed
+
+- **GraphQL:** `Int128`, `UInt128` and `BigInteger` ids are strings on both input and output. The literal
+  is a `StringValueNode`, matching the response.
+- **Canonical text:** `DateTime`, `DateTimeOffset`, `TimeOnly` and `DateOnly` use the `"O"` format, and an
+  empty `format` falls back to it. The default format drops sub-second ticks, and `TimeOnly` drops the
+  seconds, so distinct ids could produce the same text and collapse into one JSON dictionary key.
+- **Integrations:** `Integrations = Default` follows the assembly default instead of normalising to `All`,
+  which overrode an assembly-level `Integrations = None`.
+- **EF Core and Dapper:** `BigInteger`, `Int128`, `UInt128` and `Half` are stored as canonical text. These
+  four have no database provider type; every other primitive keeps its native column type.
+
+### Fixed
+
+- **Generator:** A `[StronglyTypedId]` repeated across `partial` declarations threw `CS8785`; only the
+  first declaration produces output now, leaving `CS0579`. An id named after a generated member failed with
+  `CS0542`; it now reports `STIA0027` and generation is skipped.
+- **System.Text.Json:** Object-shape ids threw `JsonException` on `{"value":null,"extra":1}`, because the
+  converter returned before reading to the closing brace. It now reads to `EndObject`.
+- **Newtonsoft.Json:** Object-shape ids leaked `FormatException` and `ArgumentException` instead of a
+  `JsonException`. Date-like values were parsed before the converter ran, so a `DateTimeOffset` id lost its
+  offset and a `string` id could have its value replaced; set `DateParseHandling.None` to avoid it.
+  `decimal` ids lost precision and rejected `decimal.MaxValue`; they are written as text now, and a JSON
+  number is still accepted on read.
+- **HotChocolate:** Same-named ids in different namespaces failed schema construction. The GraphQL name
+  falls back to the sanitised full name.
+- **Generated code:** Ids with a `Prefix` and HotChocolate scalars depended on the consumer's `using
+  System;` and failed with `CS1061` under `<ImplicitUsings>disable`. The affected files start with `using
+  global::System;`.
+- **OpenAPI and Swagger:** The `BigInteger` schema said `integer` while the converter writes text. A
+  nullable id lost its schema because the lookup did not unwrap `Nullable<T>`.
+- **Nullable ids:** `AnyIdGenerator.Create(typeof(OrderId?))` threw instead of unwrapping the type. Bogus
+  left `OrderId?` properties at `null` and threw on an explicitly passed `typeof(OrderId?)`.
+- **EF Core:** Converters for non-enum primitives threw `ArgumentException` instead of the documented
+  `InvalidOperationException`; they go through `TryCreate` now. `AddStronglyTypedIds(ModelBuilder)` was a
+  no-op, because the model never discovers a strongly typed id as a property; it reflects over the entity's
+  CLR properties now.
+- **Dapper:** `DateOnly` and `TimeOnly` columns returned by SQL Server as `DateTime` and `TimeSpan` were
+  rejected.
+- **Analyzer:** `STIA0011` reported read-only comparisons such as `id.CompareTo(default)` and
+  `id is default`.
+- **Testing helpers:** `AnyIdGenerator` threw `IndexOutOfRangeException` on an empty enum.
+- **Custom primitives:** An explicit `IComparable<TSelf>.CompareTo` produced five `CS7036` errors.
+- **`DateTime`:** Text parsing lost its `DateTimeKind` for text ending in `"Z"`; it uses
+  `DateTimeStyles.RoundtripKind` now.
+- **protobuf-net:** A `null` reference-type id read back as the primitive's default.
+- **Named instances:** Names such as `op_LessThan` produced `CS0102`; they are reserved now. A `DateTime`
+  or `DateTimeOffset` value depended on the build machine's time zone; both forms are rejected with
+  `STIA0021`.
+- **Integration helpers:** Names could collide after namespace disambiguation, because `A.B.OrderId` and
+  `A_B.OrderId` both became `A_B_OrderIdConverter`. A short hash is appended when the final names collide.
+- **Refactoring:** "Inline strongly typed id" deleted a `global using` and broke other files with `CS0246`.
+
 ## [1.4.0] - 2026-10-30
 
 The integrations release: custom primitives (including ULID), protobuf-net and GraphQL integrations, a

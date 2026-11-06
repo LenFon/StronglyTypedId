@@ -20,7 +20,7 @@ title: 功能特性
   **Convert to strongly typed id**，替你补上特性、`partial` 与 `using`；反向的
   **Inline strongly typed id** 则撤销这一切。正向动作只在结果确实是一个合法 Id 时出现，见
   [把已有 record 转成 Id](declaration.md#converting-an-existing-record)。
-- **编译期安全。** 内建分析器把不合法的声明作为错误报出，26 条规则里有 21 条附带代码修复。见
+- **编译期安全。** 内建分析器把不合法的声明作为错误报出，28 条规则里有 21 条附带代码修复。见
   [诊断](diagnostics.md#diagnostics)。
 - **23 种内置基元。** 全部数值类型（含 `Int128`、`UInt128`、`Half`），以及 `Guid`、`string`、`char`、
   `decimal`、`DateTime`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、`TimeOnly` 与 `BigInteger`。见
@@ -47,7 +47,7 @@ title: 功能特性
   `IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
   `IComparisonOperators<TSelf, TSelf, bool>`。见[运行时](runtime.md#using-the-interface)。
 - **解析。** `Parse` / `TryParse` 的 `string` 与 `ReadOnlySpan<char>` 两套重载。`provider` 传 `null`
-  表示不变文化，因此 `Parse(id.ToString())` 总能往返。见[生成产物](generated-code.md)。
+  表示不变文化，因此 `Parse(id.ToString())` 可以往返。见[生成产物](generated-code.md)。
 - **格式化。** 基元类型自身实现 `IFormattable` / `ISpanFormattable` 时一并生成。`string` 两者都没有，
   枚举 Id 则都跳过。
 - **UTF-8 接口。** 对支持相应接口的基元（如 .NET 10 的 `Guid`）生成 `IUtf8SpanFormattable` 与
@@ -64,8 +64,10 @@ title: 功能特性
   resolver，Id 才会保持字符串形态，而不是被写成对象。生成的 resolver 优先查 Id 的转换器，全程零反射。
   见[原生 AOT 与裁剪](aot.md)。
 - **`TypeConverter`。** 用 `[StronglyTypedId(TypeConverter = true)]` 开启，经 `TypeDescriptor` 往返，
-  覆盖配置绑定与 `XmlSerializer`。见[类型转换器](declaration.md#type-converter)。不开时
-  `IConfiguration` 绑定会把属性留在 `default`，而不是报错。
+  配置绑定与 Newtonsoft 字典键读路径走的就是它。`XmlSerializer` **不**走它：它反射 Id 的公开属性，
+  写出 `<Value>…</Value>`（`record` 形态的 Id 会直接失败，因为它没有无参构造函数）。
+  见[类型转换器](declaration.md#type-converter)。不开时 `IConfiguration` 绑定会把属性留在
+  `default`，而不是报错。
 - **调试器视图。** `[DebuggerDisplay]` 让折叠状态直接显示取值；`[DebuggerTypeProxy]` 让展开时同时看到
   原始 `Value` 与规范文本 `Text`（含前缀）。
 - **反射助手。** `IsStronglyTypedId`、`GetPrimitiveIdType` 与 `TryGetPrimitiveIdType` 可在运行时检查
@@ -107,8 +109,10 @@ title: 功能特性
   protobuf-net。每个集成只在对应包被引用时才生成。除 protobuf-net 外各自提供一个注册入口：除 MongoDB
   用 `RegisterBsonSerializers()` 外，其余都是 `AddStronglyTypedIds(...)`；protobuf-net 不需要，因为
   surrogate 由特性发现。见[集成](integrations.md)。
-- **二进制载荷只放基元值。** MessagePack、BSON 与 protobuf-net 写的是基元值本身；文本前缀只属于
-  文本形，不会进入载荷。
+- **二进制载荷只放基元值。** MessagePack、BSON 与 protobuf-net 写的是基元值本身，因此文本前缀不会进入
+  载荷。例外是没有原生二进制表示的基元（`BigInteger`、`Int128`、`UInt128`，protobuf-net 另加 `Half`
+  与 `DateTimeOffset`）：它们按规范文本存储。MessagePack 与 BSON 存的是 Id 的 `ToString()`，前缀随之
+  进入载荷；protobuf-net 存的是基元自身的文本，不含前缀。
 
 <a id="testing-and-deployment"></a>
 

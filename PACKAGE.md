@@ -98,7 +98,8 @@ Generated only when the matching package is referenced; `Integrations` can narro
   `StronglyTypedIds.RegisterBsonSerializers()`. Both write the primitive value itself; the text prefix
   belongs to the text form (`ToString()` / JSON) and does not reach the payload. The exception is
   `BigInteger`, `Int128` and `UInt128`, which have no native MessagePack / BSON representation, so those
-  ids are stored as their invariant-culture text, prefix included.
+  ids are stored as their invariant-culture text, prefix included. Custom primitives take the same text
+  path, because neither library has a formatter for a type it does not know.
 - **EF Core.** `EntityFrameworkCore`: `configurationBuilder.AddStronglyTypedIds()` from
   `ConfigureConventions`, plus a model-scanning `modelBuilder.AddStronglyTypedIds()` from
   `OnModelCreating` for contexts that do not override `ConfigureConventions`. Both overloads are
