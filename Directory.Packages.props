@@ -55,7 +55,7 @@
 		     内存服务器：让 Swagger 回归跑真实的 ASP.NET Core 管道。缺口出在框架与 Swashbuckle 的交界处，
 		     模拟宿主测不出来。与其余 ASP.NET Core 包同走 8.0.x 补丁线。
 		-->
-		<PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.32" />
+		<PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.33" />
 		<!--
 		     二进制序列化集成：MessagePack 与 BSON 的格式化器/序列化器都在「引用了才有」的门控之下，集成测试工程
 		     必须真的引用它们。IsBinaryTextPrimitive 让这三种基元走规范文本形，但两边的理由已经不同：
@@ -94,8 +94,8 @@
 		<!-- 与 EF Core 统一在 8.0.32：示例是使用者照抄的对象，不能停在 8.0.0 首发版。
 		     （Microsoft.Data.Sqlite 单独走 10.x，见上方 test 分组；两者不同补丁线但已验证可共存。）
 		     Sample2 面向 net10.0，通过 VersionOverride 单独抬到 10.x。 -->
-		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.32" />
-		<PackageVersion Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.32" />
+		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.33" />
+		<PackageVersion Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.33" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.32" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.32" />
