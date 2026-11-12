@@ -20,7 +20,7 @@ title: 功能特性
   **Convert to strongly typed id**，替你补上特性、`partial` 与 `using`；反向的
   **Inline strongly typed id** 则撤销这一切。正向动作只在结果确实是一个合法 Id 时出现，见
   [把已有 record 转成 Id](declaration.md#converting-an-existing-record)。
-- **编译期安全。** 内建分析器把不合法的声明作为错误报出，28 条规则里有 21 条附带代码修复。见
+- **编译期安全。** 内建分析器把不合法的声明作为错误报出，30 条规则里有 22 条附带代码修复。见
   [诊断](diagnostics.md#diagnostics)。
 - **23 种内置基元。** 全部数值类型（含 `Int128`、`UInt128`、`Half`），以及 `Guid`、`string`、`char`、
   `decimal`、`DateTime`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、`TimeOnly` 与 `BigInteger`。见
@@ -55,7 +55,10 @@ title: 功能特性
 - **比较与排序。** `CompareTo` 与 `<`、`>`、`<=`、`>=`，因此 `OrderBy`、`SortedSet<T>` 与区间判断
   都无需自定义比较器。引用类型 Id 把 `null` 视为最小。
 - **`Create` 与 `TryCreate`。** 抛异常的工厂及其非抛异常版本，后者失败时返回 `false` 并把 `result`
-  置为 `default`。
+  置为 `default`。两者都声明在 `IStronglyTypedId<TSelf, TPrimitiveId>` 上，泛型代码经约束即可调用。
+- **富验证结果。** 验证器可以返回 `StronglyTypedIdValidationResult` 而非 `bool`，带回消息与可选错误码。
+  三参 `TryCreate` 重载把它交给调用方，且每个 Id 都有该重载，泛型代码同样能读到原因。见
+  [报告拒绝原因](declaration.md#报告拒绝原因)。
 - **解构。** `id.Deconstruct(out var value)` 取出被包装的基元值。单元素解构声明
   `var (value) = id;` 不是合法 C#。
 - **`ToString()`。** 输出基元的不变文化文本（或带前缀的规范文本），而不是 record 默认的

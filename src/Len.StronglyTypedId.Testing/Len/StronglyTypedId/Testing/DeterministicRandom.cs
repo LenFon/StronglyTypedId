@@ -64,10 +64,24 @@ internal sealed class DeterministicRandom
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(minValue, maxValue);
 
-        // 满区间时 maxValue - minValue 溢出成 0，此时整个 ulong 都是合法取值。
+        // 退化区间：只有一个合法取值，直接返回它。不能落到下面的取模分支 —— 那里 range 为 0 会除零，
+        // 而按位重解释返回随机值则完全忽略 minValue / maxValue。
+        if (minValue == maxValue)
+        {
+            return minValue;
+        }
+
+        // 满区间（long.MinValue..long.MaxValue）的 maxValue - minValue 溢出成 -1，unchecked 后是 ulong.MaxValue，
+        // 不是 0。此时 NextBounded(ulong.MaxValue) 的取值区间是 [0, ulong.MaxValue)，位重解释后是
+        // [-2^63, 2^63-2]，永远取不到 long.MaxValue。故单独判出来，直接取满 64 位。
+        if (minValue == long.MinValue && maxValue == long.MaxValue)
+        {
+            return unchecked((long)NextUInt64());
+        }
+
         var range = unchecked((ulong)(maxValue - minValue));
 
-        return range == 0 ? unchecked((long)NextUInt64()) : unchecked(minValue + (long)NextBounded(range));
+        return unchecked(minValue + (long)NextBounded(range));
     }
 
     /// <summary>

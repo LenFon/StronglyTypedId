@@ -40,6 +40,8 @@ internal static class Descriptors
     public const string TypeCannotBeFileLocalId = "STIA0025";
     public const string TypeNameCannotBeVarId = "STIA0026";
     public const string TypeNameCollidesWithGeneratedMemberId = "STIA0027";
+    public const string GenericContainerSkipsIntegrationsId = "STIA0028";
+    public const string MemberCollidesWithGeneratedMemberId = "STIA0029";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -354,6 +356,37 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// 强类型 Id 声明在泛型包含类型内部，集成代码被静默跳过。
+    /// </summary>
+    /// <remarks>
+    /// 泛型容器里的 Id 能编译、核心成员也生成，但 <c>DiscoveredIds</c> 会把它过滤掉：开放泛型无法作为
+    /// 类型实参传给注册入口，<c>[JsonConverter]</c> 等特性也因 CS0416 无法发射。用户只有在运行时
+    /// 才会发现 JSON 写成了对象形态、EF Core 说无法映射，故在声明处提示。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor GenericContainerSkipsIntegrations
+        = new(GenericContainerSkipsIntegrationsId,
+            new LocalizedString("GenericContainerSkipsIntegrationsTitle"),
+            new LocalizedString("GenericContainerSkipsIntegrationsMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
+    /// 用户自己声明的成员与生成器即将产出的成员同名且同参数表。
+    /// </summary>
+    /// <remarks>
+    /// 撞名的后果是 CS0111 / CS0102，而编译器只把错误指向生成文件 —— 用户既不能编辑那个文件，
+    /// 也不知道该改自己哪一行。与 STIA0027（类型名撞名）同一类问题，故同样提前报出。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MemberCollidesWithGeneratedMember
+        = new(MemberCollidesWithGeneratedMemberId,
+            new LocalizedString("MemberCollidesWithGeneratedMemberTitle"),
+            new LocalizedString("MemberCollidesWithGeneratedMemberMessage"),
+            Category,
+            DiagnosticSeverity.Error,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -385,6 +418,8 @@ internal static class Descriptors
         TypeCannotBeFileLocal,
         TypeNameCannotBeVar,
         TypeNameCollidesWithGeneratedMember,
+        GenericContainerSkipsIntegrations,
+        MemberCollidesWithGeneratedMember,
     ];
 
     /// <summary>

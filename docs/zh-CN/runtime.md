@@ -19,11 +19,31 @@ public class Repository<TId>
 }
 ```
 
+`Create` 在 `Validator` 拒绝取值时抛异常。接口同时声明了 `TryCreate`，因此泛型代码不必知道具体 Id 类型
+也能走非抛异常路径：
+
+```csharp
+public bool TryCreateId<TId>(Guid value, out TId id)
+    where TId : IStronglyTypedId<TId, Guid>
+    => TId.TryCreate(value, out id);
+```
+
 每个 Id 同时实现了单参数的 `IStronglyTypedId<TSelf>`，因此约束可以只表达「某个强类型 Id」而不必指明
 基元类型，日志、缓存、校验辅助方法这类把 Id 当作不透明值处理的场景很合用。该接口本身已继承
-`IParsable<TSelf>` 与 `IEqualityOperators<TSelf, TSelf, bool>`，所以这样的约束依然能调用
-`TId.Parse(...)` 并使用 `==` / `!=`，无需知道基元类型。`IFormattableStronglyTypedId<TSelf>` 在此基础上
-进一步收窄到「基元可格式化」的 Id。
+`IParsable<TSelf>`、`IComparable<TSelf>` 与 `IComparisonOperators<TSelf, TSelf, bool>`，所以这样的
+约束依然能调用 `TId.Parse(...)`、使用 `==` / `!=`，并用 `CompareTo` 或 `<` / `>` 排序，无需知道基元类型：
+
+```csharp
+public static TId Max<TId>(IEnumerable<TId> ids)
+    where TId : IStronglyTypedId<TId>
+    => ids.Max()!;                       // IComparable<TSelf> 就够 LINQ 用
+
+public static bool IsBefore<TId>(TId left, TId right)
+    where TId : IStronglyTypedId<TId>
+    => left < right;                     // IComparisonOperators<TSelf, TSelf, bool>
+```
+
+`IFormattableStronglyTypedId<TSelf>` 在此基础上进一步收窄到「基元可格式化」的 Id。
 
 <a id="reflection-helpers"></a>
 

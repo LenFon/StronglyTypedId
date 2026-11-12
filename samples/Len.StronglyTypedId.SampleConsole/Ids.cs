@@ -64,9 +64,10 @@ public partial class OrderAggregate
 }
 
 // 泛型容器：核心能力齐全，外部集成（EF Core / Swagger / Dapper / MVC / OpenAPI）会跳过。
+// 显式 Integrations = None 是刻意的：本示例就是演示这个限制，关掉集成后 STIA0028 不再提示。
 public partial class Box<T>
 {
-    [StronglyTypedId]
+    [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
     public partial record struct BoxedId(Guid Value);
 }
 

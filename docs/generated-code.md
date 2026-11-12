@@ -57,14 +57,23 @@ carries the same inventory without the file names, as a one-glance list.
   value by throwing `ArgumentException` (`The value '…' is not a valid OrderId.`) or the `ExceptionType`
   you pointed it at, so an invalid id cannot be constructed through it.
 - A static `TryCreate(TPrimitiveId value, out TSelf result)` factory, the non-throwing twin of `Create`:
-  it returns `false` and sets `result` to `default` instead of throwing.
+  it returns `false` and sets `result` to `default` instead of throwing. It is also declared on
+  `IStronglyTypedId<TSelf, TPrimitiveId>`, so generic code constrained to the interface can call it.
+- A static `TryCreate(TPrimitiveId value, out TSelf result, out StronglyTypedIdValidationResult validation)`
+  overload that also reports *why* a value was rejected. The two-argument overload delegates to it. When the
+  validator returns `bool`, `validation` only says pass/fail; when it returns
+  `StronglyTypedIdValidationResult`, it carries the message and code. See
+  [Reporting why a value was rejected](declaration.md#reporting-why-a-value-was-rejected).
 - A `public static readonly TSelf` field per `[StronglyTypedIdInstance]`, initialized through `Create`.
 - `Deconstruct(out TPrimitiveId value)`, so `id.Deconstruct(out var value);` unwraps the primitive.
   (A single-element `var (value) = id;` is not legal C#; deconstruction declarations need at least two elements.)
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
   `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
   round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
-  For `string`-backed ids, `null` and empty strings are not accepted by `TryParse`. `Parse` reports
+  For `string`-backed ids, `null` and empty strings are not accepted by `TryParse`. A prefixed id is the
+  one exception: its canonical text form for an empty value is the bare prefix, so `TryParse` accepts that
+  text — otherwise `Create("")` would produce an id that cannot be read back. A bare empty string is still
+  rejected. `Parse` reports
   malformed text with `FormatException` (`Could not parse supplied value.`), following the
   `IParsable<TSelf>` convention rather than `ArgumentException`.
 - `CompareTo`, plus the `<`, `>`, `<=` and `>=` operators over the wrapped value. On a `record` id the

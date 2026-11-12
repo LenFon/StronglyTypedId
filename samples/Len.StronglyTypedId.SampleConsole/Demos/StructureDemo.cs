@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace Len.StronglyTypedId.SampleConsole.Demos;
@@ -22,11 +23,17 @@ internal static class StructureDemo
         var orderId = IdFactory<OrderId, Guid>.Create(Guid.Parse("44444444-5555-6666-7777-888888888888"));
         Demo.Line($"IdFactory<OrderId, Guid>.Create   -> {orderId}");
 
+        var createdThroughInterface = IdFactory<OrderId, Guid>.TryCreate(
+            Guid.Parse("55555555-6666-7777-8888-999999999999"),
+            out var tryCreated);
+        Demo.Line($"IdFactory<OrderId, Guid>.TryCreate -> {createdThroughInterface}, {tryCreated}");
+
         Demo.Section("单参数接口：只表达「某个强类型 Id」，不必指明基元");
 
         Demo.Line($"Describe(OrderId)                 -> {IdDescriber.Describe(orderId)}");
         Demo.Line($"Describe(ProductId)               -> {IdDescriber.Describe(ProductId.Create(42))}");
         Demo.Line($"Describe(RegionId)                -> {IdDescriber.Describe(RegionId.Create(Region.North))}");
+        Demo.Line($"Min(ProductId 集合)                -> {IdDescriber.Min([ProductId.Create(42), ProductId.Create(7)])}");
 
         Demo.Section("IFormattableStronglyTypedId：基元可格式化时才生成");
 
@@ -54,16 +61,25 @@ internal static class IdFactory<TId, TPrimitive>
     where TPrimitive : notnull, IComparable
 {
     public static TId Create(TPrimitive value) => TId.Create(value);
+
+    public static bool TryCreate(TPrimitive value, [MaybeNullWhen(false)] out TId result) => TId.TryCreate(value, out result);
 }
 
 /// <summary>
-/// 只约束「某个强类型 Id」：不知道基元类型，也能用 <c>Parse</c> 与 <c>==</c>。
+/// 只约束「某个强类型 Id」：不知道基元类型，也能用 <c>Parse</c>、<c>==</c> 与排序。
 /// </summary>
 internal static class IdDescriber
 {
     public static string Describe<TId>(TId id)
         where TId : IStronglyTypedId<TId>
         => $"{typeof(TId).Name} = {id}, 往返 = {TId.Parse(id.ToString()!, CultureInfo.InvariantCulture) == id}";
+
+    /// <summary>
+    /// 单参接口继承 <c>IComparable&lt;TSelf&gt;</c>，因此不必补约束就能排序。
+    /// </summary>
+    public static TId Min<TId>(IEnumerable<TId> ids)
+        where TId : IStronglyTypedId<TId>
+        => ids.Min()!;
 }
 
 /// <summary>

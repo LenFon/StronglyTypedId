@@ -60,6 +60,38 @@ internal static class IdentifierEscaping
             or "value" or "notnull";                   // 访问器 / 泛型约束位置的上下文化标识符
 
     /// <summary>
+    /// 构造可安全写进生成源码的完全限定名，形如 <c>global::Ns.Outer&lt;T&gt;.Inner</c>。
+    /// </summary>
+    /// <remarks>
+    /// 不能直接用 <c>type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)</c>：Roslyn 4.8 只转义
+    /// 命名空间段、不转义类型名本身，关键字命名的 Id（<c>@return</c>）会渲染成 <c>global::@int.return</c>，
+    /// 拼进产物即 CS1001；5.9 才修成 <c>global::@int.@return</c>。生成器要同时支持两个版本，
+    /// 故这里自己拼，输出与 Roslyn 版本无关。非关键字名的结果与 <c>FullyQualifiedFormat</c> 逐字节相同。
+    /// </remarks>
+    public static string FullyQualifiedName(ITypeSymbol type)
+    {
+        var parts = new List<string>();
+
+        for (var current = type as INamedTypeSymbol; current is not null; current = current.ContainingType)
+        {
+            var typeParameterList = current.TypeParameters.Length > 0
+                ? "<" + string.Join(", ", current.TypeParameters.Select(static parameter => Escape(parameter.Name))) + ">"
+                : string.Empty;
+
+            parts.Add(Escape(current.Name) + typeParameterList);
+        }
+
+        parts.Reverse();
+
+        var containingNamespace = type.ContainingNamespace;
+        var namespaceText = containingNamespace is null || containingNamespace.IsGlobalNamespace
+            ? string.Empty
+            : containingNamespace.ToDisplayString() + ".";
+
+        return "global::" + namespaceText + string.Join(".", parts);
+    }
+
+    /// <summary>
     /// 计算与进程无关的 32 位 FNV-1a 哈希，用作 hint 名与消歧类名的后缀。
     /// </summary>
     /// <remarks>

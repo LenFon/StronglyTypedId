@@ -33,7 +33,9 @@ dotnet add package Len.StronglyTypedId
 主包声明了这条依赖，所以一条 `dotnet add package` 就够了。
 
 > **构建本仓库**需要 .NET SDK 10.0.401（钉在 `global.json` 里）。那是源码树的要求，不是包的要求：
-> 引用 `Len.StronglyTypedId` 的项目只需要目标框架是 `net8.0` 或 `net10.0`。
+> 引用 `Len.StronglyTypedId` 的项目需要目标框架是 `net8.0` 或 `net10.0`，SDK 则是 8.0.100 及以上任意版本。
+> 生成器随包提供两份构建，分别编译在 Roslyn 4.8 与 5.9 上；SDK 会挑「不高于自身编译器版本的最高那一份」，
+> 因此 SDK 8、9、10 都能加载。见[分析器是随包传递来的](#transitive-analyzer)。
 
 <a id="transitive-analyzer"></a>
 
@@ -53,7 +55,7 @@ dotnet add package Len.StronglyTypedId
 
 这条属性走 MSBuild → 分析器这条通道：SDK 把它写进编译用的 analyzer config 的全局段
 （`build_property.StronglyTypedIdEnableAnalyzers`），分析器读到「否」就**一个诊断动作都不注册**，
-28 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
+30 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
 
 三态语义：
 

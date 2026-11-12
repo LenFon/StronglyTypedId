@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using System.Globalization;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.Simplification;
@@ -22,8 +23,11 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     private static readonly LocalizedString _instanceAttributeFixTitle
         = new("InstanceAttributeFixTitle");
 
+    private static readonly LocalizedString _instanceNameFixTitle
+        = new("InstanceNameFixTitle");
+
     public override ImmutableArray<string> FixableDiagnosticIds { get; } =
-        ImmutableArray.Create(
+    [
             Descriptors.TypeMustBePartialId,
             Descriptors.TypeCannotBeAbstractId,
             Descriptors.ParameterNameMustBeValueId,
@@ -44,7 +48,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.IntegrationUnavailableId,
             Descriptors.UnknownIntegrationId,
             Descriptors.InvalidInstanceNameId,
-            Descriptors.InvalidInstanceValueId);
+            Descriptors.InvalidInstanceValueId,
+            Descriptors.InstanceNameNotPascalCaseId];
 
     public override FixAllProvider? GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
 
@@ -62,7 +67,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 continue;
             }
 
-            var title = GetFixTitle(diagnostic.Id, descriptor);
+            var title = GetFixTitle(diagnostic, root, descriptor);
             var action = CodeAction.Create(title,
                              token => diagnostic.Id switch
                              {
@@ -87,6 +92,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.UnknownIntegrationId => RemoveNamedArgumentAsync(context, diagnostic, token),
                                 Descriptors.InvalidInstanceNameId => RemoveInstanceAttributeAsync(context, diagnostic, token),
                                 Descriptors.InvalidInstanceValueId => RemoveInstanceAttributeAsync(context, diagnostic, token),
+                                Descriptors.InstanceNameNotPascalCaseId => RenameInstanceAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -99,9 +105,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// 取修复标题。默认沿用诊断标题；STIA0005 例外，它的修复是把参数表整体换成 <c>(Guid Value)</c>，
     /// 原有参数会被丢弃，标题必须把这一点说出来，否则用户会以为只是「补一个参数」。
     /// STIA0025 例外，诊断标题说的是「不能是文件本地类型」，照搬会变成一句读不通的修复项。
+    /// STIA0022 例外，标题要带上具体的目标名字，用户才知道改成什么。
     /// </summary>
-    private static string GetFixTitle(string diagnosticId, DiagnosticDescriptor descriptor)
-        => diagnosticId switch
+    private static string GetFixTitle(Diagnostic diagnostic, SyntaxNode root, DiagnosticDescriptor descriptor)
+        => diagnostic.Id switch
         {
             Descriptors.TypeMustHaveSingleParameterPrimaryConstructorId => _primaryConstructorFixTitle.ToString(),
             Descriptors.TypeCannotBeFileLocalId => _fileLocalFixTitle.ToString(),
@@ -109,8 +116,40 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.UnknownIntegrationId => _integrationsArgumentFixTitle.ToString(),
             Descriptors.InvalidInstanceNameId => _instanceAttributeFixTitle.ToString(),
             Descriptors.InvalidInstanceValueId => _instanceAttributeFixTitle.ToString(),
+            Descriptors.InstanceNameNotPascalCaseId => GetInstanceRenameTitle(diagnostic, root),
             _ => descriptor.Title.ToString(),
         };
+
+    /// <summary>
+    /// 取 STIA0022 的修复标题，带上建议名。
+    /// </summary>
+    /// <remarks>
+    /// 建议名从源码里的实参重新算，而不是读 <see cref="Diagnostic.Arguments"/>：实参的个数与顺序取决于上报方，
+    /// 测试或其它宿主构造的 <see cref="Diagnostic"/> 未必带建议名，读它会退化成一句「改名为空」。
+    /// </remarks>
+    private static string GetInstanceRenameTitle(Diagnostic diagnostic, SyntaxNode root)
+    {
+        var suggestion = GetInstanceNameSuggestion(diagnostic, root);
+
+        // 分析器里禁止依赖当前文化（RS1035）：标题用不变文化拼接，与诊断消息本身的口径一致。
+        return suggestion is null
+            ? _instanceAttributeFixTitle.ToString()
+            : string.Format(CultureInfo.InvariantCulture, _instanceNameFixTitle.ToString(), suggestion);
+    }
+
+    /// <summary>
+    /// 从诊断落点那条 <c>[StronglyTypedIdInstance]</c> 的第一个实参算出 PascalCase 建议名。
+    /// </summary>
+    /// <remarks>
+    /// 只认字符串字面量。分析器能对 <c>const string</c> 引用报出 STIA0022（它读的是语义常量值），
+    /// 但这里拿不到语义模型，无法把标识符解析成常量，故那种写法不给修复。
+    /// </remarks>
+    private static string? GetInstanceNameSuggestion(Diagnostic diagnostic, SyntaxNode root)
+        => FindNode<AttributeSyntax>(root, diagnostic) is { ArgumentList.Arguments: [var nameArgument, ..] }
+            && nameArgument.Expression is LiteralExpressionSyntax { Token.Value: string name }
+            && !InstanceDeclaration.IsPascalCase(name, out var suggestion)
+                ? suggestion
+                : null;
 
     /// <summary>
     /// 判断该诊断的靶子是否真的适用对应修复。
@@ -180,6 +219,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
 
             Descriptors.InvalidInstanceValueId =>
                 FindNode<AttributeSyntax>(root, diagnostic) is not null,
+
+            // 只有名字实参是字符串字面量时才给修复：标识符、拼接等写法拿不到语义常量值，无从推断建议名。
+            Descriptors.InstanceNameNotPascalCaseId =>
+                GetInstanceNameSuggestion(diagnostic, root) is not null,
 
             // STIA0023 刻意不给修复：唯一能机械做出的改动是「删掉 Prefix」，但那会改变规范文本形，
             // 已经按带前缀格式写出去的数据将再也读不回来。换一个安全前缀必须由人决定。
@@ -382,6 +425,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     /// </summary>
     /// <remarks>
     /// struct 必须转成 <c>record struct</c>：写成 <c>record</c> 会把值类型悄悄换成引用类型，<c>readonly struct</c> 更是直接 CS8809。
+    /// <para>
+    /// <c>static</c> 必须摘掉：record 不允许 <c>static</c> 修饰符（CS0106），而 <c>static class</c> 恰好是
+    /// STIA0000 会命中的写法。类型上的 <c>static</c> 只约束成员，摘掉它不影响任何既有成员。
+    /// </para>
     /// </remarks>
     private static async Task<Document> ConvertToRecordAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
     {
@@ -397,6 +444,9 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
         // 只改 classOrStructKeyword 会得到「长得像 record struct、实则是引用类型 record」的产物。
         var isStruct = declaration is StructDeclarationSyntax;
 
+        var modifiers = SyntaxFactory.TokenList(
+            declaration.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.StaticKeyword)));
+
         var record = SyntaxFactory.RecordDeclaration(
                 isStruct ? SyntaxKind.RecordStructDeclaration : SyntaxKind.RecordDeclaration,
                 SyntaxFactory.Token(SyntaxKind.RecordKeyword),
@@ -407,7 +457,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                     .WithTrailingTrivia(SyntaxFactory.Space)
                 : SyntaxFactory.Token(SyntaxKind.None))
             .WithAttributeLists(declaration.AttributeLists)
-            .WithModifiers(declaration.Modifiers)
+            .WithModifiers(modifiers)
             .WithTypeParameterList(declaration.TypeParameterList)
             .WithParameterList(declaration.ParameterList)
             .WithBaseList(declaration.BaseList)
@@ -635,6 +685,39 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
+    /// 把诊断所在 <c>[StronglyTypedIdInstance]</c> 的名字实参改写成 PascalCase 建议名（STIA0022）。
+    /// </summary>
+    /// <remarks>
+    /// 只改特性里的字符串字面量，不碰任何引用点：命名实例生成的是 <c>public static readonly</c> 字段，
+    /// 改名后引用旧字段名的代码会编译失败（CS0117），由编译器指出，而不是由修复悄悄改掉别处的代码。
+    /// 这与「类型改名」不同 —— 后者必须跨文件重命名，所以 STIA0015 仍然不给修复。
+    /// </remarks>
+    private static async Task<Document> RenameInstanceAsync(CodeFixContext context, Diagnostic diagnostic, CancellationToken token)
+    {
+        var root = await context.Document.GetSyntaxRootAsync(token);
+
+        if (root is null
+            || GetInstanceNameSuggestion(diagnostic, root) is not { } suggestion
+            || FindNode<AttributeSyntax>(root, diagnostic) is not { ArgumentList.Arguments: [var nameArgument, ..] } attribute)
+        {
+            return context.Document;
+        }
+
+        // 用 Literal 重建字符串字面量，转义由 Roslyn 负责；trivia 原样继承，缩进与注释不丢。
+        var replacement = SyntaxFactory.LiteralExpression(
+                SyntaxKind.StringLiteralExpression,
+                SyntaxFactory.Literal(suggestion))
+            .WithTriviaFrom(nameArgument.Expression);
+
+        var updatedArgument = nameArgument.WithExpression(replacement);
+
+        return context.Document.WithSyntaxRoot(
+            root.ReplaceNode(attribute, attribute.WithArgumentList(
+                attribute.ArgumentList!.WithArguments(
+                    attribute.ArgumentList.Arguments.Replace(nameArgument, updatedArgument)))));
+    }
+
+    /// <summary>
     /// 摘掉诊断所在的那条 <c>[StronglyTypedIdInstance]</c> 特性，使 STIA0020 / STIA0021 消失。
     /// </summary>
     /// <remarks>
@@ -738,6 +821,12 @@ internal static class RecordDeclarationSyntaxExtensions
     /// <summary>
     /// 返回移除了指定修饰符的 record 声明副本（沿用 Roslyn 的 <c>Without…</c> 命名惯例）。
     /// </summary>
+    /// <remarks>
+    /// 必须显式构造 <see cref="SyntaxFactory.TokenList(IEnumerable{SyntaxToken})"/>：写成集合表达式
+    /// <c>WithModifiers([..])</c> 在 Roslyn 4.8 下会绑到 <c>WithModifiers(params SyntaxToken[])</c> 之外的
+    /// 重载并得到空列表，<c>public</c> 被一并删掉（5.9 正常）。生成器要同时支持两个版本。
+    /// </remarks>
     public static RecordDeclarationSyntax WithoutModifiers(this RecordDeclarationSyntax declaration, params SyntaxKind[] syntaxKinds)
-        => declaration.WithModifiers([.. declaration.Modifiers.Where(modifier => !syntaxKinds.Contains(modifier.Kind()))]);
+        => declaration.WithModifiers(SyntaxFactory.TokenList(
+            declaration.Modifiers.Where(modifier => !syntaxKinds.Contains(modifier.Kind()))));
 }

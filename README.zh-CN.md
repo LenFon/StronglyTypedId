@@ -20,6 +20,7 @@ Entity Framework Core / Swagger 集成。`Guid` 与 `OrderId` 从此不会互相
 - [生成器会生成什么](#what-gets-generated)
 - [文档站](#documentation)
 - [已知限制](#limitations)
+- [从其他库迁移](#migrating-from-another-library)
 - [许可证](#license)
 
 <a id="features"></a>
@@ -29,7 +30,7 @@ Entity Framework Core / Swagger 集成。`Guid` 与 `OrderId` 从此不会互相
 - **一行声明。** 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`），
   类型就具备解析、格式化、比较、`Create` / `TryCreate`、解构、JSON 转换器与调试器视图。
 - **`Guid` 冒充不了 `OrderId`。** 编译器会拒绝这种替换；内建分析器把不合法的声明作为错误报出，
-  28 条规则里有 21 条附带代码修复。
+  30 条规则里有 22 条附带代码修复。
 - **23 种基元，或你自己的类型。** 全部数值类型、`Guid`、`string`、日期与 `BigInteger` 都是内置的，
   另外还支持任意 `enum`，以及任何实现了 `IParsable<TSelf>` 与 `IComparable` 的类型。ULID 零改动即可用。
 - **在取值进入的地方校验。** 把 `Validator` 与 `Normalizer` 指向静态方法，所有生成的入口都会执行它们：
@@ -241,7 +242,7 @@ public partial record struct OrderId(Ulid Value);
 | [集成](docs/zh-CN/integrations.md) | Entity Framework Core、Swashbuckle、Dapper、MessagePack、MongoDB、HotChocolate（GraphQL）、protobuf-net、ASP.NET Core MVC、Minimal API、ASP.NET Core OpenAPI。 |
 | [运行时](docs/zh-CN/runtime.md) | 用 `IStronglyTypedId<,>` 约束泛型，以及运行时反射辅助。 |
 | [原生 AOT 与裁剪](docs/zh-CN/aot.md) | 裁剪后什么还能用、反射辅助方法，以及 AOT 应用必须提供的 `JsonSerializerContext`。 |
-| [测试](docs/zh-CN/testing.md) | `Any.Id<T>()`、AutoFixture 与 Bogus 集成，以及示例程序。 |
+| [测试](docs/zh-CN/testing.md) | `Any.Id<T>()`、零配置的自定义基元、AutoFixture 与 Bogus 集成，以及示例程序。 |
 | [诊断](docs/zh-CN/diagnostics.md) | 每一条规则、级别，以及是否带代码修复。 |
 | [性能](docs/zh-CN/performance.md) | 生成器在构建期的开销，以及生成代码在运行期的开销。 |
 | [故障排查](docs/zh-CN/troubleshooting.md) | 按症状索引：什么都没生成、集成缺失、分析器不刷新、解析出乎意料。 |
@@ -265,6 +266,32 @@ public partial record struct OrderId(Ulid Value);
 `TryCreate`、`Parse` 与 `TryParse` 会执行它们。
 
 三条的绕法，以及泛型容器那条附加限制，见[已知限制](docs/zh-CN/limitations.md)。
+
+<a id="migrating-from-another-library"></a>
+
+## 从其他库迁移 <a href="#top" style="float:right">↑ 返回目录</a>
+
+声明本身就是普通的 `record`，所以大部分工作只是删掉库专属的特性、改掉工厂方法的名字。下表对照常见写法：
+
+| 概念 | Vogen | Andrew Lock 的 `StronglyTypedId` | 手写 | 本库 |
+| --- | --- | --- | --- | --- |
+| 声明 | `partial struct` 上的 `[ValueObject<Guid>]` | `partial struct` 上的 `[StronglyTypedId(Template.Guid)]` | `readonly record struct` 加手写成员 | `partial record struct` 上的 `[StronglyTypedId]` |
+| 构造 | `CustomerId.From(value)` | `new CustomerId(value)` | `new CustomerId(value)` | `CustomerId.Create(value)` |
+| 不抛异常 | `CustomerId.TryFrom(value, out var id)` | — | — | `CustomerId.TryCreate(value, out var id)` |
+| 校验 | `[ValueObject(Validate = ...)]` | — | 构造函数里的守卫 | `[StronglyTypedId(Validator = nameof(Validate))]` |
+| 归一化 | `[ValueObject(NormalizeInput = ...)]` | — | 手写 | `[StronglyTypedId(Normalizer = nameof(Normalize))]` |
+| 命名实例 | `[Instance("Unspecified", "-1")]` | — | 静态字段 | `[StronglyTypedIdInstance("Unspecified", "-1")]` |
+| 自定义异常 | `[ValueObject(throws: typeof(...))]` | — | 手写 | `[StronglyTypedId(ExceptionType = typeof(...))]` |
+| 关闭集成 | `[ValueObject(conversions: ...)]` | — | — | `[StronglyTypedId(Integrations = ...)]` |
+
+有两处差异需要提前规划：
+
+- **`new CustomerId(value)` 仍然能编译**，因为位置记录的主构造函数保持 public。外部传入的值请走 `Create`；
+  剩下的绕过点由 `STIA0011` 标出。
+- **`Value` 保持 public。** Vogen 可以把它设为 private；源码生成器无法改变你亲手声明的成员的可见性。
+  见[已知限制](docs/zh-CN/limitations.md#value-is-public)。
+
+[迁移指南](docs/zh-CN/migration.md)讲的是 1.3 → 1.4 的变化；本节讲的是从别的库换过来。
 
 <a id="license"></a>
 

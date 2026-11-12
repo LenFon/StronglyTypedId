@@ -32,8 +32,13 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
   `ArgumentException` 时同样会被当作拒绝而重试。
 - **可覆盖。** `AnyIdOptions.PrimitiveValueFactory` 可按基元类型替换取值来源；返回 `null`
   表示回落到内置生成逻辑。
+- **自定义基元零配置可用。** 内置清单之外的基元会把七种常见文本形态交给它的 `TryParse`；清单与仍需
+  注册工厂的格式见[自定义基元](#自定义基元)。
 - **可重置。** `Any.Reset()` 丢弃共享生成器，连同在其上做过的全部 `Any.Register<T>(factory)`。
   注册了互相冲突的工厂的测试之间请调用它。
+- **不阻碍程序集卸载。** `Any.Id<T>()` 背后的按类型缓存对 `Type` 键持弱引用，因此加载进可回收
+  `AssemblyLoadContext` 的 Id（插件、热重载、会重复加载程序集的测试宿主）不会把该上下文钉住。
+  与运行时库的反射辅助方法同一保证。
 - **可配置文本。** `AnyIdOptions.StringLength`（默认 8）设定生成 `string` 基元的长度；验证器要求更长
   输入时调大它。
 - **按需覆盖边界。** `AnyIdOptions.IncludeBoundaryValues` 会掺入基元的 `MinValue` / `MaxValue`
@@ -46,8 +51,42 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
 （`enum Empty { }`）是合法的 C#，但没有取值可抽，`Any.Id<T>()` 会抛 `NotSupportedException` 并在
 消息里点名该枚举，而不是报一个看不出原因的索引错误。
 
-`AnyIdGenerator.Create(Type)` 是 `Any.Id<T>()` 的非泛型形式，用于 Id 类型只在运行期才知道的场合，
-例如对 `Type[]` 做 theory，或反射驱动的测试。传入不是强类型 Id 的类型时抛 `ArgumentException`。
+### 自定义基元
+
+内置清单之外的基元，只要它的 `TryParse` 接受某种常见文本形态，就无需任何配置。生成器按固定顺序给出
+候选，返回该类型接受的第一个：
+
+| # | 形态 | 覆盖 |
+| --- | --- | --- |
+| 1 | 默认字母表里 `StringLength` 个字符 | 大多数自定义类型 |
+| 2 | 26 个 Crockford Base32 字符（`0-9A-Z` 去掉 `I L O U`） | ULID |
+| 3 | `D` 格式的 36 字符 GUID | GUID 包装类型 |
+| 4 | 十进制整数文本 | `Money` 这类数值包装类型 |
+| 5 | ISO 8601 日期时间 | 日期包装类型 |
+| 6 | `StringLength` 个字母 | 只接受字母的类型 |
+| 7 | `local@domain.com` | 邮箱包装类型 |
+
+候选全部来自同一个带种子的随机源，因此固定 `Seed` 能复现同一串值。启发式只保证 `TryParse` 通过，
+不保证取值在语义上合理：一个接受任意 8 位数字的类型会拿到随机数字，唯一性断言可能过、业务断言却
+莫名其妙地失败。对语义敏感的类型请显式注册工厂。
+
+严格格式（固定前缀、校验位、启发式从不产出的长度）无法推断，此时 `Any.Id<T>()` 抛
+`NotSupportedException`，消息里点名该类型并指向 `Any.Register<T>(factory)` 与
+`AnyIdOptions.PrimitiveValueFactory`。这是有意划定的边界而非缺口：消息直接告诉你该做什么。
+查找 `TryParse` 用的是反射，因此这条路径在裁剪与 AOT 下不保证可用；测试辅助包不面向这两者。
+
+`Any.Create(Type)` 是 `Any.Id<T>()` 的非泛型形式，用于 Id 类型只在运行期才知道的场合，例如对
+`Type[]` 做 theory，或反射驱动的测试。传入不是强类型 Id 的类型时抛 `ArgumentException`。共享生成器与
+`AnyIdGenerator` 上都有对应的重载：
+
+| 泛型 | 非泛型 |
+| --- | --- |
+| `Any.Id<TId>()` | `Any.Create(Type)` |
+| `Any.Ids<TId>(count)` | `Any.Ids(Type, count)` |
+| `Any.Register<TId>(factory)` | `Any.Register(Type, factory)` |
+
+非泛型形式与泛型形式共用同一个生成器实例，因此经任一重载注册的工厂对两者都可见，`Any.Reset()` 也同时
+清除两者。可空 Id 类型（`OrderId?`）会拆到底层类型，与 `Create` 及反射辅助方法一致。
 
 ### 检查命名实例
 

@@ -34,8 +34,14 @@ non-empty strings, dates inside 1970–2100) to avoid failures unrelated to the 
   type alone, so a validator that throws `ArgumentException` for an unrelated reason is retried too.
 - **Overridable.** `AnyIdOptions.PrimitiveValueFactory` replaces the value source per primitive type;
   returning `null` falls back to the built-in generator.
+- **Custom primitives work unconfigured.** A primitive outside the built-in list is offered seven common
+  text shapes through its `TryParse`; see [Custom primitives](#custom-primitives) for the list and for
+  the formats that still need a registered factory.
 - **Resettable.** `Any.Reset()` discards the shared generator together with every `Any.Register<T>(factory)`
   made on it. Call it between tests that register conflicting factories.
+- **Collectible-friendly.** The per-type caches behind `Any.Id<T>()` hold their `Type` keys weakly, so an
+  id loaded into a collectible `AssemblyLoadContext` (plugins, hot reload, test hosts that reload
+  assemblies) does not pin that context alive. Same guarantee as the runtime library's reflection helpers.
 - **Configurable text.** `AnyIdOptions.StringLength` (8 by default) sets the length of generated `string`
   primitives; raise it for validators that demand longer input.
 - **Boundary-aware on demand.** `AnyIdOptions.IncludeBoundaryValues` mixes in the primitive's
@@ -50,9 +56,47 @@ still succeed inside the retry budget. An enum with no members at all (`enum Emp
 has no value to draw, so `Any.Id<T>()` throws `NotSupportedException` naming the enum rather than failing
 with an index error.
 
-`AnyIdGenerator.Create(Type)` is the non-generic form of `Any.Id<T>()`, for the cases where the id type is
-only known at run time, such as a theory over a `Type[]` or a reflection-driven test. It throws
-`ArgumentException` for a type that is not a strongly typed id.
+### Custom primitives
+
+A primitive outside the built-in list needs no configuration as long as its `TryParse` accepts some
+common text shape. The generator offers candidates in a fixed order and returns the first one the type
+accepts:
+
+| # | Shape | Covers |
+| --- | --- | --- |
+| 1 | `StringLength` characters from the default alphabet | most custom types |
+| 2 | 26 Crockford Base32 characters (`0-9A-Z` minus `I L O U`) | ULID |
+| 3 | a 36-character GUID in `D` format | GUID wrappers |
+| 4 | decimal integer text | numeric wrappers such as `Money` |
+| 5 | ISO 8601 date and time | date wrappers |
+| 6 | `StringLength` letters | letter-only types |
+| 7 | `local@domain.com` | email wrappers |
+
+Every candidate is drawn from the same seeded source, so a fixed `Seed` reproduces the sequence. The
+heuristic only guarantees that `TryParse` succeeds — not that the value is semantically sensible. A type
+that accepts any eight digits gets a random number, which may pass a uniqueness assertion while failing a
+business one; register a factory for types where the meaning matters.
+
+A strict format (a fixed prefix, a checksum, a length the heuristic never produces) cannot be inferred,
+so `Any.Id<T>()` throws `NotSupportedException` naming the type and pointing at
+`Any.Register<T>(factory)` and `AnyIdOptions.PrimitiveValueFactory`. That is the intended boundary, not a
+gap: the message tells you exactly what to do. Reflection is used to find `TryParse`, so this path is not
+trimming- or AOT-safe; the testing package does not target either.
+
+`Any.Create(Type)` is the non-generic form of `Any.Id<T>()`, for the cases where the id type is only known
+at run time, such as a theory over a `Type[]` or a reflection-driven test. It throws `ArgumentException`
+for a type that is not a strongly typed id. The same overloads exist on the shared generator and on
+`AnyIdGenerator`:
+
+| Generic | Non-generic |
+| --- | --- |
+| `Any.Id<TId>()` | `Any.Create(Type)` |
+| `Any.Ids<TId>(count)` | `Any.Ids(Type, count)` |
+| `Any.Register<TId>(factory)` | `Any.Register(Type, factory)` |
+
+The non-generic forms share the same generator instance, so a factory registered through either overload
+is visible to both, and `Any.Reset()` clears both. A nullable id type (`OrderId?`) is unwrapped to its
+underlying type, matching `Create` and the reflection helpers.
 
 ### Checking named instances
 

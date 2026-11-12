@@ -631,4 +631,30 @@ builder.Services.AddOpenApi(options =>
 按 8.0.x 生成的转换器会以 `CS0246` 编译失败，所以这道门控降不下去。`net8.0` 上没有内建的文档生成，
 请改用 [Swashbuckle](#swashbuckle) 集成，它把同样的 Id 映射成同样的 `type` / `format`。
 
+<a id="supported-versions"></a>
+
+## 支持的版本
+
+每个集成都按大版本设门控，而门控是一句承诺：「这个版本及以后可用」。下表记录这句承诺的依据。
+**最低版本**是生成器里的门控；**已验证**列出探针真正编译并往返过的版本，来源是常规测试工程或
+`test/Len.StronglyTypedId.IntegrationMatrix`。
+
+| 集成 | 最低版本 | 已验证 |
+| --- | --- | --- |
+| System.Text.Json | 任意 | `net8.0` 与 `net10.0` 上框架自带的版本 |
+| Newtonsoft.Json | 13.0.0 | 13.0.4 |
+| Entity Framework Core | 7.0.0 | 8.0.32、10.0.13 |
+| Dapper | 2.0.0 | 2.1.89 |
+| Swashbuckle | 6.0.0 | 6.9.0、7.2.0、10.2.3 |
+| MessagePack | 2.0.0 | 2.5.302、3.1.12 |
+| MongoDB.Bson | 3.0.0 | 3.4.0、3.12.0 |
+| HotChocolate | 13.0.0 | 13.9.14、14.3.0、15.1.8 |
+| protobuf-net | 3.0.0 | 3.2.30 |
+| ASP.NET Core MVC | 2.0.0 | `net8.0` 与 `net10.0` 上框架自带的版本 |
+| ASP.NET Core OpenAPI | 9.0.0 | 10.0.13 |
+
+矩阵探针在 CI 上跑每个集成的最新大版本，上游一旦破坏兼容，构建会在用户之前变红。Swashbuckle 6 与 7
+依赖 `Microsoft.OpenApi` 1.x，而 Swashbuckle 10 与 ASP.NET Core OpenAPI 9+ 依赖 2.x；两者无法共存于同一次
+编译，因此探针把它们拆成两个矩阵项。
+
 [<- 返回目录](index.md) · [English](../integrations.md)

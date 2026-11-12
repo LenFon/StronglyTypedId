@@ -33,8 +33,10 @@ dependency graph. Those two requirements cannot live in one assembly, so they li
 The main package declares the dependency, which is why one `dotnet add package` is enough.
 
 > **Building this repository** needs .NET SDK 10.0.401, pinned in `global.json`. That is a requirement of the
-> source tree, not of the package: a project that consumes `Len.StronglyTypedId` only needs a target framework
-> of `net8.0` or `net10.0`.
+> source tree, not of the package: a project that consumes `Len.StronglyTypedId` needs a target framework of
+> `net8.0` or `net10.0`, and any .NET SDK from 8.0.100 up. The generator ships two builds, one compiled
+> against Roslyn 4.8 and one against 5.9; the SDK picks the highest one no newer than its own compiler, so
+> SDK 8, 9 and 10 all load it. See [The analyzer arrives transitively](#transitive-analyzer).
 
 <a id="transitive-analyzer"></a>
 
@@ -56,7 +58,7 @@ project file:
 
 The property travels from MSBuild to the analyzer through the analyzer config the SDK writes for the
 compilation (`build_property.StronglyTypedIdEnableAnalyzers`); when it reads "no" the analyzer registers
-**no diagnostic action at all**, so none of the 28 rules report, and the code fixes disappear with them
+**no diagnostic action at all**, so none of the 30 rules report, and the code fixes disappear with them
 (there is nothing left to fix).
 
 The three states:

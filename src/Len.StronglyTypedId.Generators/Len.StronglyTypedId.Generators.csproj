@@ -9,6 +9,11 @@
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+		<!--
+		  4.8 副构建的产物路径。打包时按这个路径取文件，写进 analyzers/dotnet/roslyn4.8/cs/。
+		  用 $(Configuration) 跟随当前配置，避免 Debug 构建打到 Release 的旧产物。
+		-->
+		<Roslyn48OutputPath>$(MSBuildThisFileDirectory)..\Len.StronglyTypedId.Generators.Roslyn48\bin\$(Configuration)\netstandard2.0\</Roslyn48OutputPath>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -21,21 +26,55 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="IndexRange" PrivateAssets="all" />
+		<!-- 切片（s[1..]）所需的 Index / Range 由 PolySharp 以源码生成，不产生程序集引用。 -->
+		<PackageReference Include="PolySharp" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+			4.8 副构建：同一份源码、编译在 Roslyn 4.8 上，产物打进 analyzers/dotnet/roslyn4.8/cs/。
+			低版本 SDK（8 / 9 / 10.0.2xx）加载不了 5.9 编译的分析器，只能靠这一份。
+			用 ProjectReference 保证构建顺序，ReferenceOutputAssembly=false 避免把它的产物当引用。
+		-->
+		<ProjectReference Include="..\Len.StronglyTypedId.Generators.Roslyn48\Len.StronglyTypedId.Generators.Roslyn48.csproj"
+		                  ReferenceOutputAssembly="false"
+		                  PrivateAssets="all" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<!-- 分析器发布跟踪文件（消除 RS2008/RS2007） -->
 		<None Include="AnalyzerReleases.Shipped.md" Pack="true" PackagePath="\" Visible="false" />
 		<None Include="AnalyzerReleases.Unshipped.md" Pack="true" PackagePath="\" Visible="false" />
-		<!-- 只将分析器相关程序集打入 analyzer 目录（IncludeBuildOutput=false 已阻止默认的 lib 输出） -->
-		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
 		<!--
-			「一键静音」开关的属性放行。buildTransitive 里的 props 会沿依赖链流到最终消费者
-			（本包是主包的传递依赖），因此装主包的项目也能用上这个开关。
+			只将分析器相关程序集打入 analyzer 目录（IncludeBuildOutput=false 已阻止默认的 lib 输出）。
+
+			版本目录是 Roslyn 分析器多目标机制的一部分：SDK 按 CompilerApiVersion 挑选「≤ 当前编译器版本
+			的最高目录」，选不中就静默丢弃。目录名必须精确对应编译所用版本，不能就近取整，
+			也不能省掉版本目录 —— 无版本目录不参与这套选择。
+		-->
+		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/roslyn5.9/cs" Visible="false" />
+		<!--
+			4.8 副构建的产物。不能在 ItemGroup 里用 Exists() 判断：项目求值早于构建，干净状态下
+			副构建还没产出文件，条目会被永久漏掉（构建完也不会补回来）。改由目标在打包前动态加入。
 		-->
 		<None Include="buildTransitive\Len.StronglyTypedId.Generators.props" Pack="true" PackagePath="buildTransitive\" Visible="false" />
 	</ItemGroup>
+
+	<!--
+	  把 4.8 副构建的产物加进包。必须挂在 _GetPackageFiles 之前：那是 NuGet 收集 Pack=true 条目的目标，
+	  挂到 GenerateNuspec 上已经太晚（条目清单已生成）。项目求值阶段副构建尚未产出文件，
+	  用 Exists() 条件会静默漏掉这一份，而低版本 SDK 正是靠它才能加载生成器。
+	-->
+	<Target Name="AddRoslyn48AnalyzerToPackage" BeforeTargets="_GetPackageFiles">
+		<Error Condition="!Exists('$(Roslyn48OutputPath)Len.StronglyTypedId.Generators.dll')"
+		       Text="找不到 4.8 副构建产物：$(Roslyn48OutputPath)Len.StronglyTypedId.Generators.dll。低版本 SDK 依赖它加载生成器，不能缺。" />
+		<ItemGroup>
+			<None Include="$(Roslyn48OutputPath)Len.StronglyTypedId.Generators.dll"
+			      Pack="true"
+			      PackagePath="analyzers/dotnet/roslyn4.8/cs"
+			      Visible="false" />
+		</ItemGroup>
+	</Target>
 
 </Project>

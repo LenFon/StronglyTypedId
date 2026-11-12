@@ -13,9 +13,29 @@
 	<ItemGroup>
 		<!-- L3：测试辅助包的 AutoFixture 适配。核心包本身零第三方依赖，只有这个适配包引它。 -->
 		<PackageVersion Include="AutoFixture" Version="4.18.1" />
-		<PackageVersion Include="IndexRange" Version="1.1.1" />
+		<!--
+		  切片（`s[1..]`）所需的 Index / Range 类型由 PolySharp 以源码形式生成，取代原先的 IndexRange 包。
+		  两者产物逐字节相同（已实测）；选 PolySharp 是因为它同时覆盖其它 polyfill，且不再需要单独的
+		  IndexRange 依赖。
+		-->
+		<PackageVersion Include="PolySharp" Version="1.16.0" />
+		<!--
+		  生成器/分析器的主构建 Roslyn 版本：仓库自身、测试与 CI 都跑这一份。
+
+		  包内同时放两份产物，SDK 按 CompilerApiVersion 挑选「≤ 当前编译器版本的最高目录」：
+		    analyzers/dotnet/roslyn4.8/cs/  → SDK 8（4.8）、9（4.14）、10.0.2xx（5.3）
+		    analyzers/dotnet/roslyn5.9/cs/  → SDK 10.0.4xx（5.9）
+		  低版本 SDK 加载不了 5.9 编译的分析器（CS9057 后静默丢弃，症状是「不包含 Create 的定义」），
+		  故必须保留 4.8 那一份。4.8 产物由 Len.StronglyTypedId.Generators.Roslyn48 工程编译同一份源码产出。
+		-->
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+		<!--
+		  ImmutableArray<T> 的 [CollectionBuilder] 标注从 8.0 起才有；Roslyn 4.8 只传递 7.0，
+		  不显式抬到 8.0 会报 CS9210。运行时安全：分析器加载时 Immutable 由编译器宿主提供
+		  （SDK 8 → 8.0.0.0、SDK 9 → 9.0.0.0、SDK 10 → 10.0.0.0），均满足 8.0.0.0 下限。
+		-->
+		<PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
 		<PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
 	</ItemGroup>
 

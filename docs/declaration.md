@@ -88,6 +88,39 @@ through `TryCreate` and rethrow the rejection as their own framework exception (
 `JsonSerializationException`, and EF Core's `InvalidOperationException`). Deserialization therefore rejects
 invalid values as well.
 
+### Reporting why a value was rejected
+
+A `bool` validator can only say *that* a value was rejected. Return
+`StronglyTypedIdValidationResult` instead and the reason travels with it:
+
+```csharp
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct OrderId(Guid Value)
+{
+    private static StronglyTypedIdValidationResult Validate(Guid value)
+        => value == Guid.Empty
+            ? StronglyTypedIdValidationResult.Failure("An id cannot be empty.", "E_EMPTY")
+            : StronglyTypedIdValidationResult.Success;
+}
+
+OrderId.TryCreate(Guid.Empty, out _, out var validation);
+// validation.IsValid == false, Message == "An id cannot be empty.", Code == "E_EMPTY"
+
+OrderId.Create(Guid.Empty);  // ArgumentException whose message is the validator's
+```
+
+`default` is `Success`, so a validator may `return default;` to accept. `Failure` requires a message; the
+code is optional and meant for machine-readable branching.
+
+The three-argument `TryCreate` exists on every id, including those with a `bool` validator (where it only
+reports pass/fail) and those with no validator at all (where it always succeeds). It is declared on
+`IStronglyTypedId<TSelf, TPrimitiveId>`, so generic code constrained to the interface can read the reason
+too.
+
+`RedactValidationMessage = true` still wins: the validator's message may contain user input, so it is
+ignored in the exception and the generic text is used instead. `TryCreate` keeps returning the validator's
+message, because a return value does not reach logs or APM the way an exception message does.
+
 One thing a source generator cannot do is intercept your primary constructor: `new OrderId(...)` bypasses
 the validator. Route values through `Create` (or the parsing members) when they come from outside your
 code.
@@ -233,7 +266,8 @@ fails loudly rather than quietly handing out an id that cannot exist.
 
 Names must be valid identifiers, unique within the id, and must not collide with the id type itself or
 with an existing or generated member (`STIA0020`); values must be valid for the primitive (`STIA0021`);
-a name that is not PascalCase is reported as `STIA0022` (`Info`).
+a name that is not PascalCase is reported as `STIA0022` (`Info`) and offers a code fix that renames it to
+the suggested name.
 
 <a id="trycreate-and-utf8"></a>
 
@@ -244,6 +278,15 @@ a name that is not PascalCase is reported as `STIA0022` (`Info`).
 ```csharp
 OrderId.TryCreate(Guid.NewGuid(), out var id);              // true
 OrderId.TryCreate(badValue, out var invalid);               // false, result is default(OrderId)
+```
+
+Both factories are declared on `IStronglyTypedId<TSelf, TPrimitiveId>`, so generic code constrained to the
+interface can call either one without knowing the concrete id type:
+
+```csharp
+public static bool TryCreateId<TId>(Guid value, out TId id)
+    where TId : IStronglyTypedId<TId, Guid>
+    => TId.TryCreate(value, out id);
 ```
 
 `Guid` implements `IUtf8SpanParsable<Guid>` from .NET 10, so the generator also emits `IUtf8SpanFormattable`

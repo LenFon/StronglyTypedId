@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+	  4.8 副构建：编译与主工程完全相同的源码，但针对 Roslyn 4.8。
+
+	  为什么需要它：分析器程序集引用的 Microsoft.CodeAnalysis 版本必须 ≤ 宿主编译器版本，否则编译器
+	  报 CS9057 后静默丢弃生成器（用户看到的是「不包含 Create 的定义」）。主工程编译在 5.9 上，
+	  SDK 8 / 9 / 10.0.2xx 都加载不了；这一份放进 analyzers/dotnet/roslyn4.8/cs/ 供它们使用。
+
+	  产物由主工程打包时取走（见 Len.StronglyTypedId.Generators.csproj 的 Roslyn48OutputPath）。
+	  程序集名刻意带 .Roslyn48 后缀：两个工程输出到不同目录，避免同名产物互相覆盖。
+	-->
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<AssemblyName>Len.StronglyTypedId.Generators</AssemblyName>
+		<RootNamespace>Len.StronglyTypedId</RootNamespace>
+		<IsPackable>false</IsPackable>
+		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+		<!-- 源码目录在兄弟工程下，默认 glob 找不到，下面显式 Include。 -->
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+		<!--
+		  程序集名必须与包内文件名一致：CLR 按文件名找程序集，名字对不上会报 CS8034
+		  「Could not load file or assembly」。两个工程目录不同，同名产物天然隔离，不会互相覆盖。
+		-->
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="..\Len.StronglyTypedId.Generators\**\*.cs"
+		         Exclude="..\Len.StronglyTypedId.Generators\obj\**;..\Len.StronglyTypedId.Generators\bin\**" />
+		<EmbeddedResource Include="..\Len.StronglyTypedId.Generators\Len\Locales\en.txt" Link="Len\Locales\en.txt" />
+		<EmbeddedResource Include="..\Len.StronglyTypedId.Generators\Len\Locales\zh-CN.txt" Link="Len\Locales\zh-CN.txt" />
+		<!--
+		  RS2008 要求分析器项目带发布跟踪文件。分析器包只在「工程目录下存在这两个文件」时自动挂上，
+		  本工程目录里没有，故显式声明。
+		-->
+		<AdditionalFiles Include="..\Len.StronglyTypedId.Generators\AnalyzerReleases.Shipped.md" Link="AnalyzerReleases.Shipped.md" />
+		<AdditionalFiles Include="..\Len.StronglyTypedId.Generators\AnalyzerReleases.Unshipped.md" Link="AnalyzerReleases.Unshipped.md" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="PolySharp" PrivateAssets="all" />
+		<!--
+		  钉在 4.8：这是本工程存在的唯一理由。不要跟随主工程升级 —— 一旦升到 5.x，
+		  roslyn4.8 目录里的产物就再也加载不进低版本 SDK，而目录名与内容不符会让问题更难查。
+		  CPM 下用 VersionOverride 覆盖 Directory.Packages.props 里的 5.9.0。
+		-->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" VersionOverride="4.8.0" PrivateAssets="all" />
+		<!--
+		  Roslyn 4.8 只传递 Immutable 7.0，而 ImmutableArray<T> 的 [CollectionBuilder] 标注是 8.0 才加的，
+		  不显式抬到 8.0 集合表达式会报 CS9210。分析器加载时 Immutable 由编译器宿主提供，均 ≥ 8.0。
+		-->
+		<PackageReference Include="System.Collections.Immutable" VersionOverride="8.0.0" PrivateAssets="all" />
+	</ItemGroup>
+
+</Project>

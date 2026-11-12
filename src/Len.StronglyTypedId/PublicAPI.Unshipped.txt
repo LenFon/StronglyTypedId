@@ -6,6 +6,15 @@ static Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormat<T>(T value, Syste
 static Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormatUtf8<T>(T value, System.Span<byte> utf8Destination, out int bytesWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? formatProvider) -> bool
 Len.StronglyTypedId.IFormattableStronglyTypedId<TSelf>
 Len.StronglyTypedId.IStronglyTypedId<TSelf>
+Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>.TryCreate(TPrimitiveId value, out TSelf result) -> bool
+Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>.TryCreate(TPrimitiveId value, out TSelf result, out Len.StronglyTypedId.StronglyTypedIdValidationResult validation) -> bool
+Len.StronglyTypedId.StronglyTypedIdValidationResult
+Len.StronglyTypedId.StronglyTypedIdValidationResult.Code.get -> string?
+Len.StronglyTypedId.StronglyTypedIdValidationResult.IsValid.get -> bool
+Len.StronglyTypedId.StronglyTypedIdValidationResult.Message.get -> string?
+Len.StronglyTypedId.StronglyTypedIdValidationResult.StronglyTypedIdValidationResult() -> void
+static Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure(string! message, string? code = null) -> Len.StronglyTypedId.StronglyTypedIdValidationResult
+static Len.StronglyTypedId.StronglyTypedIdValidationResult.Success.get -> Len.StronglyTypedId.StronglyTypedIdValidationResult
 Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.JsonShape.Object = 1 -> Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.JsonShape.Primitive = 0 -> Len.StronglyTypedId.JsonShape

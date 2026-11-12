@@ -80,6 +80,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj" />
+    <Project Path="src/Len.StronglyTypedId.Generators.Roslyn48/Len.StronglyTypedId.Generators.Roslyn48.csproj" />
     <Project Path="src/Len.StronglyTypedId.Testing.AutoFixture/Len.StronglyTypedId.Testing.AutoFixture.csproj" />
     <Project Path="src/Len.StronglyTypedId.Testing.Bogus/Len.StronglyTypedId.Testing.Bogus.csproj" />
     <Project Path="src/Len.StronglyTypedId.Testing/Len.StronglyTypedId.Testing.csproj" />

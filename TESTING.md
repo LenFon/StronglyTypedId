@@ -69,6 +69,32 @@ tests to drop registrations. Prefer a dedicated `AnyIdGenerator` instance when a
 
 ## Custom primitive values
 
+A primitive outside the built-in list needs no configuration as long as its `TryParse` accepts some
+common text shape. The generator offers candidates in a fixed order and returns the first one the type
+accepts:
+
+| # | Shape | Covers |
+| --- | --- | --- |
+| 1 | `StringLength` characters from the default alphabet | most custom types |
+| 2 | 26 Crockford Base32 characters (`0-9A-Z` minus `I L O U`) | ULID |
+| 3 | a 36-character GUID in `D` format | GUID wrappers |
+| 4 | decimal integer text | numeric wrappers such as `Money` |
+| 5 | ISO 8601 date and time | date wrappers |
+| 6 | `StringLength` letters | letter-only types |
+| 7 | `local@domain.com` | email wrappers |
+
+Every candidate comes from the same seeded source, so a fixed `Seed` reproduces the sequence. The
+heuristic only guarantees that `TryParse` succeeds, not that the value is semantically sensible: a type
+accepting any eight digits gets a random number, which may pass a uniqueness assertion while failing a
+business one. Register a factory where the meaning matters.
+
+A strict format (a fixed prefix, a checksum, a length the heuristic never produces) cannot be inferred,
+so `Any.Id<T>()` throws `NotSupportedException` naming the type and pointing at
+`Any.Register<T>(factory)`. Reflection is used to find `TryParse`, so this path is not trimming- or
+AOT-safe; the testing package does not target either.
+
+To replace the value source for a specific type, use `PrimitiveValueFactory`:
+
 ```csharp
 var any = new AnyIdGenerator(new AnyIdOptions
 {

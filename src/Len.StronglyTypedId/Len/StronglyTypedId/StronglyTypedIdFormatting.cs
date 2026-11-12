@@ -33,10 +33,16 @@ public static class StronglyTypedIdFormatting
     /// <param name="value">要格式化的基元值。</param>
     /// <param name="format">格式字符串；<see langword="null"/> 表示默认格式。</param>
     /// <param name="formatProvider">格式提供程序；<see langword="null"/> 表示当前区域性。</param>
-    /// <returns>格式化后的文本。</returns>
+    /// <returns>格式化后的文本；基元返回 <see langword="null"/> 时为空字符串。</returns>
+    /// <remarks>
+    /// 与 <see cref="ToInvariantString{T}"/> 同口径兜底：<see cref="IFormattable"/> 的返回类型标注为非可空，
+    /// 但自定义基元可以返回 <see langword="null"/>，而生成的 Id 的 <c>ToString(string?, IFormatProvider?)</c>
+    /// 直接转发到这里、返回值同样标注为非可空。不兜底就会把 <see langword="null"/> 泄漏给调用方，
+    /// 让 <c>id.ToString(format, provider).Length</c> 这类写法抛 <see cref="NullReferenceException"/>。
+    /// </remarks>
     public static string Format<T>(T value, string? format, IFormatProvider? formatProvider)
         where T : IFormattable
-        => value.ToString(format, formatProvider);
+        => value.ToString(format, formatProvider) ?? string.Empty;
 
     /// <summary>
     /// 把基元值格式化进字符跨度。

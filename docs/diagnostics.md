@@ -47,12 +47,14 @@ A few rules fire in narrower circumstances than their titles suggest:
 | STIA0019 | Requested integration is not available                                | Remove the 'Integrations' argument                        |
 | STIA0020 | Named instance name is not usable                                     | Remove the '[StronglyTypedIdInstance]' attribute          |
 | STIA0021 | Named instance value is not valid for the primitive type              | Remove the '[StronglyTypedIdInstance]' attribute          |
-| STIA0022 | Named instance name should be PascalCase                              | —                                                         |
+| STIA0022 | Named instance name should be PascalCase                              | Rename the instance to the suggested name                 |
 | STIA0023 | Prefix overlaps the primitive text                                    | —                                                         |
 | STIA0024 | Integration mask contains undefined bits                              | Remove the 'Integrations' argument                        |
 | STIA0025 | Strongly typed id cannot be a file-local type                         | Remove the `file` modifier                                |
 | STIA0026 | Strongly typed id cannot be named 'var'                               | —                                                         |
 | STIA0027 | Strongly typed id name collides with a generated member               | —                                                         |
+| STIA0028 | Strongly typed id inside a generic container gets no integration code | —                                                         |
+| STIA0029 | Strongly typed id member collides with a generated member             | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Most rules ship a code fix, so the light bulb usually repairs the declaration for you. A few offer it only
@@ -61,8 +63,9 @@ primary constructor nor its members use the type parameter (removing the *contai
 parameters would change your design, and dropping a used `<T>` would leave undefined identifiers),
 `STIA0005` only when the type declares no body constructor (the fix replaces the whole parameter list
 with `(Guid Value)`, so it is also offered when a primary constructor has the wrong number of
-parameters), and `STIA0009` only when the containing
-type is actually missing `partial`.
+parameters), `STIA0009` only when the containing
+type is actually missing `partial`, and `STIA0022` only when the instance name is a string literal (the
+fix has no semantic model, so it cannot resolve a `const` reference to its value).
 
 Seven rules have no code fix, because the right repair depends on your intent:
 
@@ -71,12 +74,15 @@ Seven rules have no code fix, because the right repair depends on your intent:
   safe replacement is your decision.
 - `STIA0015` (name should end with `Id`) and `STIA0016` (several ids share a primitive). Renaming a type
   correctly means renaming every reference to it, and "these ids look alike" has no mechanical repair.
-- `STIA0022` (instance name should be PascalCase). A style suggestion; you still choose the right name.
 - `STIA0026` (the id is named `var`). That name shadows the implicit-typing keyword, so every `out var` and
   `var` pattern in the generated code stops compiling. No rewrite can pick a replacement name for you.
 - `STIA0027` (the type name collides with a generated member). C# forbids a member sharing its enclosing
   type's name (CS0542), and the members are generated, so the only repair is renaming the type — a decision
   about your domain vocabulary, not a mechanical rewrite.
+- `STIA0029` (a member collides with a generated member). C# forbids two members with the same name and
+  parameter list (CS0111), and a field, property, event or nested type sharing a generated member's name
+  is CS0102. Either way the conflicting member is the one the generator emits, so the error points into a
+  file you cannot edit. Whether to rename or delete your member depends on what it is for.
 - `STIA0012` (code generation failed). Raised by the generator rather than the analyzer, and no rewrite can
   guess the intent.
 

@@ -1,10 +1,18 @@
-﻿using System.Numerics;
+﻿using System.Globalization;
+using System.Numerics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Len.StronglyTypedId.Testing;
 
 /// <summary>
 /// 为生成器支持的每种基元类型产出合理的值。
 /// </summary>
+/// <remarks>
+/// 自定义基元没有内置规则，但大多数类型的 <c>TryParse</c> 接受某种常见文本形态（ULID、邮箱、金额、日期）。
+/// 这里按固定顺序试几种候选文本，命中即返回；全部失败才要求显式注册工厂。
+/// 启发式只保证「语法合法」，不保证「语义合理」——对语义敏感的类型仍应显式注册。
+/// </remarks>
 internal sealed class PrimitiveValueFactory(DeterministicRandom random, int stringLength, Func<Type, object?>? customFactory, bool includeBoundaryValues)
 {
     /// <summary>
@@ -12,6 +20,17 @@ internal sealed class PrimitiveValueFactory(DeterministicRandom random, int stri
     /// 在 <see cref="AnyIdOptions.MaxAttempts"/> 次重试内必然全败。
     /// </summary>
     private const string Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@.-_/:";
+
+    /// <summary>
+    /// 纯字母字符集，供只接受字母的自定义基元。
+    /// </summary>
+    private const string Letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    /// <summary>
+    /// Crockford Base32：<c>0-9A-Z</c> 去掉容易混淆的 <c>I</c>、<c>L</c>、<c>O</c>、<c>U</c>。
+    /// ULID 与许多自定义编码用它。
+    /// </summary>
+    private const string CrockfordBase32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
     /// <summary>
     /// 开启 <see cref="AnyIdOptions.IncludeBoundaryValues"/> 后，每次取值有 1/16 的概率返回
@@ -22,6 +41,10 @@ internal sealed class PrimitiveValueFactory(DeterministicRandom random, int stri
     private static readonly long _minDateTimeTicks = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
 
     private static readonly long _maxDateTimeTicks = new DateTime(2100, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
+
+    // 键是 Type，而 Type 持有 Assembly 与 AssemblyLoadContext。用普通字典做静态缓存会永久钉住
+    // 可回收 ALC，与 AnyIdGenerator 的两处缓存同构，故同样用弱键表。
+    private static readonly ConditionalWeakTable<Type, TryParseInvoker> _tryParseInvokers = [];
 
     /// <summary>
     /// 为 <paramref name="type"/> 创建一个值。
@@ -78,10 +101,118 @@ internal sealed class PrimitiveValueFactory(DeterministicRandom random, int stri
         _ when type == typeof(TimeSpan) => TimeSpan.FromTicks(random.NextInt64(0, TimeSpan.TicksPerDay)),
         _ when type == typeof(DateOnly) => DateOnly.FromDateTime(CreateDateTime()),
         _ when type == typeof(TimeOnly) => new TimeOnly(random.NextInt64(0, TimeOnly.MaxValue.Ticks)),
-        _ => throw new NotSupportedException(
-            $"'{type}' is not a built-in strongly typed id primitive. "
-            + $"Custom primitives need a factory: provide one through {nameof(AnyIdOptions)}.{nameof(AnyIdOptions.PrimitiveValueFactory)}."),
+        _ => CreateCustomPrimitive(type),
     };
+
+    /// <summary>
+    /// 自定义基元：按固定顺序试几种常见文本形态，交给类型的 <c>TryParse</c> 判定。
+    /// </summary>
+    /// <remarks>
+    /// 候选必须是随机的：固定常量会让每次调用返回同一个值，破坏唯一性断言。
+    /// 顺序按「覆盖广度」排列——一般文本 → ULID → GUID → 整数 → 日期 → 纯字母 → 邮箱。
+    /// </remarks>
+    private object CreateCustomPrimitive(Type type)
+    {
+        var invoker = _tryParseInvokers.GetValue(type, static key => new TryParseInvoker(CreateInvoker(key)));
+
+        if (invoker.Parse is not null)
+        {
+            foreach (var candidate in CreateCandidates())
+            {
+                if (invoker.Parse(candidate, out var value))
+                {
+                    return value!;
+                }
+            }
+        }
+
+        throw new NotSupportedException(
+            $"'{type}' is not a built-in strongly typed id primitive, and no value could be derived from it: "
+            + $"its format cannot be inferred from the common text shapes. Register an explicit factory with "
+            + $"{nameof(AnyIdGenerator)}.{nameof(AnyIdGenerator.Register)}<TId>(...) or "
+            + $"{nameof(AnyIdOptions)}.{nameof(AnyIdOptions.PrimitiveValueFactory)}.");
+    }
+
+    /// <summary>
+    /// 依次产出候选文本。每次调用都重新采样，因此同一个类型连续取值得到的值不同。
+    /// </summary>
+    private IEnumerable<string> CreateCandidates()
+    {
+        yield return CreateString();
+        yield return CreateFromAlphabet(CrockfordBase32, 26);
+        yield return CreateGuid().ToString("D", CultureInfo.InvariantCulture);
+        yield return random.Next(0, int.MaxValue).ToString(CultureInfo.InvariantCulture);
+        yield return CreateDateTime().ToString("O", CultureInfo.InvariantCulture);
+        yield return CreateFromAlphabet(Letters, stringLength);
+        yield return string.Concat(
+            CreateFromAlphabet(Letters, Math.Max(stringLength, 1)),
+            "@",
+            CreateFromAlphabet(Letters, Math.Max(stringLength, 1)),
+            ".com");
+    }
+
+    /// <summary>
+    /// 反射查找 <c>TryParse(string?, IFormatProvider?, out T)</c>。找不到时返回 <see langword="null"/>。
+    /// </summary>
+    private static TryParseCandidate? CreateInvoker(Type type)
+    {
+        // 直接 MakeGenericType 在类型不满足 IParsable<TSelf> 约束时会抛 ArgumentException；
+        // 先查接口列表更稳妥，也顺带确认它确实是生成器认可的自定义基元。
+        var implementsParsable = type.GetInterfaces().Any(@interface =>
+            @interface.IsGenericType
+            && @interface.GetGenericTypeDefinition() == typeof(IParsable<>)
+            && @interface.GetGenericArguments()[0] == type);
+
+        if (!implementsParsable)
+        {
+            return null;
+        }
+
+        var method = type.GetMethod(
+            "TryParse",
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            [typeof(string), typeof(IFormatProvider), type.MakeByRefType()],
+            modifiers: null);
+
+        return method is null || method.ReturnType != typeof(bool) ? null : Parse;
+
+        bool Parse(string text, out object? value)
+        {
+            object?[] arguments = [text, CultureInfo.InvariantCulture, null];
+            var success = (bool)method!.Invoke(null, arguments)!;
+
+            value = success ? arguments[2] : null;
+
+            return success;
+        }
+    }
+
+    private string CreateFromAlphabet(string alphabet, int length)
+    {
+        var chars = new char[length];
+
+        for (var index = 0; index < chars.Length; index++)
+        {
+            chars[index] = alphabet[random.Next(alphabet.Length)];
+        }
+
+        return new string(chars);
+    }
+
+    /// <summary>
+    /// 把 <c>TryParse</c> 的反射调用包成委托，避免每次取值都重新查找方法。
+    /// </summary>
+    private delegate bool TryParseCandidate(string text, out object? value);
+
+    /// <summary>
+    /// 缓存条目：<see cref="Parse"/> 为 <see langword="null"/> 表示该类型没有可用的 <c>TryParse</c>。
+    /// </summary>
+    private sealed class TryParseInvoker(TryParseCandidate? parse)
+    {
+        public TryParseCandidate? Parse { get; } = parse;
+    }
+
 
     /// <summary>
     /// 按 <see cref="BoundaryOdds"/> 的概率返回区间端点，否则走常规采样。

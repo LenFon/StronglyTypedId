@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Len.StronglyTypedId.Testing;
 
@@ -8,13 +9,17 @@ namespace Len.StronglyTypedId.Testing;
 /// </summary>
 public sealed class AnyIdGenerator
 {
-    private static readonly ConcurrentDictionary<Type, Func<AnyIdGenerator, object>> _factories = new();
+    // 缓存键是 Type，而 Type 持有 Assembly、Assembly 持有 AssemblyLoadContext。用普通字典做静态缓存时，
+    // 插件热重载或测试宿主反复加载程序集，每加载一次就永久钉住一个可回收 ALC 及其全部类型。
+    // 与主库 StronglyTypedIdExtensions 同构：ConditionalWeakTable 的键是弱引用，值随键一起回收。
+    // 这里不用 StrongBox：两个缓存的值都恒非 null（工厂必有；异常类型回退到 ArgumentException）。
+    private static readonly ConditionalWeakTable<Type, Func<AnyIdGenerator, object>> _factories = [];
 
     /// <summary>
     /// 每个 Id 类型在验证失败时抛出的异常类型。生成器允许用 <c>ExceptionType</c> 把它换掉，
     /// 而重试循环必须认得这个类型，否则第一次被拒就直接冒泡。
     /// </summary>
-    private static readonly ConcurrentDictionary<Type, Type> _rejectionTypes = new();
+    private static readonly ConditionalWeakTable<Type, Type> _rejectionTypes = [];
 
     private readonly AnyIdOptions _options;
 
@@ -81,11 +86,32 @@ public sealed class AnyIdGenerator
     }
 
     /// <summary>
+    /// 创建 <paramref name="count"/> 个指定运行时类型的强类型 Id。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Create(Type)"/> 的批量形式，供 Id 类型只在运行期可知的场景使用。
+    /// </remarks>
+    public IReadOnlyList<object> Ids(Type idType, int count)
+    {
+        ArgumentNullException.ThrowIfNull(idType);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+        var ids = new object[count];
+
+        for (var index = 0; index < count; index++)
+        {
+            ids[index] = Create(idType);
+        }
+
+        return ids;
+    }
+
+    /// <summary>
     /// 创建指定运行时类型的强类型 Id。
     /// </summary>
     /// <remarks>
     /// 可空 Id（<c>OrderId?</c>）按底层类型生成，与 <see cref="StronglyTypedIdExtensions.IsStronglyTypedId"/>、
-    /// MVC 绑定器、EF 转换器一致。返回的是底层 Id 实例，调用方按可空类型使用即可。
+    /// MVC 绑定器、EF 转换器一致。返回的是底层 Id 的装箱实例（<c>OrderId</c>，不是 <c>OrderId?</c>）。
     /// </remarks>
     public object Create(Type idType)
     {
@@ -104,8 +130,14 @@ public sealed class AnyIdGenerator
                 nameof(idType))
             : _registered.TryGetValue(underlyingType, out var registered)
                 ? registered()
-                : _factories.GetOrAdd(underlyingType, BuildFactory)(this);
+                : GetOrAddFactory(underlyingType)(this);
     }
+
+    /// <summary>
+    /// 取（必要时构建）指定 Id 类型的工厂。
+    /// </summary>
+    private static Func<AnyIdGenerator, object> GetOrAddFactory(Type idType)
+        => _factories.GetValue(idType, BuildFactory);
 
     /// <summary>
     /// 为 <typeparamref name="TId"/> 注册显式工厂，覆盖默认的取值生成。
@@ -116,6 +148,21 @@ public sealed class AnyIdGenerator
         ArgumentNullException.ThrowIfNull(factory);
 
         _registered[typeof(TId)] = () => factory()!;
+    }
+
+    /// <summary>
+    /// 为指定运行时类型的强类型 Id 注册显式工厂，覆盖默认的取值生成。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Register{TId}"/> 的非泛型形式。可空 Id（<c>OrderId?</c>）按底层类型登记，
+    /// 与 <see cref="Create(Type)"/> 的拆壳规则一致，否则注册了却永远命中不到。
+    /// </remarks>
+    public void Register(Type idType, Func<object> factory)
+    {
+        ArgumentNullException.ThrowIfNull(idType);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        _registered[Nullable.GetUnderlyingType(idType) ?? idType] = factory;
     }
 
     private static Func<AnyIdGenerator, object> BuildFactory(Type idType)
@@ -141,7 +188,7 @@ public sealed class AnyIdGenerator
     /// <c>StronglyTypedIdDefaults</c>，最后是 <see cref="ArgumentException"/>。优先级与生成器一致。
     /// </summary>
     private static Type ResolveRejectionType(Type idType)
-        => _rejectionTypes.GetOrAdd(idType, static type =>
+        => _rejectionTypes.GetValue(idType, static type =>
             type.GetCustomAttribute<StronglyTypedIdAttribute>()?.ExceptionType
             ?? type.Assembly.GetCustomAttribute<StronglyTypedIdDefaultsAttribute>()?.ExceptionType
             ?? typeof(ArgumentException));

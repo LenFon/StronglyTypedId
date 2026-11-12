@@ -18,6 +18,8 @@ STIA0024 | StronglyTypedIdAnalyzer | Warning | Reported when [StronglyTypedId(In
 STIA0025 | StronglyTypedIdAnalyzer | Error | Reported when the id itself is declared as a file-local type: the generator must reopen its partial declaration in another file, which a file-local type cannot allow.
 STIA0026 | StronglyTypedIdAnalyzer | Error | Reported when the id type is named 'var': that name shadows the implicit-typing keyword, so the generated 'out var' / 'var' patterns stop compiling (CS1503 / CS8508).
 STIA0027 | StronglyTypedIdAnalyzer | Error | Reported when the id type name equals a member the generator emits into it (e.g. 'Create', 'Parse', 'TryFormat', 'SystemTextJsonConverter'): C# forbids a member sharing its enclosing type's name (CS0542), so the generated code cannot compile.
+STIA0028 | StronglyTypedIdAnalyzer | Warning | Reported when the id is declared inside a generic container: it still compiles and gets its core members, but every integration is skipped (open generics cannot be registered) and the [JsonConverter] / [TypeConverter] / [DebuggerTypeProxy] attributes cannot be emitted (CS0416). Not reported when every integration is explicitly turned off.
+STIA0029 | StronglyTypedIdAnalyzer | Error | Reported when a member the user declares on the id collides with a member the generator emits into it: a method with the same name and parameter list (CS0111), or a field, property, event or nested type sharing a generated member's name (CS0102). The compiler only points at the generated file.
 
 ### Changed Rules
 

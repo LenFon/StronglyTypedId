@@ -20,12 +20,33 @@ public class Repository<TId>
 }
 ```
 
+`Create` throws when a `Validator` rejects the value. The interface declares `TryCreate` too, so generic
+code can take the non-throwing path without knowing the concrete id type:
+
+```csharp
+public bool TryCreateId<TId>(Guid value, out TId id)
+    where TId : IStronglyTypedId<TId, Guid>
+    => TId.TryCreate(value, out id);
+```
+
 Every id also implements the single-parameter `IStronglyTypedId<TSelf>`, so a constraint can say "some
 strongly typed id" without naming the primitive, which is useful for logging, caching and validation
-helpers that treat the id as an opaque value. That interface already extends `IParsable<TSelf>` and
-`IEqualityOperators<TSelf, TSelf, bool>`, so such a constraint can still call `TId.Parse(...)` and use
-`==` / `!=` without knowing the primitive. `IFormattableStronglyTypedId<TSelf>` narrows that to ids whose
-primitive can be formatted.
+helpers that treat the id as an opaque value. That interface extends `IParsable<TSelf>`,
+`IComparable<TSelf>` and `IComparisonOperators<TSelf, TSelf, bool>`, so such a constraint can still call
+`TId.Parse(...)`, use `==` / `!=`, and order ids with `CompareTo` or `<` / `>` without knowing the
+primitive:
+
+```csharp
+public static TId Max<TId>(IEnumerable<TId> ids)
+    where TId : IStronglyTypedId<TId>
+    => ids.Max()!;                       // IComparable<TSelf> is enough for LINQ
+
+public static bool IsBefore<TId>(TId left, TId right)
+    where TId : IStronglyTypedId<TId>
+    => left < right;                     // IComparisonOperators<TSelf, TSelf, bool>
+```
+
+`IFormattableStronglyTypedId<TSelf>` narrows that to ids whose primitive can be formatted.
 
 <a id="reflection-helpers"></a>
 

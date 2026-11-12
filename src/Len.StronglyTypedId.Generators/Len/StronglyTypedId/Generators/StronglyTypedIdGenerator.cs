@@ -210,7 +210,8 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
     /// 代码生成器的模块闸门登记：把「引用了哪个程序集才启用哪个生成器」集中在一处表达（Factory + Strategy），
     /// 取代原先散落在各处按程序集名做重复判定的写法。
     /// </summary>
-    private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog = ImmutableArray.Create(
+    private static readonly ImmutableArray<CodeGeneratorRegistration> _generatorCatalog =
+    [
         // 核心生成器按模块名精确匹配（区分大小写）。
         new CodeGeneratorRegistration(
             "Len.StronglyTypedId.dll",
@@ -360,7 +361,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
             NewtonsoftJsonRegistrationCodeGenerator.Instance,
             DocText.Empty,
-            DocText.Empty));
+            DocText.Empty)];
 
     /// <summary>
     /// README「What gets generated」表的行数据：只含登记了文档的项，顺序即表格行序。
@@ -456,8 +457,9 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         // 对每个特性应用各触发一次（实测 TargetNode 的 span 不同、TargetSymbol 相同）。两次都产出
         // 就会用同一个 hintName 调两次 AddSource，抛 ArgumentException 并降级成 CS8785，
         // 该 Id 的全部产物随之丢失。编译器已用 CS0579 报出「特性重复」，生成器只需安静地生成一份。
-        // 判据取「本次触发落在该符号的第一个声明上」：无状态，不破坏按 Id 的增量性。
-        if (!IsFirstDeclaration(context.TargetNode, symbol))
+        // 判据取「本次触发落在该符号的第一个特性应用上」：无状态，不破坏按 Id 的增量性。
+        // 不能取「第一个声明」：特性可以标在不承载主构造函数的后续段上，那样会一个产物都不生成。
+        if (!IsFirstAttributeApplication(context, symbol))
         {
             return null;
         }
@@ -480,37 +482,186 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             return null;
         }
 
+        // 生成代码通篇引用 `Value`（接口成员、ToString、CompareTo…），而 `Value` 只由主构造函数合成。
+        // 手写单参构造（`public OrderId(int value) { }`）没有主构造，也就没有 `Value` 属性；
+        // 特性标在不带主构造的 partial 段上时，`GetSingleParameterType` 仍能从另一段找到构造，
+        // 于是生成器会产出引用不存在成员的代码 —— 用户只看到指向生成文件的 CS0535。
+        // 分析器对这两种写法分别报 STIA0005 / STIA0007，这里同步不产出，让那条诊断成为唯一可见的错误。
+        if (!HasValueProperty(symbol, ctorArgType))
+        {
+            return null;
+        }
+
         var info = new StronglyTypedIdInfo(symbol, StronglyTypedIdDefaults.Read(assembly));
 
         // 类型名与生成成员同名会 CS0542。分析器报 STIA0027 并阻断构建，这里同步不产出，
         // 免得在 IDE 里先看到一堆指向生成文件的编译错误。判据与分析器同源。
-        return GeneratedMemberNames.MayCollide(symbol.Name)
+        if (GeneratedMemberNames.MayCollide(symbol.Name)
             && GeneratedMemberNames.CollidesWithGeneratedMember(
                 info,
                 ReferencesAssembly(context.SemanticModel.Compilation, "System.Text.Json"),
-                ReferencesAssembly(context.SemanticModel.Compilation, "Newtonsoft.Json"))
-                ? null
-                : info;
+                ReferencesAssembly(context.SemanticModel.Compilation, "Newtonsoft.Json")))
+        {
+            return null;
+        }
+
+        // 用户自己写的成员与生成成员撞名会 CS0111 / CS0102，而这类声明级编译错误会让编译器跳过
+        // 全部分析器诊断 —— 包括本该指出问题所在的 STIA0029。用户于是只看到一条指向生成文件的错误。
+        // 这里同步不产出，让 STIA0029 成为唯一可见的错误。判据与分析器同源。
+        return GeneratedMemberNames.HasMemberCollision(symbol, info, GetIntegrationReferences(context.SemanticModel.Compilation, info))
+            ? null
+            : info;
     }
 
     /// <summary>
-    /// 判断本次触发的语法节点是否为该符号的第一个声明。
+    /// 取本次编译引用了哪些会影响「会生成哪些成员」的集成程序集。
+    /// </summary>
+    /// <param name="compilation">当前编译。</param>
+    /// <param name="info">当前 Id 的描述信息。</param>
+    /// <remarks>
+    /// 与 <c>StronglyTypedIdAnalyzer</c> 的同名计算同源，但这里跑在<b>生成前</b>的编译上：
+    /// 用户自带 <c>[ProtoContract]</c> 时生成器本就不产出 surrogate，故直接读
+    /// <see cref="StronglyTypedIdInfo.HasProtoContractAttribute"/> 即可，不必像分析器那样
+    /// 区分「特性来自用户」还是「来自生成文件」。
+    /// </remarks>
+    private static GeneratedMemberNames.IntegrationReferences GetIntegrationReferences(
+        Compilation compilation,
+        StronglyTypedIdInfo info)
+        => new(
+            ReferencesAssembly(compilation, "System.Text.Json"),
+            ReferencesAssembly(compilation, "Newtonsoft.Json"),
+            ReferencesAssembly(compilation, "protobuf-net")
+                && !info.IsInGenericContainer
+                && !info.HasProtoContractAttribute);
+
+    /// <summary>
+    /// 判断该 Id 是否真的有一个名为 <c>Value</c>、类型为基元的可读属性。
+    /// </summary>
+    /// <param name="symbol">声明 Id 的类型。</param>
+    /// <param name="primitiveType">从单参构造推出的基元类型。</param>
+    /// <remarks>
+    /// 生成代码通篇引用 <c>Value</c>，而它只由主构造函数合成。以下两种写法都没有它：
+    /// <list type="bullet">
+    /// <item>主构造的参数名不是 <c>Value</c>（<c>record OrderId(int Wrong)</c>，分析器报 STIA0007）；</item>
+    /// <item>根本没有主构造，只有手写单参构造（分析器报 STIA0005）。</item>
+    /// </list>
+    /// 两者此前都会让生成器产出引用不存在成员的代码，用户看到的是一条指向生成文件的 CS0535，
+    /// 而真正的诊断被编译错误掩盖。这里提前返回，让分析器那条成为唯一可见的错误。
+    /// <para>
+    /// 必须沿基类链查找：<c>record DerivedId(Guid Value) : BaseId(Value)</c> 的 <c>Value</c> 由基类声明，
+    /// 派生类型自己并不合成它，但生成代码照样能解析到。
+    /// </para>
+    /// <para>
+    /// 只认属性而不认字段：record 的主构造合成的是属性。用户显式写的 <c>Value</c> 属性同样满足，
+    /// 因为生成代码只按名字访问它。
+    /// </para>
+    /// </remarks>
+    private static bool HasValueProperty(INamedTypeSymbol symbol, ITypeSymbol primitiveType)
+    {
+        for (var current = symbol; current is not null; current = current.BaseType)
+        {
+            if (current.GetMembers(StronglyTypedIdInfo.ValuePropertyName)
+                .OfType<IPropertySymbol>()
+                .Any(property => !property.IsStatic
+                    && SymbolEqualityComparer.Default.Equals(property.Type, primitiveType)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 判断本次触发是否为该符号上最早的那次 <c>[StronglyTypedId]</c> 应用。
     /// </summary>
     /// <remarks>
     /// 同一类型可以在多个 partial 段上各标一次 <c>[StronglyTypedId]</c>（编译器报 CS0579，但生成器仍会被
-    /// 触发多次）。只让第一个声明产出，其余静默跳过，避免同一个 hintName 被添加两次。
+    /// 触发多次），也可以在同一段里重复标注。只让最早的一次产出，其余静默跳过，避免同一个 hintName 被添加两次。
     /// <para>
-    /// 按 <see cref="ISymbol.DeclaringSyntaxReferences"/> 的顺序比较：Roslyn 保证它按源码位置排序，
-    /// 因此「第一个」是确定的，与触发顺序无关。
+    /// 比较的是<b>特性应用</b>的位置而非声明的位置：特性可以标在不承载主构造函数的后续段上，按「第一个声明」
+    /// 判定会让这种写法一个产物都不生成。同一段里重复标注时两次触发的声明位置相同，也只有比较特性位置才分得开。
+    /// </para>
+    /// <para>
+    /// 排序键是「声明在 <see cref="ISymbol.DeclaringSyntaxReferences"/> 里的序号 + 树内偏移」，不能只用
+    /// <c>TextSpan.Start</c>：它是相对各自语法树的偏移，两个文件里位置相同的特性会得到同一个值，
+    /// 于是两次触发都判定为「最早」，重复 <c>AddSource</c> 抛异常、该 Id 的全部产物丢失。
+    /// <see cref="ISymbol.DeclaringSyntaxReferences"/> 按源码位置排序，序号因此是跨文件的稳定全序。
     /// </para>
     /// </remarks>
-    private static bool IsFirstDeclaration(SyntaxNode targetNode, INamedTypeSymbol symbol)
+    private static bool IsFirstAttributeApplication(GeneratorAttributeSyntaxContext context, INamedTypeSymbol symbol)
     {
+        if (context.Attributes.IsDefaultOrEmpty
+            || context.Attributes[0].ApplicationSyntaxReference is not { } current)
+        {
+            return true;
+        }
+
         var declarations = symbol.DeclaringSyntaxReferences;
 
-        return declarations.Length <= 1
-            || declarations[0].Span == targetNode.Span;
+        if (declarations.Length <= 1)
+        {
+            return true;
+        }
+
+        var currentKey = GetApplicationOrderKey(declarations, current);
+
+        foreach (var attribute in symbol.GetAttributes())
+        {
+            if (attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                    != AttributeReader.StronglyTypedIdAttributeName
+                || attribute.ApplicationSyntaxReference is not { } reference)
+            {
+                continue;
+            }
+
+            if (IsEarlier(GetApplicationOrderKey(declarations, reference), currentKey))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
+
+    /// <summary>
+    /// 取一次特性应用在「全部声明」里的全序键：声明序号为主、树内偏移为辅。
+    /// </summary>
+    /// <remarks>
+    /// 按「声明 span 包含特性 span」定位所属段，不能只比语法树：同一文件里可以有两个 partial 段，
+    /// 那样两个特性都会匹配到第一个声明，序号失去区分度。
+    /// <para>
+    /// 找不到所属声明时退化为「序号取最大值」：那种特性不属于本符号的任何一个 partial 段，
+    /// 让它排在最后，不影响正常声明的判定。
+    /// </para>
+    /// </remarks>
+    private static (int Declaration, int Offset) GetApplicationOrderKey(
+        ImmutableArray<SyntaxReference> declarations,
+        SyntaxReference application)
+    {
+        for (var index = 0; index < declarations.Length; index++)
+        {
+            var declaration = declarations[index];
+
+            if (declaration.SyntaxTree == application.SyntaxTree
+                && declaration.Span.Contains(application.Span))
+            {
+                return (index, application.Span.Start);
+            }
+        }
+
+        return (int.MaxValue, application.Span.Start);
+    }
+
+    /// <summary>
+    /// 按「声明序号 → 树内偏移」的字典序比较两个应用位置。
+    /// </summary>
+    /// <remarks>
+    /// 元组本身没有 <c>&lt;</c> 运算符（C# 只给元组生成 <c>==</c>），故显式展开比较。
+    /// </remarks>
+    private static bool IsEarlier((int Declaration, int Offset) left, (int Declaration, int Offset) right)
+        => left.Declaration < right.Declaration
+            || (left.Declaration == right.Declaration && left.Offset < right.Offset);
 
     /// <summary>
     /// 判断编译是否引用了指定简单名的程序集。

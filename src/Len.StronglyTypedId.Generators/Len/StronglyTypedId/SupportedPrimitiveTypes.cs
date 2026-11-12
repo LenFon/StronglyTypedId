@@ -43,7 +43,8 @@ internal static class SupportedPrimitiveTypes
     /// <summary>
     /// 受支持基元类型的登记表，顺序即 README「Supported primitive types」表的行序。
     /// </summary>
-    internal static readonly ImmutableArray<PrimitiveTypeEntry> DocumentedTypes = ImmutableArray.Create(
+    internal static readonly ImmutableArray<PrimitiveTypeEntry> DocumentedTypes =
+    [
         new PrimitiveTypeEntry("Guid", nameof(Guid), PrimitiveNamespace, false),
         new PrimitiveTypeEntry("string", nameof(String), PrimitiveNamespace, true),
         // 字符基元：CLR 里是 16 位无符号整数，接口面与整型同构，但 IParsable / IFormattable 的成员
@@ -68,7 +69,7 @@ internal static class SupportedPrimitiveTypes
         new PrimitiveTypeEntry("TimeSpan", nameof(TimeSpan), PrimitiveNamespace, false),
         new PrimitiveTypeEntry("DateOnly", "DateOnly", PrimitiveNamespace, false),
         new PrimitiveTypeEntry("TimeOnly", "TimeOnly", PrimitiveNamespace, false),
-        new PrimitiveTypeEntry("BigInteger", "BigInteger", NumericsNamespace, false));
+        new PrimitiveTypeEntry("BigInteger", "BigInteger", NumericsNamespace, false)];
 
     /// <summary>
     /// <c>System</c> 命名空间下受支持的基元类型名集合（由 <see cref="DocumentedTypes"/> 派生）。

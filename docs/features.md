@@ -22,8 +22,8 @@ there points at a runnable sample.
   offers **Convert to strongly typed id**, which adds the attribute, `partial` and the `using` for you; the
   reverse **Inline strongly typed id** undoes it. The forward action appears only when the result would be a
   valid id; see [Converting an existing record](declaration.md#converting-an-existing-record).
-- **Compile-time safety.** A built-in analyzer rejects invalid declarations as errors, and twenty-one of
-  its twenty-eight rules ship a code fix that repairs the declaration for you. See
+- **Compile-time safety.** A built-in analyzer rejects invalid declarations as errors, and 22 of
+  its 30 rules ship a code fix that repairs the declaration for you. See
   [Diagnostics](diagnostics.md#diagnostics).
 - **Twenty-three built-in primitives.** Every numeric type including `Int128`, `UInt128` and `Half`, plus
   `Guid`, `string`, `char`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`
@@ -61,7 +61,12 @@ there points at a runnable sample.
 - **Comparison and ordering.** `CompareTo` plus `<`, `>`, `<=` and `>=`, so `OrderBy`, `SortedSet<T>`
   and range checks work without a custom comparer. Reference-type ids treat `null` as the smallest value.
 - **`Create` and `TryCreate`.** The throwing factory and its non-throwing twin, which returns `false` and
-  sets `result` to `default` instead of throwing.
+  sets `result` to `default` instead of throwing. Both are declared on
+  `IStronglyTypedId<TSelf, TPrimitiveId>`, so generic code can call either through the constraint.
+- **Rich validation results.** A validator may return `StronglyTypedIdValidationResult` instead of `bool`,
+  carrying a message and an optional error code. The three-argument `TryCreate` overload exposes it, and it
+  exists on every id, so generic code can read the reason too. See
+  [Reporting why a value was rejected](declaration.md#reporting-why-a-value-was-rejected).
 - **Deconstruction.** `id.Deconstruct(out var value)` unwraps the primitive. A single-element
   `var (value) = id;` is not legal C#.
 - **`ToString()`.** The invariant-culture text of the primitive (or the prefixed canonical form), not the

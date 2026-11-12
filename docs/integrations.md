@@ -733,4 +733,32 @@ API (`IOpenApiSchemaTransformer`, `OpenApiSchemaTransformerContext` and `AddSche
 `net8.0` has no built-in document generation, so use the [Swashbuckle](#swashbuckle) integration there; it
 maps the same ids to the same `type` / `format` pairs.
 
+<a id="supported-versions"></a>
+
+## Supported versions
+
+Each integration is gated on a major version, and that gate is a promise: "this version or newer works".
+The table records what the promise rests on. **Minimum** is the gate in the generator. **Verified** lists
+the versions a probe actually compiled against and round-tripped, either in the regular test projects or
+in `test/Len.StronglyTypedId.IntegrationMatrix`.
+
+| Integration | Minimum | Verified |
+| --- | --- | --- |
+| System.Text.Json | any | the framework's own version on `net8.0` and `net10.0` |
+| Newtonsoft.Json | 13.0.0 | 13.0.4 |
+| Entity Framework Core | 7.0.0 | 8.0.32, 10.0.13 |
+| Dapper | 2.0.0 | 2.1.89 |
+| Swashbuckle | 6.0.0 | 6.9.0, 7.2.0, 10.2.3 |
+| MessagePack | 2.0.0 | 2.5.302, 3.1.12 |
+| MongoDB.Bson | 3.0.0 | 3.4.0, 3.12.0 |
+| HotChocolate | 13.0.0 | 13.9.14, 14.3.0, 15.1.8 |
+| protobuf-net | 3.0.0 | 3.2.30 |
+| ASP.NET Core MVC | 2.0.0 | the framework's own version on `net8.0` and `net10.0` |
+| ASP.NET Core OpenAPI | 9.0.0 | 10.0.13 |
+
+The matrix probe runs in CI for the newest major of each integration, so a breaking change upstream turns
+the build red before it reaches a user. Swashbuckle 6 and 7 depend on `Microsoft.OpenApi` 1.x while
+Swashbuckle 10 and ASP.NET Core OpenAPI 9+ depend on 2.x; the two cannot be in one compilation, so the
+probe covers them as separate matrix entries.
+
 [<- Back to the index](index.md) · [中文](zh-CN/integrations.md)

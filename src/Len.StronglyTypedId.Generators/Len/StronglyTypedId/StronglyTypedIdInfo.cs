@@ -18,6 +18,11 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string InterfaceNamespace = "global::Len.StronglyTypedId";
 
     /// <summary>
+    /// 主构造函数必须使用的参数名，也是生成代码通篇引用的成员名。
+    /// </summary>
+    internal const string ValuePropertyName = "Value";
+
+    /// <summary>
     /// System.Text.Json 转换器的内嵌类型名。
     /// </summary>
     private const string SystemTextJsonConverterTypeName = "SystemTextJsonConverter";
@@ -118,6 +123,11 @@ internal readonly record struct StronglyTypedIdInfo
     private const string BigIntegerTypeName = "System.Numerics.BigInteger";
 
     /// <summary>
+    /// 富验证结果类型的显示名（含 <c>global::</c> 前缀，直接用于生成代码）。验证器返回它时，生成代码按「带原因」的模板分支。
+    /// </summary>
+    internal const string ValidationResultTypeName = "global::Len.StronglyTypedId.StronglyTypedIdValidationResult";
+
+    /// <summary>
     /// Newtonsoft.Json 下必须走规范文本形的基元。
     /// </summary>
     /// <remarks>
@@ -203,8 +213,10 @@ internal readonly record struct StronglyTypedIdInfo
         FullyQualifiedNamespace = containingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         Namespace = FullyQualifiedNamespace[GlobalPrefix.Length..];
         Name = type.Name;
-        FullyQualifiedName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        FullName = type.ToDisplayString();
+        FullyQualifiedName = IdentifierEscaping.FullyQualifiedName(type);
+        // 与 FullyQualifiedName 同源，只去掉 global:: 前缀：ToDisplayString() 在 4.8 下同样不转义类型名，
+        // 会让 hint 名、XML 注释与消歧哈希随 Roslyn 版本漂移。
+        FullName = FullyQualifiedName[GlobalPrefix.Length..];
         // readonly 必须写在 record 关键字之前，且各 partial 段必须一致，否则合并后编译失败。
         TypeKindSuffix = type.TypeKind == TypeKind.Struct ? " struct" : null;
         ReadOnlyRecordModifier = type.TypeKind == TypeKind.Struct && type.IsReadOnly ? "readonly " : string.Empty;
@@ -273,6 +285,13 @@ internal readonly record struct StronglyTypedIdInfo
         // 属性只查一次：下面九项都要读命名实参，逐项重查会把 GetAttributes 与显示名格式化各做九遍。
         var attribute = AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName);
         ValidatorName = AttributeReader.GetString(attribute, ValidatorArgumentName) ?? defaults.ValidatorName;
+        // 验证器有两种签名：static bool 与 static StronglyTypedIdValidationResult。按返回类型分支生成，
+        // 存布尔而非符号：本类型是增量缓存的键，符号跨编译不稳定。
+        // 必须按实参类型挑出真正会绑定的那个重载：验证器允许重载，取「任一返回 result 的方法」会让
+        // 编译器实际绑到 bool 重载时产物访问 .IsValid 而编译失败。
+        ValidatorReturnsResult = ValidatorName is not null
+            && FindValidatorMethod(type, ValidatorName, primitiveIdType) is { } validatorMethod
+            && ReturnsValidationResult(validatorMethod.ReturnType);
         NormalizerName = AttributeReader.GetString(attribute, NormalizerArgumentName) ?? defaults.NormalizerName;
         // 存显示名而非符号：本类型是增量缓存的键，符号跨编译不稳定，显示名才是稳定值。
         ExceptionTypeName = AttributeReader.GetType(attribute, ExceptionTypeArgumentName)
@@ -559,10 +578,17 @@ internal readonly record struct StronglyTypedIdInfo
     /// <see cref="RoundTripFormat"/> 非 <see langword="null"/> 时用它取代 <see langword="null"/> 格式：
     /// 三个时间基元的默认格式有损，写成短格式会让不同的 Id 产生同一段文本。
     /// </para>
+    /// <para>
+    /// 未实现 <see cref="IFormattable"/> 的基元只能调无参 <c>ToString()</c>。若它也没重写 <c>ToString</c>，
+    /// 绑定到的是 <see cref="object.ToString"/>，返回类型标注为 <c>string?</c> —— 生成代码里
+    /// <c>writer.WritePropertyName(primitiveId.ToString())</c> 这类调用会留下 CS8604，开了
+    /// <c>TreatWarningsAsErrors</c> 的消费方直接构建失败。故这里补 <c>?? string.Empty</c>，
+    /// 与运行时库 <c>StronglyTypedIdFormatting.ToInvariantString</c> 的既有兜底同口径。
+    /// </para>
     /// </remarks>
     public string GetPrimitiveTextExpression(string variableName)
         => !IsFormattable
-            ? $"{variableName}.ToString()"
+            ? $"{variableName}.ToString() ?? string.Empty"
             : HasPublicToStringWithProvider
                 ? $"{variableName}.ToString({FormatArgument}, global::System.Globalization.CultureInfo.InvariantCulture)"
                 : RoundTripFormat is null
@@ -736,6 +762,15 @@ internal readonly record struct StronglyTypedIdInfo
     /// <c>[StronglyTypedId]</c> 上 <c>Validator</c> 指定的验证器方法名；未指定时为 <see langword="null"/>。
     /// </summary>
     public string? ValidatorName { get; }
+
+    /// <summary>
+    /// 验证器是否返回 <see cref="ValidationResultTypeName"/>（而非 <see langword="bool"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 为 <see langword="true"/> 时生成代码走「带拒绝原因」的模板：<c>Create</c> 用验证器给出的消息，
+    /// <c>TryCreate</c> 额外提供一个带回验证结果的重载。为 <see langword="false"/> 时产物与加入该能力之前逐字节一致。
+    /// </remarks>
+    public bool ValidatorReturnsResult { get; }
 
     /// <summary>
     /// <c>[StronglyTypedId]</c> 上 <c>Normalizer</c> 指定的归一化方法名；未指定时为 <see langword="null"/>。
@@ -993,26 +1028,39 @@ internal readonly record struct StronglyTypedIdInfo
     }
 
     /// <summary>
+    /// 判断类型是否声明在泛型包含类型内部（任意一层带类型参数即算）。
+    /// </summary>
+    /// <remarks>
+    /// 生成器与分析器共用这一份判定，保证「STIA0028 报的那条」就是「集成被跳过的那条」。
+    /// </remarks>
+    internal static bool HasGenericContainer(ITypeSymbol type)
+    {
+        for (var container = type.ContainingType; container is not null; container = container.ContainingType)
+        {
+            if (container.TypeParameters.Length > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 自内向外取出包含类型链，反转成最外层在前，并逐层渲染为可重开该类型的 partial 声明。
     /// </summary>
     private static (string Declarations, int Depth, bool IsInGenericContainer) GetContainingTypeDeclarations(ITypeSymbol type)
     {
         var levels = new List<string>();
-        var isInGenericContainer = false;
 
         for (var container = type.ContainingType; container is not null; container = container.ContainingType)
         {
-            if (container.TypeParameters.Length > 0)
-            {
-                isInGenericContainer = true;
-            }
-
             levels.Add(GetContainingTypeDeclaration(container));
         }
 
         levels.Reverse();
 
-        return (string.Join("\n", levels), levels.Count, isInGenericContainer);
+        return (string.Join("\n", levels), levels.Count, HasGenericContainer(type));
     }
 
     /// <summary>
@@ -1168,6 +1216,193 @@ internal readonly record struct StronglyTypedIdInfo
     /// 把枚举成员的常量值按位展开成 <see cref="ulong"/>（负数按补码展开，随后由宽度掩码裁掉高位）。
     /// </summary>
     internal static ulong ToBits(object constant) => EnumBitMath.ToBits(constant);
+
+    /// <summary>
+    /// 找出 <c>[StronglyTypedId(Validator = ...)]</c> 实际会绑定到的那个方法。
+    /// </summary>
+    /// <param name="type">声明 Id 的类型。</param>
+    /// <param name="validatorName">特性上写的方法名。</param>
+    /// <param name="primitiveType">Id 的基元类型，即生成代码传进验证器的实参类型。</param>
+    /// <returns>匹配的方法；没有可绑定的重载时为 <see langword="null"/>。</returns>
+    /// <remarks>
+    /// 不能取「第一个静态同名方法」：验证器允许重载，生成代码按实参类型绑定，取第一个会与编译器选中的那个不一致
+    /// —— 返回类型不同时产物直接编译不过（<c>bool</c> 上访问 <c>.IsValid</c>）。
+    /// <para>
+    /// 沿基类链查找，因为 <c>GetMembers(string)</c> 只返回声明成员，而验证器可以继承。基类上的
+    /// <see langword="private"/> 成员对派生类型不可见，生成代码调不到，故跳过；Id 自身声明的
+    /// <see langword="private"/> 验证器在同一个 partial 类型里，照常可用。
+    /// </para>
+    /// <para>
+    /// 参数类型相同的重载无法共存（C# 不允许仅按返回类型重载），故命中至多一个。
+    /// </para>
+    /// </remarks>
+    internal static IMethodSymbol? FindValidatorMethod(ITypeSymbol type, string validatorName, ITypeSymbol primitiveType)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            var isDeclaringType = SymbolEqualityComparer.Default.Equals(current, type);
+
+            foreach (var member in current.GetMembers(validatorName))
+            {
+                if (member is IMethodSymbol { IsStatic: true, Parameters.Length: >= 1 } method
+                    && (isDeclaringType || method.DeclaredAccessibility != Accessibility.Private)
+                    && CanBindWithSingleArgument(method, primitiveType))
+                {
+                    return method;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 判断生成代码里那句裸实参调用 <c>Name(value)</c> 能否绑定到 <paramref name="method"/>。
+    /// </summary>
+    /// <param name="method">候选方法。</param>
+    /// <param name="primitiveType">调用点传入的实参类型，即 Id 的基元类型。</param>
+    /// <remarks>
+    /// 生成代码写的是 <c>Name(value)</c>，没有修饰符、没有额外实参、没有显式类型实参，因此三种形态绑定不上：
+    /// <list type="bullet">
+    /// <item><c>ref</c> / <c>out</c>：调用点必须写修饰符，否则 CS1620。<c>in</c> 可以省略修饰符，照常绑定。</item>
+    /// <item>第一个参数之后还有必填参数：缺实参，CS7036。</item>
+    /// <item>泛型方法的类型参数无法从唯一那个实参推断：CS0411。判据是「每个类型参数都出现在第一个参数的类型里」，
+    /// 与编译器按单实参推断的口径一致 —— <c>Validate&lt;T&gt;(T value)</c> 能推断，<c>Validate&lt;T&gt;(Guid value)</c>
+    /// 与 <c>Validate&lt;T, U&gt;(T value)</c> 都不能。</item>
+    /// </list>
+    /// <para>
+    /// 反过来，<c>Validate&lt;T&gt;(T value)</c> 与 <c>Validate(Guid value, bool strict = true)</c> 都能正常绑定，
+    /// 不能因为「参数个数不是 1」「带类型参数」就把它们判成非法 —— 那会把能编译的写法误报成 Error。
+    /// </para>
+    /// </remarks>
+    private static bool CanBindWithSingleArgument(IMethodSymbol method, ITypeSymbol primitiveType)
+    {
+        var firstParameter = method.Parameters[0];
+
+        if (firstParameter.RefKind is RefKind.Ref or RefKind.Out)
+        {
+            return false;
+        }
+
+        for (var index = 1; index < method.Parameters.Length; index++)
+        {
+            // params 可以传零个实参，故与可选参数一样不阻碍 Validate(value) 绑定。
+            if (!method.Parameters[index].IsOptional && !method.Parameters[index].IsParams)
+            {
+                return false;
+            }
+        }
+
+        if (method.TypeParameters.Length == 0)
+        {
+            return SymbolEqualityComparer.Default.Equals(firstParameter.Type, primitiveType);
+        }
+
+        // 类型参数必须全部能从这一个实参推断出来，否则调用点会 CS0411。
+        var inferable = new HashSet<ITypeParameterSymbol>(SymbolEqualityComparer.Default);
+        CollectTypeParameters(firstParameter.Type, inferable);
+
+        return method.TypeParameters.All(inferable.Contains);
+    }
+
+    /// <summary>
+    /// 判断 <paramref name="method"/> 在按 <paramref name="primitiveType"/> 绑定后，返回类型是否就是基元类型。
+    /// </summary>
+    /// <remarks>
+    /// 泛型归一化方法（<c>static T Normalize&lt;T&gt;(T value)</c>）的返回类型是类型参数本身，
+    /// 绑定后即 <paramref name="primitiveType"/>，不能直接拿符号比。
+    /// </remarks>
+    private static bool ReturnsPrimitiveType(IMethodSymbol method, ITypeSymbol primitiveType)
+        => method.ReturnType is ITypeParameterSymbol returnTypeParameter
+            && method.TypeParameters.Any(candidate => SymbolEqualityComparer.Default.Equals(candidate, returnTypeParameter))
+            ? IsInferredFromSingleArgument(method, returnTypeParameter)
+            : SymbolEqualityComparer.Default.Equals(method.ReturnType, primitiveType);
+
+    /// <summary>
+    /// 判断类型参数是否由唯一那个实参推断得出（即出现在第一个参数的类型里）。
+    /// </summary>
+    private static bool IsInferredFromSingleArgument(IMethodSymbol method, ITypeParameterSymbol typeParameter)
+    {
+        var inferable = new HashSet<ITypeParameterSymbol>(SymbolEqualityComparer.Default);
+        CollectTypeParameters(method.Parameters[0].Type, inferable);
+
+        return inferable.Contains(typeParameter);
+    }
+
+    /// <summary>
+    /// 递归收集类型里出现的类型参数（含数组、指针、泛型实参与元组元素）。
+    /// </summary>
+    private static void CollectTypeParameters(ITypeSymbol type, HashSet<ITypeParameterSymbol> typeParameters)
+    {
+        switch (type)
+        {
+            case ITypeParameterSymbol typeParameter:
+                typeParameters.Add(typeParameter);
+                break;
+
+            case IArrayTypeSymbol array:
+                CollectTypeParameters(array.ElementType, typeParameters);
+                break;
+
+            case IPointerTypeSymbol pointer:
+                CollectTypeParameters(pointer.PointedAtType, typeParameters);
+                break;
+
+            case INamedTypeSymbol named:
+                foreach (var argument in named.TypeArguments)
+                {
+                    CollectTypeParameters(argument, typeParameters);
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 找出 <c>[StronglyTypedId(Normalizer = ...)]</c> 实际会绑定到的那个方法。
+    /// </summary>
+    /// <param name="type">声明 Id 的类型。</param>
+    /// <param name="normalizerName">特性上写的方法名。</param>
+    /// <param name="primitiveType">Id 的基元类型，即生成代码传进归一化方法的实参类型。</param>
+    /// <returns>匹配的方法；没有可绑定的重载时为 <see langword="null"/>。</returns>
+    /// <remarks>
+    /// 与 <see cref="FindValidatorMethod"/> 同一口径：归一化方法允许重载，生成代码按实参类型绑定，
+    /// 取「第一个静态同名方法」会在重载或继承时误报 STIA0017，而产物其实能编译。
+    /// <para>
+    /// 沿基类链查找，因为 <c>GetMembers(string)</c> 只返回声明成员，而归一化方法可以继承。基类上的
+    /// <see langword="private"/> 成员对派生类型不可见，生成代码调不到，故跳过；Id 自身声明的
+    /// <see langword="private"/> 归一化方法在同一个 partial 类型里，照常可用。
+    /// </para>
+    /// <para>
+    /// 参数类型相同的重载无法共存（C# 不允许仅按返回类型重载），故命中至多一个。
+    /// </para>
+    /// </remarks>
+    internal static IMethodSymbol? FindNormalizerMethod(ITypeSymbol type, string normalizerName, ITypeSymbol primitiveType)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            var isDeclaringType = SymbolEqualityComparer.Default.Equals(current, type);
+
+            foreach (var member in current.GetMembers(normalizerName))
+            {
+                if (member is IMethodSymbol { IsStatic: true, Parameters.Length: >= 1 } method
+                    && (isDeclaringType || method.DeclaredAccessibility != Accessibility.Private)
+                    && CanBindWithSingleArgument(method, primitiveType)
+                    && ReturnsPrimitiveType(method, primitiveType))
+                {
+                    return method;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 判断验证器的返回类型是否为富验证结果（而非 <see langword="bool"/>）。
+    /// </summary>
+    internal static bool ReturnsValidationResult(ITypeSymbol returnType)
+        => returnType.ToDisplayString() == ValidationResultTypeName[GlobalPrefix.Length..];
 
     /// <summary>
     /// 判断给定类型是否暴露了公开的实例 <c>CompareTo(TSelf)</c> 重载。

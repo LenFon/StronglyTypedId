@@ -66,6 +66,9 @@ public partial record struct ResourceUri(string Value)
 类型实参传入。转换器类本身是生成的，请为你实际使用的闭合类型手工注册，见
 [嵌套类型](declaration.md#nested-types)。
 
+`STIA0028` 会在编译期提示这一点，让静默降级变得可见，而不是等到运行时才发现。显式关掉全部集成时
+不报：那时没有集成可丢。
+
 `[DebuggerTypeProxy]` 出于同样的原因被跳过，而且与转换器不同，它的代理类也不生成：代理类是私有的，
 没有手工接线的可能，调试器里展开该 Id 时只会显示 record 自己的成员。
 

@@ -52,7 +52,12 @@ title: 生成产物
   `ArgumentException`（`The value '…' is not a valid OrderId.`）或你指定的 `ExceptionType`，
   因此经它无法构造出非法 Id。
 - 静态的 `TryCreate(TPrimitiveId value, out TSelf result)` 工厂，即 `Create` 的不抛异常版本：
-  失败时返回 `false` 并把 `result` 置为 `default`。
+  失败时返回 `false` 并把 `result` 置为 `default`。它同时声明在 `IStronglyTypedId<TSelf, TPrimitiveId>`
+  上，因此约束到该接口的泛型代码也能调用。
+- 静态的 `TryCreate(TPrimitiveId value, out TSelf result, out StronglyTypedIdValidationResult validation)`
+  重载，额外带回**拒绝原因**；两参重载委托给它。验证器返回 `bool` 时 `validation` 只表达通过与否，
+  返回 `StronglyTypedIdValidationResult` 时则带有消息与错误码。见
+  [报告拒绝原因](declaration.md#报告拒绝原因)。
 - 每个 `[StronglyTypedIdInstance]` 对应一个 `public static readonly TSelf` 字段，经 `Create` 初始化。
 - `Deconstruct(out TPrimitiveId value)`，因此 `id.Deconstruct(out var value);` 可解构出基元值。
   （单元素的 `var (value) = id;` 不是合法 C#，解构声明至少要两个元素。）

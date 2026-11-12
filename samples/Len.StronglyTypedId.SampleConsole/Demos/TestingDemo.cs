@@ -57,6 +57,21 @@ internal static class TestingDemo
             Demo.Line($"Create(typeof(string))            -> 抛出 {ex.GetType().Name}");
         }
 
+        Demo.Section("自定义基元：无需注册，启发式候选交给 TryParse 判定");
+
+        // ULID 只接受 26 位 Crockford Base32，启发式第 2 种候选命中，因此零配置即可造值。
+        Demo.Line($"Any.Id<UlidId>()                  -> {generator.Id<UlidId>()}");
+
+        // Money 的文本形是 "USD 12.50"（带空格与币种），启发式推断不出来，必须显式注册。
+        try
+        {
+            _ = generator.Id<MoneyId>();
+        }
+        catch (NotSupportedException ex)
+        {
+            Demo.Line($"Any.Id<MoneyId>()                 -> 抛出 {ex.GetType().Name}（提示注册工厂）");
+        }
+
         Demo.Section("命名实例体检：StronglyTypedIdConformance");
 
         // 本程序集里有一个故意写坏的实例（RejectedInstanceId.Zero），它会在首次触碰时抛

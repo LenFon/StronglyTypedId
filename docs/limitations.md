@@ -73,6 +73,10 @@ emitted, and the `AddStronglyTypedIds` entry points skip it because an open gene
 be passed as a type argument. The converter classes themselves are generated; register the one for the
 closed type you use by hand, see [Nested types](declaration.md#nested-types).
 
+`STIA0028` reports this at compile time, so the silent downgrade is visible rather than discovered at run
+time. It is not reported when every integration is explicitly turned off, since there is then nothing to
+lose.
+
 `[DebuggerTypeProxy]` is skipped for the same reason, and unlike the converters its proxy class is not
 generated either: it is private, so there is no way to wire it up by hand, and the id simply shows its
 record members when expanded in the debugger.

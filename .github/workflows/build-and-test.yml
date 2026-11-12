@@ -1,6 +1,6 @@
 # 构建 / 测试 / 覆盖率 / 打包校验 / AOT / 性能门槛。
 #
-# 五个 job 之间没有 needs：各跑独立 VM、各 checkout、各 restore，不消费彼此产物，
+# 七个 job 之间没有 needs：各跑独立 VM、各 checkout、各 restore，不消费彼此产物，
 # 加 needs 只会把关键路径从 build 的 6 分钟拉成 8 分钟。
 #
 # 触发面只覆盖会改变产物或校验结论的路径：源码、测试、基准、工具、构建配置、文档表格与工作流本身。
@@ -170,6 +170,100 @@ jobs:
       run: dotnet restore
     - name: Verify package contents
       run: dotnet test --project test/Len.StronglyTypedId.Packaging.Test --verbosity normal
+
+  # 生成器编译在 Roslyn 5.9 上，而分析器程序集引用的 Roslyn 版本必须 ≤ 宿主编译器版本，否则编译器
+  # 报 CS9057 / CS8034 后静默丢弃生成器（用户看到的是「不包含 Create 的定义」）。包内因此放了两份
+  # 产物：roslyn5.9 供 SDK 10.0.4xx，roslyn4.8 供 SDK 8 / 9 / 10.0.2xx。
+  #
+  # 本 job 用矩阵 SDK 消费真实 nupkg 来证明这件事。必须走包而不是 ProjectReference：
+  # 目录选择（analyzers/dotnet/roslynX.Y/）只在包路径上发生，ProjectReference 复现不出来。
+  #
+  # 10.0.2xx 这一项专门守「目录名必须精确对应版本」：它是唯一能抓到「把 5.9 产物放进 roslyn5.0」
+  # 这类错误的用例。
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ["8.0.x", "9.0.x", "10.0.2xx"]
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+      with:
+        # 10.0.401 用来打包（仓库 global.json 要求），矩阵 SDK 用来构建探针。
+        # 两者装在同一台机器上，靠探针目录下的 global.json 切换。
+        dotnet-version: |
+          10.0.401
+          ${{ matrix.sdk }}
+        cache: true
+        cache-dependency-path: Directory.Packages.props
+    - name: Pack packages
+      # 必须在仓库根跑（用 10.0.401）：探针目录下的 global.json 会把 SDK 切到矩阵版本，
+      # 而仓库构建需要 10.0.401。
+      #
+      # 两个包都要打：主包依赖生成器包，探针装主包时会去本地源找它。
+      run: |
+        dotnet pack src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release -o artifacts/packages
+        dotnet pack src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release -o artifacts/packages
+    - name: Build compatibility probe
+      # 在探针目录跑，让嵌套 global.json 生效。TreatWarningsAsErrors 已在 csproj 里，
+      # CS9057 / CS8034 会直接失败而不是被当成噪音。
+      working-directory: test/Len.StronglyTypedId.CompatibilityTest
+      run: dotnet build -p:StronglyTypedIdVersion=${{ env.PACKAGE_VERSION }}
+      env:
+        PACKAGE_VERSION: 1.0.0
+
+  # 集成版本矩阵：门控承诺的是「≥ 这个版本可用」，本 job 把这句话变成证据。
+  #
+  # 常规测试只钉一个版本（门控下界附近），上游改 API 时生成代码会在用户那里才炸。探针工程用
+  # VersionOverride 换版本，编译通过 + 一次真实往返是判据。
+  #
+  # 只跑「下一个大版本」而不是全部历史版本：下界那一端已由 Integration.Test / GraphQL.Test /
+  # Swagger.Test 各自钉住，矩阵的职责是上界。
+  #
+  # continue-on-error 首轮非阻塞：上游大版本刚发布时红项往往需要单独评估（是生成器要改，还是
+  # 该版本确实不兼容）。绿了之后逐项去掉它转阻塞 —— 不允许「门控说支持、矩阵没跑过」的状态长期存在。
+  integration-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # EF Core 10 只有 net10.0 资产，探针本身也是 net10.0。
+          - name: efcore-10
+            args: "-p:EfCoreVersion=10.0.13"
+          - name: hotchocolate-15
+            args: "-p:HotChocolateVersion=15.1.8"
+          # Swashbuckle 10 依赖 Microsoft.OpenApi 2.x，与内置 OpenAPI 同侧，可以一起测。
+          - name: swashbuckle-10
+            args: "-p:SwashbuckleVersion=10.2.3 -p:IncludeAspNetCoreOpenApi=true -p:OpenApiVersion=10.0.13"
+          # Swashbuckle 7 依赖 Microsoft.OpenApi 1.x，与内置 OpenAPI 互斥，故关掉后者。
+          - name: swashbuckle-7
+            args: "-p:SwashbuckleVersion=7.2.0"
+          - name: messagepack-3
+            args: "-p:MessagePackVersion=3.1.12"
+          - name: mongodb-3
+            args: "-p:MongoDbVersion=3.12.0"
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+      with:
+        dotnet-version: |
+          10.0.401
+        cache: true
+        cache-dependency-path: Directory.Packages.props
+    - name: Build and run probe
+      # 探针不参与解决方案构建，这里单独构建并运行它。TreatWarningsAsErrors 已在 csproj 里，
+      # 生成器没跑（CS1929）或包不兼容（CS7069）都会直接失败。
+      run: |
+        dotnet run --project test/Len.StronglyTypedId.IntegrationMatrix/Len.StronglyTypedId.IntegrationMatrix.csproj -c Release ${{ matrix.args }}
 
   # README / PACKAGE.md 宣称本库可在 Native AOT 与裁剪环境下工作，本 job 把它变成可验证的证据。
   #

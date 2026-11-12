@@ -34,8 +34,8 @@ public static class StronglyTypedIdExtensions
     {
         ArgumentNullException.ThrowIfNull(type);
 
-        // 不用 GetValue(key, ResolvePrimitiveIdType)：那个回调无法携带 DynamicallyAccessedMembers 标注，
-        // 裁剪分析器会报 IL2091。这里先算好再装箱，回调不碰类型成员。
+        // 不用 GetValue(key, ResolvePrimitiveIdType)：回调形参没有 DynamicallyAccessedMembers 标注，
+        // 把 key 传进去会让裁剪分析器报 IL2067。这里先算好再装箱，回调不碰类型成员。
         if (!_primitiveIdTypes.TryGetValue(type, out var boxed))
         {
             var resolved = ResolvePrimitiveIdType(type);

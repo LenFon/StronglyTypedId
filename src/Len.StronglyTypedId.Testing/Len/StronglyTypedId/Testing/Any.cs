@@ -43,19 +43,58 @@ public static class Any
         => new AnyIdGenerator(new AnyIdOptions { Seed = seed }).Ids<TId>(count);
 
     /// <summary>
+    /// 创建指定运行时类型的强类型 Id。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Id{TId}()"/> 的非泛型形式，供 Id 类型只在运行期可知的场景使用（如以 <see cref="Type"/>
+    /// 数组驱动的测试）。可空 Id 按底层类型生成。
+    /// </remarks>
+    public static object Create(Type idType) => Current.Create(idType);
+
+    /// <summary>
+    /// 创建 <paramref name="count"/> 个指定运行时类型的强类型 Id。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Ids{TId}(int)"/> 的非泛型形式。
+    /// </remarks>
+    public static IReadOnlyList<object> Ids(Type idType, int count) => Current.Ids(idType, count);
+
+    /// <summary>
+    /// 在共享生成器上为指定运行时类型的强类型 Id 注册显式工厂。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Register{TId}"/> 的非泛型形式。
+    /// </remarks>
+    public static void Register(Type idType, Func<object> factory)
+    {
+        ArgumentNullException.ThrowIfNull(idType);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        RegisterOnCurrentGenerator(generator => generator.Register(idType, factory));
+    }
+
+    /// <summary>
     /// 在共享生成器上为 <typeparamref name="TId"/> 注册显式工厂。
     /// </summary>
     public static void Register<TId>(Func<TId> factory)
         where TId : IStronglyTypedId<TId>
+        => RegisterOnCurrentGenerator(generator => generator.Register(factory));
+
+    /// <summary>
+    /// 在当前的共享生成器上执行注册，并复查实例没有被 <see cref="Reset"/> 换掉。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Reset"/> 可能在「读到引用」与「写进字典」之间换掉实例，那样注册会留在被丢弃的旧实例里，
+    /// 之后 <see cref="Id{TId}()"/> 静默不生效。用「写后复查」而非「持锁执行」：后者会在锁内调用用户工厂，
+    /// 工厂再进 <see cref="Any"/> 就死锁。
+    /// </remarks>
+    private static void RegisterOnCurrentGenerator(Action<AnyIdGenerator> register)
     {
-        // 注册必须落在当前的共享生成器上：Reset() 可能在「读到引用」与「写进字典」之间换掉实例，
-        // 那样注册会留在被丢弃的旧实例里，之后 Any.Id<TId>() 静默不生效。
-        // 用「写后复查」而非「持锁执行」，后者会在锁内调用用户工厂，工厂再进 Any 就死锁。
         while (true)
         {
             var generator = Current;
 
-            generator.Register(factory);
+            register(generator);
 
             lock (_sync)
             {
@@ -68,7 +107,8 @@ public static class Any
     }
 
     /// <summary>
-    /// 丢弃共享生成器，同时清除通过 <see cref="Register{TId}"/> 建立的全部注册。
+    /// 丢弃共享生成器，同时清除通过 <see cref="Register(Type, Func{object})"/> 与
+    /// <see cref="Register{TId}"/> 建立的全部注册。
     /// </summary>
     public static void Reset()
     {
@@ -83,7 +123,7 @@ public static class Any
     /// </summary>
     /// <remarks>
     /// 生成基于快照：与 <see cref="Reset"/> 竞争最多丢失一次重置，而持锁会在锁内运行用户工厂。
-    /// 唯一需要原子性的是 <see cref="Register{TId}"/>，它在写入后复查实例。
+    /// 需要原子性的是两个 <c>Register</c> 重载，它们在写入后复查实例。
     /// </remarks>
     private static AnyIdGenerator Current
     {

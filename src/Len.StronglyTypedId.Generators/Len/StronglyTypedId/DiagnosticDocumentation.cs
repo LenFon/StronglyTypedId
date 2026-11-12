@@ -8,7 +8,8 @@ internal static class DiagnosticDocumentation
     /// <summary>
     /// 全部诊断的文档条目。顺序不影响渲染：DocGen 把它转成以规则 ID 为键的字典后自行排序。
     /// </summary>
-    internal static readonly ImmutableArray<DiagnosticDocEntry> Entries = ImmutableArray.Create(
+    internal static readonly ImmutableArray<DiagnosticDocEntry> Entries =
+    [
         new DiagnosticDocEntry(Descriptors.TypeMustBeRecordId, new DocText("Convert to `record`", "转为 `record`")),
         new DiagnosticDocEntry(Descriptors.TypeMustBePartialId, new DocText("Add `partial`", "补上 `partial`")),
         new DiagnosticDocEntry(Descriptors.TypeCannotBeAbstractId, new DocText("Remove `abstract`", "去掉 `abstract`")),
@@ -38,15 +39,20 @@ internal static class DiagnosticDocumentation
         // 越界位同理：删掉 Integrations 实参即可去掉未定义的位，机器能安全做，故给修复。
         new DiagnosticDocEntry(Descriptors.UnknownIntegrationId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
         // 命名实例：名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的两条，给「删掉整条 [StronglyTypedIdInstance]」修复。
-        // 机器只能让诊断消失，补全业务语义留给人；PascalCase 改名会牵动所有引用点，不是单文件可安全完成的机械修复，故保持无修复。
+        // 机器只能让诊断消失，补全业务语义留给人。PascalCase 那条给「改名为建议名」修复：只改特性里的字符串字面量，
+        // 引用旧字段名的代码由编译器报 CS0117 指出，不会被修复悄悄改掉。
         new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
-        new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, DocText.Empty),
+        new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, new DocText("Rename the instance to the suggested name", "改名为建议的名字")),
         new DiagnosticDocEntry(Descriptors.TypeCannotBeFileLocalId, new DocText("Remove the `file` modifier", "去掉 `file` 修饰符")),
         // 无修复：改名会牵动所有引用点，且替代名字只能由人挑。
         new DiagnosticDocEntry(Descriptors.TypeNameCannotBeVarId, DocText.Empty),
         // 同上：类型名与生成成员同名，改名同样只能由人挑。
-        new DiagnosticDocEntry(Descriptors.TypeNameCollidesWithGeneratedMemberId, DocText.Empty));
+        new DiagnosticDocEntry(Descriptors.TypeNameCollidesWithGeneratedMemberId, DocText.Empty),
+        // 无修复：把 Id 移出泛型容器不是机械操作（要改所有引用点的封闭类型）。
+        new DiagnosticDocEntry(Descriptors.GenericContainerSkipsIntegrationsId, DocText.Empty),
+        // 无修复：撞名的成员该改名还是该删，取决于它承载的业务语义，机器只能指出撞了哪一个。
+        new DiagnosticDocEntry(Descriptors.MemberCollidesWithGeneratedMemberId, DocText.Empty)];
 
     /// <summary>
     /// 单条诊断的文档条目。

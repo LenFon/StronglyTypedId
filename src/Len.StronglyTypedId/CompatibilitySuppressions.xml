@@ -1,6 +1,56 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- https://learn.microsoft.com/dotnet/fundamentals/package-validation/diagnostic-ids -->
 <Suppressions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <!--
+    2.0.0 的破坏性变更，全部集中在 IStronglyTypedId<TSelf, TPrimitiveId> 上：
+      1. CP0006：新增静态抽象成员 TryCreate（两参与三参两个重载）。
+      2. CP0021：TSelf 的约束由 IEqualityOperators 收紧为 IComparisonOperators（后者继承前者，
+         因此 == / != 仍可用，另加 < / > / <= / >=），同时接口继承 IComparable<TSelf>。
+    手写实现该接口的类型必须补上这些成员，否则编译失败。生成器产出的 Id 本来就实现了它们，不受影响。
+    CP0003（程序集版本）由发布流水线用 -p:AssemblyVersion 透传，不在此处掩盖。
+  -->
+  <Suppression>
+    <DiagnosticId>CP0006</DiagnosticId>
+    <Target>M:Len.StronglyTypedId.IStronglyTypedId`2.TryCreate(`1,`0@,Len.StronglyTypedId.StronglyTypedIdValidationResult@)</Target>
+    <Left>lib/net10.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net10.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0006</DiagnosticId>
+    <Target>M:Len.StronglyTypedId.IStronglyTypedId`2.TryCreate(`1,`0@)</Target>
+    <Left>lib/net10.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net10.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0006</DiagnosticId>
+    <Target>M:Len.StronglyTypedId.IStronglyTypedId`2.TryCreate(`1,`0@,Len.StronglyTypedId.StronglyTypedIdValidationResult@)</Target>
+    <Left>lib/net8.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net8.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0006</DiagnosticId>
+    <Target>M:Len.StronglyTypedId.IStronglyTypedId`2.TryCreate(`1,`0@)</Target>
+    <Left>lib/net8.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net8.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0021</DiagnosticId>
+    <Target>T:Len.StronglyTypedId.IStronglyTypedId`2``0:T:System.Numerics.IComparisonOperators{`0,`0,System.Boolean}</Target>
+    <Left>lib/net10.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net10.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0021</DiagnosticId>
+    <Target>T:Len.StronglyTypedId.IStronglyTypedId`2``0:T:System.Numerics.IEqualityOperators{`0,`0,System.Boolean}</Target>
+    <Left>lib/net10.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net10.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
   <Suppression>
     <DiagnosticId>CP0021</DiagnosticId>
     <Target>T:Len.StronglyTypedId.IStronglyTypedId`2``1:T:System.IComparable{`1}</Target>
@@ -13,6 +63,20 @@
     <Target>T:Len.StronglyTypedId.IStronglyTypedId`2``1:T:System.IEquatable{`1}</Target>
     <Left>lib/net10.0/Len.StronglyTypedId.dll</Left>
     <Right>lib/net10.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0021</DiagnosticId>
+    <Target>T:Len.StronglyTypedId.IStronglyTypedId`2``0:T:System.Numerics.IComparisonOperators{`0,`0,System.Boolean}</Target>
+    <Left>lib/net8.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net8.0/Len.StronglyTypedId.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>CP0021</DiagnosticId>
+    <Target>T:Len.StronglyTypedId.IStronglyTypedId`2``0:T:System.Numerics.IEqualityOperators{`0,`0,System.Boolean}</Target>
+    <Left>lib/net8.0/Len.StronglyTypedId.dll</Left>
+    <Right>lib/net8.0/Len.StronglyTypedId.dll</Right>
     <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>

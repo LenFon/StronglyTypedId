@@ -21,6 +21,7 @@ then no longer be passed where an `OrderId` is expected, or the reverse.
 - [What gets generated](#what-gets-generated)
 - [Documentation](#documentation)
 - [Limitations](#limitations)
+- [Migrating from another library](#migrating-from-another-library)
 - [License](#license)
 
 <a id="features"></a>
@@ -31,7 +32,7 @@ then no longer be passed where an `OrderId` is expected, or the reverse.
   `[StronglyTypedId]` and the type gains parsing, formatting, comparison, `Create` / `TryCreate`,
   deconstruction, JSON converters and a debugger view.
 - **A `Guid` can never stand in for an `OrderId`.** The compiler rejects the swap, and a built-in
-  analyzer rejects invalid declarations as errors; twenty-one of its twenty-eight rules ship a code fix.
+  analyzer rejects invalid declarations as errors; 22 of its 30 rules ship a code fix.
 - **Twenty-three primitives, or your own.** Every numeric type, `Guid`, `string`, dates and
   `BigInteger` are built in, along with any `enum` and any type that implements `IParsable<TSelf>` and
   `IComparable`. ULID works unchanged.
@@ -257,7 +258,7 @@ Everything past the quick start lives in `docs/`, and is published at
 | [Integrations](docs/integrations.md) | Entity Framework Core, Swashbuckle, Dapper, MessagePack, MongoDB, HotChocolate (GraphQL), protobuf-net, ASP.NET Core MVC, Minimal API and ASP.NET Core OpenAPI. |
 | [Runtime](docs/runtime.md) | Constraining generics with `IStronglyTypedId<,>`, and the reflection helpers. |
 | [Native AOT and trimming](docs/aot.md) | What survives trimming, the reflection helpers, and the `JsonSerializerContext` an AOT app must supply. |
-| [Testing](docs/testing.md) | `Any.Id<T>()`, the AutoFixture and Bogus integrations, and the sample projects. |
+| [Testing](docs/testing.md) | `Any.Id<T>()`, custom primitives without configuration, the AutoFixture and Bogus integrations, and the sample projects. |
 | [Diagnostics](docs/diagnostics.md) | Every rule, its severity, and whether it ships a code fix. |
 | [Performance](docs/performance.md) | What the generator costs at build time, and what the generated code costs at run time. |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom-first: nothing generated, a missing integration, stale analyzers, parsing surprises. |
@@ -283,6 +284,34 @@ default ports, so two different URIs would compare equal and silently collapse i
 only `Create`, `TryCreate`, `Parse` and `TryParse` enforce them.
 
 Workarounds for all three, plus the generic-container caveat, are in [Limitations](docs/limitations.md).
+
+<a id="migrating-from-another-library"></a>
+
+## Migrating from another library <a href="#table-of-contents" style="float:right">↑ Back to top</a>
+
+The declaration is a plain `record`, so most of the work is deleting the library-specific attribute and
+renaming the factory method. The table maps the common shapes:
+
+| Concept | Vogen | Andrew Lock's `StronglyTypedId` | Hand-rolled | Here |
+| --- | --- | --- | --- | --- |
+| Declare | `[ValueObject<Guid>]` on a `partial struct` | `[StronglyTypedId(Template.Guid)]` on a `partial struct` | a `readonly record struct` plus hand-written members | `[StronglyTypedId]` on a `partial record struct` |
+| Construct | `CustomerId.From(value)` | `new CustomerId(value)` | `new CustomerId(value)` | `CustomerId.Create(value)` |
+| Non-throwing | `CustomerId.TryFrom(value, out var id)` | — | — | `CustomerId.TryCreate(value, out var id)` |
+| Validate | `[ValueObject(Validate = ...)]` | — | a guard in the constructor | `[StronglyTypedId(Validator = nameof(Validate))]` |
+| Normalize | `[ValueObject(NormalizeInput = ...)]` | — | manual | `[StronglyTypedId(Normalizer = nameof(Normalize))]` |
+| Named value | `[Instance("Unspecified", "-1")]` | — | a static field | `[StronglyTypedIdInstance("Unspecified", "-1")]` |
+| Custom exception | `[ValueObject(throws: typeof(...))]` | — | manual | `[StronglyTypedId(ExceptionType = typeof(...))]` |
+| Turn integrations off | `[ValueObject(conversions: ...)]` | — | — | `[StronglyTypedId(Integrations = ...)]` |
+
+Two differences are worth planning for:
+
+- **`new CustomerId(value)` keeps compiling** because the positional record's primary constructor stays
+  public. Route external values through `Create`; `STIA0011` flags the bypasses that remain.
+- **`Value` stays public.** Vogen can make it private; a source generator cannot change the accessibility
+  of a member you declared. See [Limitations](docs/limitations.md#value-is-public).
+
+The [migration guide](docs/migration.md) covers the 1.3 → 1.4 changes; this section is about moving from a
+different library.
 
 <a id="license"></a>
 

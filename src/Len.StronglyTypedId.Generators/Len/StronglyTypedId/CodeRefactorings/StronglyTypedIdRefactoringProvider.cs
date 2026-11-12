@@ -141,6 +141,19 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
     /// <summary>
     /// 判断该 record 是否「加上特性、partial 与 using 后就是一个合法的强类型 Id」。
     /// </summary>
+    /// <remarks>
+    /// 容器链也必须可重开：生成器要把产物嵌回包含类型，而重开一个非 <c>partial</c> 的容器是 CS0260，
+    /// 分析器对同一写法报 STIA0009（Error）。文档承诺「正向重构只在该结果确实是合法 Id 时才提供」，
+    /// 故这里与生成器、分析器共用同一套形状判据。
+    /// <para>
+    /// record 自身是 <c>file</c> 本地类型时同样不能提供：生成器无法在另一个文件里重开它，
+    /// 分析器报 STIA0025（Error）。容器链循环只查外层，record 自己这一层必须单独判。
+    /// </para>
+    /// <para>
+    /// 参数可空时也不能提供：分析器对 <c>string? Value</c> 报 STIA0006（Error），生成器则直接跳过该 Id
+    /// （<c>GetSingleParameterType(skipNullableAnnotated: true)</c>）。重构后一条诊断被换成另一条，等于没修。
+    /// </para>
+    /// </remarks>
     private static bool IsConvertible(RecordDeclarationSyntax record, SemanticModel semanticModel)
     {
         if (record.ParameterList is not { Parameters: [var parameter] }
@@ -149,14 +162,27 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             return false;
         }
 
-        if (record.Modifiers.Any(SyntaxKind.AbstractKeyword) || record.TypeParameterList is not null)
+        if (record.Modifiers.Any(SyntaxKind.AbstractKeyword)
+            || record.Modifiers.Any(SyntaxKind.FileKeyword)
+            || record.TypeParameterList is not null)
         {
             return false;
         }
 
-        if (parameter.Type is null)
+        // 可空参数（`string? Value`）过不了 STIA0006，生成器也不会为它产出任何代码。
+        if (parameter.Type is null or NullableTypeSyntax)
         {
             return false;
+        }
+
+        // 容器链：每一层都必须是 partial 且非 file 本地，否则生成器无法把产物嵌回去。
+        for (var container = record.Parent; container is TypeDeclarationSyntax declaration; container = declaration.Parent)
+        {
+            if (declaration.Modifiers.Any(SyntaxKind.FileKeyword)
+                || !declaration.Modifiers.Any(SyntaxKind.PartialKeyword))
+            {
+                return false;
+            }
         }
 
         var parameterType = semanticModel.GetTypeInfo(parameter.Type).Type;
@@ -251,6 +277,13 @@ internal class StronglyTypedIdRefactoringProvider : CodeRefactoringProvider
             .WithAttributeLists(RemoveStronglyTypedIdAttributes(record.AttributeLists, semanticModel))
             .WithModifiers(SyntaxFactory.TokenList(
                 record.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))));
+
+        // 摘掉特性后，record 的前导 trivia 会跟着特性列表一起消失。Roslyn 4.8 的 Formatter 不会把它补回来，
+        // 于是声明上方的空行被吞掉（5.9 会补）。显式接回特性列表原本的前导 trivia，两个版本输出一致。
+        if (record.AttributeLists.Count > 0)
+        {
+            updated = updated.WithLeadingTrivia(record.AttributeLists[0].GetLeadingTrivia());
+        }
 
         var newRoot = root.ReplaceNode(record, updated);
 

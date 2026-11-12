@@ -132,10 +132,171 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 「可被绕过」同样独立于形状校验，复用上面已算出的名字。
         ValidateGuardBypass(context, type, validatorName, normalizerName, records);
 
+        // 泛型容器里的 Id 能编译，但集成代码会被静默跳过；这条提示让降级在编译期可见。
+        ValidateGenericContainer(context, type, records);
+
+        // 用户自己写的成员与生成成员撞名：编译器只会把 CS0111 / CS0102 指向生成文件，必须提前报在用户声明上。
+        ValidateMemberCollisions(context, type, constructorParameterType);
+
         // 风格提示放在全部硬性校验之后，避免连 record 都不是的类型同时冒出改名建议。
         ValidateNameConvention(context, type, records);
         ValidateDuplicatePrimitiveType(context, type, constructorParameterType, records, namespacePrimitiveGroups);
     }
+
+    /// <summary>
+    /// 检测用户自己声明的成员是否与生成器即将产出的成员撞名（STIA0029）。
+    /// </summary>
+    /// <param name="context">符号分析上下文。</param>
+    /// <param name="type">声明 Id 的类型。</param>
+    /// <param name="primitiveType">Id 的基元类型。</param>
+    /// <remarks>
+    /// 撞名的后果是 CS0111（方法）或 CS0102（字段 / 属性 / 事件 / 嵌套类型），而编译器只把错误指向生成文件。
+    /// 判据与生成器同源（<see cref="GeneratedMemberNames.FindCollidingGeneratedMember"/>），
+    /// 且按「本次实际会生成哪些成员」条件化。
+    /// <para>
+    /// 落点取用户那一行声明：<see cref="ISymbol.Locations"/> 里第一个源位置即声明处。
+    /// 运算符的声明位置在 <c>operator</c> 关键字上，同样可用。
+    /// </para>
+    /// <para>
+    /// 非方法成员只比名字：字段 / 属性 / 事件 / 嵌套类型与生成成员共用一个声明空间，同名即撞 CS0102，
+    /// 与参数表无关。方法还要比签名 —— 同名不同参数表是合法重载。
+    /// </para>
+    /// </remarks>
+    private static void ValidateMemberCollisions(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        ITypeSymbol primitiveType)
+    {
+        if (!SupportedPrimitiveTypes.IsSupported(primitiveType))
+        {
+            // 基元不可用时生成器不产出任何成员，撞名无从谈起（那种写法由 STIA0008 报出）。
+            return;
+        }
+
+        var idInfo = new StronglyTypedIdInfo(type, StronglyTypedIdDefaults.Read(context.Compilation.Assembly));
+        var references = new GeneratedMemberNames.IntegrationReferences(
+            ReferencesAssembly(context.Compilation, "System.Text.Json"),
+            ReferencesAssembly(context.Compilation, "Newtonsoft.Json"),
+            EmitsProtobufSurrogate(type, idInfo, context.Compilation));
+
+        foreach (var member in type.GetMembers())
+        {
+            // 只认用户自己写的：生成器产出的成员此刻还不存在，而 record 合成的成员（Equals / GetHashCode /
+            // PrintMembers / op_Equality …）由编译器负责，用户重写它们不构成本库的问题。
+            if (!GeneratedMemberNames.IsUserDeclaredMember(member))
+            {
+                continue;
+            }
+
+            var collidingName = GeneratedMemberNames.FindCollision(member, idInfo, references);
+
+            if (collidingName is not null)
+            {
+                Report(
+                    context,
+                    Descriptors.MemberCollidesWithGeneratedMember,
+                    member.Locations[0],
+                    collidingName,
+                    type.Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 判断本次编译是否会为该 Id 产出 <c>{TypeName}Surrogate</c>。
+    /// </summary>
+    /// <param name="type">声明 Id 的类型。</param>
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <param name="compilation">当前编译。</param>
+    /// <remarks>
+    /// 条件与 <c>ProtobufCodeGenerator.Generate</c> 的三处早退一一对应：未引用 protobuf-net、
+    /// Id 在泛型容器里、用户自带 <c>[ProtoContract]</c>。
+    /// <para>
+    /// 不能直接用 <see cref="StronglyTypedIdInfo.HasProtoContractAttribute"/>：分析器跑在<b>生成后</b>的编译上，
+    /// 那个特性可能正是生成器自己加的。判据改为「特性是否出现在用户源文件里」—— 生成器产出的
+    /// <c>.Protobuf.g.cs</c> 不是用户写的，据此区分「用户接管契约」与「生成器接管契约」。
+    /// </para>
+    /// </remarks>
+    private static bool EmitsProtobufSurrogate(INamedTypeSymbol type, StronglyTypedIdInfo idInfo, Compilation compilation)
+        => ReferencesAssembly(compilation, "protobuf-net")
+            && !idInfo.IsInGenericContainer
+            && !HasUserProtoContractAttribute(type);
+
+    /// <summary>
+    /// 判断用户是否在自己的源文件里给该类型加了 <c>[ProtoContract]</c>。
+    /// </summary>
+    /// <remarks>
+    /// 只认源文件里的特性应用：生成器产出的 <c>.Protobuf.g.cs</c> 同样带这个特性，但它代表「生成器接管」，
+    /// 与「用户接管」的结论相反。
+    /// <para>
+    /// 类型必须按<b>全限定名</b>比较，与生成器的 <c>AttributeReader.Find</c> 同口径。只比短名
+    /// <c>ProtoContractAttribute</c> 会把用户自己定义的同名特性（或别的命名空间下的同名特性）误判成
+    /// 「用户接管」，于是生成器照常产出 surrogate、分析器却不报撞名，漏掉一条 CS0102。
+    /// </para>
+    /// <para>
+    /// 生成文件按「路径里含生成器程序集名」识别，而不是只看 <c>.g.cs</c> 后缀：用户自己的文件完全可能
+    /// 叫 <c>Foo.g.cs</c>，那时按后缀判定会把用户的 <c>[ProtoContract]</c> 当成生成器加的，同样漏报。
+    /// </para>
+    /// </remarks>
+    private static bool HasUserProtoContractAttribute(INamedTypeSymbol type)
+        => type.GetAttributes().Any(attribute =>
+            attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::ProtoBuf.ProtoContractAttribute"
+            && attribute.ApplicationSyntaxReference is { } reference
+            && !IsGeneratedFile(reference.SyntaxTree.FilePath));
+
+    /// <summary>
+    /// 判断语法树路径是否指向生成器产出的文件。
+    /// </summary>
+    /// <remarks>
+    /// Roslyn 把生成文件的路径写成 <c>{生成器程序集名}\{生成器类型全名}\{hint 名}</c>，故路径里出现
+    /// 生成器程序集名即可判定。不依赖具体分隔符：不同宿主（IDE / 命令行 / 测试框架）用的分隔符不一致。
+    /// </remarks>
+    private static bool IsGeneratedFile(string path)
+        => path.Contains("Len.StronglyTypedId.Generators", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 提示泛型容器里的 Id 拿不到集成代码（STIA0028）。
+    /// </summary>
+    /// <remarks>
+    /// 判据与生成器共用 <see cref="StronglyTypedIdInfo.HasGenericContainer"/>，保证「报错的那条」就是
+    /// 「集成被跳过的那条」。用户已显式关掉全部集成时不报：那时没有集成可丢，警告只是噪声。
+    /// </remarks>
+    private static void ValidateGenericContainer(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        RecordDeclarationSyntax[] records)
+    {
+        if (!StronglyTypedIdInfo.HasGenericContainer(type))
+        {
+            return;
+        }
+
+        if (GetEffectiveIntegrations(type, context.Compilation.Assembly) == 0)
+        {
+            return;
+        }
+
+        Report(
+            context,
+            Descriptors.GenericContainerSkipsIntegrations,
+            records[0].Identifier.GetLocation(),
+            type.Name,
+            type.ContainingType!.Name);
+    }
+
+    /// <summary>
+    /// 取生效的集成掩码：逐类型 <c>Integrations</c> 优先，其次程序集默认值，最后 <see cref="IntegrationFlags.All"/>。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="StronglyTypedIdInfo"/> 构造函数里的回退链同源。显式 <c>None</c> 归一化后是 <c>0</c>，
+    /// <c>Default</c> 归一化后是 <see langword="null"/> 表示回退，两者最终都可能落到 <c>0</c>。
+    /// </remarks>
+    private static int GetEffectiveIntegrations(INamedTypeSymbol type, IAssemblySymbol assembly)
+        => IntegrationFlags.Normalize(AttributeReader.GetEnumValue(
+                AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+                StronglyTypedIdInfo.IntegrationsArgumentName))
+            ?? StronglyTypedIdDefaults.Read(assembly).Integrations
+            ?? IntegrationFlags.All;
 
     /// <summary>
     /// 校验类型声明本身能否承载强类型 Id：必须是 record、非抽象、partial、非 file 本地、非泛型，
@@ -703,7 +864,10 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
                 case InstanceIssue.None:
                     // 风格提示排在硬性校验之后：已经报错的实例不再顺带建议改名。
-                    if (!InstanceDeclaration.IsPascalCase(declaration.Name, out var suggestion))
+                    // 建议名还必须真的可用：机械推导会给出 `1`（不是标识符）、`Create`（生成成员）、
+                    // `OrderId`（类型名）这类结果，报出来只会诱导用户把 Info 提示换成 STIA0020（Error）。
+                    if (!InstanceDeclaration.IsPascalCase(declaration.Name, out var suggestion)
+                        && InstanceDeclaration.IsUsableInstanceName(type, suggestion, primitiveType, declarations, index))
                     {
                         Report(context, Descriptors.InstanceNameNotPascalCase, location, declaration.Name, suggestion);
                     }
@@ -900,6 +1064,14 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// <summary>
     /// 校验 <c>[StronglyTypedId(Validator = nameof(Foo))]</c> 指向的方法是否为合法的静态验证器。
     /// </summary>
+    /// <remarks>
+    /// 两种签名都接受：<c>static bool Foo(TPrimitiveId)</c> 与
+    /// <c>static StronglyTypedIdValidationResult Foo(TPrimitiveId)</c>。后者能带回拒绝原因。
+    /// <para>
+    /// 按实参类型挑重载、并沿基类链查找，与生成器同源（<see cref="StronglyTypedIdInfo.FindValidatorMethod"/>）：
+    /// 取「第一个静态同名方法」会在验证器重载或继承时误报，而生成代码实际能编译。
+    /// </para>
+    /// </remarks>
     private static void ValidateValidator(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
@@ -907,22 +1079,33 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         ITypeSymbol primitiveType,
         RecordDeclarationSyntax[] records)
     {
-        var method = type.GetMembers(validatorName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
+        var method = StronglyTypedIdInfo.FindValidatorMethod(type, validatorName, primitiveType);
 
         var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.ValidatorArgumentName) ?? records[0].GetLocation();
 
-        if (method is null
-            || method.ReturnType.SpecialType != SpecialType.System_Boolean
-            || method.Parameters.Length != 1
-            || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, primitiveType))
+        if (method is null || !IsValidValidatorReturnType(method.ReturnType))
         {
             Report(context, Descriptors.ValidatorReferenceInvalid, location, validatorName, primitiveType.ToDisplayString());
         }
     }
 
     /// <summary>
+    /// 验证器的返回类型必须是 <see langword="bool"/> 或 <c>StronglyTypedIdValidationResult</c>。
+    /// </summary>
+    /// <remarks>
+    /// 常量带 <c>global::</c> 前缀（生成代码要用），而 <c>ToDisplayString()</c> 不带，故比较前先剥掉。
+    /// </remarks>
+    private static bool IsValidValidatorReturnType(ITypeSymbol returnType)
+        => returnType.SpecialType == SpecialType.System_Boolean
+            || StronglyTypedIdInfo.ReturnsValidationResult(returnType);
+
+    /// <summary>
     /// 校验 <c>[StronglyTypedId(Normalizer = nameof(Foo))]</c> 指向的方法是否为合法的静态归一化方法。
     /// </summary>
+    /// <remarks>
+    /// 按实参类型挑重载、并沿基类链查找，与生成器同源（<see cref="StronglyTypedIdInfo.FindNormalizerMethod"/>）：
+    /// 取「第一个静态同名方法」会在归一化方法重载或继承时误报，而生成代码实际能编译。
+    /// </remarks>
     private static void ValidateNormalizer(
         SymbolAnalysisContext context,
         INamedTypeSymbol type,
@@ -930,14 +1113,11 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         ITypeSymbol primitiveType,
         RecordDeclarationSyntax[] records)
     {
-        var method = type.GetMembers(normalizerName).OfType<IMethodSymbol>().FirstOrDefault(member => member.IsStatic);
+        var method = StronglyTypedIdInfo.FindNormalizerMethod(type, normalizerName, primitiveType);
 
         var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.NormalizerArgumentName) ?? records[0].GetLocation();
 
-        if (method is null
-            || !SymbolEqualityComparer.Default.Equals(method.ReturnType, primitiveType)
-            || method.Parameters.Length != 1
-            || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, primitiveType))
+        if (method is null)
         {
             Report(context, Descriptors.NormalizerReferenceInvalid, location, normalizerName, primitiveType.ToDisplayString());
         }

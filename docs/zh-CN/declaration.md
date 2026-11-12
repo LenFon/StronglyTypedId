@@ -79,6 +79,36 @@ OrderId.TryParse(Guid.Empty.ToString(), null, out _);  // 返回 false，不抛�
 执行校验：三者都经 `TryCreate` 构造，再把拒绝转成各自的框架异常（`JsonException`、
 `JsonSerializationException` 与 EF Core 的 `InvalidOperationException`），所以反序列化同样会拒绝非法值。
 
+### 报告拒绝原因
+
+`bool` 验证器只能说「这个值被拒了」。改成返回 `StronglyTypedIdValidationResult`，原因就能一起带出来：
+
+```csharp
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct OrderId(Guid Value)
+{
+    private static StronglyTypedIdValidationResult Validate(Guid value)
+        => value == Guid.Empty
+            ? StronglyTypedIdValidationResult.Failure("An id cannot be empty.", "E_EMPTY")
+            : StronglyTypedIdValidationResult.Success;
+}
+
+OrderId.TryCreate(Guid.Empty, out _, out var validation);
+// validation.IsValid == false，Message == "An id cannot be empty."，Code == "E_EMPTY"
+
+OrderId.Create(Guid.Empty);  // ArgumentException，消息即验证器给出的原因
+```
+
+`default` 是 `Success`，因此验证器可以写 `return default;` 表示接受。`Failure` 必须给消息；错误码可选，
+用于机器可读的分支判断。
+
+三参 `TryCreate` 在每个 Id 上都有，包括 `bool` 验证器的（此时只表达通过与否）与完全没有验证器的
+（此时恒为通过）。它声明在 `IStronglyTypedId<TSelf, TPrimitiveId>` 上，因此约束到该接口的泛型代码
+同样能拿到原因。
+
+`RedactValidationMessage = true` 仍然优先：验证器文案可能含用户输入，故异常里忽略它、改用通用文案。
+`TryCreate` 仍返回验证器的消息 —— 返回值不像异常消息那样会进日志与 APM。
+
 源码生成器唯一做不到的是拦截你声明的主构造函数：`new OrderId(...)` 会绕过校验。当取值来自你的代码
 之外（用户输入、数据库、报文）时，请让它经过 `Create` 或解析成员。
 
@@ -207,7 +237,8 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 悄悄交出一个「不可能存在」的 Id。
 
 名字必须是合法标识符、在同一个 Id 内唯一，且不能与 Id 类型本身、既有成员或生成成员撞名（`STIA0020`）；
-取值必须是该基元类型的合法值（`STIA0021`）；名字不是 PascalCase 时报 `STIA0022`（`Info`）。
+取值必须是该基元类型的合法值（`STIA0021`）；名字不是 PascalCase 时报 `STIA0022`（`Info`），并提供
+改名为建议名字的代码修复。
 
 <a id="trycreate-and-utf8"></a>
 
@@ -218,6 +249,15 @@ TenantId.Unspecified == TenantId.Create(-1);    // true
 ```csharp
 OrderId.TryCreate(Guid.NewGuid(), out var id);          // true
 OrderId.TryCreate(badValue, out var invalid);           // false，result 为 default(OrderId)
+```
+
+两个工厂都声明在 `IStronglyTypedId<TSelf, TPrimitiveId>` 上，因此约束到该接口的泛型代码不必知道具体
+Id 类型就能调用其中任意一个：
+
+```csharp
+public static bool TryCreateId<TId>(Guid value, out TId id)
+    where TId : IStronglyTypedId<TId, Guid>
+    => TId.TryCreate(value, out id);
 ```
 
 `Guid` 自 .NET 10 起实现 `IUtf8SpanParsable<Guid>`，生成器据此为 `GuidId` 一并实现 `IUtf8SpanFormattable`
