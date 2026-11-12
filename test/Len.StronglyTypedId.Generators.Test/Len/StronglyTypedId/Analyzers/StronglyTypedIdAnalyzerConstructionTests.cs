@@ -311,6 +311,8 @@ public class StronglyTypedIdAnalyzerConstructionTests
                 private static bool Validate(Guid value) => value != Guid.Empty;
 
                 // 分析器用例不跑生成器，CompareTo 得自己写，否则调用在语义模型里是 IInvalidOperation。
+                // 手写的这个成员与生成器产出的同签名成员撞名，故 STIA0029 会报出来 —— 本用例只关心
+                // STIA0011 不误报，把这条已知诊断一并声明。
                 public int CompareTo(OrderId other) => 0;
             }
 
@@ -321,7 +323,10 @@ public class StronglyTypedIdAnalyzerConstructionTests
                 public int Compare(OrderId id) => default(OrderId).CompareTo(id);
             }
             """";
-        await Verify.VerifyAnalyzerAsync(code);
+        var expected = Verify.Diagnostic(Descriptors.MemberCollidesWithGeneratedMember)
+            .WithArguments("CompareTo", "OrderId")
+            .WithSpan(13, 16, 13, 25);
+        await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
     /// <summary>

@@ -57,6 +57,9 @@ public partial class DescriptorsTests
                 case Descriptors.IntegrationUnavailableId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0019 是告警性诊断");
                     break;
+                case Descriptors.GenericContainerSkipsIntegrationsId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0028 是告警性诊断");
+                    break;
                 case Descriptors.UnknownIntegrationId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0024 是告警性诊断");
                     break;

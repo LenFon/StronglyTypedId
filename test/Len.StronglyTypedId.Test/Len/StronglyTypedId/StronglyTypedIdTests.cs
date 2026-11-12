@@ -192,7 +192,29 @@ public readonly struct MultiContractId(Guid value)
 
     public static MultiContractId Create(Guid value) => new(value);
 
+    public static bool TryCreate(Guid value, out MultiContractId result)
+    {
+        result = new(value);
+        return true;
+    }
+
+    public static bool TryCreate(Guid value, out MultiContractId result, out StronglyTypedIdValidationResult validation)
+    {
+        validation = StronglyTypedIdValidationResult.Success;
+        result = new(value);
+        return true;
+    }
+
     static ForeignId IStronglyTypedId<ForeignId, int>.Create(int value) => ForeignId.Create(value);
+
+    static bool IStronglyTypedId<ForeignId, int>.TryCreate(int value, out ForeignId result)
+        => ForeignId.TryCreate(value, out result);
+
+    static bool IStronglyTypedId<ForeignId, int>.TryCreate(
+        int value,
+        out ForeignId result,
+        out StronglyTypedIdValidationResult validation)
+        => ForeignId.TryCreate(value, out result, out validation);
 
     // 第二份契约继承的 IParsable<ForeignId> / IEqualityOperators<ForeignId, ForeignId, bool> 与自身的
     // 同名成员签名冲突（返回类型不同），只能显式实现。它们不参与本用例的判定，保持最小实现即可。
@@ -204,6 +226,18 @@ public readonly struct MultiContractId(Guid value)
     static bool IEqualityOperators<ForeignId, ForeignId, bool>.operator ==(ForeignId left, ForeignId right) => left == right;
 
     static bool IEqualityOperators<ForeignId, ForeignId, bool>.operator !=(ForeignId left, ForeignId right) => left != right;
+
+    // 第二份契约现在也带 IComparable<ForeignId> 与 IComparisonOperators<ForeignId, ForeignId, bool>。
+    // 同样与自身契约的同名成员签名冲突，只能显式实现；本用例不判定它们，保持最小实现。
+    int IComparable<ForeignId>.CompareTo(ForeignId other) => 0;
+
+    static bool IComparisonOperators<ForeignId, ForeignId, bool>.operator <(ForeignId left, ForeignId right) => left < right;
+
+    static bool IComparisonOperators<ForeignId, ForeignId, bool>.operator <=(ForeignId left, ForeignId right) => left <= right;
+
+    static bool IComparisonOperators<ForeignId, ForeignId, bool>.operator >(ForeignId left, ForeignId right) => left > right;
+
+    static bool IComparisonOperators<ForeignId, ForeignId, bool>.operator >=(ForeignId left, ForeignId right) => left >= right;
 
     public static MultiContractId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
 
@@ -223,6 +257,16 @@ public readonly struct MultiContractId(Guid value)
 
     public static bool operator !=(MultiContractId left, MultiContractId right) => left.Value != right.Value;
 
+    public int CompareTo(MultiContractId other) => Value.CompareTo(other.Value);
+
+    public static bool operator <(MultiContractId left, MultiContractId right) => left.Value < right.Value;
+
+    public static bool operator <=(MultiContractId left, MultiContractId right) => left.Value <= right.Value;
+
+    public static bool operator >(MultiContractId left, MultiContractId right) => left.Value > right.Value;
+
+    public static bool operator >=(MultiContractId left, MultiContractId right) => left.Value >= right.Value;
+
     public override bool Equals(object? obj) => obj is MultiContractId other && Value == other.Value;
 
     public override int GetHashCode() => Value.GetHashCode();
@@ -237,6 +281,19 @@ public readonly struct ForeignId(int value) : IStronglyTypedId<ForeignId, int>
     public int Value { get; } = value;
 
     public static ForeignId Create(int value) => new(value);
+
+    public static bool TryCreate(int value, out ForeignId result)
+    {
+        result = new(value);
+        return true;
+    }
+
+    public static bool TryCreate(int value, out ForeignId result, out StronglyTypedIdValidationResult validation)
+    {
+        validation = StronglyTypedIdValidationResult.Success;
+        result = new(value);
+        return true;
+    }
 
     public static ForeignId Parse(string s, IFormatProvider? provider) => new(int.Parse(s, provider));
 
@@ -255,6 +312,16 @@ public readonly struct ForeignId(int value) : IStronglyTypedId<ForeignId, int>
     public static bool operator ==(ForeignId left, ForeignId right) => left.Value == right.Value;
 
     public static bool operator !=(ForeignId left, ForeignId right) => left.Value != right.Value;
+
+    public int CompareTo(ForeignId other) => Value.CompareTo(other.Value);
+
+    public static bool operator <(ForeignId left, ForeignId right) => left.Value < right.Value;
+
+    public static bool operator <=(ForeignId left, ForeignId right) => left.Value <= right.Value;
+
+    public static bool operator >(ForeignId left, ForeignId right) => left.Value > right.Value;
+
+    public static bool operator >=(ForeignId left, ForeignId right) => left.Value >= right.Value;
 
     public override bool Equals(object? obj) => obj is ForeignId other && Value == other.Value;
 

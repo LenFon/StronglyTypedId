@@ -165,6 +165,73 @@ public partial record struct RedactedCustomExceptionId(string Value)
 
 public partial record NotStronglyTypedId();
 
+// R3：验证器可以返回 StronglyTypedIdValidationResult，把拒绝原因与错误码带回调用方。
+// 与上面的 bool 验证器夹具同构，差异只在返回类型 —— 用来锁「两种签名走不同模板」。
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct ResultValidatedGuidId(Guid Value)
+{
+    private static StronglyTypedIdValidationResult Validate(Guid value)
+        => value == Guid.Empty
+            ? StronglyTypedIdValidationResult.Failure("An id cannot be empty.", "E_EMPTY")
+            : StronglyTypedIdValidationResult.Success;
+}
+
+// result 验证器 + 自定义异常：拒绝原因同样进入该异常的消息。
+[StronglyTypedId(Validator = nameof(Validate), ExceptionType = typeof(DomainRuleViolationException))]
+public partial record struct ResultValidatedDomainExceptionId(Guid Value)
+{
+    private static StronglyTypedIdValidationResult Validate(Guid value)
+        => value == Guid.Empty
+            ? StronglyTypedIdValidationResult.Failure("An id cannot be empty.", "E_EMPTY")
+            : StronglyTypedIdValidationResult.Success;
+}
+
+// result 验证器 + 脱敏：验证器文案可能含用户输入，打开脱敏后一律忽略它。
+[StronglyTypedId(Validator = nameof(Validate), RedactValidationMessage = true)]
+public partial record struct ResultValidatedRedactedId(string Value)
+{
+    private static StronglyTypedIdValidationResult Validate(string value)
+        => value.Length <= 8
+            ? StronglyTypedIdValidationResult.Success
+            : StronglyTypedIdValidationResult.Failure($"'{value}' is too long.", "E_TOO_LONG");
+}
+
+// result 验证器 + 归一化：四个入口都按「归一化 → 校验 → 构造」执行。
+[StronglyTypedId(Validator = nameof(Validate), Normalizer = nameof(Normalize))]
+public partial record struct ResultValidatedNormalizedId(string Value)
+{
+    private static string Normalize(string value) => value.Trim();
+
+    private static StronglyTypedIdValidationResult Validate(string value)
+        => value.Length > 0
+            ? StronglyTypedIdValidationResult.Success
+            : StronglyTypedIdValidationResult.Failure("The value cannot be blank.", "E_BLANK");
+}
+
+// result 验证器 + 前缀：带前缀的读入路径（JSON / Newtonsoft / MVC 绑定）只能经 TryParse，
+// 用来锁「前缀路径同样执行验证器」。
+[StronglyTypedId(Validator = nameof(Validate), Prefix = "ord_")]
+public partial record struct ResultValidatedPrefixedId(Guid Value)
+{
+    private static StronglyTypedIdValidationResult Validate(Guid value)
+        => value == Guid.Empty
+            ? StronglyTypedIdValidationResult.Failure("An id cannot be empty.", "E_EMPTY")
+            : StronglyTypedIdValidationResult.Success;
+}
+
+// 验证器重载：生成代码按实参类型绑定，只有 Guid 那个重载会被调用。
+// 用来锁「按实参类型挑重载」——取第一个静态同名方法会在返回类型不同时产出不可编译的代码。
+[StronglyTypedId(Validator = nameof(Validate))]
+public partial record struct OverloadedValidatorId(Guid Value)
+{
+    private static bool Validate(string value) => value.Length > 0;
+
+    private static StronglyTypedIdValidationResult Validate(Guid value)
+        => value == Guid.Empty
+            ? StronglyTypedIdValidationResult.Failure("An id cannot be empty.", "E_EMPTY")
+            : StronglyTypedIdValidationResult.Success;
+}
+
 // readonly record struct 形态：生成器必须把 readonly 修饰符透出到生成的 partial 段，否则与使用者
 // 写下的 readonly 段对「是否 readonly struct」不一致而编译失败。
 [StronglyTypedId]
@@ -239,6 +306,10 @@ public partial record struct PrefixedValidatedGuidId(Guid Value)
 // 严格读入：缺前缀即解析失败（PrefixReadMode 默认宽松，此处显式改为严格）。
 [StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
 public partial record struct StrictPrefixedGuidId(Guid Value);
+
+// 严格前缀 + string 基元：空串的规范文本形是裸前缀，严格读也必须能读回。
+[StronglyTypedId(Prefix = "ord_", PrefixReadMode = PrefixReadMode.Strict)]
+public partial record struct StrictPrefixedStringId(string Value);
 
 // 严格前缀 + TypeConverter：TypeDescriptor 是与 JSON 并列的另一条文本读入路径。
 // 生成的转换器内部调 Parse，故严格模式下的拒绝表现为 FormatException，而不是 NotSupportedException。
@@ -598,3 +669,28 @@ public partial record struct FormattableReferenceCodeId(FormattableReferenceCode
 
 [StronglyTypedId(Prefix = "fc_")]
 public partial record struct PrefixedFormattableReferenceCodeId(FormattableReferenceCode Value);
+
+// 显式实现 IFormattable 且两参 ToString 返回 null 的自定义基元。IFormattable 的返回类型标注为非可空，
+// 但运行时不强制；生成代码若直接转发就会把 null 泄漏给调用方，让 id.ToString(format, provider).Length 抛 NRE。
+public readonly record struct NullReturningFormat(string Value)
+    : IParsable<NullReturningFormat>, IComparable<NullReturningFormat>, IComparable, IFormattable
+{
+    public static NullReturningFormat Parse(string s, IFormatProvider? provider) => new(s);
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out NullReturningFormat result)
+    {
+        result = new NullReturningFormat(s ?? string.Empty);
+        return s is not null;
+    }
+
+    public int CompareTo(NullReturningFormat other) => string.CompareOrdinal(Value, other.Value);
+
+    public int CompareTo(object? obj) => obj is NullReturningFormat other ? CompareTo(other) : throw new ArgumentException("Object is not a NullReturningFormat.", nameof(obj));
+
+    public override string ToString() => Value;
+
+    public string ToString(string? format, IFormatProvider? formatProvider) => null!;
+}
+
+[StronglyTypedId]
+public partial record struct NullReturningFormatId(NullReturningFormat Value);

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+	  SDK 兼容性探针：消费打包后的真实 nupkg，验证生成器在低版本 SDK 上也能加载。
+
+	  为什么必须走包而不是 ProjectReference：CS9057 / CS8034 是「包内 analyzer 的 Roslyn 版本与
+	  宿主编译器不匹配」的问题，ProjectReference 不经过 analyzers/dotnet/roslynX.Y/ 的目录选择，
+	  复现不出来。
+
+	  本工程不参与解决方案构建（CI 用矩阵 SDK 单独构建它），故 IsPackable=false 且不进 slnx。
+	-->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsPackable>false</IsPackable>
+		<!--
+		  退出中央包版本管理：本工程消费的是「刚打包出来的那一份」，版本由 CI 传入，
+		  不该被 Directory.Packages.props 里的登记值约束。
+		-->
+		<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+		<!--
+		  生成器没跑时编译直接失败（CS1929），这正是要抓的症状；把警告也当错误，
+		  确保 CS9057 / CS8034 不会被当成噪音忽略。
+		-->
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+		  版本由 CI 用 -p:StronglyTypedIdVersion 传入（取刚打包的版本号）。
+		  本地跑时默认 1.0.0，与 version.props 一致。
+		-->
+		<PackageReference Include="Len.StronglyTypedId" Version="$(StronglyTypedIdVersion)" />
+	</ItemGroup>
+
+</Project>

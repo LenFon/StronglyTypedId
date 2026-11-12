@@ -98,13 +98,65 @@ public enum EmptyEnum
 public partial record struct EmptyEnumId(EmptyEnum Value);
 
 /// <summary>
-/// 自定义基元：没有内置生成规则，必须由调用方提供工厂。
+/// 自定义基元：没有内置生成规则，但 <c>TryParse</c> 只要求含 <c>@</c>，启发式候选能命中。
 /// </summary>
 /// <remarks>
 /// 基元类型 <c>Email</c> 由 <c>StronglyTypedIdConformanceTests</c> 声明（同一命名空间），此处只补 Id。
 /// </remarks>
 [StronglyTypedId]
 public partial record struct EmailId(Email Value);
+
+/// <summary>
+/// 第三方自定义基元：只接受 26 位 Crockford Base32 文本，启发式第 2 种候选命中。
+/// </summary>
+[StronglyTypedId]
+public partial record struct UlidId(Ulid Value);
+
+/// <summary>
+/// 严格格式的自定义基元：只接受 <c>ACCT-</c> 前缀加固定长度，任何随机文本都无法命中。
+/// </summary>
+[StronglyTypedId]
+public partial record struct StrictCodeId(StrictCode Value);
+
+/// <summary>
+/// 只接受 <c>ACCT-</c> 前缀加 8 位数字：启发式无法推断出这个格式。
+/// </summary>
+public readonly record struct StrictCode(string Value) : IParsable<StrictCode>, IComparable<StrictCode>, IComparable
+{
+    public static StrictCode Parse(string s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException($"'{s}' is not a valid StrictCode.");
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out StrictCode result)
+    {
+        if (s is { Length: 13 } && s.StartsWith("ACCT-", StringComparison.Ordinal) && IsAllDigits(s.AsSpan(5)))
+        {
+            result = new StrictCode(s);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    private static bool IsAllDigits(ReadOnlySpan<char> text)
+    {
+        foreach (var character in text)
+        {
+            if (!char.IsAsciiDigit(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public int CompareTo(StrictCode other) => string.CompareOrdinal(Value, other.Value);
+
+    public int CompareTo(object? obj) => obj is StrictCode other ? CompareTo(other) : throw new ArgumentException("not a StrictCode", nameof(obj));
+
+    public override string ToString() => Value;
+}
 
 /// <summary>
 /// 验证器只接受正数，随机值约有一半会被拒，用来验证重试路径。
@@ -203,9 +255,10 @@ public sealed class BogusPositiveOrder
 /// <summary>
 /// 泛型容器里的 Id：自动发现会看到开放泛型 <c>Box&lt;T&gt;.BoxedId</c>，它无法被闭合构造。
 /// 适配包必须跳过它，而不是让 <c>MakeGenericMethod</c> 抛「not fully instantiated」。
+/// 显式 Integrations = None 是刻意的：本夹具只关心自动发现，关掉集成后 STIA0028 不再提示。
 /// </summary>
 public partial class Box<T>
 {
-    [StronglyTypedId]
+    [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
     public partial record struct BoxedId(Guid Value);
 }

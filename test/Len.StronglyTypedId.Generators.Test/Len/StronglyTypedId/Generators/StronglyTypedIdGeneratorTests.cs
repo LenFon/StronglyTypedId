@@ -771,6 +771,80 @@ public class StronglyTypedIdGeneratorTests
     }
 
     /// <summary>
+    /// 去重判据必须看「特性应用」而不是「声明」：特性可以只标在后续的 partial 段上。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾是「本次触发落在 <c>DeclaringSyntaxReferences[0]</c> 上」，于是特性标在第二个
+    /// partial 段时两次触发都被跳过，该 Id 一个产物都没有，用户看到的是 <c>CS1929: 不包含 Create 的定义</c>。
+    /// 同一段里重复标注时两次触发的声明位置相同，也只有比较特性位置才分得开。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_GenerateCode_WhenAttributeIsOnLaterPartialSegment()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial record struct OrderId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record struct OrderId
+            {
+                public string Display => Value.ToString();
+            }
+            """";
+
+        var generated = GetGeneratedCodeByHint(code);
+
+        generated.Should().ContainKey("Len.StronglyTypedId.OrderId.g.cs");
+        generated["Len.StronglyTypedId.OrderId.g.cs"]
+            .Should().Contain("public static OrderId Create(global::System.Guid value)");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 跨文件重复标注时同样只产出一份，且特性落在两个文件里的相同偏移也不能误判。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：去重判据曾只比较 <c>TextSpan.Start</c>，而它是相对各自语法树的偏移。两个文件里位置相同的
+    /// 特性会得到同一个值，于是两次触发都判定为「最早」，重复 <c>AddSource</c> 抛
+    /// <c>ArgumentException</c>，该 Id 的全部产物丢失（表现为 <c>CS1929: 不包含 Create 的定义</c>）。
+    /// 两个源文件刻意写成同样的行数与缩进，让特性落在同一偏移上。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_GenerateOnce_WhenAttributeIsRepeatedAcrossFilesAtSameOffset()
+    {
+        string[] sources =
+        [
+            """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value);
+            """,
+            """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId
+            {
+                public string Display => Value.ToString();
+            }
+            """,
+        ];
+
+        var generated = GetGeneratedCodeByHintForTrees(sources, [], []);
+
+        generated.Should().ContainKey("Len.StronglyTypedId.OrderId.g.cs");
+    }
+
+    /// <summary>
     /// Id 名为 <c>var</c> 时不生成：该名字遮蔽隐式类型关键字，产物里的 <c>out var</c> / <c>var</c> 模式
     /// 全部编译不过（CS1503 / CS8508）。分析器对同一写法报 STIA0026，两边判据必须一致。
     /// </summary>
@@ -1268,8 +1342,18 @@ public class StronglyTypedIdGeneratorTests
         Type[] extraAssemblyTypes,
         MetadataReference[] extraReferences,
         CSharpCompilationOptions? options = null)
+        => CreateCompilation([sourceCode], extraAssemblyTypes, extraReferences, options);
+
+    /// <summary>
+    /// 用多个源文件构造编译，供跨文件场景使用。
+    /// </summary>
+    private static CSharpCompilation CreateCompilation(
+        string[] sourceCodes,
+        Type[] extraAssemblyTypes,
+        MetadataReference[] extraReferences,
+        CSharpCompilationOptions? options = null)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+        var syntaxTrees = sourceCodes.Select(static code => CSharpSyntaxTree.ParseText(code)).ToArray();
 
         var assemblies = new[]
         {
@@ -1305,7 +1389,7 @@ public class StronglyTypedIdGeneratorTests
 
         return CSharpCompilation.Create(
             "Len.StronglyTypedId.Generator.Test",
-            [syntaxTree],
+            syntaxTrees,
             references,
             options ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
@@ -1341,8 +1425,21 @@ public class StronglyTypedIdGeneratorTests
         string sourceCode,
         Type[] extraAssemblyTypes,
         MetadataReference[] extraReferences)
+        => GetGeneratedCodeByHintForTrees([sourceCode], extraAssemblyTypes, extraReferences);
+
+    /// <summary>
+    /// 同 <see cref="GetGeneratedCodeByHint(string, Type[], MetadataReference[])"/>，但接受多个源文件。
+    /// </summary>
+    /// <remarks>
+    /// 跨文件的场景（同一 Id 的 partial 段分散在多个文件里）必须真的给多个语法树：拼成一个字符串会让
+    /// 「跨文件」与「同文件多段」变成同一种输入，从而漏掉只在跨文件时出现的缺陷。
+    /// </remarks>
+    private static Dictionary<string, string> GetGeneratedCodeByHintForTrees(
+        string[] sourceCodes,
+        Type[] extraAssemblyTypes,
+        MetadataReference[] extraReferences)
     {
-        var compilation = CreateCompilation(sourceCode, extraAssemblyTypes, extraReferences);
+        var compilation = CreateCompilation(sourceCodes, extraAssemblyTypes, extraReferences);
 
         var generator = new StronglyTypedIdGenerator();
 
@@ -3323,6 +3420,382 @@ public class StronglyTypedIdGeneratorTests
             .And.Contain("&& IsValid(val)");
     }
 
+    /// <summary>
+    /// 富结果验证器（无归一化）的三个 <c>TryParse</c> 重载都必须校验。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：验证器返回结构体时无法并入解析条件，校验被挪进「解析成功」块；而那个块只在有归一化时
+    /// 才写校验，于是无归一化的 Id 三个重载全部放行被拒的值。这里逐重载断言产物里有 <c>!Validate(...).IsValid</c>。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_ValidateInEveryTryParseOverload_WhenResultValidatorHasNoNormalizer()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static StronglyTypedIdValidationResult Validate(Guid value)
+                    => StronglyTypedIdValidationResult.Success;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        // UTF-16 与 span 两条路径共用 GetTryParseSuccessBlock，UTF-8 路径单独生成。
+        // 数出现次数而不是只断言「包含」：漏掉其中一条路径时「包含」仍然成立。
+        // UTF-8 重载只在基元实现 IUtf8SpanParsable 时生成（Guid 自 .NET 10 起才实现）。
+        var expected = GuidSupportsUtf8Parsing() ? 3 : 2;
+
+        generated.Split("if (!Validate(val).IsValid)").Length.Should().Be(expected + 1, "string、span、UTF-8 三个 TryParse 重载各校验一次");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 验证器重载时按实参类型挑重载，而不是「第一个静态同名方法」。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾是「任一静态同名方法返回 <c>StronglyTypedIdValidationResult</c>」。当
+    /// <c>bool Validate(Guid)</c> 与 <c>Result Validate(string)</c> 并存时，生成代码按 <c>Guid</c> 绑到
+    /// <c>bool</c> 重载，却仍按富结果模板访问 <c>.IsValid</c>，产物报 CS1061 / CS0029。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_BindToOverloadMatchingPrimitive_WhenValidatorIsOverloaded()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value) => value != Guid.Empty;
+
+                private static StronglyTypedIdValidationResult Validate(string value)
+                    => StronglyTypedIdValidationResult.Success;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        // 绑到 bool 重载 → 走 bool 模板，产物里不应出现 .IsValid。
+        generated.Should().NotContain(".IsValid");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 继承来的验证器同样被识别为富结果验证器。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾用 <c>GetMembers</c>，它只返回声明成员，继承来的验证器会被当成 <c>bool</c> 模板，
+    /// 产物在 <c>if (!Validate(value))</c> 处报 CS0019。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_UseInheritedResultValidator()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial record BaseId(Guid Value)
+            {
+                protected static StronglyTypedIdValidationResult Validate(Guid value)
+                    => StronglyTypedIdValidationResult.Success;
+            }
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record DerivedId(Guid Value) : BaseId(Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.DerivedId.g.cs"];
+
+        generated.Should().Contain(".IsValid");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 没有 <c>Value</c> 属性的声明不产出任何代码，让分析器的诊断成为唯一可见的错误。
+    /// </summary>
+    /// <param name="declaration">Id 的声明（含特性）。</param>
+    /// <remarks>
+    /// 缺陷回归：生成代码通篇引用 <c>Value</c>，而它只由主构造函数合成。以下两种写法都没有它，
+    /// 生成器此前照样产出，用户看到的是一条指向生成文件的 CS0535（「不实现 Value」），
+    /// 真正的诊断被编译错误掩盖 —— 而编译器在有生成错误时不再报告分析器诊断。
+    /// <list type="bullet">
+    /// <item>主构造的参数名不是 <c>Value</c>（分析器报 STIA0007）；</item>
+    /// <item>根本没有主构造，只有手写单参构造（分析器报 STIA0005）。</item>
+    /// </list>
+    /// </remarks>
+    [Theory]
+    [InlineData("public partial record struct OrderId(int Wrong) { }")]
+    [InlineData("public partial record struct OrderId { public OrderId(int value) { } }")]
+    public void Generator_Should_NotEmit_WhenValuePropertyIsMissing(string declaration)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            {{declaration}}
+            """;
+
+        GetGeneratedCodeByHint(code).Should().NotContainKey("Len.StronglyTypedId.OrderId.g.cs");
+    }
+
+    /// <summary>
+    /// 特性标在不带主构造的 partial 段上时，同样不产出代码。
+    /// </summary>
+    /// <remarks>
+    /// 这是缺陷的实际触发形态：<c>GetSingleParameterType</c> 会从另一段找到主构造，于是生成器以为
+    /// 一切正常，产出的代码却引用主构造参数名以外的 <c>Value</c>。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_NotEmit_WhenAttributeSitsOnSegmentWithoutPrimaryConstructor()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial record struct OrderId(int Wrong) { }
+
+            [StronglyTypedId]
+            public partial record struct OrderId { }
+            """;
+
+        GetGeneratedCodeByHint(code).Should().NotContainKey("Len.StronglyTypedId.OrderId.g.cs");
+    }
+
+    /// <summary>
+    /// 主构造在基类、派生类型只转发时，<c>Value</c> 由基类声明，仍应正常产出。
+    /// </summary>
+    /// <remarks>
+    /// 判据必须沿基类链查找：<c>record DerivedId(Guid Value) : BaseId(Value)</c> 的 <c>Value</c>
+    /// 不在派生类型自己的成员表里，只看声明成员会把合法写法误判成「缺 Value」。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_Emit_WhenValueComesFromBaseRecord()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial record BaseId(Guid Value);
+
+            [StronglyTypedId]
+            public partial record DerivedId(Guid Value) : BaseId(Value);
+            """;
+
+        GetGeneratedCodeByHint(code).Should().ContainKey("Len.StronglyTypedId.DerivedId.g.cs");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 用户成员与生成成员撞名时不产出任何代码，让分析器的 STIA0029 成为唯一可见的错误。
+    /// </summary>
+    /// <param name="member">用户写在 Id 上的成员声明。</param>
+    /// <remarks>
+    /// 缺陷回归：撞名的产物必然 CS0111（方法）或 CS0102（字段 / 嵌套类型），而这类<b>声明级</b>编译错误
+    /// 会让编译器跳过全部分析器诊断 —— 包括本该指出问题所在的 STIA0029。用户于是只看到一条指向生成文件的
+    /// 错误，既不能编辑那个文件，也不知道该改自己哪一行。
+    /// <para>
+    /// 判据必须按条件判定：<c>TryFormat</c> 只在基元可 span 格式化时生成、<c>{TypeName}DebugView</c>
+    /// 只在非泛型容器时生成。无条件判定会让本来不撞名的写法也一个产物都没有。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("public static OrderId Create(Guid value) => default;")]
+    [InlineData("public void Deconstruct(out Guid value) => value = Value;")]
+    [InlineData("public override string ToString() => \"custom\";")]
+    [InlineData("public int CompareTo(OrderId other) => 0;")]
+    [InlineData("public bool TryFormat(System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? provider) { charsWritten = 0; return false; }")]
+    [InlineData("public sealed class OrderIdDebugView { }")]
+    public void Generator_Should_NotEmit_WhenUserMemberCollidesWithGeneratedMember(string member)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                {{member}}
+            }
+            """;
+
+        GetGeneratedCodeByHint(code).Should().NotContainKey("Len.StronglyTypedId.OrderId.g.cs");
+    }
+
+    /// <summary>
+    /// 同名但参数表不同的成员是合法重载，仍应正常产出。
+    /// </summary>
+    /// <remarks>
+    /// 撞名判据只比「名字 + 参数个数 + 每个参数的类型与修饰符」，不比返回类型。若退化成只比名字，
+    /// 这些写法会被误判成撞名，用户一个产物都拿不到。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_Emit_WhenUserMemberIsAValidOverload()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(Guid Value)
+            {
+                public static OrderId Create(string text) => default;
+
+                public int CompareTo(OrderId? other) => 0;
+
+                public void Deconstruct(out Guid value, out string text)
+                {
+                    value = Value;
+                    text = string.Empty;
+                }
+            }
+            """;
+
+        GetGeneratedCodeByHint(code).Should().ContainKey("Len.StronglyTypedId.OrderId.g.cs");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 条件生成的成员不撞名时仍应产出：<c>TryFormat</c> 只在基元可 span 格式化时生成。
+    /// </summary>
+    /// <remarks>
+    /// <c>string</c> 不可 span 格式化，生成器不会为它产出 <c>TryFormat</c>，用户的同名声明完全合法。
+    /// 若判据退化成「无条件保留 TryFormat」，这里会一个产物都拿不到。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_Emit_WhenConditionalMemberIsNotGenerated()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record struct TextId(string Value)
+            {
+                public bool TryFormat(System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? provider)
+                {
+                    charsWritten = 0;
+                    return false;
+                }
+            }
+            """;
+
+        GetGeneratedCodeByHint(code).Should().ContainKey("Len.StronglyTypedId.TextId.g.cs");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 归一化方法重载时，生成代码按实参类型绑定，产物必须可编译。
+    /// </summary>
+    /// <remarks>
+    /// 与验证器重载同一类问题：分析器曾取「第一个静态同名方法」判签名，重载顺序不同就误报 STIA0017。
+    /// 这里从生成器侧固定事实：产物本身完全可编译，误报的责任在分析器。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_BindToOverloadMatchingPrimitive_WhenNormalizerIsOverloaded()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static int Normalize(int value) => value;
+
+                private static Guid Normalize(Guid value) => value;
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        // 归一化结果放在局部变量 normalized 里，两个入口各一次（TryCreate 与 TryParse）。
+        generated.Should().Contain("Normalize(value)");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 继承来的归一化方法同样可用，产物必须可编译。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：分析器曾用 <c>GetMembers</c> 判存在性，它只返回声明成员，继承来的归一化方法会被判成不存在。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_UseInheritedNormalizer()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            public partial record BaseId(Guid Value)
+            {
+                protected static Guid Normalize(Guid value) => value;
+            }
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record DerivedId(Guid Value) : BaseId(Value);
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.DerivedId.g.cs"];
+
+        generated.Should().Contain("Normalize(value)");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
+    /// <summary>
+    /// 用户另写一个单参数构造函数时，基元类型仍取自主构造函数。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StronglyTypedIdInfo.GetSingleParameterType"/> 取「第一个单参数、且参数类型不是自身的实例构造函数」。
+    /// 主构造函数在 <c>InstanceConstructors</c> 里未必排第一，用户再写一个 <c>OrderId(int)</c> 就可能被当成基元，
+    /// 产物会按 <c>int</c> 生成而实际主构造是 <c>Guid</c>。本用例锁住当前行为，防止后续调整构造枚举顺序时回归。
+    /// </remarks>
+    [Fact]
+    public void Generator_Should_UsePrimaryConstructor_WhenAnotherSingleParameterConstructorExists()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId]
+            public partial record OrderId(Guid Value)
+            {
+                public OrderId(int seed) : this(Guid.Empty) { }
+            }
+            """;
+
+        var generated = GetGeneratedCodeByHint(code)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should().Contain("IStronglyTypedId<OrderId, global::System.Guid>");
+
+        GeneratedCode_Should_Compile(code);
+    }
+
     #endregion
 
     /// <summary>
@@ -4098,20 +4571,25 @@ public class StronglyTypedIdGeneratorTests
     /// 这里验证保留名检查真的覆盖了 <c>{TypeName}DebugView</c> 这一条：撞名的实例被跳过（不生成字段），
     /// 由 <c>STIA0020</c> 报出来，而不是让产物编译失败。
     /// </summary>
+    /// <remarks>
+    /// <c>{TypeName}TypeConverter</c> 只在 <c>TypeConverter = true</c> 时才生成，故保留名判定也是条件化的：
+    /// 关掉它时同名实例合法。这一档必须显式打开，否则测的就不是撞名了。
+    /// </remarks>
     [Theory]
-    [InlineData("OrderIdDebugView")]
-    [InlineData("OrderIdTypeConverter")]
+    [InlineData("OrderIdDebugView", false)]
+    [InlineData("OrderIdTypeConverter", true)]
     // protobuf-net 的 surrogate 也生成在同一个 partial 类型里，撞名即 CS0102。
-    [InlineData("OrderIdSurrogate")]
-    [InlineData("OrderId")]
-    public async Task InstanceName_Should_BeRejected_WhenItCollidesWithGeneratedNestedType(string name)
+    [InlineData("OrderIdSurrogate", false)]
+    [InlineData("OrderId", false)]
+    public async Task InstanceName_Should_BeRejected_WhenItCollidesWithGeneratedNestedType(string name, bool typeConverter)
     {
+        var attribute = typeConverter ? "[StronglyTypedId(TypeConverter = true)]" : "[StronglyTypedId]";
         var code = $$"""
             using System;
 
             namespace Len.StronglyTypedId;
 
-            [StronglyTypedId]
+            {{attribute}}
             [StronglyTypedIdInstance("{{name}}", "7")]
             public partial record struct OrderId(int Value);
             """;

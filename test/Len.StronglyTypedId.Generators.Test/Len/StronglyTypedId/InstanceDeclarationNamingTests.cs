@@ -53,4 +53,20 @@ public class InstanceDeclarationNamingTests
         InstanceDeclaration.IsPascalCase(name, out var suggestion).Should().BeTrue();
         suggestion.Should().BeEmpty();
     }
+
+    /// <summary>
+    /// 机械推导出的建议名不保证可用：<c>_1</c> 得到 <c>1</c>，不是合法标识符。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：STIA0022 此前无条件报出建议名，用户照做后立刻得到 STIA0020（Error）。
+    /// 这条用例把「推导结果」与「可用性」两件事分开钉住 —— 前者仍是 <c>1</c>，后者必须为 false。
+    /// </remarks>
+    [Theory]
+    [InlineData("_1", "1")]
+    [InlineData("_123", "123")]
+    public void IsPascalCase_Should_SuggestNonIdentifier_ForLeadingDigitAfterUnderscore(string name, string expected)
+    {
+        InstanceDeclaration.IsPascalCase(name, out var suggestion).Should().BeFalse();
+        suggestion.Should().Be(expected);
+    }
 }

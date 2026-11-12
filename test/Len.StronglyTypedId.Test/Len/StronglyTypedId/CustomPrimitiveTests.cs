@@ -34,6 +34,25 @@ public class CustomPrimitiveTests
         SlugId.Create(new Slug("abc")).ToString().Should().Be("abc");
     }
 
+    /// <summary>
+    /// 基元的两参 <c>ToString</c> 返回 <see langword="null"/> 时，Id 的带格式 <c>ToString</c> 必须返回空串。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>StronglyTypedIdFormatting.Format</c> 与生成代码里的直呼路径都没有兜底，
+    /// 而 <c>IFormattable.ToString</c> 的返回类型标注为非可空、Id 的 <c>ToString(string?, IFormatProvider?)</c>
+    /// 同样标注为非可空，于是 <see langword="null"/> 被泄漏给调用方，
+    /// <c>id.ToString(format, provider).Length</c> 抛 <see cref="NullReferenceException"/>。
+    /// </remarks>
+    [Fact]
+    public void ToString_Should_ReturnEmptyString_WhenPrimitiveFormattedTextIsNull()
+    {
+        var id = NullReturningFormatId.Create(new NullReturningFormat("abc"));
+
+        id.ToString(null, CultureInfo.InvariantCulture).Should().BeEmpty();
+        id.ToString("X", CultureInfo.InvariantCulture).Should().BeEmpty();
+        id.ToString(null, CultureInfo.InvariantCulture).Length.Should().Be(0);
+    }
+
     [Fact]
     public void Parse_Should_RoundTripThroughToString()
     {

@@ -1,0 +1,93 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+	  集成版本矩阵探针：证明「门控承诺 ≥ 某个版本可用」这句话有证据。
+
+	  生成器的集成门控只看大版本下限（EF Core ≥ 7、HotChocolate ≥ 13、Swashbuckle ≥ 6…），
+	  而常规测试只钉一个版本。上游一旦改 API，生成代码会在用户那里才炸。本工程用
+	  VersionOverride 让 CI 逐项换版本，编译通过 + 一次真实往返是判据。
+
+	  单目标 net10.0：矩阵换的是「下一个大版本」，而 EF Core 10 / Swashbuckle 10 只有 net10.0 资产。
+	  两个 TFM 会让 -p:EfCoreVersion=10.x 在 net8.0 腿还原失败（NU1202）。门控下界那一端由
+	  Integration.Test / GraphQL.Test / Swagger.Test 各自钉住，这里不重复。
+
+	  不参与解决方案构建：矩阵 job 用 -p:xxxVersion=... 单独构建它，默认值只保证本地能跑。
+	-->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsPackable>false</IsPackable>
+		<!--
+		  生成器没跑时编译直接失败（CS1929），这正是要抓的症状。把警告也当错误，
+		  确保 CS9057 / CS8034 不会被当成噪音忽略。
+		-->
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+	</PropertyGroup>
+
+	<!--
+	  默认版本取仓库当前钉的值（门控下界附近），CI 用 -p:xxxVersion=... 换成下一个大版本。
+	  全局属性优先于这里的赋值，故 CI 只换属性就能换版本，不必改仓库里的登记值。
+	-->
+	<PropertyGroup>
+		<EfCoreVersion Condition="'$(EfCoreVersion)' == ''">8.0.32</EfCoreVersion>
+		<SwashbuckleVersion Condition="'$(SwashbuckleVersion)' == ''">6.9.0</SwashbuckleVersion>
+		<!--
+		  默认 8.x：与 Swashbuckle 6 同属 Microsoft.OpenApi 1.x，能一起还原。
+		  9.0+ 才有 OpenApiOptions，故默认把那一项编译掉（见 IncludeAspNetCoreOpenApi）。
+		-->
+		<OpenApiVersion Condition="'$(OpenApiVersion)' == ''">8.0.32</OpenApiVersion>
+		<HotChocolateVersion Condition="'$(HotChocolateVersion)' == ''">13.9.14</HotChocolateVersion>
+		<MessagePackVersion Condition="'$(MessagePackVersion)' == ''">3.1.12</MessagePackVersion>
+		<MongoDbVersion Condition="'$(MongoDbVersion)' == ''">3.12.0</MongoDbVersion>
+		<DapperVersion Condition="'$(DapperVersion)' == ''">2.1.89</DapperVersion>
+	</PropertyGroup>
+
+	<!--
+	  Swashbuckle 与内置 OpenAPI 共用 Microsoft.OpenApi，而两者的大版本必须一致：
+	  Swashbuckle 6/7 依赖 1.x，Swashbuckle 10 与 AspNetCore.OpenApi 9+ 依赖 2.x。
+	  NuGet 会把 1.x 抬到 2.x，生成器于是按 2.x 发代码，而 Swashbuckle 6/7 的 API 还是 1.x —— CS7069。
+
+	  因此「测 Swashbuckle 6/7」与「测内置 OpenAPI」是两组互斥的矩阵项：
+	  前者传 -p:IncludeAspNetCoreOpenApi=false，后者传 -p:SwashbuckleVersion=10.x。
+	  默认取前者，与仓库当前钉的组合一致。
+	-->
+	<PropertyGroup>
+		<IncludeAspNetCoreOpenApi Condition="'$(IncludeAspNetCoreOpenApi)' == ''">false</IncludeAspNetCoreOpenApi>
+		<DefineConstants Condition="'$(IncludeAspNetCoreOpenApi)' != 'true'">$(DefineConstants);EXCLUDE_ASPNETCORE_OPENAPI</DefineConstants>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+		  VersionOverride 在 CPM 下优先于 Directory.Packages.props 的 PackageVersion。
+		  Microsoft.Data.Sqlite 跟随 EF Core 的大版本：EF 10 的 SQLite 提供程序要求 10.x 的驱动。
+		-->
+		<PackageReference Include="Microsoft.EntityFrameworkCore" VersionOverride="$(EfCoreVersion)" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" VersionOverride="$(EfCoreVersion)" />
+		<PackageReference Include="Microsoft.Data.Sqlite" VersionOverride="$(EfCoreVersion)" />
+		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" VersionOverride="$(SwashbuckleVersion)" />
+		<!--
+		  内置 OpenAPI 与 Swashbuckle 6/7 的 Microsoft.OpenApi 大版本冲突（见上面的 IncludeAspNetCoreOpenApi），
+		  因此这一项可被编译掉。
+		-->
+		<PackageReference Include="Microsoft.AspNetCore.OpenApi" VersionOverride="$(OpenApiVersion)" Condition="'$(IncludeAspNetCoreOpenApi)' == 'true'" />		<PackageReference Include="HotChocolate.AspNetCore" VersionOverride="$(HotChocolateVersion)" />
+		<PackageReference Include="MessagePack" VersionOverride="$(MessagePackVersion)" />
+		<PackageReference Include="MongoDB.Bson" VersionOverride="$(MongoDbVersion)" />
+		<PackageReference Include="Dapper" VersionOverride="$(DapperVersion)" />
+		<PackageReference Include="protobuf-net" />
+		<PackageReference Include="Newtonsoft.Json" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- MVC / OpenAPI / Swagger 的宿主类型来自共享框架。 -->
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 生成器只作为分析器参与编译，不进引用：它的 Roslyn 依赖与引用集冲突。 -->
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId.Generators\Len.StronglyTypedId.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<ProjectReference Include="..\..\src\Len.StronglyTypedId\Len.StronglyTypedId.csproj" />
+	</ItemGroup>
+
+</Project>

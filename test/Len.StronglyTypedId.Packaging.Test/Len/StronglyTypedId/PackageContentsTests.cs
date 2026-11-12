@@ -14,7 +14,10 @@ namespace Len.StronglyTypedId;
 [Collection(PackedPackagesCollection.Name)]
 public class PackageContentsTests(PackedPackagesFixture fixture)
 {
-    private const string GeneratorsAssemblyEntry = "analyzers/dotnet/cs/Len.StronglyTypedId.Generators.dll";
+    private const string GeneratorsAssemblyEntry = "analyzers/dotnet/roslyn5.9/cs/Len.StronglyTypedId.Generators.dll";
+    private const string GeneratorsAssemblyEntryRoslyn48 = "analyzers/dotnet/roslyn4.8/cs/Len.StronglyTypedId.Generators.dll";
+    private const string GeneratorsAnalyzerDirectory = "analyzers/dotnet/roslyn5.9/cs/";
+    private const string GeneratorsAnalyzerDirectoryRoslyn48 = "analyzers/dotnet/roslyn4.8/cs/";
     private const string GeneratorsPackageId = "Len.StronglyTypedId.Generators";
     private const string MainPackageId = "Len.StronglyTypedId";
     private const string PackageVersion = "1.0.0";
@@ -24,16 +27,64 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     #region 生成器包：使用者能拿到生成器
 
     /// <summary>
-    /// 生成器程序集必须落在 <c>analyzers/dotnet/cs/</c> 下，这是 Roslyn 加载分析器 / 源生成器的约定目录，放错目录（比如落到
-    /// <c>lib/</c>）使用者就完全拿不到生成器。
+    /// 生成器程序集必须同时落在两个版本目录下：<c>roslyn5.9</c> 供 SDK 10.0.4xx，<c>roslyn4.8</c> 供
+    /// SDK 8 / 9 / 10.0.2xx。这是 Roslyn 分析器多目标机制的约定：SDK 按 <c>CompilerApiVersion</c> 挑选
+    /// 「≤ 当前编译器版本的最高目录」，缺了低版本目录时低版本 SDK 直接 CS9057 并静默丢弃生成器。
     /// </summary>
     [Fact]
-    public void GeneratorsPackage_Should_PlaceAssemblyUnderAnalyzersDirectory()
+    public void GeneratorsPackage_Should_PlaceAssemblyUnderBothVersionedDirectories()
     {
         var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
 
         entries.Should().Contain(GeneratorsAssemblyEntry,
-            "生成器程序集必须落在 analyzers/dotnet/cs/ 下才会被 Roslyn 加载");
+            "SDK 10.0.4xx（Roslyn 5.9）只会选中 roslyn5.9 目录");
+        entries.Should().Contain(GeneratorsAssemblyEntryRoslyn48,
+            "SDK 8 / 9 / 10.0.2xx 加载不了 5.9 编译的分析器，必须提供 roslyn4.8 那一份");
+    }
+
+    /// <summary>
+    /// 分析器目录必须带 Roslyn 版本段。
+    /// </summary>
+    /// <remarks>
+    /// 无版本目录（<c>analyzers/dotnet/cs/</c>）不参与版本选择，低版本 SDK 会报 CS9057 后静默丢弃生成器，
+    /// 用户看到的是「不包含 Create 的定义」。目录名写错（如就近取整成 roslyn5.0）则高版本 SDK 也会拒载。
+    /// </remarks>
+    [Fact]
+    public void GeneratorsPackage_Should_UseVersionedAnalyzerDirectory()
+    {
+        var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
+
+        entries.Should().NotContain(entry => entry.StartsWith("analyzers/dotnet/cs/", StringComparison.Ordinal),
+            "无版本目录不参与 Roslyn 的版本选择，低版本 SDK 会静默丢弃生成器");
+        entries.Should().Contain(entry => entry.StartsWith("analyzers/dotnet/roslyn", StringComparison.Ordinal),
+            "分析器目录必须带 Roslyn 版本段");
+    }
+
+    /// <summary>
+    /// 两份产物引用的 Roslyn 版本必须与各自目录名相符：<c>roslyn4.8</c> 里是 4.8，<c>roslyn5.9</c> 里是 5.9。
+    /// </summary>
+    /// <remarks>
+    /// 目录名与内容不符是最难查的形态：SDK 按目录名选中它，编译器再按内容版本拒载（CS9057），
+    /// 症状与「目录根本不存在」一样，但排查时容易被目录名误导。
+    /// </remarks>
+    [Theory]
+    [InlineData(GeneratorsAssemblyEntryRoslyn48, 4, 8)]
+    [InlineData(GeneratorsAssemblyEntry, 5, 9)]
+    public void GeneratorsAssembly_Should_ReferenceMatchingRoslynVersion(string entry, int major, int minor)
+    {
+        var image = PackedPackagesFixture.ReadEntryBytes(fixture.GeneratorsPackagePath, entry);
+
+        using var peReader = new PEReader(ImmutableArray.Create(image));
+        var metadata = peReader.GetMetadataReader();
+
+        var codeAnalysis = metadata.AssemblyReferences
+            .Select(handle => metadata.GetAssemblyReference(handle))
+            .Single(reference => metadata.GetString(reference.Name) == "Microsoft.CodeAnalysis");
+
+        codeAnalysis.Version.Major.Should().Be(major,
+            $"{entry} 必须编译在 Roslyn {major}.{minor} 上，否则目录名与内容不符");
+        codeAnalysis.Version.Minor.Should().Be(minor,
+            $"{entry} 必须编译在 Roslyn {major}.{minor} 上，否则目录名与内容不符");
     }
 
     /// <summary>
@@ -81,8 +132,8 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
     }
 
     /// <summary>
-    /// 分析器目录里只允许出现生成器程序集本身。该目录是 Roslyn 的加载面，多放一个文件就等于多让一份
-    /// 代码进入使用者的编译过程；<c>IndexRange</c> 是源码包（不产生运行期程序集），所以「只有一个 dll」
+    /// 每个分析器目录里只允许出现生成器程序集本身。该目录是 Roslyn 的加载面，多放一个文件就等于多让一份
+    /// 代码进入使用者的编译过程；<c>PolySharp</c> 是源码包（不产生运行期程序集），所以「每个目录只有一个 dll」
     /// 正是当前的预期形态。
     /// </summary>
     [Fact]
@@ -91,9 +142,14 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
         var entries = PackedPackagesFixture.ReadEntries(fixture.GeneratorsPackagePath);
 
         entries
-            .Where(entry => entry.StartsWith("analyzers/dotnet/cs/", StringComparison.Ordinal))
+            .Where(entry => entry.StartsWith(GeneratorsAnalyzerDirectory, StringComparison.Ordinal))
             .Should().BeEquivalentTo([GeneratorsAssemblyEntry],
-                "分析器目录里只应有生成器程序集；新增文件必须在此处显式登记");
+                "roslyn5.9 目录里只应有生成器程序集；新增文件必须在此处显式登记");
+
+        entries
+            .Where(entry => entry.StartsWith(GeneratorsAnalyzerDirectoryRoslyn48, StringComparison.Ordinal))
+            .Should().BeEquivalentTo([GeneratorsAssemblyEntryRoslyn48],
+                "roslyn4.8 目录里只应有生成器程序集；新增文件必须在此处显式登记");
     }
 
     /// <summary>
@@ -136,7 +192,7 @@ public class PackageContentsTests(PackedPackagesFixture fixture)
 
     /// <summary>
     /// 生成器程序集的引用必须全部来自 Roslyn / BCL。分析器目录里只有这一个 dll，任何第三方运行期依赖
-    /// 都会在使用者编译期变成 <c>FileNotFoundException</c>，<c>IndexRange</c> 之所以安全，是因为它是
+    /// 都会在使用者编译期变成 <c>FileNotFoundException</c>，<c>PolySharp</c> 之所以安全，是因为它是
     /// 源码包（只提供 polyfill 源码，不产生程序集引用）。
     /// </summary>
     [Fact]

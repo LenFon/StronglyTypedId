@@ -391,6 +391,54 @@ public class StronglyTypedIdBehaviorTests
     }
 
     /// <summary>
+    /// 空串基元 + 前缀：<c>ToString()</c> 写出裸前缀，必须能读回。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>Create("")</c> 是合法的（<c>Create</c> 只包装给定值），而它的规范文本形就是裸前缀。
+    /// 解析条件曾要求「剥离后长度 &gt; 0」，于是裸前缀被拒 —— 写出去就读不回来，JSON / Newtonsoft /
+    /// TypeConverter 三条路径全部失败，也违反「<c>Parse(id.ToString())</c> 总能往返」的承诺。
+    /// <para>
+    /// 宽松读下裸空串仍须拒绝（文档承诺 <c>string</c> 基元的 <c>TryParse</c> 不接受空串），
+    /// 故判据是「真的剥掉了前缀」而不是「剥离后可以为空」。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Prefix_Should_RoundTripEmptyString_ForLenient()
+    {
+        var id = PrefixedStringId.Create(string.Empty);
+
+        id.ToString().Should().Be("ord_");
+
+        PrefixedStringId.TryParse(id.ToString(), null, out var parsed).Should().BeTrue();
+        parsed.Value.Should().BeEmpty();
+        PrefixedStringId.Parse(id.ToString(), null).Value.Should().BeEmpty();
+
+        // 裸空串没有前缀可剥，仍按 string 基元的既定规则拒绝。
+        PrefixedStringId.TryParse(string.Empty, null, out _).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 空串基元 + 严格前缀：裸前缀同样必须能读回。
+    /// </summary>
+    /// <remarks>
+    /// 严格模式的前缀守卫已确认前缀存在，剥离后任何长度都合法；若仍要求非空，
+    /// <c>StrictPrefixedStringId.Create("")</c> 的文本形同样写出去就读不回来。
+    /// </remarks>
+    [Fact]
+    public void Prefix_Should_RoundTripEmptyString_ForStrict()
+    {
+        var id = StrictPrefixedStringId.Create(string.Empty);
+
+        id.ToString().Should().Be("ord_");
+
+        StrictPrefixedStringId.TryParse(id.ToString(), null, out var parsed).Should().BeTrue();
+        parsed.Value.Should().BeEmpty();
+
+        // 严格模式仍拒绝缺前缀的裸空串。
+        StrictPrefixedStringId.TryParse(string.Empty, null, out _).Should().BeFalse();
+    }
+
+    /// <summary>
     /// N3：配置 <c>ExceptionType</c> 后，<c>Create</c> 的验证失败抛该异常而不是 <see cref="ArgumentException"/>。
     /// </summary>
     [Fact]

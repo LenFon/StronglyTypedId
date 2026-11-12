@@ -233,4 +233,130 @@ public class StronglyTypedIdAnalyzerIntegrationTests
 
 
     #endregion
+
+    #region 泛型容器里的 Id 拿不到集成代码（STIA0028）
+
+    /// <summary>
+    /// 泛型容器：核心成员照常生成，但集成全部跳过，必须可见地提示。
+    /// </summary>
+    [Theory]
+    [InlineData("class")]
+    [InlineData("struct")]
+    [InlineData("record")]
+    [InlineData("interface")]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenIdIsInGenericContainer(string containerKeyword)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial {{containerKeyword}} Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.GenericContainerSkipsIntegrations)
+            .WithArguments("OrderId", "Container")
+            .WithSpan(8, 34, 8, 41);
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 多层嵌套：只要链上任意一层带类型参数就报，容器名取直接包含类型。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenOuterContainerIsGeneric()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Outer<T>
+            {
+                public partial class Inner
+                {
+                    [StronglyTypedId]
+                    public partial record struct OrderId(Guid Value);
+                }
+            }
+            """";
+
+        var expected = Verify.Diagnostic(Descriptors.GenericContainerSkipsIntegrations)
+            .WithArguments("OrderId", "Inner")
+            .WithSpan(10, 38, 10, 45);
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 非泛型容器不报：集成照常生成。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenContainerIsNotGeneric()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Container
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 逐类型显式关掉全部集成时不报：那时没有集成可丢，警告只是噪声。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenAllIntegrationsAreDisabled()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 程序集级默认关掉全部集成时同样不报。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenAssemblyDefaultDisablesAllIntegrations()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Integrations = Len.StronglyTypedId.StronglyTypedIdIntegrations.None)]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Container<T>
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(Guid Value);
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    #endregion
 }

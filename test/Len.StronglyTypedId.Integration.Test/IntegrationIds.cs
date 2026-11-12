@@ -44,11 +44,14 @@ public partial record struct ValidatedIntegrationGuidId(Guid Value)
 
 // 泛型容器里的 Id：转换器类照常生成，但 [JsonConverter] 特性无法引用含类型参数的转换器（CS0416），
 // 且集成注册入口会跳过它（开放泛型不能作类型实参）。JSON 支持因此只能按闭合类型手动注册。
+// 本夹具刻意保留集成（下面的用例要断言转换器类确实生成了），故用 pragma 静音 STIA0028。
+#pragma warning disable STIA0028
 public partial class IntegrationBox<T>
 {
     [StronglyTypedId]
     public partial record struct BoxedGuidId(Guid Value);
 }
+#pragma warning restore STIA0028
 
 // 对象 JSON 形：线上报文是 {"value":"<guid>"}。OpenAPI 若仍按裸基元发 schema，
 // 生成的客户端会按字符串收发，与服务端实际报文不符。

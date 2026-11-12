@@ -556,6 +556,188 @@ public class AnyIdGeneratorTests
         id.Value.Should().NotBe(Guid.Empty);
     }
 
+    #region 非泛型重载（运行时 Type）
+
+    /// <summary>
+    /// <c>Ids(Type, count)</c> 是 <c>Create(Type)</c> 的批量形式。
+    /// </summary>
+    [Fact]
+    public void Ids_WithType_Should_ReturnRequestedCount()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261109 });
+
+        var ids = generator.Ids(typeof(GuidId), 5);
+
+        ids.Should().HaveCount(5);
+        ids.Should().AllBeOfType<GuidId>();
+    }
+
+    /// <summary>
+    /// 批量形式同样拆可空外壳，与单值形式一致。
+    /// </summary>
+    [Fact]
+    public void Ids_WithType_Should_UnwrapNullableIdType()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261109 });
+
+        var ids = generator.Ids(typeof(GuidId?), 3);
+
+        ids.Should().AllBeOfType<GuidId>();
+    }
+
+    [Fact]
+    public void Ids_WithType_Should_RejectNullType()
+    {
+        var generator = new AnyIdGenerator();
+
+        var act = () => generator.Ids(null!, 1);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Ids_WithType_Should_RejectNegativeCount()
+    {
+        var generator = new AnyIdGenerator();
+
+        var act = () => generator.Ids(typeof(GuidId), -1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("count");
+    }
+
+    /// <summary>
+    /// 非泛型 <c>Register</c> 覆盖默认取值生成。
+    /// </summary>
+    [Fact]
+    public void Register_WithType_Should_OverrideGeneration()
+    {
+        var known = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var generator = new AnyIdGenerator();
+
+        generator.Register(typeof(GuidId), () => GuidId.Create(known));
+
+        generator.Create(typeof(GuidId)).Should().Be(GuidId.Create(known));
+    }
+
+    /// <summary>
+    /// 非泛型 <c>Register</c> 也拆可空外壳：否则注册了 <c>OrderId?</c> 却永远命中不到。
+    /// </summary>
+    [Fact]
+    public void Register_WithType_Should_UnwrapNullableIdType()
+    {
+        var known = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var generator = new AnyIdGenerator();
+
+        generator.Register(typeof(GuidId?), () => GuidId.Create(known));
+
+        generator.Create(typeof(GuidId)).Should().Be(GuidId.Create(known));
+    }
+
+    [Fact]
+    public void Register_WithType_Should_RejectNullArguments()
+    {
+        var generator = new AnyIdGenerator();
+
+        var nullType = () => generator.Register(null!, () => GuidId.Create(Guid.Empty));
+        var nullFactory = () => generator.Register(typeof(GuidId), null!);
+
+        nullType.Should().Throw<ArgumentNullException>().WithParameterName("idType");
+        nullFactory.Should().Throw<ArgumentNullException>().WithParameterName("factory");
+    }
+
+    /// <summary>
+    /// 静态门面的非泛型重载与泛型版本走同一个共享生成器：注册后 <c>Any.Create</c> 与 <c>Any.Id</c> 看到同一个值。
+    /// </summary>
+    [Fact]
+    public void Any_Create_Should_UseSharedGenerator()
+    {
+        var known = Guid.Parse("11111111-2222-3333-4444-555555555555");
+
+        try
+        {
+            Any.Register(typeof(GuidId), () => GuidId.Create(known));
+
+            Any.Create(typeof(GuidId)).Should().Be(GuidId.Create(known));
+            Any.Id<GuidId>().Value.Should().Be(known);
+        }
+        finally
+        {
+            Any.Reset();
+        }
+    }
+
+    /// <summary>
+    /// 静态门面的批量非泛型重载。
+    /// </summary>
+    [Fact]
+    public void Any_Ids_WithType_Should_ReturnRequestedCount()
+    {
+        try
+        {
+            var ids = Any.Ids(typeof(GuidId), 4);
+
+            ids.Should().HaveCount(4);
+            ids.Should().AllBeOfType<GuidId>();
+        }
+        finally
+        {
+            Any.Reset();
+        }
+    }
+
+    /// <summary>
+    /// 静态门面的非泛型注册同样要在 <c>Reset</c> 竞争下不丢失，与泛型版本共用同一套「写后复查」逻辑。
+    /// </summary>
+    [Fact]
+    public void Any_Register_WithType_Should_NotLoseRegistration_WhenRacingWithReset()
+    {
+        var known = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        Exception? failure = null;
+
+        try
+        {
+            var registrar = new Thread(() =>
+            {
+                try
+                {
+                    for (var index = 0; index < 200; index++)
+                    {
+                        Any.Register(typeof(GuidId), () => GuidId.Create(known));
+                    }
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
+            });
+
+            var resetter = new Thread(() =>
+            {
+                for (var index = 0; index < 200; index++)
+                {
+                    Any.Reset();
+                }
+            });
+
+            registrar.Start();
+            resetter.Start();
+            registrar.Join();
+            resetter.Join();
+
+            failure.Should().BeNull();
+
+            Any.Reset();
+            Any.Register(typeof(GuidId), () => GuidId.Create(known));
+            Any.Create(typeof(GuidId)).Should().Be(GuidId.Create(known));
+        }
+        finally
+        {
+            Any.Reset();
+        }
+    }
+
+    #endregion
+
     [Theory]
     [InlineData(0, 100)]
     [InlineData(8, 0)]
@@ -587,19 +769,60 @@ public class AnyIdGeneratorTests
     }
 
     /// <summary>
-    /// 自定义基元没有内置生成规则，且调用方没提供工厂时，必须给出可操作的提示，
-    /// 而不是让 <c>Type.GetTypeCode</c> 落到默认分支后抛一个看不出原因的异常。
+    /// 自定义基元的 <c>TryParse</c> 能接受常见文本形态时，零配置即可生成，不需要注册工厂。
     /// </summary>
+    /// <remarks>
+    /// <c>Email.TryParse</c> 只要求含 <c>@</c>，启发式的最后一种候选（<c>local@domain.com</c>）必然命中。
+    /// </remarks>
     [Fact]
-    public void Id_Should_ThrowHelpfulError_ForCustomPrimitiveWithoutFactory()
+    public void Id_Should_GenerateCustomPrimitive_WithoutFactory()
     {
         var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 1 });
 
-        var act = () => generator.Create(typeof(EmailId));
+        generator.Id<EmailId>().Value.Value.Should().Contain("@");
+    }
+
+    /// <summary>
+    /// 第三方自定义基元同样零配置：ULID 只接受 26 位 Crockford Base32，启发式第 2 种候选命中。
+    /// </summary>
+    [Fact]
+    public void Id_Should_GenerateThirdPartyPrimitive_WithoutFactory()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 1 });
+
+        var ids = generator.Ids<UlidId>(10);
+
+        ids.Should().OnlyHaveUniqueItems("候选文本是随机的，不能退化成固定常量");
+        ids.Should().AllSatisfy(id => id.Value.ToString().Should().HaveLength(26));
+    }
+
+    /// <summary>
+    /// 格式无法推断（固定前缀 + 固定长度）时，错误消息必须点名类型并给出注册工厂的写法，
+    /// 而不是含糊的「不支持」。
+    /// </summary>
+    [Fact]
+    public void Id_Should_ThrowHelpfulError_ForStrictCustomPrimitive()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 1 });
+
+        var act = () => generator.Create(typeof(StrictCodeId));
 
         act.Should().Throw<NotSupportedException>()
-            .WithMessage("*Email*")
+            .WithMessage("*StrictCode*")
+            .WithMessage("*AnyIdGenerator.Register*")
             .WithMessage("*PrimitiveValueFactory*");
+    }
+
+    /// <summary>
+    /// 启发式候选全部来自 <c>DeterministicRandom</c>，同一个种子必须得到同一串值。
+    /// </summary>
+    [Fact]
+    public void Id_Should_BeReproducible_ForCustomPrimitive()
+    {
+        var first = new AnyIdGenerator(new AnyIdOptions { Seed = 20261109 }).Ids<EmailId>(5);
+        var second = new AnyIdGenerator(new AnyIdOptions { Seed = 20261109 }).Ids<EmailId>(5);
+
+        first.Select(static id => id.Value.Value).Should().Equal(second.Select(static id => id.Value.Value));
     }
 
     /// <summary>

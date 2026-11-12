@@ -55,6 +55,28 @@ public class StronglyTypedIdAnalyzerValidatorTests
     }
 
     /// <summary>
+    /// 验证器返回 <c>StronglyTypedIdValidationResult</c> 是合法签名，不报 STIA0010。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorReturnsValidationResult()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static StronglyTypedIdValidationResult Validate(Guid value)
+                    => StronglyTypedIdValidationResult.Success;
+            }
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
     /// 验证器方法的参数类型与基元 Id 类型不一致。
     /// </summary>
     [Fact]
@@ -214,6 +236,58 @@ public class StronglyTypedIdAnalyzerValidatorTests
     }
 
     /// <summary>
+    /// 归一化方法重载时按实参类型挑重载，而不是「第一个静态同名方法」。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾取 <c>GetMembers(name).FirstOrDefault(IsStatic)</c>，重载顺序不同就会挑到签名不符的那个，
+    /// 报出 STIA0017（Error 级，直接阻断编译），而生成代码按实参类型绑定、产物完全可编译。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerIsOverloaded()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static int Normalize(int value) => value;
+
+                private static Guid Normalize(Guid value) => value;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 继承来的归一化方法同样被识别。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>GetMembers</c> 只返回声明成员，继承来的归一化方法会被判成「不存在」并报 STIA0017，
+    /// 而生成代码在派生类型里能正常调用它。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerIsInherited()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public abstract partial record BaseId
+            {
+                protected static Guid Normalize(Guid value) => value;
+            }
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record OrderId(Guid Value) : BaseId;
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
     /// 装配级默认归一化要求名为 <c>Normalize</c> 的方法，但本程序集的 Id 没有该方法时应报告 STIA0017。
     /// </summary>
     [Fact]
@@ -233,6 +307,292 @@ public class StronglyTypedIdAnalyzerValidatorTests
             .WithArguments("Normalize", "System.Guid")
             .WithSpan(7, 1, 8, 50);
         await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    #endregion
+
+    #region 验证器 / 归一化方法的绑定形态（STIA0010 / STIA0017）
+
+    /// <summary>
+    /// 验证器带 <c>ref</c> 参数时报告 STIA0010。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据只看「静态 + 参数个数 + 参数类型」，<c>ref</c> / <c>out</c> 被放行，而生成代码写的是
+    /// 裸实参调用 <c>Validate(value)</c>，产物在 5 处报 CS1620（阻断编译）且没有任何 STIA 诊断。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorTakesRefParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(ref Guid value) => value != Guid.Empty;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 验证器带 <c>out</c> 参数时报告 STIA0010（同 <c>ref</c>，调用点必须写修饰符）。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorTakesOutParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(out Guid value)
+                {
+                    value = Guid.Empty;
+                    return true;
+                }
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 验证器的参数类型就是它自己的类型参数时，实参能推断出 <c>T</c>，不报 STIA0010。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾要求「参数个数恰为 1 且不带类型参数」，把 <c>Validate&lt;T&gt;(T value)</c> 误报成 Error，
+    /// 而生成代码 <c>Validate(value)</c> 由编译器正常推断 <c>T := Guid</c>，产物完全可编译。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorIsGenericOverItsParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate<T>(T value) => value is not null;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 验证器的类型参数无法从唯一那个实参推断时报告 STIA0010。
+    /// </summary>
+    /// <remarks>
+    /// <c>Validate&lt;T&gt;(Guid value)</c> 的 <c>T</c> 不出现在参数表里，生成代码 <c>Validate(value)</c> 会 CS0411。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorTypeParameterCannotBeInferred()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate<T>(Guid value) => true;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 验证器第一个参数之后全是可选参数时，实参个数足够，不报 STIA0010。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾要求「参数个数恰为 1」，把 <c>Validate(Guid value, bool strict = true)</c> 误报成 Error，
+    /// 而生成代码 <c>Validate(value)</c> 用默认值补足，产物完全可编译。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorHasOptionalParameters()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value, bool strict = true) => value != Guid.Empty;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 验证器第一个参数之后是 <c>params</c> 时，实参可以一个都不给，不报 STIA0010。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾只放行 <c>IsOptional</c>，把 <c>params</c> 当成必填参数误报成 Error，
+    /// 而生成代码 <c>Validate(value)</c> 传空数组，产物完全可编译。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenValidatorHasParamsParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value, params int[] extra) => value != Guid.Empty;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 归一化方法第一个参数之后是 <c>params</c> 时同样不报 STIA0017。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerHasParamsParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value, params int[] extra) => value;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 验证器第一个参数之后还有必填参数时报告 STIA0010（实参不足，CS7036）。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenValidatorHasRequiredTrailingParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Validator = nameof(Validate))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static bool Validate(Guid value, bool strict) => value != Guid.Empty;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.ValidatorReferenceInvalid)
+            .WithArguments("Validate", "System.Guid")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 归一化方法带 <c>ref</c> 参数时报告 STIA0017。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：与验证器同源，判据漏了 <c>RefKind</c>，生成代码在 5 处报 CS1620 且无 STIA 诊断。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNormalizerTakesRefParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(ref Guid value) => value;
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.NormalizerReferenceInvalid)
+            .WithArguments("Normalize", "System.Guid")
+            .WithSpan(5, 18, 5, 48);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 归一化方法带 <c>in</c> 参数时不报 STIA0017：<c>in</c> 可以省略修饰符，裸实参调用照常绑定。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerTakesInParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(in Guid value) => value;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 归一化方法带可选参数时不报 STIA0017。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerHasOptionalParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static Guid Normalize(Guid value, bool trim = true) => value;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 泛型归一化方法 <c>static T Normalize&lt;T&gt;(T value)</c> 不报 STIA0017：返回类型是类型参数本身，
+    /// 绑定后即基元类型。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenNormalizerIsGenericOverItsParameter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Normalizer = nameof(Normalize))]
+            public partial record struct OrderId(Guid Value)
+            {
+                private static T Normalize<T>(T value) => value;
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
     }
 
     #endregion

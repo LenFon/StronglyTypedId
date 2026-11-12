@@ -86,12 +86,16 @@ public class CustomPrimitiveCodeGeneratorTests
     /// 只实现 <c>IParsable</c> 而不实现 <c>IFormattable</c> 的基元不能调 <c>ToString(null, provider)</c>（CS1501），
     /// 必须退回无参 <c>ToString()</c>。
     /// </summary>
+    /// <remarks>
+    /// 无参 <c>ToString()</c> 绑定到 <c>object.ToString()</c> 时返回类型是 <c>string?</c>，
+    /// 直接交给 <c>WriteStringValue(string)</c> 会在消费方留下 CS8604，故必须补 <c>?? string.Empty</c>。
+    /// </remarks>
     [Fact]
     public void SystemTextJson_Should_UseParameterlessToString_WhenPrimitiveIsNotFormattable()
     {
         var converter = GetGeneratedCode(FormattablePrimitiveSource)["Probe.OrderId.SystemTextJson.g.cs"];
 
-        converter.Should().Contain("writer.WriteStringValue(primitiveId.ToString());");
+        converter.Should().Contain("writer.WriteStringValue(primitiveId.ToString() ?? string.Empty);");
         converter.Should().NotContain("primitiveId.ToString(null,");
     }
 
@@ -132,16 +136,38 @@ public class CustomPrimitiveCodeGeneratorTests
     }
 
     /// <summary>
-    /// 公开实现两参重载的基元必须继续按类型名直呼：这条路径的产物逐字节不变。
+    /// 公开实现两参重载的基元必须继续按类型名直呼，不改成接口强制转换。
     /// </summary>
+    /// <remarks>
+    /// 自定义基元的两参 <c>ToString</c> 调用补 <c>?? string.Empty</c>：它可以在运行期返回
+    /// <see langword="null"/>，而 Id 的 <c>ToString(string?, IFormatProvider?)</c> 标注为非可空。
+    /// 内置基元不加这一档，产物逐字节不变（见 <c>ToString_Should_NotAddNullFallback_ForBuiltInPrimitive</c>）。
+    /// </remarks>
     [Fact]
     public void ToString_Should_CallDirectly_WhenPrimitiveExposesPublicOverload()
     {
         var generated = GetGeneratedCode()[CoreHint];
 
         generated.Should().Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;");
-        generated.Should().Contain("Value.ToString(format, formatProvider);");
+        generated.Should().Contain("Value.ToString(format, formatProvider) ?? string.Empty;");
         generated.Should().NotContain("((global::System.IFormattable)Value)");
+    }
+
+    /// <summary>
+    /// 内置基元的两参 <c>ToString</c> 不加 null 兜底：它们的 <c>IFormattable</c> 实现从不返回
+    /// <see langword="null"/>，加这一档只会让产物无谓变化。
+    /// </summary>
+    /// <remarks>
+    /// 与上一条成对：兜底只对自定义基元生效，内置基元的产物逐字节不变。
+    /// </remarks>
+    [Fact]
+    public void ToString_Should_NotAddNullFallback_ForBuiltInPrimitive()
+    {
+        var generated = GetGeneratedCode(BuiltInInstanceSource)["Len.StronglyTypedId.OrderId.g.cs"];
+
+        generated.Should().Contain("public string ToString(string? format, global::System.IFormatProvider? formatProvider) =>");
+        generated.Should().Contain("Value.ToString(format, formatProvider);");
+        generated.Should().NotContain("Value.ToString(format, formatProvider) ?? string.Empty;");
     }
 
     /// <summary>
@@ -168,6 +194,35 @@ public class CustomPrimitiveCodeGeneratorTests
         var errors = emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
 
         errors.Should().BeEmpty(string.Join("\n", errors.Select(error => error.ToString())));
+    }
+
+    /// <summary>
+    /// 自定义基元没有重写 <c>ToString()</c> 时，生成的 STJ 字典键写出路径不能留下 CS8604。
+    /// </summary>
+    /// <remarks>
+    /// 未重写时 <c>primitiveId.ToString()</c> 绑定到 <c>object.ToString()</c>，返回类型是 <c>string?</c>，
+    /// 直接交给 <c>WritePropertyName(string)</c> 会报 CS8604。开 <c>TreatWarningsAsErrors</c> 的消费方
+    /// 会因此构建失败，故生成代码必须补 <c>?? string.Empty</c>。
+    /// </remarks>
+    [Fact]
+    public void ToString_Should_NotProduceNullableWarning_WhenPrimitiveDoesNotOverrideToString()
+    {
+        var compilation = CreateCompilation(NoToStringOverridePrimitiveSource, dapper: false, efCore: false);
+
+        CSharpGeneratorDriver
+            .Create(new StronglyTypedIdGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+
+        using var stream = new MemoryStream();
+        var emit = outputCompilation.Emit(stream);
+
+        var nullableWarnings = emit.Diagnostics
+            .Where(d => d.Id is "CS8602" or "CS8604" or "CS8603")
+            .ToArray();
+
+        nullableWarnings.Should().BeEmpty(string.Join("\n", nullableWarnings.Select(warning => warning.ToString())));
     }
 
     /// <summary>
@@ -263,7 +318,7 @@ public class CustomPrimitiveCodeGeneratorTests
         var converter = GetGeneratedCode(DapperSource, efCore: true)["Probe.OrderId.EntityFrameworkCore.g.cs"];
 
         converter.Should().Contain("ValueConverter<global::Probe.OrderId, string>");
-        converter.Should().Contain("base(v => v.Value.ToString(), val => CreateFromProvider(val))");
+        converter.Should().Contain("base(v => v.Value.ToString() ?? string.Empty, val => CreateFromProvider(val))");
         converter.Should().Contain("private static global::Probe.OrderId CreateFromProvider(string val)");
         converter.Should().Contain("global::Probe.Email.TryParse(val, global::System.Globalization.CultureInfo.InvariantCulture, out var value)");
         converter.Should().Contain("global::Probe.OrderId.TryCreate(value, out var id)");
@@ -305,7 +360,7 @@ public class CustomPrimitiveCodeGeneratorTests
     {
         var handler = GetGeneratedCode(DapperSource, dapper: true)["Probe.OrderId.Dapper.g.cs"];
 
-        handler.Should().Contain("parameter.Value = value.Value.ToString();");
+        handler.Should().Contain("parameter.Value = value.Value.ToString() ?? string.Empty;");
     }
 
     /// <summary>
@@ -327,19 +382,19 @@ public class CustomPrimitiveCodeGeneratorTests
             .Should().Contain("public override string ToString() => Value?.ToString() ?? string.Empty;");
 
         generated["Probe.OrderId.SystemTextJson.g.cs"]
-            .Should().Contain("writer.WriteStringValue((primitiveId == null ? null : primitiveId.ToString()));");
+            .Should().Contain("writer.WriteStringValue((primitiveId == null ? null : primitiveId.ToString() ?? string.Empty));");
 
         generated["Probe.OrderId.NewtonsoftJson.g.cs"]
-            .Should().Contain("writer.WriteValue((primitiveId == null ? null : primitiveId.ToString()));");
+            .Should().Contain("writer.WriteValue((primitiveId == null ? null : primitiveId.ToString() ?? string.Empty));");
 
         generated["Probe.OrderId.Dapper.g.cs"]
-            .Should().Contain("parameter.Value = value.Value is null ? (object)global::System.DBNull.Value : value.Value.ToString();");
+            .Should().Contain("parameter.Value = value.Value is null ? (object)global::System.DBNull.Value : value.Value.ToString() ?? string.Empty;");
 
         generated["Probe.OrderId.EntityFrameworkCore.g.cs"]
-            .Should().Contain("base(v => (v.Value == null ? null : v.Value.ToString()), val =>");
+            .Should().Contain("base(v => (v.Value == null ? null : v.Value.ToString() ?? string.Empty), val =>");
 
         generated["Probe.OrderId.Protobuf.g.cs"]
-            .Should().Contain("(id.Value == null ? null : id.Value.ToString())");
+            .Should().Contain("(id.Value == null ? null : id.Value.ToString() ?? string.Empty)");
     }
 
     /// <summary>
@@ -595,6 +650,38 @@ public class CustomPrimitiveCodeGeneratorTests
         [StronglyTypedId]
         [StronglyTypedIdInstance("Empty", "00000000-0000-0000-0000-000000000000")]
         public partial record struct OrderId(Guid Value);
+        """;
+
+    /// <summary>
+    /// 只实现 <c>IParsable</c>、<b>没有</b>重写 <c>ToString()</c> 的自定义基元。
+    /// </summary>
+    /// <remarks>
+    /// 未重写时 <c>ToString()</c> 绑定到 <c>object.ToString()</c>，返回类型是 <c>string?</c>。
+    /// 这是 CS8604 的触发条件，也是 D6 的复现源码。
+    /// </remarks>
+    private const string NoToStringOverridePrimitiveSource = """
+        using System;
+        using Len.StronglyTypedId;
+
+        namespace Probe;
+
+        public readonly record struct Email(string Value) : IParsable<Email>, IComparable<Email>, IComparable
+        {
+            public static Email Parse(string s, IFormatProvider? provider) => new(s);
+
+            public static bool TryParse(string? s, IFormatProvider? provider, out Email result)
+            {
+                result = new Email(s ?? string.Empty);
+                return s is not null;
+            }
+
+            public int CompareTo(Email other) => string.CompareOrdinal(Value, other.Value);
+
+            public int CompareTo(object? obj) => obj is Email other ? CompareTo(other) : throw new ArgumentException();
+        }
+
+        [StronglyTypedId]
+        public partial record struct OrderId(Email Value);
         """;
 
     private const string DapperSource = """

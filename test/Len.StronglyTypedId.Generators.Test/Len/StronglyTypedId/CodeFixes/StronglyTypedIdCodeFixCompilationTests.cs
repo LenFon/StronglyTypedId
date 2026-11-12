@@ -108,6 +108,27 @@ public class StronglyTypedIdCodeFixCompilationTests
             Descriptors.TypeMustBeRecord,
             TypeDeclaration());
 
+    /// <summary>STIA0002：<c>static class</c> → <c>record</c>，且必须摘掉 <c>static</c>。</summary>
+    /// <remarks>
+    /// 缺陷回归：修复曾原样搬运修饰符，产出 <c>public static record OrderId</c>，record 不允许
+    /// <c>static</c>（CS0106），一条诊断被换成一条编译错误。
+    /// </remarks>
+    [Fact]
+    public Task TypeMustBeRecord_FromStaticClass_Should_ProduceCompilableCode()
+        => AssertCompilable(
+            """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public static class OrderId
+            {
+            }
+            """,
+            Descriptors.TypeMustBeRecord,
+            TypeDeclaration());
+
     /// <summary>STIA0004：包进命名空间。</summary>
     /// <remarks>
     /// 源码必须自带 <c>using Len.StronglyTypedId;</c>：STIA0004 的修复只负责包命名空间，

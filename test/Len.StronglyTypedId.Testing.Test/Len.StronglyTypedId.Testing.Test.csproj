@@ -11,6 +11,16 @@
 		<PackageReference Include="FluentAssertions" />
 		<!-- Bogus 适配包的被测依赖：Faker&lt;T&gt; 是它的公开 API 的一部分。 -->
 		<PackageReference Include="Bogus" />
+		<!--
+		     ULID：第三方自定义基元的零配置证据。它只接受 26 位 Crockford Base32 文本，
+		     正好用来验证启发式候选能覆盖「格式宽松但非内置」的类型。
+		-->
+		<PackageReference Include="Ulid" />
+		<!--
+		     卸载用例要在内存里编译一份插件程序集，需要 Roslyn 的编译 API。只引 CSharp 而非 CSharp.Workspaces：
+		     用例只用 CSharpCompilation，不用 Workspace。
+		-->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
 	</ItemGroup>
 
 	<ItemGroup>

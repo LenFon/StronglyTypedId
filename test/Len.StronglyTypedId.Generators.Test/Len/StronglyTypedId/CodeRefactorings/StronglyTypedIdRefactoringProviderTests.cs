@@ -311,6 +311,137 @@ public class StronglyTypedIdRefactoringProviderTests
     }
 
     /// <summary>
+    /// 包含类型不是 <c>partial</c>：生成器要把产物嵌回去，重开非 partial 容器是 CS0260，
+    /// 分析器对同一写法报 STIA0009（Error）。文档承诺「正向重构只在该结果确实是合法 Id 时才提供」。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：判据曾只看 record 自身（参数、abstract、泛型、基元），漏掉容器链，于是重构会产出
+    /// 一份立刻被 STIA0009 拒绝的声明。
+    /// </remarks>
+    [Fact]
+    public async Task Refactoring_ShouldNotBeOffered_WhenContainingTypeIsNotPartial()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public class Outer
+            {
+                public record OrderId(Guid Value);
+            }
+            """;
+
+        (await Verify.CollectRefactoringsAsync(code)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 容器链里任意一层不是 <c>partial</c> 都不提供：生成器要逐层重开。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_ShouldNotBeOffered_WhenOuterContainerIsNotPartial()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public class Outer
+            {
+                public partial class Inner
+                {
+                    public record OrderId(Guid Value);
+                }
+            }
+            """;
+
+        (await Verify.CollectRefactoringsAsync(code)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 容器是 <c>partial</c> 时照常提供，避免上面的判据把合法写法一并挡掉。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_ShouldBeOffered_WhenContainingTypeIsPartial()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Outer
+            {
+                public record OrderId(Guid Value);
+            }
+            """;
+
+        var titles = (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title);
+
+        titles.Should().Contain("Convert to strongly typed id");
+    }
+
+    /// <summary>
+    /// record 自身是 <c>file</c> 本地类型时不提供：生成器无法在另一个文件里重开它，分析器报 STIA0025。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：容器链循环只查外层，record 自己这一层漏判，于是重构会产出一份立刻被 STIA0025 拒绝的声明。
+    /// </remarks>
+    [Fact]
+    public async Task Refactoring_ShouldNotBeOffered_WhenRecordIsFileLocal()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            file partial record OrderId(Guid Value);
+            """;
+
+        (await Verify.CollectRefactoringsAsync(code)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 主构造参数可空时不提供：分析器对 <c>string? Value</c> 报 STIA0006（Error），生成器也直接跳过该 Id。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>IsConvertible</c> 检查了「单参数 + 名为 Value + 非抽象 / 非 file / 非泛型 + 容器链 partial +
+    /// 基元受支持」，唯独漏了「参数不可空」，于是重构把一条诊断换成了另一条。
+    /// </remarks>
+    [Theory]
+    [InlineData("string?")]
+    [InlineData("System.Guid?")]
+    public async Task Refactoring_ShouldNotBeOffered_WhenParameterIsNullable(string parameterType)
+    {
+        var code = $$"""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial record OrderId({{parameterType}} Value);
+            """;
+
+        (await Verify.CollectRefactoringsAsync(code)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// 参数不可空时照常提供（未回归）。
+    /// </summary>
+    [Fact]
+    public async Task Refactoring_ShouldBeOffered_WhenParameterIsNotNullable()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial record OrderId(Guid Value);
+            """;
+
+        (await Verify.CollectRefactoringsAsync(code)).Select(action => action.Title)
+            .Should().Contain("Convert to strongly typed id");
+    }
+
+    /// <summary>
     /// 已经是强类型 Id：不再提供正向重构。
     /// </summary>
     [Fact]

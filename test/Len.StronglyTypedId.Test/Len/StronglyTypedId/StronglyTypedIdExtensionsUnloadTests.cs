@@ -36,6 +36,29 @@ public class StronglyTypedIdExtensionsUnloadTests
 
             public static PluginId Create(Guid value) => new(value);
 
+            public int CompareTo(PluginId other) => Value.CompareTo(other.Value);
+
+            public static bool operator <(PluginId left, PluginId right) => left.Value.CompareTo(right.Value) < 0;
+
+            public static bool operator <=(PluginId left, PluginId right) => left.Value.CompareTo(right.Value) <= 0;
+
+            public static bool operator >(PluginId left, PluginId right) => left.Value.CompareTo(right.Value) > 0;
+
+            public static bool operator >=(PluginId left, PluginId right) => left.Value.CompareTo(right.Value) >= 0;
+
+            public static bool TryCreate(Guid value, out PluginId result)
+            {
+                result = new(value);
+                return true;
+            }
+
+            public static bool TryCreate(Guid value, out PluginId result, out StronglyTypedIdValidationResult validation)
+            {
+                validation = StronglyTypedIdValidationResult.Success;
+                result = new(value);
+                return true;
+            }
+
             public static PluginId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
 
             public static bool TryParse(string? s, IFormatProvider? provider, out PluginId result)

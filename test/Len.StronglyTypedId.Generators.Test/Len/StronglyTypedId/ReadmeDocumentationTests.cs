@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Len.StronglyTypedId.CodeFixes;
 using Len.StronglyTypedId.DocGen;
@@ -13,7 +14,7 @@ namespace Len.StronglyTypedId;
 /// 区块按文件分配：README 只留导览级两张表，诊断表在 <c>docs/diagnostics.md</c>，生成文件表在 <c>docs/generated-code.md</c>。
 /// 新增或搬动区块时，这里的 <c>InlineData</c> 与 <see cref="Program"/> 的 targets 必须一起改。
 /// </remarks>
-public class ReadmeDocumentationTests
+public partial class ReadmeDocumentationTests
 {
     [Theory]
     [InlineData("README.md", "en", "primitive-types,generated-code")]
@@ -219,6 +220,40 @@ public class ReadmeDocumentationTests
             registration.FileNames.Zh.Should().NotBeNullOrWhiteSpace($"{registration.AssemblyName} 的产物文件名缺少中文");
         }
     }
+
+    /// <summary>
+    /// 英文页里由 DocGen 生成的区块不得出现中日韩文字。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>Features.Core</c> 曾把同一个中文串同时塞进 <see cref="DocText"/> 的两个槽位，
+    /// 于是英文功能索引页整张表都是中文。当时没有任何测试能发现 —— <c>Document_Should_MatchGeneratedTables</c>
+    /// 只比对「文件与渲染结果一致」，两边同时是中文时它照样通过。
+    /// <para>
+    /// 只检查生成区块内部：区块外的「中文」链接（<c>[中文](zh-CN/…)</c>）是有意保留的。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("README.md")]
+    [InlineData("docs/generated-code.md")]
+    [InlineData("docs/diagnostics.md")]
+    [InlineData("docs/features-index.md")]
+    public void EnglishDocument_Should_NotContainChineseTextInGeneratedBlocks(string fileName)
+    {
+        var text = File.ReadAllText(Path.Combine(RepositoryRoot(), fileName));
+
+        foreach (Match block in GeneratedBlockPattern().Matches(text))
+        {
+            block.Groups["body"].Value.Should().NotMatchRegex(
+                @"[\u4e00-\u9fff]",
+                $"{fileName} 的「{block.Groups["id"].Value}」区块是英文页，不应出现中文");
+        }
+    }
+
+    /// <summary>
+    /// 匹配 <c>&lt;!-- BEGIN GENERATED:id --&gt;</c> 与 <c>&lt;!-- END GENERATED:id --&gt;</c> 之间的内容。
+    /// </summary>
+    [GeneratedRegex(@"<!-- BEGIN GENERATED:(?<id>[\w-]+) -->(?<body>.*?)<!-- END GENERATED:\k<id> -->", RegexOptions.Singleline)]
+    private static partial Regex GeneratedBlockPattern();
 
     /// <summary>
     /// 每个成行的登记项都必须登记文件名：<c>docs/generated-code.md</c> 的「Generated files」表

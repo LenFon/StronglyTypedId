@@ -1,4 +1,4 @@
-﻿// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
+// xUnit1051：本文件中的 CSharpSyntaxTree.ParseText / Emit 等均为测试内同步调用，取消令牌无意义，
 // 统一在此文件禁用该测试框架分析器警告。
 #pragma warning disable xUnit1051
 using System.Collections.Immutable;
@@ -41,6 +41,29 @@ public class StronglyTypedIdInfoTests
                 public int Value => Number;
 
                 public static LegacyId Create(int value) => new(value, string.Empty);
+
+                public int CompareTo(LegacyId other) => Number.CompareTo(other.Number);
+
+                public static bool operator <(LegacyId left, LegacyId right) => left.Number < right.Number;
+
+                public static bool operator <=(LegacyId left, LegacyId right) => left.Number <= right.Number;
+
+                public static bool operator >(LegacyId left, LegacyId right) => left.Number > right.Number;
+
+                public static bool operator >=(LegacyId left, LegacyId right) => left.Number >= right.Number;
+
+                public static bool TryCreate(int value, out LegacyId result)
+                {
+                    result = new(value, string.Empty);
+                    return true;
+                }
+
+                public static bool TryCreate(int value, out LegacyId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    result = new(value, string.Empty);
+                    return true;
+                }
 
                 public static LegacyId Parse(string value, System.IFormatProvider? provider)
                     => new(int.Parse(value, provider), string.Empty);
@@ -86,6 +109,32 @@ public class StronglyTypedIdInfoTests
                 public int Value => Number;
 
                 public static TaggedId Create(int value) => new(value, string.Empty);
+
+                public int CompareTo(TaggedId? other) => other is null ? 1 : Number.CompareTo(other.Number);
+
+                public static bool operator <(TaggedId? left, TaggedId? right) => Compare(left, right) < 0;
+
+                public static bool operator <=(TaggedId? left, TaggedId? right) => Compare(left, right) <= 0;
+
+                public static bool operator >(TaggedId? left, TaggedId? right) => Compare(left, right) > 0;
+
+                public static bool operator >=(TaggedId? left, TaggedId? right) => Compare(left, right) >= 0;
+
+                private static int Compare(TaggedId? left, TaggedId? right)
+                    => left is null ? (right is null ? 0 : -1) : left.CompareTo(right);
+
+                public static bool TryCreate(int value, out TaggedId result)
+                {
+                    result = new(value, string.Empty);
+                    return true;
+                }
+
+                public static bool TryCreate(int value, out TaggedId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    result = new(value, string.Empty);
+                    return true;
+                }
 
                 public static TaggedId Parse(string value, System.IFormatProvider? provider)
                     => new(int.Parse(value, provider), string.Empty);

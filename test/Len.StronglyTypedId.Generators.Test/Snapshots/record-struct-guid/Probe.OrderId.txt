@@ -124,6 +124,22 @@ partial record struct OrderId :
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
     public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)
     {
+        return TryCreate(value, out result, out _);
+    }
+
+    /// <summary>
+    /// 尝试创建包装指定基元值的新强类型 Id，并带回验证器给出的拒绝原因。
+    /// </summary>
+    /// <param name="value">要包装的基元值。</param>
+    /// <param name="result">方法返回 <see langword="true"/> 时创建出的 Id。</param>
+    /// <param name="validation">验证结果；验证器返回 <see langword="bool"/> 时只表达通过与否，不含原因。</param>
+    /// <returns>当 <paramref name="value"/> 可接受时返回 <see langword="true"/>，否则返回 <see langword="false"/>。</returns>
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
+    public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+    {
+        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+
         result = new OrderId(value);
         return true;
     }

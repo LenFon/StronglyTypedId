@@ -404,7 +404,7 @@ public class StronglyTypedIdAnalyzerDeclarationTests
     }
 
     [Fact]
-    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenContainingTypeIsGeneric()
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenContainingTypeIsGeneric()
     {
         var code = """"
             using System;
@@ -418,9 +418,12 @@ public class StronglyTypedIdAnalyzerDeclarationTests
             }
             """";
 
-        // 泛型容器现已放开：重开的 partial 只需复现类型参数表（约束子句可省略），hint 名经净化去掉尖括号，
-        // 因此不再报 STIA0003。这里验证分析器对泛型容器不再产生任何诊断。
-        await Verify.VerifyAnalyzerAsync(code);
+        // 泛型容器本身是允许的：重开的 partial 只需复现类型参数表（约束子句可省略），hint 名经净化去掉尖括号，
+        // 因此不报 STIA0003。但集成代码会被静默跳过，故报 STIA0028 让降级在编译期可见。
+        var expected = Verify.Diagnostic(Descriptors.GenericContainerSkipsIntegrations)
+            .WithSpan(8, 34, 8, 41).WithArguments("OrderId", "Container");
+
+        await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
     [Fact]

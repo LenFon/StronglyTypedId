@@ -51,6 +51,30 @@ public class MetadataIdScannerTests
             {
                 public static MyId Create(global::System.Guid value) => new(value);
 
+                public int CompareTo(MyId other) => Value.CompareTo(other.Value);
+
+                public static bool operator <(MyId left, MyId right) => left.Value.CompareTo(right.Value) < 0;
+
+                public static bool operator <=(MyId left, MyId right) => left.Value.CompareTo(right.Value) <= 0;
+
+                public static bool operator >(MyId left, MyId right) => left.Value.CompareTo(right.Value) > 0;
+
+                public static bool operator >=(MyId left, MyId right) => left.Value.CompareTo(right.Value) >= 0;
+
+                public static bool TryCreate(global::System.Guid value, out MyId result)
+                {
+                    result = new(value);
+                    return true;
+                }
+
+                public static bool TryCreate(global::System.Guid value, out MyId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    result = new(value);
+                    return true;
+                }
+
+
                 public static MyId Parse(string value, global::System.IFormatProvider? provider)
                     => new(global::System.Guid.Parse(value, provider));
 
@@ -142,6 +166,30 @@ public class MetadataIdScannerTests
                 {
                     public static InnerId Create(global::System.Guid value) => new(value);
 
+                    public int CompareTo(InnerId other) => Value.CompareTo(other.Value);
+
+                    public static bool operator <(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) < 0;
+
+                    public static bool operator <=(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) <= 0;
+
+                    public static bool operator >(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) > 0;
+
+                    public static bool operator >=(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) >= 0;
+
+                    public static bool TryCreate(global::System.Guid value, out InnerId result)
+                    {
+                        result = new(value);
+                        return true;
+                    }
+
+                    public static bool TryCreate(global::System.Guid value, out InnerId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                    {
+                        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                        result = new(value);
+                        return true;
+                    }
+
+
                     public static InnerId Parse(string value, global::System.IFormatProvider? provider)
                         => new(global::System.Guid.Parse(value, provider));
 
@@ -179,6 +227,30 @@ public class MetadataIdScannerTests
                     : global::Len.StronglyTypedId.IStronglyTypedId<InnerId, global::System.Guid>
                 {
                     public static InnerId Create(global::System.Guid value) => new(value);
+
+                    public int CompareTo(InnerId other) => Value.CompareTo(other.Value);
+
+                    public static bool operator <(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) < 0;
+
+                    public static bool operator <=(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) <= 0;
+
+                    public static bool operator >(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) > 0;
+
+                    public static bool operator >=(InnerId left, InnerId right) => left.Value.CompareTo(right.Value) >= 0;
+
+                    public static bool TryCreate(global::System.Guid value, out InnerId result)
+                    {
+                        result = new(value);
+                        return true;
+                    }
+
+                    public static bool TryCreate(global::System.Guid value, out InnerId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                    {
+                        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                        result = new(value);
+                        return true;
+                    }
+
 
                     public static InnerId Parse(string value, global::System.IFormatProvider? provider)
                         => new(global::System.Guid.Parse(value, provider));
@@ -268,6 +340,30 @@ public class MetadataIdScannerTests
             {
                 public static OtherId Create(int value) => new(value);
 
+                public int CompareTo(OtherId other) => Value.CompareTo(other.Value);
+
+                public static bool operator <(OtherId left, OtherId right) => left.Value < right.Value;
+
+                public static bool operator <=(OtherId left, OtherId right) => left.Value <= right.Value;
+
+                public static bool operator >(OtherId left, OtherId right) => left.Value > right.Value;
+
+                public static bool operator >=(OtherId left, OtherId right) => left.Value >= right.Value;
+
+                public static bool TryCreate(int value, out OtherId result)
+                {
+                    result = new(value);
+                    return true;
+                }
+
+                public static bool TryCreate(int value, out OtherId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    result = new(value);
+                    return true;
+                }
+
+
                 public static OtherId Parse(string value, global::System.IFormatProvider? provider)
                     => new(int.Parse(value, provider));
 
@@ -343,6 +439,30 @@ public class MetadataIdScannerTests
             : global::Len.StronglyTypedId.IStronglyTypedId<OrderId, global::System.Guid>
         {
             public static OrderId Create(global::System.Guid value) => new(value);
+
+            public int CompareTo(OrderId other) => Value.CompareTo(other.Value);
+
+            public static bool operator <(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) < 0;
+
+            public static bool operator <=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) <= 0;
+
+            public static bool operator >(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) > 0;
+
+            public static bool operator >=(OrderId left, OrderId right) => left.Value.CompareTo(right.Value) >= 0;
+
+            public static bool TryCreate(global::System.Guid value, out OrderId result)
+            {
+                result = new(value);
+                return true;
+            }
+
+            public static bool TryCreate(global::System.Guid value, out OrderId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+            {
+                validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                result = new(value);
+                return true;
+            }
+
 
             public static OrderId Parse(string value, global::System.IFormatProvider? provider)
                 => new(global::System.Guid.Parse(value, provider));

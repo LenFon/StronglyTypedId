@@ -1,0 +1,10 @@
+{
+  // 探针刻意不钉 SDK 版本：CI 用矩阵（8.0.x / 9.0.x / 10.0.x）逐个构建它，
+  // 目的正是验证「低版本 SDK 也能加载生成器」。钉死会让矩阵失去意义。
+  //
+  // rollForward=latestFeature：在已安装的 SDK 里取最高的特性带。矩阵 job 里同时装了
+  // 10.0.401（打包用）与目标 SDK，靠 CI 的 setup-dotnet 安装顺序让目标 SDK 胜出。
+  "sdk": {
+    "rollForward": "latestFeature"
+  }
+}

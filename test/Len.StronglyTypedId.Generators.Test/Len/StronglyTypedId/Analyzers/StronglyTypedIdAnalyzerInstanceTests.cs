@@ -184,8 +184,223 @@ public class StronglyTypedIdAnalyzerInstanceTests
     }
 
     /// <summary>
-    /// 值文本无法解析成基元时报告 STIA0021。
+    /// 实例名 <c>_</c> 会遮蔽生成代码里的弃元 <c>out _</c>，必须报告 STIA0020。
     /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>_</c> 是合法标识符（<c>SyntaxFacts.IsValidIdentifier</c> 放行），保留名清单里也没有它，
+    /// 于是实例字段 <c>public static readonly OrderId @_</c> 与 <c>TryCreate(value, out result, out _)</c> 撞车，
+    /// 产物报 CS0199（「无法将静态只读字段用作 ref 或 out 值」）且没有任何 STIA 诊断。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInstanceNameIsDiscard()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("_", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidInstanceName)
+            .WithArguments("_", "OrderId")
+            .WithSpan(6, 2, 6, 35);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 双下划线 <c>__</c> 不构成弃元，作为实例名合法。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenInstanceNameIsDoubleUnderscore()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("__", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>TryFormat</c> 只在基元可 span 格式化时生成；<c>string</c> 基元不生成，同名实例合法。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：保留名清单曾无条件收录 <c>TryFormat</c>，给「本来不存在的撞名」报 STIA0020（Error），
+    /// 而绕过它之后实例又被生成器静默丢弃。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenStringPrimitiveInstanceNameIsTryFormat()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("TryFormat", "abc")]
+            public partial record struct StringId(string Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>TryFormat</c> 在可 span 格式化的基元上确实会生成，同名实例必须报告 STIA0020。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenSpanFormattableInstanceNameIsTryFormat()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("TryFormat", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidInstanceName)
+            .WithArguments("TryFormat", "OrderId")
+            .WithSpan(6, 2, 6, 43);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>EqualityContract</c> 只有 <c>record class</c> 由编译器合成；<c>record struct</c> 上没有它，同名实例合法。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：保留名清单曾无条件收录 <c>EqualityContract</c>，值类型 Id 上会误报 STIA0020（Error）。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenRecordStructInstanceNameIsEqualityContract()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("EqualityContract", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>record class</c> 上 <c>EqualityContract</c> 确实存在，同名实例必须报告 STIA0020。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenRecordClassInstanceNameIsEqualityContract()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("EqualityContract", "0")]
+            public partial record OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidInstanceName)
+            .WithArguments("EqualityContract", "OrderId")
+            .WithSpan(6, 2, 6, 50);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>{TypeName}TypeConverter</c> 只在 <c>TypeConverter = true</c> 时生成；默认关闭时同名实例合法。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：保留名清单曾无条件收录该名字，默认配置下会误报 STIA0020（Error）。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenTypeConverterDisabledInstanceNameIsNestedTypeConverter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("OrderIdTypeConverter", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// <c>TypeConverter = true</c> 时该嵌套类型确实生成，同名实例必须报告 STIA0020。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenTypeConverterEnabledInstanceNameIsNestedTypeConverter()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(TypeConverter = true)]
+            [StronglyTypedIdInstance("OrderIdTypeConverter", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidInstanceName)
+            .WithArguments("OrderIdTypeConverter", "OrderId")
+            .WithSpan(6, 2, 6, 54);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// <c>{TypeName}DebugView</c> 在泛型容器里不生成（<c>[DebuggerTypeProxy]</c> 会 CS0416），同名实例合法。
+    /// </summary>
+    /// <remarks>
+    /// 泛型容器本身会报 STIA0028（集成被跳过），这里把它一并声明，只断言「没有 STIA0020」。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenGenericContainerInstanceNameIsDebugView()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial class Box<T>
+            {
+                [StronglyTypedId]
+                [StronglyTypedIdInstance("BoxedIdDebugView", "0")]
+                public partial record struct BoxedId(int Value);
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.GenericContainerSkipsIntegrations)
+            .WithArguments("BoxedId", "Box")
+            .WithSpan(9, 34, 9, 41);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 非泛型容器里 <c>{TypeName}DebugView</c> 确实生成，同名实例必须报告 STIA0020。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenNonGenericInstanceNameIsDebugView()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("OrderIdDebugView", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.InvalidInstanceName)
+            .WithArguments("OrderIdDebugView", "OrderId")
+            .WithSpan(6, 2, 6, 50);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
     [Fact]
     public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInstanceValueIsNotParseable()
     {
@@ -329,6 +544,83 @@ public class StronglyTypedIdAnalyzerInstanceTests
             [StronglyTypedId]
             [StronglyTypedIdInstance("URL", "0")]
             public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 机械推导出的建议名不可用时，STIA0022 不报告。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：建议名此前被无条件报出，而它可能根本不是合法实例名 ——
+    /// <c>_1</c> 得到 <c>1</c>（不是标识符）、<c>create</c> 得到 <c>Create</c>（生成成员）、
+    /// <c>order_id</c> 得到 <c>OrderId</c>（类型名）。用户照着改（或点 CodeFix）就把一条 Info 提示
+    /// 换成了 STIA0020（Error）。现在报出前先按与 STIA0020 同一套判据验一遍。
+    /// </remarks>
+    [Theory]
+    [InlineData("_1")]
+    [InlineData("_123")]
+    [InlineData("create")]
+    [InlineData("try_parse")]
+    [InlineData("to_string")]
+    [InlineData("deconstruct")]
+    [InlineData("order_id")]
+    [InlineData("value")]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenSuggestedNameIsNotUsable(string instanceName)
+    {
+        var code = $$""""
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("{{instanceName}}", "0")]
+            public partial record struct OrderId(int Value);
+            """";
+
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 建议名与同类型的另一条实例重名时，STIA0022 不报告。
+    /// </summary>
+    /// <remarks>
+    /// 兄弟实例之间的重名要单独判：保留名判定会滤掉生成器产出的实例字段（否则每条实例都会撞上自己），
+    /// 因此它看不到这一档。改名为 <c>Foo</c> 会立刻撞上已有的 <c>Foo</c>，得到 STIA0020。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenSuggestedNameCollidesWithSiblingInstance()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("foo", "0")]
+            [StronglyTypedIdInstance("Foo", "1")]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 建议名与用户自己写的成员重名时，STIA0022 同样不报告。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenSuggestedNameCollidesWithUserMember()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("bar", "0")]
+            public partial record struct OrderId(int Value)
+            {
+                public static readonly OrderId Bar = new(9);
+            }
             """";
         await Verify.VerifyAnalyzerAsync(code);
     }

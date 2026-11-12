@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using System.Globalization;
 
@@ -585,6 +586,34 @@ public class StronglyTypedIdCapabilityTests
     }
 
     /// <summary>
+    /// <c>TryCreate</c> 声明在 <c>IStronglyTypedId&lt;TSelf, TPrimitiveId&gt;</c> 上，因此约束到该接口的泛型代码
+    /// 不必知道具体 Id 类型就能走非抛异常路径。此前只有 <c>Create</c> 在接口上，泛型代码想避免异常只能
+    /// 先反射找 <c>TryCreate</c>。
+    /// </summary>
+    [Fact]
+    public void TryCreate_Should_BeCallableThroughGenericConstraint()
+    {
+        TryCreateViaInterface<GuidId>(_lowGuid, out var created).Should().BeTrue();
+        created.Should().Be(GuidId.Create(_lowGuid));
+
+        // 验证器拒绝时经接口调用同样返回 false，而不是抛异常。
+        TryCreateViaInterface<NonEmptyGuidId>(Guid.Empty, out _).Should().BeFalse();
+
+        // 基元类型也作为类型参数传入，确认签名里的 TPrimitiveId 能正常绑定。
+        TryCreateViaPrimitiveInterface<Int32Id, int>(42, out var intId).Should().BeTrue();
+        intId.Should().Be(Int32Id.Create(42));
+    }
+
+    private static bool TryCreateViaInterface<TId>(Guid value, [MaybeNullWhen(false)] out TId result)
+        where TId : IStronglyTypedId<TId, Guid>
+        => TId.TryCreate(value, out result);
+
+    private static bool TryCreateViaPrimitiveInterface<TId, TPrimitive>(TPrimitive value, [MaybeNullWhen(false)] out TId result)
+        where TId : IStronglyTypedId<TId, TPrimitive>
+        where TPrimitive : notnull, IComparable
+        => TId.TryCreate(value, out result);
+
+    /// <summary>
     /// <c>IUtf8SpanFormattable</c> 自 .NET 8 起即可用，两个框架的 Guid / Int32 都实现，故生成的 Id 恒实现。
     /// </summary>
     [Fact]
@@ -959,6 +988,79 @@ public class StronglyTypedIdCapabilityTests
             single.IsAssignableFrom(pair).Should().BeTrue("双参接口应可赋给单参接口");
         }
     }
+
+    /// <summary>
+    /// 单参接口同时承载排序：约束在它上面的泛型代码可以直接 <c>CompareTo</c>、用 <c>&lt;</c> / <c>&gt;</c>，
+    /// 也能直接放进 <see cref="SortedSet{T}"/>，不必再补 <c>IComparable&lt;TId&gt;</c> 约束。
+    /// </summary>
+    [Fact]
+    public void SingleParameterInterface_Should_SupportOrderingThroughConstraint()
+    {
+        var lower = GuidId.Create(_lowGuid);
+        var higher = GuidId.Create(_highGuid);
+
+        CompareThroughConstraint(lower, higher).Should().Be(_lowGuid.CompareTo(_highGuid));
+        CompareThroughConstraint(lower, lower).Should().Be(0);
+
+        IsLessThan(lower, higher).Should().BeTrue();
+        IsLessThan(higher, lower).Should().BeFalse();
+        IsLessThanOrEqual(lower, lower).Should().BeTrue();
+        IsGreaterThan(higher, lower).Should().BeTrue();
+        IsGreaterThanOrEqual(higher, higher).Should().BeTrue();
+
+        // 排序不再需要自定义比较器：接口约束本身就够。
+        SortThroughConstraint([Int32Id.Create(3), Int32Id.Create(1), Int32Id.Create(2)])
+            .Select(id => id.Value)
+            .Should()
+            .Equal(1, 2, 3);
+    }
+
+    /// <summary>
+    /// 双参接口继承单参接口，排序能力同样经它可用。
+    /// </summary>
+    [Fact]
+    public void PairInterface_Should_SupportOrderingThroughConstraint()
+    {
+        var lower = Int32Id.Create(1);
+        var higher = Int32Id.Create(2);
+
+        CompareThroughPairConstraint<Int32Id, int>(lower, higher).Should().Be(-1);
+        IsLessThanThroughPairConstraint<Int32Id, int>(lower, higher).Should().BeTrue();
+    }
+
+    private static int CompareThroughConstraint<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left.CompareTo(right);
+
+    private static bool IsLessThan<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left < right;
+
+    private static bool IsLessThanOrEqual<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left <= right;
+
+    private static bool IsGreaterThan<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left > right;
+
+    private static bool IsGreaterThanOrEqual<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left >= right;
+
+    private static SortedSet<TId> SortThroughConstraint<TId>(IEnumerable<TId> ids)
+        where TId : IStronglyTypedId<TId>
+        => [.. ids];
+
+    private static int CompareThroughPairConstraint<TId, TPrimitive>(TId left, TId right)
+        where TId : IStronglyTypedId<TId, TPrimitive>
+        where TPrimitive : notnull, IComparable
+        => left.CompareTo(right);
+
+    private static bool IsLessThanThroughPairConstraint<TId, TPrimitive>(TId left, TId right)
+        where TId : IStronglyTypedId<TId, TPrimitive>
+        where TPrimitive : notnull, IComparable
+        => left < right;
 
     private static TId RoundTrip<TId>(string text)
         where TId : IStronglyTypedId<TId>
