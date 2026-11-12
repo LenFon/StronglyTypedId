@@ -28,7 +28,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         // 与 System.Text.Json 侧同理：泛型容器里的 Id 无法在特性实参里引用含类型参数的转换器（CS0416）。
         var converterAttribute = idInfo.IsInGenericContainer
             ? string.Empty
-            : "[global::Newtonsoft.Json.JsonConverter(typeof(NewtonsoftJsonConverter))]\n";
+            : "[global::Newtonsoft.Json.JsonConverter(typeof(NewtonsoftJsonConverter))]" + GeneratedCode.NewLine;
 
         var declaration = $$"""
                 {{converterAttribute}}partial record{{idInfo.TypeKindSuffix}} {{idInfo.EscapedName}}
@@ -79,7 +79,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
 
         if (!idInfo.IsObjectJsonShape)
         {
-            builder.Append(" =>").Append('\n');
+            builder.Append(" =>").Append(GeneratedCode.NewLine);
 
             if (idInfo.IsDecimalPrimitive && !idInfo.HasPrefix)
             {
@@ -87,18 +87,18 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                 // 两者都要能读：只认字符串会让升级前的既有载荷（尤其是 1E-05 这类指数形）直接读不出来。
                 // number 分支沿用旧路径 —— Newtonsoft 已把 token 解析成 double，精度损失与修复前一致，
                 // 但至少不会让既有载荷失效。
-                builder.Append("            reader.TokenType == global::Newtonsoft.Json.JsonToken.String").Append('\n');
-                builder.Append("                ? serializer.Deserialize<string>(reader) switch").Append('\n');
-                builder.Append("                {").Append('\n');
-                builder.Append("                    { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
-                builder.Append("                    null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
-                builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
-                builder.Append("                }").Append('\n');
-                builder.Append("                : serializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(reader) switch").Append('\n');
-                builder.Append("                {").Append('\n');
+                builder.Append("            reader.TokenType == global::Newtonsoft.Json.JsonToken.String").Append(GeneratedCode.NewLine);
+                builder.Append("                ? serializer.Deserialize<string>(reader) switch").Append(GeneratedCode.NewLine);
+                builder.Append("                {").Append(GeneratedCode.NewLine);
+                builder.Append("                    { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append(GeneratedCode.NewLine);
+                builder.Append("                    null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append(GeneratedCode.NewLine);
+                builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
+                builder.Append("                }").Append(GeneratedCode.NewLine);
+                builder.Append("                : serializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(reader) switch").Append(GeneratedCode.NewLine);
+                builder.Append("                {").Append(GeneratedCode.NewLine);
                 AppendTryCreateArm(builder, idInfo, "                    ", typeReference);
-                builder.Append("                    null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
-                builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
+                builder.Append("                    null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append(GeneratedCode.NewLine);
+                builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
                 builder.Append("                };");
 
                 return builder.ToString();
@@ -108,29 +108,29 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             {
                 // 有前缀时文本形是字符串，读回一律经 Id.TryParse（前缀策略由生成的 TryParse 承担）。
                 // Newtonsoft 不认识 Int128 / UInt128 / Half / DateOnly / TimeOnly，也只能按文本读。
-                builder.Append("            serializer.Deserialize<string>(reader) switch").Append('\n');
-                builder.Append("            {").Append('\n');
-                builder.Append("                { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
+                builder.Append("            serializer.Deserialize<string>(reader) switch").Append(GeneratedCode.NewLine);
+                builder.Append("            {").Append(GeneratedCode.NewLine);
+                builder.Append("                { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append(GeneratedCode.NewLine);
 
                 // 写侧对 null 基元一律写 JSON null（含带前缀的情形）。值类型 Id 的 objectType 不是 class，
                 // 下面的 null when 分支对它永不成立，故这里直接还原成 default（基元为 null 的 Id）。
                 if (idInfo.IsReferenceTypePrimitive && idInfo.TypeKindSuffix is not null)
                 {
-                    builder.Append("                null => default,").Append('\n');
+                    builder.Append("                null => default,").Append(GeneratedCode.NewLine);
                 }
                 else
                 {
-                    builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
+                    builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append(GeneratedCode.NewLine);
                 }
 
-                builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
+                builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
                 builder.Append("            };");
 
                 return builder.ToString();
             }
 
-            builder.Append("            serializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(reader) switch").Append('\n');
-            builder.Append("            {").Append('\n');
+            builder.Append("            serializer.Deserialize<").Append(idInfo.PrimitiveIdTypeName).Append("?>(reader) switch").Append(GeneratedCode.NewLine);
+            builder.Append("            {").Append(GeneratedCode.NewLine);
 
             // 必须走 TryCreate：Create 在验证器拒绝时抛 ArgumentException（或 ExceptionType 指定的类型），
             // 它会穿透 JsonConvert.DeserializeObject，而 Newtonsoft 的转换器契约要求失败一律抛 JsonSerializationException。
@@ -142,63 +142,63 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             // 下面的 null when 分支对它永不成立，故这里直接还原成 default。
             if (idInfo.IsReferenceTypePrimitive && idInfo.TypeKindSuffix is not null)
             {
-                builder.Append("                null => default,").Append('\n');
+                builder.Append("                null => default,").Append(GeneratedCode.NewLine);
             }
             else
             {
-                builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append('\n');
+                builder.Append("                null when (objectType.IsClass || global::System.Nullable.GetUnderlyingType(objectType) is not null) => null,").Append(GeneratedCode.NewLine);
             }
-            builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
+            builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
             builder.Append("            };");
 
             return builder.ToString();
         }
 
-        builder.Append('\n');
-        builder.Append("        {").Append('\n');
-        builder.Append("            if (reader.TokenType == global::Newtonsoft.Json.JsonToken.Null)").Append('\n');
-        builder.Append("            {").Append('\n');
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append("        {").Append(GeneratedCode.NewLine);
+        builder.Append("            if (reader.TokenType == global::Newtonsoft.Json.JsonToken.Null)").Append(GeneratedCode.NewLine);
+        builder.Append("            {").Append(GeneratedCode.NewLine);
 
         // 值类型 Id 无法表示 null：返回 null 会让调用方在拆箱时拿到 NullReferenceException，
         // 而不是框架自己的序列化异常。与基元形态的 null 分支同一口径。
         builder.Append(idInfo.TypeKindSuffix is null
             ? "                return null;"
-            : "                throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a " + idInfo.Name + ".\");").Append('\n');
+            : "                throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a " + idInfo.Name + ".\");").Append(GeneratedCode.NewLine);
 
-        builder.Append("            }").Append('\n');
-        builder.Append('\n');
-        builder.Append("            if (reader.TokenType != global::Newtonsoft.Json.JsonToken.StartObject)").Append('\n');
-        builder.Append("            {").Append('\n');
-        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a 'value' property was expected.\");").Append('\n');
-        builder.Append("            }").Append('\n');
-        builder.Append('\n');
-        builder.Append("            var json = global::Newtonsoft.Json.Linq.JObject.Load(reader);").Append('\n');
-        builder.Append('\n');
+        builder.Append("            }").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append("            if (reader.TokenType != global::Newtonsoft.Json.JsonToken.StartObject)").Append(GeneratedCode.NewLine);
+        builder.Append("            {").Append(GeneratedCode.NewLine);
+        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a 'value' property was expected.\");").Append(GeneratedCode.NewLine);
+        builder.Append("            }").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append("            var json = global::Newtonsoft.Json.Linq.JObject.Load(reader);").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
         // 属性名按大小写不敏感匹配：Newtonsoft 对普通 POCO 就是这么做的（`{"Value":…}` 与 `{"value":…}`
         // 都能填进 Value 属性），而 JObject.TryGetValue 是序数比较、只认小写。生成的转换器若比它所在的
         // 序列化器更严，同一个载荷会在 Id 这一层突然失败。精确匹配优先，与 POCO 的解析顺序一致。
-        builder.Append("            var valueToken = json.GetValue(\"value\", global::System.StringComparison.OrdinalIgnoreCase);").Append('\n');
-        builder.Append('\n');
-        builder.Append("            if (valueToken is null)").Append('\n');
-        builder.Append("            {").Append('\n');
-        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append('\n');
-        builder.Append("            }").Append('\n');
-        builder.Append('\n');
+        builder.Append("            var valueToken = json.GetValue(\"value\", global::System.StringComparison.OrdinalIgnoreCase);").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append("            if (valueToken is null)").Append(GeneratedCode.NewLine);
+        builder.Append("            {").Append(GeneratedCode.NewLine);
+        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append(GeneratedCode.NewLine);
+        builder.Append("            }").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
 
         if (idInfo.IsDecimalPrimitive && !idInfo.HasPrefix)
         {
             // 与基元形态同理：新载荷是字符串，旧载荷是数字，两者都要能读。
-            builder.Append("            return valueToken.Type == global::Newtonsoft.Json.Linq.JTokenType.String").Append('\n');
-            builder.Append("                ? valueToken.ToObject<string>(serializer) switch").Append('\n');
-            builder.Append("                {").Append('\n');
-            builder.Append("                    { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
-            builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
-            builder.Append("                }").Append('\n');
-            builder.Append("                : valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>(serializer) switch").Append('\n');
-            builder.Append("                {").Append('\n');
+            builder.Append("            return valueToken.Type == global::Newtonsoft.Json.Linq.JTokenType.String").Append(GeneratedCode.NewLine);
+            builder.Append("                ? valueToken.ToObject<string>(serializer) switch").Append(GeneratedCode.NewLine);
+            builder.Append("                {").Append(GeneratedCode.NewLine);
+            builder.Append("                    { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append(GeneratedCode.NewLine);
+            builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
+            builder.Append("                }").Append(GeneratedCode.NewLine);
+            builder.Append("                : valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>(serializer) switch").Append(GeneratedCode.NewLine);
+            builder.Append("                {").Append(GeneratedCode.NewLine);
             AppendTryCreateArm(builder, idInfo, "                    ", typeReference);
-            builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
-            builder.Append("                };").Append('\n');
+            builder.Append("                    _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
+            builder.Append("                };").Append(GeneratedCode.NewLine);
             builder.Append("        }");
 
             return builder.ToString();
@@ -209,42 +209,42 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
             // 同上：有前缀或基元本身不被 Newtonsoft 认识时，值都以规范文本形存放。
             // ToObject 必须传 serializer：不传时 Newtonsoft 直接把 FormatException / ArgumentException
             // 抛给调用方，而转换器契约要求失败一律是 JsonSerializationException（见 docs/serialization.md）。
-            builder.Append("            return valueToken.ToObject<string>(serializer) switch").Append('\n');
-            builder.Append("            {").Append('\n');
-            builder.Append("                { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append('\n');
+            builder.Append("            return valueToken.ToObject<string>(serializer) switch").Append(GeneratedCode.NewLine);
+            builder.Append("            {").Append(GeneratedCode.NewLine);
+            builder.Append("                { } text when ").Append(typeReference).Append(".TryParse(text, global::System.Globalization.CultureInfo.InvariantCulture, out var id) => id,").Append(GeneratedCode.NewLine);
 
             // 引用类型基元可以是 null，而写侧会把它写成 {"value":null}。读侧必须接受这个形态，
             // 否则「写出去就读不回来」。还原成 default 而不是走 TryCreate：写侧写出的正是 default 值，
             // 走 TryCreate 会让「验证器拒绝 null」的 Id 再次写读不对称。值类型基元没有 null 可写，仍拒绝。
             if (idInfo.IsReferenceTypePrimitive)
             {
-                builder.Append("                null => default,").Append('\n');
+                builder.Append("                null => default,").Append(GeneratedCode.NewLine);
             }
 
-            builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
-            builder.Append("            };").Append('\n');
+            builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
+            builder.Append("            };").Append(GeneratedCode.NewLine);
             builder.Append("        }");
 
             return builder.ToString();
         }
 
-        builder.Append("            return valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>(serializer) switch").Append('\n');
-        builder.Append("            {").Append('\n');
+        builder.Append("            return valueToken.ToObject<").Append(idInfo.PrimitiveIdTypeName).Append("?>(serializer) switch").Append(GeneratedCode.NewLine);
+        builder.Append("            {").Append(GeneratedCode.NewLine);
 
         // 引用类型基元可以是 null，而写侧会把它写成 {"value":null}。读侧必须接受这个形态，
         // 否则「写出去就读不回来」。还原成 default 而不是走 TryCreate：写侧写出的正是 default 值。
         // 值类型基元没有 null 可写，仍按契约拒绝。
         if (idInfo.IsReferenceTypePrimitive)
         {
-            builder.Append("                null => default,").Append('\n');
+            builder.Append("                null => default,").Append(GeneratedCode.NewLine);
         }
 
         // 同上：TryCreate 让验证失败落在下面的 JsonSerializationException 分支，而不是穿透 ArgumentException。
         // 枚举在此追加已定义性校验：TryCreate 不含它，而 Newtonsoft 对未定义数值（999）照常读出，
         // 不补就会反序列化出不对应任何成员的 Id（TryParse 与 Dapper 三条路径都已收紧，这里对齐）。
         AppendTryCreateArm(builder, idInfo, "                ", typeReference);
-        builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append('\n');
-        builder.Append("            };").Append('\n');
+        builder.Append("                _ => throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{valueToken.Type}' to a ").Append(idInfo.Name).Append(".\")").Append(GeneratedCode.NewLine);
+        builder.Append("            };").Append(GeneratedCode.NewLine);
         builder.Append("        }");
 
         return builder.ToString();
@@ -255,7 +255,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
     /// 已定义性校验（见 <see cref="StronglyTypedIdInfo.GetEnumValidityCondition"/>）。
     /// </summary>
     internal static void AppendTryCreateArm(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string typeReference)
-        => builder.Append(indent).Append("{ } value when ").Append(idInfo.GetTryCreateCondition(typeReference)).Append(" => id,").Append('\n');
+        => builder.Append(indent).Append("{ } value when ").Append(idInfo.GetTryCreateCondition(typeReference)).Append(" => id,").Append(GeneratedCode.NewLine);
 
     /// <summary>
     /// 取 <c>WriteJson</c> 成员形参表之后的方法体。
@@ -279,28 +279,28 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
                 ? $"writer.WriteValue({idInfo.GetPrimitiveTextExpressionOrNull("primitiveId")});"
                 : "writer.WriteValue(primitiveId);";
 
-        builder.Append('\n');
-        builder.Append("        {").Append('\n');
-        builder.Append("            if (value is { Value: var primitiveId })").Append('\n');
-        builder.Append("            {").Append('\n');
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append("        {").Append(GeneratedCode.NewLine);
+        builder.Append("            if (value is { Value: var primitiveId })").Append(GeneratedCode.NewLine);
+        builder.Append("            {").Append(GeneratedCode.NewLine);
 
         if (idInfo.IsObjectJsonShape)
         {
-            builder.Append("                writer.WriteStartObject();").Append('\n');
-            builder.Append("                writer.WritePropertyName(\"value\");").Append('\n');
-            builder.Append("                ").Append(writeValue).Append('\n');
-            builder.Append("                writer.WriteEndObject();").Append('\n');
+            builder.Append("                writer.WriteStartObject();").Append(GeneratedCode.NewLine);
+            builder.Append("                writer.WritePropertyName(\"value\");").Append(GeneratedCode.NewLine);
+            builder.Append("                ").Append(writeValue).Append(GeneratedCode.NewLine);
+            builder.Append("                writer.WriteEndObject();").Append(GeneratedCode.NewLine);
         }
         else
         {
-            builder.Append("                ").Append(writeValue).Append('\n');
+            builder.Append("                ").Append(writeValue).Append(GeneratedCode.NewLine);
         }
 
-        builder.Append("            }").Append('\n');
-        builder.Append("            else").Append('\n');
-        builder.Append("            {").Append('\n');
-        builder.Append("                writer.WriteNull();").Append('\n');
-        builder.Append("            }").Append('\n');
+        builder.Append("            }").Append(GeneratedCode.NewLine);
+        builder.Append("            else").Append(GeneratedCode.NewLine);
+        builder.Append("            {").Append(GeneratedCode.NewLine);
+        builder.Append("                writer.WriteNull();").Append(GeneratedCode.NewLine);
+        builder.Append("            }").Append(GeneratedCode.NewLine);
         builder.Append("        }");
 
         return builder.ToString();

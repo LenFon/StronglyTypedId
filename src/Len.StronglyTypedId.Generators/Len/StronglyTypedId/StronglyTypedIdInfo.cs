@@ -871,12 +871,12 @@ internal readonly record struct StronglyTypedIdInfo
             }
 
             // 块经插值洞注入模板，洞写在去缩进基准列上，故每行必须自带产物中的绝对缩进。
-            builder.Append('\n').Append('\n');
-            builder.Append("    /// <summary>").Append('\n');
-            builder.Append("    /// 获取 <c>").Append(IdentifierEscaping.Escape(type.Name)).Append("</c> 的 <c>").Append(instance.Name).Append("</c> 实例。").Append('\n');
-            builder.Append("    /// </summary>").Append('\n');
-            builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
-            builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append('\n');
+            builder.Append(GeneratedCode.NewLine).Append(GeneratedCode.NewLine);
+            builder.Append("    /// <summary>").Append(GeneratedCode.NewLine);
+            builder.Append("    /// 获取 <c>").Append(IdentifierEscaping.Escape(type.Name)).Append("</c> 的 <c>").Append(instance.Name).Append("</c> 实例。").Append(GeneratedCode.NewLine);
+            builder.Append("    /// </summary>").Append(GeneratedCode.NewLine);
+            builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append(GeneratedCode.NewLine);
+            builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append(GeneratedCode.NewLine);
             // 字段类型是 Id 自身、字段名是实例名，两者都要转义：Id 叫 class 或实例叫 class 时，
             // 原样写出 "public static readonly class Empty" / "public static readonly MyId class" 都是语法错误。
             // 实例名转义只在落盘这一刻做，IsReservedName 的撞名判定仍用原始名，两者判据一致。
@@ -909,24 +909,24 @@ internal readonly record struct StronglyTypedIdInfo
         var idName = IdentifierEscaping.Escape(type.Name);
         var primitiveName = primitiveType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-        builder.Append('\n').Append('\n');
-        builder.Append("    /// <summary>").Append('\n');
-        builder.Append("    /// 由命名实例的文本值创建 Id；失败时抛出带实例名与原文的异常。").Append('\n');
-        builder.Append("    /// </summary>").Append('\n');
-        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
-        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append('\n');
-        builder.Append($"    private static {idName} CreateInstance(string name, string text)").Append('\n');
-        builder.Append("    {").Append('\n');
-        builder.Append("        try").Append('\n');
-        builder.Append("        {").Append('\n');
-        builder.Append($"            return Create({primitiveName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture));").Append('\n');
-        builder.Append("        }").Append('\n');
-        builder.Append("        catch (global::System.Exception exception)").Append('\n');
-        builder.Append("        {").Append('\n');
+        builder.Append(GeneratedCode.NewLine).Append(GeneratedCode.NewLine);
+        builder.Append("    /// <summary>").Append(GeneratedCode.NewLine);
+        builder.Append("    /// 由命名实例的文本值创建 Id；失败时抛出带实例名与原文的异常。").Append(GeneratedCode.NewLine);
+        builder.Append("    /// </summary>").Append(GeneratedCode.NewLine);
+        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append(GeneratedCode.NewLine);
+        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(Generators.StronglyTypedIdCodeGenerator), GeneratedCode.Version)).Append(GeneratedCode.NewLine);
+        builder.Append($"    private static {idName} CreateInstance(string name, string text)").Append(GeneratedCode.NewLine);
+        builder.Append("    {").Append(GeneratedCode.NewLine);
+        builder.Append("        try").Append(GeneratedCode.NewLine);
+        builder.Append("        {").Append(GeneratedCode.NewLine);
+        builder.Append($"            return Create({primitiveName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture));").Append(GeneratedCode.NewLine);
+        builder.Append("        }").Append(GeneratedCode.NewLine);
+        builder.Append("        catch (global::System.Exception exception)").Append(GeneratedCode.NewLine);
+        builder.Append("        {").Append(GeneratedCode.NewLine);
         builder.Append(redactsValidationMessage
             ? $"            throw new global::System.InvalidOperationException(\"StronglyTypedId: named instance '\" + name + \"' of '{type.Name}' could not be created.\", exception);"
-            : $"            throw new global::System.InvalidOperationException(\"StronglyTypedId: named instance '\" + name + \"' of '{type.Name}' could not be created from '\" + text + \"'.\", exception);").Append('\n');
-        builder.Append("        }").Append('\n');
+            : $"            throw new global::System.InvalidOperationException(\"StronglyTypedId: named instance '\" + name + \"' of '{type.Name}' could not be created from '\" + text + \"'.\", exception);").Append(GeneratedCode.NewLine);
+        builder.Append("        }").Append(GeneratedCode.NewLine);
         builder.Append("    }");
     }
 
@@ -1060,6 +1060,8 @@ internal readonly record struct StronglyTypedIdInfo
 
         levels.Reverse();
 
+        // 用 '\n' 而非 GeneratedCode.NewLine：这是中间值，只被 NestInContainingTypes 按 '\n' 切分，
+        // 行尾由落盘前的归一化统一。测试也按 '\n' 断言这个属性。
         return (string.Join("\n", levels), levels.Count, HasGenericContainer(type));
     }
 

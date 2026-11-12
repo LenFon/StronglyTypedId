@@ -45,7 +45,8 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// 否则只能写全限定静态调用，与 HotChocolate 自己的 <c>AddGraphQLServer()</c> 风格不一致。
     /// </remarks>
     private const string RegistrationPreamble =
-        "using Microsoft.Extensions.DependencyInjection;\nusing Microsoft.Extensions.DependencyInjection.Extensions;";
+        "using Microsoft.Extensions.DependencyInjection;" + GeneratedCode.NewLine
+            + "using Microsoft.Extensions.DependencyInjection.Extensions;";
 
     /// <summary>
     /// 成员体内语句的缩进（产物中为 8 空格）。
@@ -142,8 +143,8 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
 
             GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.HotChocolate.g.cs", scalarCode);
 
-            registrations.Append($"\n{_registrationIndent}builder.Services.TryAddSingleton(typeof({scalarName}), typeof({scalarName}));\n");
-            registrations.Append($"{_registrationIndent}builder.BindRuntimeType<{idInfo.FullyQualifiedName}, {scalarName}>();\n");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}builder.Services.TryAddSingleton(typeof({scalarName}), typeof({scalarName}));{GeneratedCode.NewLine}");
+            registrations.Append($"{_registrationIndent}builder.BindRuntimeType<{idInfo.FullyQualifiedName}, {scalarName}>();{GeneratedCode.NewLine}");
         }
 
         // 装配入口固定落在 Len.StronglyTypedId 命名空间（与其余集成的注册入口一致）：
@@ -187,7 +188,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// </remarks>
     private static string GetIsInstanceOfTypeMember(StronglyTypedIdInfo idInfo, string version)
         => string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _statementIndent + "/// <inheritdoc/>",
             _statementIndent + GeneratedCode.CompilerGeneratedAttribute,
             _statementIndent + GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version),
@@ -203,7 +204,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// </remarks>
     private static string GetParseLiteralMember(StronglyTypedIdInfo idInfo, string version)
         => string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _statementIndent + "/// <inheritdoc/>",
             _statementIndent + GeneratedCode.CompilerGeneratedAttribute,
             _statementIndent + GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version),
@@ -223,7 +224,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// </summary>
     private static string GetParseValueMember(StronglyTypedIdInfo idInfo, string version)
         => string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _statementIndent + "/// <inheritdoc/>",
             _statementIndent + GeneratedCode.CompilerGeneratedAttribute,
             _statementIndent + GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version),
@@ -267,7 +268,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
         lines.Add(_nestedIndent + "    _ => CreateNode(ToText(resultValue)),");
         lines.Add(_nestedIndent + "};");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 
     /// <summary>
@@ -314,7 +315,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
         lines.Add(_nestedIndent + "return false;");
         lines.Add(_statementIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 
     /// <summary>
@@ -327,7 +328,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// </remarks>
     private static string GetTryDeserializeMember(StronglyTypedIdInfo idInfo, string version)
         => string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _statementIndent + "/// <inheritdoc/>",
             _statementIndent + GeneratedCode.CompilerGeneratedAttribute,
             _statementIndent + GeneratedCode.GeneratedCodeAttribute(nameof(HotChocolateCodeGenerator), version),
@@ -361,7 +362,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
     /// </remarks>
     private static string GetSerializeMember(StronglyTypedIdInfo idInfo, string version)
         => string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _statementIndent + "/// <summary>",
             _statementIndent + "/// 把 Id 转成 GraphQL 能原生写出的值。",
             _statementIndent + "/// </summary>",
@@ -389,7 +390,7 @@ internal class HotChocolateCodeGenerator : IIntegrationCodeGenerator
         };
 
         return string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _statementIndent + "/// <summary>",
             _statementIndent + "/// 把文本转成 GraphQL 字面量节点。",
             _statementIndent + "/// </summary>",

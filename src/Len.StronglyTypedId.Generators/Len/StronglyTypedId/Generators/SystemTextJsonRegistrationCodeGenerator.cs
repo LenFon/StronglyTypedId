@@ -67,7 +67,7 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                         registered.Add(converter.GetType());
                     }
 
-            {{string.Join("\n\n", registrations)}}
+            {{string.Join(GeneratedCode.NewLine + GeneratedCode.NewLine, registrations)}}
 
                     return options;
                 }
@@ -123,7 +123,7 @@ internal class SystemTextJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                     global::System.Type type,
                     global::System.Text.Json.JsonSerializerOptions options)
                 {
-            {{string.Join("\n\n", resolverEntries)}}
+            {{string.Join(GeneratedCode.NewLine + GeneratedCode.NewLine, resolverEntries)}}
 
                     return null;
                 }

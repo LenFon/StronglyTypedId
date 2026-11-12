@@ -76,7 +76,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
 
             GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.MongoDb.g.cs", serializerCode);
 
-            registrations.Append($"\n{_registrationIndent}global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(new {serializerName}());");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}global::MongoDB.Bson.Serialization.BsonSerializer.TryRegisterSerializer(new {serializerName}());");
         }
 
         // 基元序列化器也必须由本入口显式注册：BSON 的 PrimitiveSerializationProvider 靠 Activator 反射创建
@@ -95,7 +95,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
 
         foreach (var primitiveRegistration in primitiveRegistrations)
         {
-            registrations.Append($"\n{_registrationIndent}{primitiveRegistration}");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}{primitiveRegistration}");
         }
 
         // MongoDB 的根序列化/反序列化上下文会无条件取 BsonDefaults.DynamicArraySerializer（List<object>）
@@ -104,9 +104,9 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
         // 故按依赖顺序预注册这三个动态类型：object → List<object> → ExpandoObject
         // （后者的元素序列化器取自前者，ExpandoObjectSerializer 的构造又会立刻取 List<object>）。
         // 实例与 provider 默认创建的同类型，行为一致；已有他人注册时保留既有的。
-        registrations.Append($"\n{_registrationIndent}TryRegisterBsonSerializer(typeof(object), new global::MongoDB.Bson.Serialization.Serializers.ObjectSerializer());");
-        registrations.Append($"\n{_registrationIndent}TryRegisterBsonSerializer(typeof(global::System.Collections.Generic.List<object>), new global::MongoDB.Bson.Serialization.Serializers.EnumerableInterfaceImplementerSerializer<global::System.Collections.Generic.List<object>, object>());");
-        registrations.Append($"\n{_registrationIndent}TryRegisterBsonSerializer(typeof(global::System.Dynamic.ExpandoObject), new global::MongoDB.Bson.Serialization.Serializers.ExpandoObjectSerializer());");
+        registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}TryRegisterBsonSerializer(typeof(object), new global::MongoDB.Bson.Serialization.Serializers.ObjectSerializer());");
+        registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}TryRegisterBsonSerializer(typeof(global::System.Collections.Generic.List<object>), new global::MongoDB.Bson.Serialization.Serializers.EnumerableInterfaceImplementerSerializer<global::System.Collections.Generic.List<object>, object>());");
+        registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}TryRegisterBsonSerializer(typeof(global::System.Dynamic.ExpandoObject), new global::MongoDB.Bson.Serialization.Serializers.ExpandoObjectSerializer());");
 
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
                 internal static partial class StronglyTypedIds
@@ -209,7 +209,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
 
         lines.Add(_statementIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 
     /// <summary>
@@ -284,7 +284,7 @@ internal class MongoDbCodeGenerator : IIntegrationCodeGenerator
 
         lines.Add(_statementIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 
     /// <summary>

@@ -87,7 +87,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 
             GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.MessagePack.g.cs", formatterCode);
 
-            registrations.Append($"\n{_registrationIndent}new {formatterName}(),");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}new {formatterName}(),");
         }
 
         // 枚举基元的格式化器也必须由本入口显式提供：MessagePack 在 AOT（AvoidDynamicCode）下的
@@ -102,7 +102,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 
         foreach (var enumPrimitiveType in enumPrimitiveTypes)
         {
-            registrations.Append($"\n{_registrationIndent}new global::MessagePack.Formatters.GenericEnumFormatter<{enumPrimitiveType}>(),");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}new global::MessagePack.Formatters.GenericEnumFormatter<{enumPrimitiveType}>(),");
         }
 
         // 装配入口固定落在 Len.StronglyTypedId 命名空间（与 System.Text.Json / Dapper 的注册入口一致）：
@@ -192,7 +192,7 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 
         lines.Add(_statementIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 
     /// <summary>
@@ -266,6 +266,6 @@ internal class MessagePackCodeGenerator : IIntegrationCodeGenerator
 
         lines.Add(_statementIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 }

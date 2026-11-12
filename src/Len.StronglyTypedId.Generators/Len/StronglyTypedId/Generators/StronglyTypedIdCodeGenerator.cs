@@ -218,7 +218,9 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             interfaces.Add("global::System.IUtf8SpanFormattable");
         }
 
-        return interfaces.Count == 0 ? string.Empty : ",\n    " + string.Join(",\n    ", interfaces);
+        return interfaces.Count == 0
+            ? string.Empty
+            : "," + GeneratedCode.NewLine + "    " + string.Join("," + GeneratedCode.NewLine + "    ", interfaces);
     }
 
     /// <summary>
@@ -314,14 +316,14 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     {
         var builder = new StringBuilder();
 
-        builder.Append("[global::System.Diagnostics.DebuggerDisplay(\"{Value}\")]").Append('\n');
+        builder.Append("[global::System.Diagnostics.DebuggerDisplay(\"{Value}\")]").Append(GeneratedCode.NewLine);
 
         // 泛型容器里的 Id 不能带 [DebuggerTypeProxy]：特性实参必须是封闭类型，而
         // Box<T>.BoxedId.BoxedIdDebugView 含类型参数，会 CS0416。代理类本身也不生成——
         // 它是 private 的，没有手动接线的可能，留着只会是死代码。
         if (!idInfo.IsInGenericContainer)
         {
-            builder.Append($"[global::System.Diagnostics.DebuggerTypeProxy(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}DebugView))]").Append('\n');
+            builder.Append($"[global::System.Diagnostics.DebuggerTypeProxy(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}DebugView))]").Append(GeneratedCode.NewLine);
         }
 
         // 泛型容器里的 Id 同样不能带 [TypeConverter]：特性实参必须是封闭类型，而
@@ -332,7 +334,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
             // 必须用 FullyQualifiedName（含包含类型链，如 global::Ns.Outer.Inner）而不是
             // FullyQualifiedNamespace（只有命名空间）：嵌套 Id 的转换器挂在 Id 自己名下，
             // 用命名空间拼会指向不存在的 global::Ns.Inner.InnerTypeConverter → CS0246。
-            builder.Append($"[global::System.ComponentModel.TypeConverter(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}TypeConverter))]").Append('\n');
+            builder.Append($"[global::System.ComponentModel.TypeConverter(typeof({idInfo.FullyQualifiedName}.{idInfo.EscapedName}TypeConverter))]").Append(GeneratedCode.NewLine);
         }
 
         return builder.ToString();
@@ -345,21 +347,21 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
     /// </summary>
     private static void AppendTypeConverter(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
     {
-        builder.Append('\n').Append('\n');
-        builder.Append("    /// <summary>").Append('\n');
-        builder.Append("    /// 在强类型 Id 与其底层基元的字符串表示之间转换。").Append('\n');
-        builder.Append("    /// </summary>").Append('\n');
-        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
-        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append('\n');
-        builder.Append($"    public sealed class {idInfo.EscapedName}TypeConverter : global::System.ComponentModel.TypeConverter").Append('\n');
-        builder.Append("    {").Append('\n');
-        builder.Append("        public override bool CanConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Type sourceType) => sourceType == typeof(string);").Append('\n');
-        builder.Append('\n');
-        builder.Append($"        public override object? ConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object value) =>").Append('\n');
-        builder.Append($"            value is string text ? {idInfo.FullyQualifiedName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append('\n');
-        builder.Append('\n');
-        builder.Append("        public override object? ConvertTo(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object? value, global::System.Type? destinationType) =>").Append('\n');
-        builder.Append("            destinationType == typeof(string) ? value?.ToString() : throw new global::System.NotSupportedException($\"Cannot convert to {destinationType}.\");").Append('\n');
+        builder.Append(GeneratedCode.NewLine).Append(GeneratedCode.NewLine);
+        builder.Append("    /// <summary>").Append(GeneratedCode.NewLine);
+        builder.Append("    /// 在强类型 Id 与其底层基元的字符串表示之间转换。").Append(GeneratedCode.NewLine);
+        builder.Append("    /// </summary>").Append(GeneratedCode.NewLine);
+        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append(GeneratedCode.NewLine);
+        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append(GeneratedCode.NewLine);
+        builder.Append($"    public sealed class {idInfo.EscapedName}TypeConverter : global::System.ComponentModel.TypeConverter").Append(GeneratedCode.NewLine);
+        builder.Append("    {").Append(GeneratedCode.NewLine);
+        builder.Append("        public override bool CanConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Type sourceType) => sourceType == typeof(string);").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append($"        public override object? ConvertFrom(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object value) =>").Append(GeneratedCode.NewLine);
+        builder.Append($"            value is string text ? {idInfo.FullyQualifiedName}.Parse(text, global::System.Globalization.CultureInfo.InvariantCulture) : throw new global::System.NotSupportedException($\"Cannot convert from {{value?.GetType()}}.\");").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append("        public override object? ConvertTo(global::System.ComponentModel.ITypeDescriptorContext? context, global::System.Globalization.CultureInfo? culture, object? value, global::System.Type? destinationType) =>").Append(GeneratedCode.NewLine);
+        builder.Append("            destinationType == typeof(string) ? value?.ToString() : throw new global::System.NotSupportedException($\"Cannot convert to {destinationType}.\");").Append(GeneratedCode.NewLine);
         builder.Append("    }");
     }
 
@@ -419,7 +421,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         lines.Add($"    return new {idInfo.EscapedName}(value);");
         lines.Add("}");
 
-        return string.Join("\n", lines.Select(line => line.Length == 0 ? string.Empty : _memberBodyIndent + line));
+        return string.Join(GeneratedCode.NewLine, lines.Select(line => line.Length == 0 ? string.Empty : _memberBodyIndent + line));
     }
 
     /// <summary>
@@ -520,7 +522,7 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         lines.Add("    return true;");
         lines.Add("}");
 
-        return string.Join("\n", lines.Select(line => line.Length == 0 ? string.Empty : _tryParseBodyIndent + line));
+        return string.Join(GeneratedCode.NewLine, lines.Select(line => line.Length == 0 ? string.Empty : _tryParseBodyIndent + line));
     }
 
     private static string GetTryParseConditionCore(StronglyTypedIdInfo idInfo, bool isSpan)
@@ -622,7 +624,9 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         var guardLines = GetPrefixGuardLines(idInfo, kind, trackPrefix)
             .Select(line => line.Length == 0 ? string.Empty : _tryParseBodyIndent + line);
 
-        return string.Join("\n", guardLines) + "\n\n" + ifStatement;
+        return string.Join(GeneratedCode.NewLine, guardLines)
+            + GeneratedCode.NewLine + GeneratedCode.NewLine
+            + ifStatement;
     }
 
     /// <summary>
@@ -787,11 +791,11 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
 
         var builder = new StringBuilder();
 
-        builder.Append('\n').Append('\n');
-        builder.Append(_memberBodyIndent).Append("/// <summary>").Append('\n');
-        builder.Append(_memberBodyIndent).Append("/// 按「null 最小」的约定比较两个值，与 <see cref=\"CompareTo\"/> 保持一致。").Append('\n');
-        builder.Append(_memberBodyIndent).Append("/// </summary>").Append('\n');
-        builder.Append(_memberBodyIndent).Append(signature).Append('\n');
+        builder.Append(GeneratedCode.NewLine).Append(GeneratedCode.NewLine);
+        builder.Append(_memberBodyIndent).Append("/// <summary>").Append(GeneratedCode.NewLine);
+        builder.Append(_memberBodyIndent).Append("/// 按「null 最小」的约定比较两个值，与 <see cref=\"CompareTo\"/> 保持一致。").Append(GeneratedCode.NewLine);
+        builder.Append(_memberBodyIndent).Append("/// </summary>").Append(GeneratedCode.NewLine);
+        builder.Append(_memberBodyIndent).Append(signature).Append(GeneratedCode.NewLine);
         builder.Append(_expressionBodyIndent).Append("=> left is null ? (right is null ? 0 : -1) : left.CompareTo(right);");
 
         return builder.ToString();
@@ -891,21 +895,21 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         var valueExpression = isReferenceType ? "_id?.Value" : "_id.Value";
         var textExpression = isReferenceType ? "_id?.ToString() ?? \"<null>\"" : "_id.ToString()";
 
-        builder.Append('\n').Append('\n');
-        builder.Append("    /// <summary>").Append('\n');
-        builder.Append("    /// 调试器展开视图：显示裸基元值与规范文本形（含文本前缀）。").Append('\n');
-        builder.Append("    /// </summary>").Append('\n');
-        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
-        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append('\n');
-        builder.Append($"    private sealed class {idInfo.EscapedName}DebugView").Append('\n');
-        builder.Append("    {").Append('\n');
-        builder.Append($"        private readonly {fieldType} _id;").Append('\n');
-        builder.Append('\n');
-        builder.Append($"        public {idInfo.EscapedName}DebugView({fieldType} id) => _id = id;").Append('\n');
-        builder.Append('\n');
-        builder.Append($"        public {valueType} Value => {valueExpression};").Append('\n');
-        builder.Append('\n');
-        builder.Append($"        public string Text => {textExpression};").Append('\n');
+        builder.Append(GeneratedCode.NewLine).Append(GeneratedCode.NewLine);
+        builder.Append("    /// <summary>").Append(GeneratedCode.NewLine);
+        builder.Append("    /// 调试器展开视图：显示裸基元值与规范文本形（含文本前缀）。").Append(GeneratedCode.NewLine);
+        builder.Append("    /// </summary>").Append(GeneratedCode.NewLine);
+        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append(GeneratedCode.NewLine);
+        builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)).Append(GeneratedCode.NewLine);
+        builder.Append($"    private sealed class {idInfo.EscapedName}DebugView").Append(GeneratedCode.NewLine);
+        builder.Append("    {").Append(GeneratedCode.NewLine);
+        builder.Append($"        private readonly {fieldType} _id;").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append($"        public {idInfo.EscapedName}DebugView({fieldType} id) => _id = id;").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append($"        public {valueType} Value => {valueExpression};").Append(GeneratedCode.NewLine);
+        builder.Append(GeneratedCode.NewLine);
+        builder.Append($"        public string Text => {textExpression};").Append(GeneratedCode.NewLine);
         builder.Append("    }");
     }
 
@@ -1250,19 +1254,19 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         string[] docLines,
         params string[] declarationLines)
     {
-        builder.Append('\n').Append('\n');
+        builder.Append(GeneratedCode.NewLine).Append(GeneratedCode.NewLine);
 
         foreach (var docLine in docLines)
         {
-            builder.Append("    /// ").Append(docLine).Append('\n');
+            builder.Append("    /// ").Append(docLine).Append(GeneratedCode.NewLine);
         }
 
-        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append('\n');
+        builder.Append("    ").Append(GeneratedCode.CompilerGeneratedAttribute).Append(GeneratedCode.NewLine);
         builder.Append("    ").Append(GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version));
 
         foreach (var declarationLine in declarationLines)
         {
-            builder.Append('\n').Append(declarationLine.Length == 0 ? string.Empty : "    " + declarationLine);
+            builder.Append(GeneratedCode.NewLine).Append(declarationLine.Length == 0 ? string.Empty : "    " + declarationLine);
         }
     }
 }

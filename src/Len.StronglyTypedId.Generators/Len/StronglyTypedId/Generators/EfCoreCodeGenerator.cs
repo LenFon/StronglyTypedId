@@ -136,8 +136,8 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 
             GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.EntityFrameworkCore.g.cs", converterCode);
 
-            registrations.Append($"\n{_registrationIndent}{converterName}.ApplyTo(configurationBuilder);");
-            modelBuilderRegistrations.Append($"\n{_registrationIndent}{converterName}.ApplyTo(modelBuilder);");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}{converterName}.ApplyTo(configurationBuilder);");
+            modelBuilderRegistrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}{converterName}.ApplyTo(modelBuilder);");
         }
 
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -218,7 +218,7 @@ internal class EfCoreCodeGenerator : IIntegrationCodeGenerator
 
         // 洞紧跟在构造函数右大括号之后，故首行自带一个换行；其余各行自带产物中的绝对缩进（成员级 8 空格）。
         return string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             string.Empty,
             "        /// <summary>",
             $"        /// 把数据库里的值还原成 {idInfo.Name}；验证器拒绝或枚举取值未定义时抛 <see cref=\"global::System.InvalidOperationException\"/>。",

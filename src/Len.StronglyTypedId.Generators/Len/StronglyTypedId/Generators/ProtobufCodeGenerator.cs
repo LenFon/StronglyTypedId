@@ -138,7 +138,7 @@ internal class ProtobufCodeGenerator : ICoreCodeGenerator
             : $"new() {{ Value = {valueExpression} }}";
 
         return string.Join(
-            "\n",
+            GeneratedCode.NewLine,
             _memberIndent + "/// <summary>",
             _memberIndent + "/// 把 Id 转成 surrogate。",
             _memberIndent + "/// </summary>",
@@ -220,6 +220,6 @@ internal class ProtobufCodeGenerator : ICoreCodeGenerator
         lines.Add(_bodyIndent + $"throw new global::ProtoBuf.ProtoException(\"Cannot convert the protobuf value to a {idInfo.Name}.\");");
         lines.Add(_memberIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 }

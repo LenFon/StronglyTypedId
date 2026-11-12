@@ -81,7 +81,7 @@ internal class NewtonsoftJsonRegistrationCodeGenerator : IIntegrationCodeGenerat
                         registered.Add(converter.GetType());
                     }
 
-            {{string.Join("\n\n", registrations)}}
+            {{string.Join(GeneratedCode.NewLine + GeneratedCode.NewLine, registrations)}}
                 }
             }
             """;

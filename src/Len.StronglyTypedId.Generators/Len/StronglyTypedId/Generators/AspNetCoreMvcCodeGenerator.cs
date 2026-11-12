@@ -64,7 +64,7 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
                 public static global::Microsoft.AspNetCore.Routing.RouteOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.Routing.RouteOptions options)
                 {
-            {{string.Join("\n", constraintRegistrations)}}
+            {{string.Join(GeneratedCode.NewLine, constraintRegistrations)}}
 
                     return options;
                 }

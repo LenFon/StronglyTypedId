@@ -54,7 +54,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                 {
                     private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, ({{schemaTypeValueType}} Type, string? Format, bool IsObject)> _schemas = new()
                     {
-            {{string.Join("\n", schemaEntries)}}
+            {{string.Join(GeneratedCode.NewLine, schemaEntries)}}
                     };
 
                     /// <inheritdoc/>

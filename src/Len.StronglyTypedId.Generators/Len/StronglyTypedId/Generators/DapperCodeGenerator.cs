@@ -114,7 +114,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
 
             GeneratedCode.AddGeneratedSource(context, $"{idInfo.HintName}.Dapper.g.cs", handlerCode);
 
-            registrations.Append($"\n{_registrationIndent}global::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
+            registrations.Append($"{GeneratedCode.NewLine}{_registrationIndent}global::Dapper.SqlMapper.AddTypeHandler<{idInfo.FullyQualifiedName}>(new {handlerName}());");
         }
 
         var registrationCode = GeneratedCode.Header("Len.StronglyTypedId") + $$"""
@@ -190,7 +190,7 @@ internal class DapperCodeGenerator : IIntegrationCodeGenerator
 
         lines.Add(_parseBodyIndent + "}");
 
-        return string.Join("\n", lines);
+        return string.Join(GeneratedCode.NewLine, lines);
     }
 
     /// <summary>

@@ -34,9 +34,13 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             .Select(idInfo => $"            [typeof({idInfo.FullyQualifiedName})] = () => {CreateOpenApiSchema(idInfo, useOpenApiV2)},")
             .ToList();
 
-        var schemaTable = string.Join("\n", schemaEntries);
+        var schemaTable = string.Join(GeneratedCode.NewLine, schemaEntries);
 
-        var code = GeneratedCode.Header("Len.StronglyTypedId", "// Required by IDictionary<TKey, TValue>.TryAdd, an extension method declared in this namespace.\nusing System.Collections.Generic;") + $$"""
+        var code = GeneratedCode.Header(
+            "Len.StronglyTypedId",
+            "// Required by IDictionary<TKey, TValue>.TryAdd, an extension method declared in this namespace."
+                + GeneratedCode.NewLine
+                + "using System.Collections.Generic;") + $$"""
             internal static partial class StronglyTypedIds
             {
                 /// <summary>
@@ -191,9 +195,9 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
     /// </remarks>
     private static string GetApplySchemaBody(bool useOpenApiV2)
         => useOpenApiV2
-            ? "            if (parameter is global::Microsoft.OpenApi.OpenApiParameter concreteParameter)\n"
-                + "            {\n"
-                + "                concreteParameter.Schema = schema;\n"
+            ? "            if (parameter is global::Microsoft.OpenApi.OpenApiParameter concreteParameter)" + GeneratedCode.NewLine
+                + "            {" + GeneratedCode.NewLine
+                + "                concreteParameter.Schema = schema;" + GeneratedCode.NewLine
                 + "            }"
             : "            parameter.Schema = schema;";
 }
