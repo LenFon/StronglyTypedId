@@ -205,9 +205,15 @@ jobs:
       # 而仓库构建需要 10.0.401。
       #
       # 两个包都要打：主包依赖生成器包，探针装主包时会去本地源找它。
+      #
+      # 必须显式关掉 GeneratePackageOnBuild：common.props 在 Release 下把它设为 true，而 SDK 的
+      # NuGet.Build.Tasks.Pack.targets 据此把 Build 从 GenerateNuspecDependsOn 里摘掉 —— 于是
+      # `dotnet pack` 只打包、不构建。本 job 没有前置 build 步骤（pack 与 publish 两个 job 都有），
+      # 生成器的 4.8 副构建产物因此不存在，AddRoslyn48AnalyzerToPackage 直接报错。关掉后 pack
+      # 重新依赖 Build，两个工程（含副构建）都会先构建。Packaging.Test 的夹具出于同样原因也传了这个开关。
       run: |
-        dotnet pack src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release -o artifacts/packages
-        dotnet pack src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release -o artifacts/packages
+        dotnet pack src/Len.StronglyTypedId.Generators/Len.StronglyTypedId.Generators.csproj -c Release -o artifacts/packages -p:GeneratePackageOnBuild=false
+        dotnet pack src/Len.StronglyTypedId/Len.StronglyTypedId.csproj -c Release -o artifacts/packages -p:GeneratePackageOnBuild=false
     - name: Build compatibility probe
       # 在探针目录跑，让嵌套 global.json 生效。TreatWarningsAsErrors 已在 csproj 里，
       # CS9057 / CS8034 会直接失败而不是被当成噪音。
