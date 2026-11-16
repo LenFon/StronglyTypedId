@@ -28,8 +28,8 @@
 		  低版本 SDK 加载不了 5.9 编译的分析器（CS9057 后静默丢弃，症状是「不包含 Create 的定义」），
 		  故必须保留 4.8 那一份。4.8 产物由 Len.StronglyTypedId.Generators.Roslyn48 工程编译同一份源码产出。
 		-->
-		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.12.0" />
 		<!--
 		  ImmutableArray<T> 的 [CollectionBuilder] 标注从 8.0 起才有；Roslyn 4.8 只传递 7.0，
 		  不显式抬到 8.0 会报 CS9210。运行时安全：分析器加载时 Immutable 由编译器宿主提供
