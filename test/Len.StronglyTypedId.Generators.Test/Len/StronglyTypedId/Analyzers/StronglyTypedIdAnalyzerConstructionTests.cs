@@ -959,7 +959,7 @@ public class StronglyTypedIdAnalyzerConstructionTests
             """";
         var expected = Verify.Diagnostic(Descriptors.JsonShapePropertyNameInvalid)
             .WithArguments("'  '", "the name must not be empty, whitespace-only, or contain control characters")
-            .WithSpan(3, 65, 3, 93);
+            .WithSpan(3, 66, 3, 94);
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 
@@ -982,7 +982,7 @@ public class StronglyTypedIdAnalyzerConstructionTests
             """";
         var expected = Verify.Diagnostic(Descriptors.JsonShapePropertyNameInvalid)
             .WithArguments("'id'", "it only applies when JsonShape is JsonShape.Object")
-            .WithSpan(3, 35, 3, 63);
+            .WithSpan(3, 36, 3, 64);
         await Verify.VerifyAnalyzerAsync(code, expected);
     }
 

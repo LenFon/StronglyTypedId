@@ -449,6 +449,7 @@ internal static class Descriptors
     /// <remarks>
     /// 两种原因共用一条规则，因为它们指向同一个实参、同一类修复（改形态或改名字）。级别是 Warning：
     /// 代码仍可编译，生成器回退到默认属性名 <c>"value"</c>，只是配置没有按预期生效。
+    /// 带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/> 是因为程序集级默认值要到编译结束才知道。
     /// </remarks>
     public static readonly DiagnosticDescriptor JsonShapePropertyNameInvalid
         = new(JsonShapePropertyNameInvalidId,
@@ -456,7 +457,10 @@ internal static class Descriptors
             new LocalizedString("JsonShapePropertyNameInvalidMessage"),
             Category,
             DiagnosticSeverity.Warning,
-            true);
+            true,
+            description: null,
+            helpLinkUri: null,
+            WellKnownDiagnosticTags.CompilationEnd);
 
     /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
