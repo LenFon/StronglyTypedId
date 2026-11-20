@@ -171,6 +171,57 @@ value is `(Status)999`. This is the check `Id.TryParse("999")` already applies, 
 paths apply, closing the one entry point that used to accept it. `[Flags]` enums are checked against the
 undefined-bits mask instead, so any combination of defined members passes while `999` does not.
 
+## Number handling
+
+`System.Text.Json`'s `JsonNumberHandling` is a policy for numeric types: `AllowReadingFromString` lets a
+number be read from a JSON string, and `WriteAsString` writes it as one. It applies to the framework's
+built-in converters only — a custom `JsonConverter<T>` never sees it — so without help an `int` property
+and an `Int32Id` property in the same contract would disagree about `"42"`.
+
+The generated converter honours both flags for numeric primitives, matching what the bare primitive does
+byte for byte:
+
+```csharp
+var options = new JsonSerializerOptions { NumberHandling = JsonNumberHandling.WriteAsString };
+
+JsonSerializer.Serialize(new Int32Id(42), options);                        // "42"
+JsonSerializer.Deserialize<Int32Id>("\"42\"", options);                    // Int32Id { Value = 42 }
+```
+
+Covered primitives are `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`, `decimal`,
+`float` and `double`. `Half`, `Int128` and `UInt128` already go through `JsonSerializer`, which honours the
+option natively; `BigInteger` is always written as text. `Guid`, `string`, `char` and the date/time types
+are unaffected, because `NumberHandling` does not describe them.
+
+The accepted string forms are exactly the ones the built-in converters accept, not the looser
+`NumberStyles.Integer` / `Number`: no surrounding whitespace, no thousands separators, no leading `+` on
+unsigned types, and only the exact spellings `NaN`, `Infinity` and `-Infinity` for floating point. Values
+that overflow the primitive are rejected rather than folded into infinity. With the option unset, output
+is unchanged.
+
+Enums are deliberately excluded. `System.Text.Json`'s enum converter ignores `NumberHandling` entirely —
+`WriteAsString` still writes `1`, and `AllowReadingFromString` still rejects `"1"` — so making an
+enum-backed id honour it would put the id at odds with the bare enum.
+
+### `[JsonNumberHandling]` on an id does not work
+
+The attribute cannot be used to opt in per member. `System.Text.Json` validates it against the CLR type
+when it builds the `JsonTypeInfo`, before any converter runs, and an id is not a number to that check:
+
+```csharp
+public class Order
+{
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString)]   // throws at serialize time
+    public Int32Id Id { get; set; }
+}
+```
+
+Serializing that throws `InvalidOperationException` (`'JsonNumberHandlingAttribute' is only valid on a
+number or a collection of numbers…`). The same happens when the attribute is put on the id type itself,
+and for `Int32Id?` and `List<Int32Id>` — the check unwraps `Nullable<T>` and looks inside containers. The
+converter cannot intervene, because the failure happens before it is called. `STIA0033` reports these
+declarations at compile time; the fix is to set `JsonSerializerOptions.NumberHandling` globally.
+
 ## Validation failures
 
 A `Validator` rejects values that parse but violate a domain rule. Both converters honour it on read, and
@@ -209,14 +260,31 @@ public partial record struct OrderId(Guid Value);
 // JsonShape.Object:             {"value":"3f2c…"}
 ```
 
+The property name is `value` by default. When an existing contract already uses a different one, set
+`JsonShapePropertyName` instead of hand-writing a converter:
+
+```csharp
+[StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+public partial record struct OrderId(Guid Value);
+
+// {"id":"3f2c…"}
+```
+
+The name flows through every place that knows the shape: both converters, the Swagger schema and the
+built-in OpenAPI schema, so the document and the payload cannot drift apart. `JsonShapePropertyName` only
+applies when `JsonShape` is `JsonShape.Object`; setting it without the object shape, or giving it a blank
+name or one containing control characters, reports `STIA0031` and the generator falls back to `value`.
+Renaming the property is a **data-contract change**: payloads written under the old name no longer read
+back.
+
 The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to the id's own value only;
 dictionary keys are always the primitive text, because a JSON object cannot be a key. `JsonShape.Object`
-reads and writes a single `value` property; a payload that is not an object, or an object without
-`value`, throws (`JsonException` / `JsonSerializationException`), and any other property is skipped.
-An id whose wrapped primitive is `null` (a `string`-backed id or one backed by a custom `class`) writes
-`{"value":null}` and reads it back as that same default id, so the object form round-trips too. A bare
-JSON `null` in place of the object is rejected for a `record struct` id with the same framework exception
-as the primitive form, rather than being handed back as `null` (which would fail on unboxing).
+reads and writes a single property (`value` unless renamed); a payload that is not an object, or an object
+without that property, throws (`JsonException` / `JsonSerializationException`), and any other property is
+skipped. An id whose wrapped primitive is `null` (a `string`-backed id or one backed by a custom `class`)
+writes `{"value":null}` and reads it back as that same default id, so the object form round-trips too. A
+bare JSON `null` in place of the object is rejected for a `record struct` id with the same framework
+exception as the primitive form, rather than being handed back as `null` (which would fail on unboxing).
 
 Under `System.Text.Json` the property name follows `options.PropertyNameCaseInsensitive`, which is
 `false` by default: only the exact lowercase `value` is accepted unless you turn it on, and then

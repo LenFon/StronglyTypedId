@@ -190,7 +190,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             // 直读：token 类型不符时 Utf8JsonReader 抛 InvalidOperationException，文本格式不符时抛
             // FormatException（如 GetGuid）。两者都不是 JsonException，会穿透转换器、让按契约
             // catch (JsonException) 的调用方漏掉这条路径，故在此统一转成 JsonException。
-            AppendDirectRead(builder, idInfo, indent, idInfo.PrimitiveIdTypeName, "value", read);
+            AppendDirectRead(builder, idInfo, indent, idInfo.PrimitiveIdTypeName, "value", read, PrimitiveJsonIo.TryGetStringReadPlan(idInfo));
 
             return;
         }
@@ -219,14 +219,60 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
     /// <param name="typeName">变量的类型（含可空标注）。</param>
     /// <param name="variableName">变量名。</param>
     /// <param name="expression">读取表达式。</param>
-    private static void AppendDirectRead(StringBuilder builder, StronglyTypedIdInfo idInfo, string indent, string typeName, string variableName, string expression)
+    /// <param name="stringReadPlan">
+    /// <c>AllowReadingFromString</c> 生效时的解析计划；为 <see langword="null"/> 时不生成分支。
+    /// </param>
+    private static void AppendDirectRead(
+        StringBuilder builder,
+        StronglyTypedIdInfo idInfo,
+        string indent,
+        string typeName,
+        string variableName,
+        string expression,
+        PrimitiveJsonIo.StringReadPlan? stringReadPlan = null)
     {
         builder.Append(indent).Append(typeName).Append(' ').Append(variableName).Append(';').Append(GeneratedCode.NewLine);
         builder.Append(indent).Append("try").Append(GeneratedCode.NewLine);
         builder.Append(indent).Append("{").Append(GeneratedCode.NewLine);
-        builder.Append(indent).Append("    ").Append(variableName).Append(" = ").Append(expression).Append(';').Append(GeneratedCode.NewLine);
+
+        if (stringReadPlan is not { } plan)
+        {
+            builder.Append(indent).Append("    ").Append(variableName).Append(" = ").Append(expression).Append(';').Append(GeneratedCode.NewLine);
+        }
+        else
+        {
+            // 与 STJ 内置数值转换器一致：字符串令牌只在 AllowReadingFromString 打开时才接受。
+            // 关掉时仍走 GetInt32 等，由它按 token 类型报错，行为与改动前逐字节相同。
+            builder.Append(indent).Append("    if (reader.TokenType == global::System.Text.Json.JsonTokenType.String").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("        && options.NumberHandling.HasFlag(global::System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString))").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("    {").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("        var text = reader.GetString()!;").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("        ").Append(variableName).Append(" = ").Append(plan.ParseExpression).Append(';').Append(GeneratedCode.NewLine);
+
+            if (plan.InvalidCondition is { } invalidCondition)
+            {
+                // Parse 认小写 nan / infinity，也会把溢出折成无穷；STJ 两者都拒绝，故补一道校验。
+                builder.Append(indent).Append("        if (").Append(invalidCondition).Append(')').Append(GeneratedCode.NewLine);
+                builder.Append(indent).Append("        {").Append(GeneratedCode.NewLine);
+                builder.Append(indent).Append("            throw new global::System.FormatException($\"The JSON string '").Append("{text}").Append("' is not a valid JSON number.\");").Append(GeneratedCode.NewLine);
+                builder.Append(indent).Append("        }").Append(GeneratedCode.NewLine);
+            }
+
+            builder.Append(indent).Append("    }").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("    else").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("    {").Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("        ").Append(variableName).Append(" = ").Append(expression).Append(';').Append(GeneratedCode.NewLine);
+            builder.Append(indent).Append("    }").Append(GeneratedCode.NewLine);
+        }
+
         builder.Append(indent).Append("}").Append(GeneratedCode.NewLine);
-        builder.Append(indent).Append("catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException)").Append(GeneratedCode.NewLine);
+
+        // 字符串分支的 Parse 会抛 OverflowException（如 "256" 之于 byte），而 STJ 对同一载荷报的是
+        // JsonException；不并进来就会让按契约 catch (JsonException) 的调用方漏掉这条路径。
+        // 无字符串分支时保持原有过滤器，Guid / string / 日期类的产物逐字节不变。
+        builder.Append(indent).Append(stringReadPlan is null
+            ? "catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException)"
+            : "catch (global::System.Exception e) when (e is global::System.FormatException or global::System.InvalidOperationException or global::System.OverflowException)").Append(GeneratedCode.NewLine);
         builder.Append(indent).Append("{").Append(GeneratedCode.NewLine);
         builder.Append(indent).Append("    throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(".\", e);").Append(GeneratedCode.NewLine);
         builder.Append(indent).Append("}").Append(GeneratedCode.NewLine);
@@ -307,7 +353,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("        {").Append(GeneratedCode.NewLine);
         builder.Append("            if (reader.TokenType != global::System.Text.Json.JsonTokenType.StartObject)").Append(GeneratedCode.NewLine);
         builder.Append("            {").Append(GeneratedCode.NewLine);
-        builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a 'value' property was expected.\");").Append(GeneratedCode.NewLine);
+        builder.Append("                throw new global::System.Text.Json.JsonException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a '").Append(idInfo.JsonShapePropertyName).Append("' property was expected.\");").Append(GeneratedCode.NewLine);
         builder.Append("            }").Append(GeneratedCode.NewLine);
         builder.Append(GeneratedCode.NewLine);
         builder.Append("            ").Append(idInfo.EscapedName).Append("? result = null;").Append(GeneratedCode.NewLine);
@@ -333,10 +379,10 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         builder.Append("                    continue;").Append(GeneratedCode.NewLine);
         builder.Append("                }").Append(GeneratedCode.NewLine);
         builder.Append(GeneratedCode.NewLine);
-        // ValueTextEquals 是逐字节比较、只认小写 value，故需跟随 options.PropertyNameCaseInsensitive，
-        // 否则开了大小写不敏感后 {"Value":"..."} 会走进 Skip 分支并报「缺少 value 属性」。
-        builder.Append("                if (reader.ValueTextEquals(\"value\")").Append(GeneratedCode.NewLine);
-        builder.Append("                    || (options.PropertyNameCaseInsensitive && global::System.String.Equals(reader.GetString(), \"value\", global::System.StringComparison.OrdinalIgnoreCase)))").Append(GeneratedCode.NewLine);
+        // ValueTextEquals 是逐字节比较、只认精确拼写，故需跟随 options.PropertyNameCaseInsensitive，
+        // 否则开了大小写不敏感后 {"Value":"..."} 会走进 Skip 分支并报「缺少属性」。
+        builder.Append("                if (reader.ValueTextEquals(").Append(GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName)).Append(")").Append(GeneratedCode.NewLine);
+        builder.Append("                    || (options.PropertyNameCaseInsensitive && global::System.String.Equals(reader.GetString(), ").Append(GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName)).Append(", global::System.StringComparison.OrdinalIgnoreCase)))").Append(GeneratedCode.NewLine);
         builder.Append("                {").Append(GeneratedCode.NewLine);
         builder.Append("                    reader.Read();").Append(GeneratedCode.NewLine);
 
@@ -413,7 +459,7 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
             builder.Append(GeneratedCode.NewLine);
         }
 
-        builder.Append("            return result ?? throw new global::System.Text.Json.JsonException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append(GeneratedCode.NewLine);
+        builder.Append("            return result ?? throw new global::System.Text.Json.JsonException(\"Cannot convert a JSON object without a '").Append(idInfo.JsonShapePropertyName).Append("' property to a ").Append(idInfo.Name).Append(".\");").Append(GeneratedCode.NewLine);
         builder.Append("        }");
 
         return builder.ToString();
@@ -454,12 +500,25 @@ internal class SystemTextJsonCodeGenerator : ICoreCodeGenerator
         if (idInfo.IsObjectJsonShape)
         {
             builder.Append("                writer.WriteStartObject();").Append(GeneratedCode.NewLine);
-            builder.Append("                writer.WritePropertyName(\"value\");").Append(GeneratedCode.NewLine);
+            builder.Append("                writer.WritePropertyName(").Append(GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName)).Append(");").Append(GeneratedCode.NewLine);
         }
 
         if (delegatesToSerializer)
         {
             AppendDelegatedWrite(builder, idInfo);
+        }
+        else if (!idInfo.HasPrefix && !idInfo.RequiresTextSerialization && PrimitiveJsonIo.TryGetStringWriteExpression(idInfo) is { } writeAsString)
+        {
+            // 与 STJ 内置数值转换器一致：WriteAsString 打开时写不变文化的文本，否则写数字。
+            // 只在数值基元上生成；Guid / string / 日期类的产物逐字节不变。
+            builder.Append("                if (options.NumberHandling.HasFlag(global::System.Text.Json.Serialization.JsonNumberHandling.WriteAsString))").Append(GeneratedCode.NewLine);
+            builder.Append("                {").Append(GeneratedCode.NewLine);
+            builder.Append("                    ").Append(writeAsString).Append(GeneratedCode.NewLine);
+            builder.Append("                }").Append(GeneratedCode.NewLine);
+            builder.Append("                else").Append(GeneratedCode.NewLine);
+            builder.Append("                {").Append(GeneratedCode.NewLine);
+            builder.Append("                    ").Append(writeValue).Append(GeneratedCode.NewLine);
+            builder.Append("                }").Append(GeneratedCode.NewLine);
         }
         else
         {

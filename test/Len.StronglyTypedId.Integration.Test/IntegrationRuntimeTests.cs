@@ -535,8 +535,8 @@ public class IntegrationRuntimeTests
         invalidContext.Result.IsModelSet.Should().BeFalse("非法文本不得写入模型");
         invalidContext.ModelState["id"]!.Errors.Should().ContainSingle()
             .Which.ErrorMessage.Should().Be(
-                "The value 'not-a-guid' is not a valid strongly typed id.",
-                "错误消息来自生成的绑定器；退回 TryParseModelBinder 时是框架的 \"is not valid.\"");
+                "The value 'not-a-guid' is not a valid IntegrationGuidId.",
+                "错误消息来自生成的绑定器，且带 Id 名；退回 TryParseModelBinder 时是框架的 \"is not valid.\"");
 
         // 缺省（查询串里根本没有该键）应保持「未绑定且无错误」，交由可空类型表达 null。
         var missingContext = CreateBindingContext("id", null);

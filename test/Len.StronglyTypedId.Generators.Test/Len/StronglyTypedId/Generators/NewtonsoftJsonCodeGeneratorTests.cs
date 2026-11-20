@@ -232,6 +232,29 @@ public class NewtonsoftJsonCodeGeneratorTests
     }
 
     /// <summary>
+    /// <c>JsonShapePropertyName</c> 配了之后，读写都改用该名字，默认的 <c>"value"</c> 不再出现。
+    /// </summary>
+    [Fact]
+    public void JsonShapePropertyName_Should_RenameObjectProperty_ForNewtonsoftJson()
+    {
+        var generated = GetGeneratedCode("""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+            public partial record struct OrderId(Guid Value);
+            """);
+
+        var code = generated["Len.StronglyTypedId.OrderId.NewtonsoftJson.g.cs"];
+
+        code.Should()
+            .Contain("json.GetValue(\"id\", global::System.StringComparison.OrdinalIgnoreCase)")
+            .And.Contain("writer.WritePropertyName(\"id\");")
+            .And.NotContain("writer.WritePropertyName(\"value\");");
+    }
+
+    /// <summary>
     /// 默认（基元形态）下产物不含任何对象形态痕迹，引入本开关不改变既有产物。
     /// </summary>
     [Fact]

@@ -106,8 +106,26 @@ OrderId.Create(Guid.Empty);  // ArgumentException，消息即验证器给出的�
 （此时恒为通过）。它声明在 `IStronglyTypedId<TSelf, TPrimitiveId>` 上，因此约束到该接口的泛型代码
 同样能拿到原因。
 
+解析也有对应的重载。`IParsable<TSelf>` 的 `TryParse` 只报布尔值，收到文本的调用方（模型绑定器、
+消息处理器）无从知道**为什么**被拒。四参重载补上这条通道，且声明在 `IStronglyTypedId<TSelf>` 上，
+不需要基元类型：
+
+```csharp
+OrderId.TryParse("not-a-guid", null, out _, out var validation);
+// validation.IsValid == false
+// validation.Message == "The value 'not-a-guid' is not a valid OrderId."
+
+OrderId.TryParse(Guid.Empty.ToString(), null, out _, out validation);
+// validation.Message == "An id cannot be empty.", Code == "E_EMPTY"   （验证器给出的原因）
+```
+
+「文本解析不了」与「验证器拒绝」分开报告：前者给一条点名 Id 与文本的通用消息，后者原样带回验证器的结果。
+ASP.NET Core 模型绑定器用的就是这个重载，被拒绝的值因此带着验证器的消息进 `ModelState`，而不是一句固定文案。
+Minimal API 的绑定走框架的 `IParsable` 路径，不经过它，所以仍只看到布尔值。
+
 `RedactValidationMessage = true` 仍然优先：验证器文案可能含用户输入，故异常里忽略它、改用通用文案。
-`TryCreate` 仍返回验证器的消息 —— 返回值不像异常消息那样会进日志与 APM。
+`TryCreate` 仍返回验证器的消息 —— 返回值不像异常消息那样会进日志与 APM。四参 `TryParse` 跟随 `Create`
+而不是 `TryCreate`：它填的是 `ModelState`，那是回显给调用方的，故同样脱敏。
 
 源码生成器唯一做不到的是拦截你声明的主构造函数：`new OrderId(...)` 会绕过校验。当取值来自你的代码
 之外（用户输入、数据库、报文）时，请让它经过 `Create` 或解析成员。

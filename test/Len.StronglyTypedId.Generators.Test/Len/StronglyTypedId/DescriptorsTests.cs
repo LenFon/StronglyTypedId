@@ -57,11 +57,23 @@ public partial class DescriptorsTests
                 case Descriptors.IntegrationUnavailableId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0019 是告警性诊断");
                     break;
+                case Descriptors.IntegrationVersionTooLowId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0030 是告警性诊断");
+                    break;
                 case Descriptors.GenericContainerSkipsIntegrationsId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0028 是告警性诊断");
                     break;
                 case Descriptors.UnknownIntegrationId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0024 是告警性诊断");
+                    break;
+                case Descriptors.JsonShapePropertyNameInvalidId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0031 是告警性诊断");
+                    break;
+                case Descriptors.OrphanInstanceId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0032 是告警性诊断");
+                    break;
+                case Descriptors.JsonNumberHandlingOnIdId:
+                    descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning, "STIA0033 是告警性诊断");
                     break;
                 case Descriptors.ValidatorCanBeBypassedId:
                     descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Info, "STIA0014 是建议性诊断");

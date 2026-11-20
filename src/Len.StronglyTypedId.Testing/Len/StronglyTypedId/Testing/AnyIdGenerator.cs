@@ -68,42 +68,92 @@ public sealed class AnyIdGenerator
         => (TId)Create(typeof(TId));
 
     /// <summary>
-    /// 创建 <paramref name="count"/> 个 <typeparamref name="TId"/> 类型的强类型 Id。
+    /// 创建 <paramref name="count"/> 个互不相同的 <typeparamref name="TId"/> 类型的强类型 Id。
     /// </summary>
+    /// <remarks>
+    /// 按 Id 的 <c>Equals</c>（record 的结构相等）去重，与使用者写 <c>OnlyHaveUniqueItems()</c> 的口径一致。
+    /// 取值域可能小于 <paramref name="count"/>（<c>byte</c> 只有 256 个值），因此有尝试上限：
+    /// 凑不够时抛 <see cref="InvalidOperationException"/>，而不是静默返回重复值 —— 后者会让唯一性断言偶发失败。
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> 为负数。</exception>
+    /// <exception cref="InvalidOperationException">在尝试上限内凑不够 <paramref name="count"/> 个不同值。</exception>
     public IReadOnlyList<TId> Ids<TId>(int count)
         where TId : IStronglyTypedId<TId>
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);
 
-        var ids = new TId[count];
-
-        for (var index = 0; index < count; index++)
+        if (count == 0)
         {
-            ids[index] = Id<TId>();
+            return [];
         }
 
-        return ids;
+        var seen = new HashSet<TId>(count);
+        var ids = new List<TId>(count);
+
+        // 上限按请求数放大，给「验证器拒绝一部分取值」留出重试空间；下限保证小请求也有足够尝试次数。
+        var maxAttempts = Math.Max(count * 10, 1000);
+
+        for (var attempt = 0; attempt < maxAttempts && ids.Count < count; attempt++)
+        {
+            var id = Id<TId>();
+
+            if (seen.Add(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids.Count < count
+            ? throw new InvalidOperationException(
+                $"Could not generate {count} distinct values for '{typeof(TId)}' after {maxAttempts} attempts; "
+                + $"got {ids.Count}. The primitive's value domain is probably smaller than {count}, "
+                + "or its validator rejects too many generated values. Request fewer ids, or register an "
+                + $"explicit factory with {nameof(AnyIdGenerator)}.{nameof(Register)}<{typeof(TId).Name}>(...).")
+            : ids;
     }
 
     /// <summary>
-    /// 创建 <paramref name="count"/> 个指定运行时类型的强类型 Id。
+    /// 创建 <paramref name="count"/> 个互不相同的指定运行时类型的强类型 Id。
     /// </summary>
     /// <remarks>
     /// <see cref="Create(Type)"/> 的批量形式，供 Id 类型只在运行期可知的场景使用。
+    /// 去重口径与 <see cref="Ids{TId}(int)"/> 一致：按 Id 的 <c>Equals</c>。
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="idType"/> 为 <see langword="null"/>。</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> 为负数。</exception>
+    /// <exception cref="InvalidOperationException">在尝试上限内凑不够 <paramref name="count"/> 个不同值。</exception>
     public IReadOnlyList<object> Ids(Type idType, int count)
     {
         ArgumentNullException.ThrowIfNull(idType);
         ArgumentOutOfRangeException.ThrowIfNegative(count);
 
-        var ids = new object[count];
-
-        for (var index = 0; index < count; index++)
+        if (count == 0)
         {
-            ids[index] = Create(idType);
+            return [];
         }
 
-        return ids;
+        var seen = new HashSet<object>(count);
+        var ids = new List<object>(count);
+
+        var maxAttempts = Math.Max(count * 10, 1000);
+
+        for (var attempt = 0; attempt < maxAttempts && ids.Count < count; attempt++)
+        {
+            var id = Create(idType);
+
+            if (seen.Add(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids.Count < count
+            ? throw new InvalidOperationException(
+                $"Could not generate {count} distinct values for '{idType}' after {maxAttempts} attempts; "
+                + $"got {ids.Count}. The primitive's value domain is probably smaller than {count}, "
+                + "or its validator rejects too many generated values. Request fewer ids, or register an "
+                + $"explicit factory with {nameof(AnyIdGenerator)}.{nameof(Register)}({nameof(Type)}, ...).")
+            : ids;
     }
 
     /// <summary>

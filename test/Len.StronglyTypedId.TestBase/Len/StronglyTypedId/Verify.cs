@@ -37,6 +37,25 @@ public static class Verify
     }
 
     /// <summary>
+    /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但额外挂一批引用程序集。
+    /// </summary>
+    /// <remarks>
+    /// 用于「程序集引用了、但版本不同」这类用例：版本下限的判定读的是
+    /// <see cref="Compilation.ReferencedAssemblyNames"/>，只有真的挂上对应版本的引用才测得出来。
+    /// </remarks>
+    public static Task VerifyAnalyzerWithReferencesAsync(
+        string source,
+        MetadataReference[] references,
+        params DiagnosticResult[] expected)
+    {
+        var test = new TestAnalyzer { TestCode = source };
+        EnableStyleHintsWhenExpected(test, expected);
+        test.TestState.AdditionalReferences.AddRange(references);
+        test.ExpectedDiagnostics.AddRange(expected);
+        return test.RunAsync();
+    }
+
+    /// <summary>
     /// 与 <see cref="VerifyAnalyzerAsync"/> 相同，但无条件启用默认被测试基建屏蔽的两条命名风格提示（STIA0015 / STIA0016）。
     /// </summary>
     /// <remarks>

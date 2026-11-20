@@ -1,10 +1,11 @@
 ﻿using FluentAssertions;
+using Len.StronglyTypedId.Generators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
+using System.Collections.Immutable;
 using System.Globalization;
-using System.Reflection;
 
 namespace Len.StronglyTypedId.Analyzers;
 
@@ -131,13 +132,45 @@ public class StronglyTypedIdAnalyzerIntegrationTests
     [Fact]
     public void IntegrationRequirements_Should_CoverEveryFlagInAll()
     {
-        var requirements = (IEnumerable<(int Flag, string AssemblyName, string DisplayName)>)typeof(StronglyTypedIdAnalyzer)
-            .GetField("_integrationRequirements", BindingFlags.NonPublic | BindingFlags.Static)!
-            .GetValue(null)!;
-
-        var covered = requirements.Aggregate(0, (mask, requirement) => mask | requirement.Flag);
+        var covered = IntegrationRequirements.All.Aggregate(0, (mask, requirement) => mask | requirement.Flag);
 
         covered.Should().Be(IntegrationFlags.All);
+    }
+
+    /// <summary>
+    /// 分析器与生成器必须共用同一张表：两处各写一份版本下限，改了一处漏改另一处，
+    /// 门控与分析器就会给出互相矛盾的结论（生成器不产出，分析器也不报）。
+    /// </summary>
+    [Fact]
+    public void IntegrationRequirements_Should_BeSharedWithGeneratorGates()
+    {
+        // 每个集成在生成器登记表里都必须有一条闸门，且该闸门就是 IntegrationRequirements 的判定。
+        foreach (var requirement in IntegrationRequirements.All)
+        {
+            var registration = StronglyTypedIdGenerator.DocumentedGenerators
+                .SingleOrDefault(candidate => string.Equals(
+                    candidate.AssemblyName,
+                    requirement.AssemblyName + ".dll",
+                    StringComparison.OrdinalIgnoreCase));
+
+            registration.Should().NotBeNull($"{requirement.DisplayName} 必须在生成器登记表里成行");
+
+            // 闸门在「满足下限」时开、在「低于下限」时关，两者必须与表里的 MinMajor 一致。
+            var satisfied = ImmutableArray.Create(
+                new ModuleInfo(requirement.AssemblyName + ".dll", new Version(requirement.MinMajor, 0), null));
+
+            registration!.IsEnabled(satisfied).Should().BeTrue(
+                $"{requirement.DisplayName} 在 {requirement.MinMajor}.0 时必须启用");
+
+            if (requirement.MinMajor > 0)
+            {
+                var tooOld = ImmutableArray.Create(
+                    new ModuleInfo(requirement.AssemblyName + ".dll", new Version(requirement.MinMajor - 1, 9), null));
+
+                registration.IsEnabled(tooOld).Should().BeFalse(
+                    $"{requirement.DisplayName} 在 {requirement.MinMajor - 1}.9 时必须关闭");
+            }
+        }
     }
 
     /// <summary>
@@ -356,6 +389,135 @@ public class StronglyTypedIdAnalyzerIntegrationTests
             """";
 
         await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    #endregion
+
+    #region 请求了版本过低的集成（STIA0030）
+
+    /// <summary>
+    /// 引用了 EF Core 6，但生成器门控要求 7：不报的话，用户看到的是运行时「EF 无法映射 OrderId」，
+    /// 而不是「EF Core 版本太旧」。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenIntegrationVersionIsBelowMinimum()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.EntityFrameworkCore)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.IntegrationVersionTooLow)
+            .WithArguments("OrderId", "EntityFrameworkCore", "Microsoft.EntityFrameworkCore", 7, "6.0.0.0")
+            .WithSpan(5, 18, 5, 80);
+        await Verify.VerifyAnalyzerWithReferencesAsync(
+            code,
+            [SyntheticAssembly.GetOrCreate("Microsoft.EntityFrameworkCore", "6.0.0.0")],
+            expected);
+    }
+
+    /// <summary>
+    /// 版本够用时不报：门控承诺的是「≥ 这个版本可用」，达到下限就该安静。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenIntegrationVersionMeetsMinimum()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.EntityFrameworkCore)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerWithReferencesAsync(
+            code,
+            [SyntheticAssembly.GetOrCreate("Microsoft.EntityFrameworkCore", "7.0.0.0")]);
+    }
+
+    /// <summary>
+    /// 程序集根本没引用时只报 STIA0019，不报 STIA0030：两条规则的修复方向不同（加包 vs 升级），
+    /// 同时报只会让用户不知道该做哪一件。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReportOnlyUnavailable_WhenIntegrationIsNotReferenced()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.EntityFrameworkCore)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.IntegrationUnavailable)
+            .WithArguments("OrderId", "EntityFrameworkCore", "Microsoft.EntityFrameworkCore")
+            .WithSpan(5, 18, 5, 80);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 没有请求该集成时，即使版本低也不报：用户没要求它，报出来只是噪声。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenOutdatedIntegrationIsNotRequested()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.None)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerWithReferencesAsync(
+            code,
+            [SyntheticAssembly.GetOrCreate("Microsoft.EntityFrameworkCore", "6.0.0.0")]);
+    }
+
+    /// <summary>
+    /// MVC 的门面随 .NET 版本分散在三个程序集里：版本取实际命中的那个门面。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenMvcFacadeVersionIsBelowMinimum()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.AspNetCoreMvc)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.IntegrationVersionTooLow)
+            .WithArguments("OrderId", "AspNetCoreMvc", "Microsoft.AspNetCore.Mvc", 2, "1.1.0.0")
+            .WithSpan(5, 18, 5, 74);
+        await Verify.VerifyAnalyzerWithReferencesAsync(
+            code,
+            [SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.Mvc.Abstractions", "1.1.0.0")],
+            expected);
+    }
+
+    /// <summary>
+    /// 门面版本够用时不报：三个门面里只要有一个达到下限，集成就能用。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenMvcFacadeVersionMeetsMinimum()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(Integrations = StronglyTypedIdIntegrations.AspNetCoreMvc)]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerWithReferencesAsync(
+            code,
+            [SyntheticAssembly.GetOrCreate("Microsoft.AspNetCore.Mvc.Abstractions", "2.0.0.0")]);
     }
 
     #endregion

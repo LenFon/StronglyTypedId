@@ -169,7 +169,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         builder.Append(GeneratedCode.NewLine);
         builder.Append("            if (reader.TokenType != global::Newtonsoft.Json.JsonToken.StartObject)").Append(GeneratedCode.NewLine);
         builder.Append("            {").Append(GeneratedCode.NewLine);
-        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a 'value' property was expected.\");").Append(GeneratedCode.NewLine);
+        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException($\"Cannot convert the JSON token '{reader.TokenType}' to a ").Append(idInfo.Name).Append(": an object with a '").Append(idInfo.JsonShapePropertyName).Append("' property was expected.\");").Append(GeneratedCode.NewLine);
         builder.Append("            }").Append(GeneratedCode.NewLine);
         builder.Append(GeneratedCode.NewLine);
         builder.Append("            var json = global::Newtonsoft.Json.Linq.JObject.Load(reader);").Append(GeneratedCode.NewLine);
@@ -177,11 +177,11 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         // 属性名按大小写不敏感匹配：Newtonsoft 对普通 POCO 就是这么做的（`{"Value":…}` 与 `{"value":…}`
         // 都能填进 Value 属性），而 JObject.TryGetValue 是序数比较、只认小写。生成的转换器若比它所在的
         // 序列化器更严，同一个载荷会在 Id 这一层突然失败。精确匹配优先，与 POCO 的解析顺序一致。
-        builder.Append("            var valueToken = json.GetValue(\"value\", global::System.StringComparison.OrdinalIgnoreCase);").Append(GeneratedCode.NewLine);
+        builder.Append("            var valueToken = json.GetValue(").Append(GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName)).Append(", global::System.StringComparison.OrdinalIgnoreCase);").Append(GeneratedCode.NewLine);
         builder.Append(GeneratedCode.NewLine);
         builder.Append("            if (valueToken is null)").Append(GeneratedCode.NewLine);
         builder.Append("            {").Append(GeneratedCode.NewLine);
-        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Cannot convert a JSON object without a 'value' property to a ").Append(idInfo.Name).Append(".\");").Append(GeneratedCode.NewLine);
+        builder.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Cannot convert a JSON object without a '").Append(idInfo.JsonShapePropertyName).Append("' property to a ").Append(idInfo.Name).Append(".\");").Append(GeneratedCode.NewLine);
         builder.Append("            }").Append(GeneratedCode.NewLine);
         builder.Append(GeneratedCode.NewLine);
 
@@ -287,7 +287,7 @@ internal class NewtonsoftJsonCodeGenerator : ICoreCodeGenerator
         if (idInfo.IsObjectJsonShape)
         {
             builder.Append("                writer.WriteStartObject();").Append(GeneratedCode.NewLine);
-            builder.Append("                writer.WritePropertyName(\"value\");").Append(GeneratedCode.NewLine);
+            builder.Append("                writer.WritePropertyName(").Append(GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName)).Append(");").Append(GeneratedCode.NewLine);
             builder.Append("                ").Append(writeValue).Append(GeneratedCode.NewLine);
             builder.Append("                writer.WriteEndObject();").Append(GeneratedCode.NewLine);
         }

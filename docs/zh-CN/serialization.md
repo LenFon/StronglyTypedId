@@ -150,6 +150,53 @@ Id 无法表示 `null`，因此两种转换器都会拒绝该 token，而不是�
 执行的校验，Dapper 的三条路径也一样；补上它之后，唯一还放行野值的入口也关上了。`[Flags]` 枚举则改按
 未定义位掩码校验：已定义成员的任意位组合照常通过，而 `999` 不通过。
 
+## 数字处理（`NumberHandling`）
+
+`System.Text.Json` 的 `JsonNumberHandling` 是数值类型的序列化策略：`AllowReadingFromString` 允许从
+JSON 字符串读数字，`WriteAsString` 把数字写成字符串。它只作用于框架内置的转换器 —— 自定义
+`JsonConverter<T>` 完全看不到它 —— 于是同一份契约里的 `int` 属性与 `Int32Id` 属性会对 `"42"`
+给出不同结果。
+
+生成的转换器对数值基元遵守这两个标志，与裸基元逐字节一致：
+
+```csharp
+var options = new JsonSerializerOptions { NumberHandling = JsonNumberHandling.WriteAsString };
+
+JsonSerializer.Serialize(new Int32Id(42), options);                        // "42"
+JsonSerializer.Deserialize<Int32Id>("\"42\"", options);                    // Int32Id { Value = 42 }
+```
+
+覆盖的基元是 `byte`、`sbyte`、`short`、`ushort`、`int`、`uint`、`long`、`ulong`、`decimal`、`float`
+与 `double`。`Half`、`Int128`、`UInt128` 本来就经 `JsonSerializer` 处理，原生遵守该选项；
+`BigInteger` 始终按文本写出。`Guid`、`string`、`char` 与日期时间类型不受影响，因为 `NumberHandling`
+描述的不是它们。
+
+接受的字符串形态与内置转换器完全一致，而不是更宽松的 `NumberStyles.Integer` / `Number`：不允许首尾
+空白、不允许千位分隔符、无符号类型不允许前导 `+`，浮点只认 `NaN`、`Infinity`、`-Infinity` 三个精确
+拼写。超出基元范围的值会被拒绝，而不是折成无穷。未配置该选项时，输出与改动前一致。
+
+枚举被有意排除。`System.Text.Json` 的枚举转换器完全不看 `NumberHandling` —— `WriteAsString` 仍写
+`1`，`AllowReadingFromString` 仍拒绝 `"1"` —— 让枚举 Id 遵守它反而会与裸枚举不一致。
+
+### 在 Id 上写 `[JsonNumberHandling]` 不生效
+
+不能用这个特性逐成员开启。`System.Text.Json` 在构建 `JsonTypeInfo` 时就按 CLR 类型判定它的合法性，
+早于任何转换器运行，而 Id 在那个判定里不是数字：
+
+```csharp
+public class Order
+{
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString)]   // 序列化时抛异常
+    public Int32Id Id { get; set; }
+}
+```
+
+序列化这段代码会抛 `InvalidOperationException`（`'JsonNumberHandlingAttribute' is only valid on a
+number or a collection of numbers…`）。把特性标在 Id 类型自身上同样如此，`Int32Id?` 与
+`List<Int32Id>` 也一样 —— 那个判定会拆开 `Nullable<T>` 并看进容器内部。转换器无从干预，因为失败发生
+在它被调用之前。`STIA0033` 会在编译期报出这些声明；正确的做法是全局设置
+`JsonSerializerOptions.NumberHandling`。
+
 ## 验证失败的异常契约
 
 `Validator` 拒绝的是「能解析但违反领域规则」的值。两种转换器在读入时都会执行它，并用各自的异常类型
@@ -184,9 +231,22 @@ public partial record struct OrderId(Guid Value);
 // JsonShape.Object：           {"value":"3f2c…"}
 ```
 
+属性名默认是 `value`。当既有契约用的是别的名字时，用 `JsonShapePropertyName` 指定，不必手写转换器：
+
+```csharp
+[StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+public partial record struct OrderId(Guid Value);
+
+// {"id":"3f2c…"}
+```
+
+这个名字贯通所有知道形态的地方：两个转换器、Swagger schema 与内置 OpenAPI schema，因此文档与报文不会各说各话。
+`JsonShapePropertyName` 只在 `JsonShape` 为 `JsonShape.Object` 时有意义；形态不是对象、或名字为空 / 纯空白 /
+含控制字符时报 `STIA0031`，生成器回退到 `value`。改名是**数据契约变更**：按旧名写出的载荷再也读不回来。
+
 该设置对 `System.Text.Json` 与 `Newtonsoft.Json` 同时生效，且只作用于 Id 自身的值：字典键永远是基元
-文本，因为 JSON 的对象键不可能是对象。`JsonShape.Object` 读写单个 `value` 属性；载荷不是对象、或对象
-缺少 `value` 时会抛异常（`JsonException` / `JsonSerializationException`），其余属性一律跳过。
+文本，因为 JSON 的对象键不可能是对象。`JsonShape.Object` 读写单个属性（默认 `value`，可改名）；载荷不是对象、
+或对象缺少该属性时会抛异常（`JsonException` / `JsonSerializationException`），其余属性一律跳过。
 被包装基元为 `null` 的 Id（`string` 基元或自定义 `class` 基元）写出 `{"value":null}`，读回得到同一个
 default Id，因此对象形态同样可往返。若整个值位置是裸 JSON `null` 而不是对象，`record struct` 的 Id 会像
 基元形态那样抛框架自己的序列化异常，而不是把 `null` 交回去（拆箱时会失败）。

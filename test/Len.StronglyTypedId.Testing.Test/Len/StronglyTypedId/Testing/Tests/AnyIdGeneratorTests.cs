@@ -161,10 +161,12 @@ public class AnyIdGeneratorTests
 
         var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021, IncludeBoundaryValues = true });
 
-        var bytes = generator.Ids<ByteId>(Count).Select(id => id.Value).ToArray();
+        // byte / sbyte 的取值域只有 256，去重后凑不出 400 个不同值，故这两档按单值循环取样：
+        // 本条断言的是「端点会被注入」，不是唯一性。
+        var bytes = Sample(generator.Id<ByteId>, Count).Select(id => id.Value).ToArray();
         bytes.Should().Contain(byte.MinValue).And.Contain(byte.MaxValue);
 
-        var sbytes = generator.Ids<SByteId>(Count).Select(id => id.Value).ToArray();
+        var sbytes = Sample(generator.Id<SByteId>, Count).Select(id => id.Value).ToArray();
         sbytes.Should().Contain(sbyte.MinValue).And.Contain(sbyte.MaxValue);
 
         var int16Values = generator.Ids<Int16Id>(Count).Select(id => id.Value).ToArray();
@@ -187,6 +189,24 @@ public class AnyIdGeneratorTests
 
         var uint128Values = generator.Ids<UInt128Id>(Count).Select(id => id.Value).ToArray();
         uint128Values.Should().Contain(UInt128.MinValue).And.Contain(UInt128.MaxValue);
+    }
+
+    /// <summary>
+    /// 连续调用 <paramref name="factory"/> <paramref name="count"/> 次，不去重。
+    /// </summary>
+    /// <remarks>
+    /// 供「取值域小于请求数」的断言使用：这类用例关心的是取值分布，不是唯一性。
+    /// </remarks>
+    private static List<T> Sample<T>(Func<T> factory, int count)
+    {
+        var values = new List<T>(count);
+
+        for (var index = 0; index < count; index++)
+        {
+            values.Add(factory());
+        }
+
+        return values;
     }
 
     /// <summary>
@@ -228,6 +248,111 @@ public class AnyIdGeneratorTests
 
     [Fact]
     public void Ids_Should_ProduceDistinctValues() => Any.Ids<GuidId>(100).Select(id => id.Value).Should().OnlyHaveUniqueItems();
+
+    /// <summary>
+    /// 小取值域的基元同样保证唯一：<c>byte</c> 只有 256 个值，请求 200 个必须全部不同。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：<c>Ids</c> 此前只是循环调用 <c>Id&lt;T&gt;()</c>，对 <c>byte</c> 这类窄基元，
+    /// 200 个样本里出现重复的概率接近 1，使用者的 <c>OnlyHaveUniqueItems()</c> 断言会稳定失败。
+    /// </remarks>
+    [Fact]
+    public void Ids_Should_BeUnique_ForSmallPrimitiveDomain()
+    {
+        var values = Any.Ids<ByteId>(200).Select(id => id.Value).ToArray();
+
+        values.Should().HaveCount(200);
+        values.Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
+    /// 请求数超过取值域时抛 <see cref="InvalidOperationException"/>，消息说明取值域可能太小。
+    /// </summary>
+    /// <remarks>
+    /// 静默返回重复值会让唯一性断言偶发失败，而失败点离「请求数超过域大小」这个真实原因很远。
+    /// </remarks>
+    [Fact]
+    public void Ids_Should_Throw_WhenRequestedCountExceedsDomain()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021 });
+
+        var act = () => generator.Ids<ByteId>(300);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*300*ByteId*domain*");
+    }
+
+    /// <summary>
+    /// 枚举的取值域是成员数：3 个成员的枚举凑不出 4 个不同值。
+    /// </summary>
+    [Fact]
+    public void Ids_Should_Throw_WhenEnumDomainIsExhausted()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021 });
+
+        generator.Ids<ColorId>(3).Select(id => id.Value).Should().OnlyHaveUniqueItems();
+
+        var act = () => generator.Ids<ColorId>(4);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ColorId*domain*");
+    }
+
+    /// <summary>
+    /// 去重后同一 seed 仍可复现：随机源的调用顺序确定，去重只是过滤。
+    /// </summary>
+    [Fact]
+    public void Ids_WithDeduplication_Should_StillBeReproducible()
+    {
+        var first = Any.Ids<ByteId>(100, seed: 20261021);
+        var second = Any.Ids<ByteId>(100, seed: 20261021);
+
+        first.Should().Equal(second);
+        first.Select(id => id.Value).Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
+    /// 验证器拒绝一部分取值时，去重仍能在重试预算内凑够请求数。
+    /// </summary>
+    /// <remarks>
+    /// 约一半的随机 <c>int</c> 是负数，<see cref="PositiveIntId"/> 只接受正数；
+    /// 请求 50 个正数时，尝试上限 <c>max(50 * 10, 1000)</c> 足够。
+    /// </remarks>
+    [Fact]
+    public void Ids_Should_StillFillRequest_WhenValidatorRejectsSomeValues()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021 });
+
+        var values = generator.Ids<PositiveIntId>(50).Select(id => id.Value).ToArray();
+
+        values.Should().HaveCount(50);
+        values.Should().OnlyHaveUniqueItems();
+        values.Should().OnlyContain(value => value > 0);
+    }
+
+    /// <summary>
+    /// 非泛型重载同样去重，且超域时抛同样的异常。
+    /// </summary>
+    [Fact]
+    public void NonGenericIds_Should_AlsoBeUnique()
+    {
+        var generator = new AnyIdGenerator(new AnyIdOptions { Seed = 20261021 });
+
+        var values = generator.Ids(typeof(ByteId), 200);
+
+        values.Should().HaveCount(200);
+        values.Should().OnlyHaveUniqueItems();
+
+        var act = () => generator.Ids(typeof(ByteId), 300);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ByteId*domain*");
+    }
+
+    /// <summary>
+    /// 请求 0 个仍返回空集合，不进入去重循环。
+    /// </summary>
+    [Fact]
+    public void NonGenericIds_WithZeroCount_Should_ReturnEmpty() => new AnyIdGenerator().Ids(typeof(ByteId), 0).Should().BeEmpty();
 
     [Fact]
     public void Ids_WithNegativeCount_Should_Throw()

@@ -141,6 +141,16 @@ internal static class GeneratedCode
         => "0x" + mask.ToString("X16", System.Globalization.CultureInfo.InvariantCulture) + "UL";
 
     /// <summary>
+    /// 把字符串渲染成 C# 字符串字面量（含两侧引号并按需转义）。
+    /// </summary>
+    /// <remarks>
+    /// 属性名来自用户配置，可能含引号、反斜杠或非 ASCII 字符；直接内插会产出非法或语义不同的代码。
+    /// 用 Roslyn 的 <c>FormatLiteral</c> 而非手写转义，保证与编译器口径一致。
+    /// </remarks>
+    public static string StringLiteral(string value)
+        => Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(value, quote: true);
+
+    /// <summary>
     /// 把在命名空间层级书写的强类型 Id 声明块嵌进各层包含类型里，并按嵌套层数整体缩进。
     /// </summary>
     /// <remarks>

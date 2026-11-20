@@ -159,7 +159,7 @@ public class AspNetCoreMvcCodeGeneratorTests
         var generated = GetMvcGeneratedCode(code);
 
         generated.Should().Contain("private sealed class StronglyTypedIdModelBinderProvider : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinderProvider")
-            .And.Contain("private sealed class StronglyTypedIdModelBinder<TId> : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinder where TId : global::System.IParsable<TId>")
+            .And.Contain("private sealed class StronglyTypedIdModelBinder<TId> : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinder where TId : global::Len.StronglyTypedId.IStronglyTypedId<TId>")
             .And.Contain("private sealed class StronglyTypedIdRouteConstraint<TId> : global::Microsoft.AspNetCore.Routing.IRouteConstraint where TId : global::System.IParsable<TId>");
     }
 

@@ -54,6 +54,12 @@ Two further reasons an integration skips an id: the id is declared inside a **ge
 external-reference integrations cannot reopen it; see [Nested types](declaration.md#nested-types)), or
 the assembly-level default turned it off.
 
+If the package is referenced but its **version is below the floor** in the table above, the generator
+silently produces nothing for that integration — the compiler has no reason to complain, and the failure
+only shows up at runtime (for example, EF Core refusing to map `OrderId`). Requesting the integration
+explicitly makes this visible: `STIA0030` reports the floor and the version actually referenced. Upgrade
+the package, or drop the flag.
+
 ## `AddStronglyTypedIds` is not found
 
 The entry points live in `internal static partial class StronglyTypedIds` in the `Len.StronglyTypedId`

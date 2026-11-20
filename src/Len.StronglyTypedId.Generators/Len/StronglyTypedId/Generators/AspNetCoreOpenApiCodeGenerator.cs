@@ -24,7 +24,13 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
             {
                 var (type, format) = PrimitiveIdSchemaMap.Resolve(idInfo);
 
-                return $"            [typeof({idInfo.FullyQualifiedName})] = ({OpenApiSchemaNames.TypeLiteral(type, useOpenApiV2)}, {OpenApiSchemaNames.FormatLiteral(format)}, {(idInfo.IsObjectJsonShape ? "true" : "false")}),";
+                // 属性名随 Id 而异，故一并存进表里：同一个 transformer 要服务全部 Id。
+                // 非对象形态时该字段无意义，写空串以免为它分配字面量。
+                var propertyName = idInfo.IsObjectJsonShape
+                    ? GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName)
+                    : "null";
+
+                return $"            [typeof({idInfo.FullyQualifiedName})] = ({OpenApiSchemaNames.TypeLiteral(type, useOpenApiV2)}, {OpenApiSchemaNames.FormatLiteral(format)}, {(idInfo.IsObjectJsonShape ? "true" : "false")}, {propertyName}),";
             })
             .ToArray();
 
@@ -52,7 +58,7 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreOpenApiCodeGenerator), version)}}
                 class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer
                 {
-                    private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, ({{schemaTypeValueType}} Type, string? Format, bool IsObject)> _schemas = new()
+                    private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, ({{schemaTypeValueType}} Type, string? Format, bool IsObject, string? PropertyName)> _schemas = new()
                     {
             {{string.Join(GeneratedCode.NewLine, schemaEntries)}}
                     };
@@ -77,14 +83,16 @@ internal class AspNetCoreOpenApiCodeGenerator : IIntegrationCodeGenerator
                         {
                             if (entry.IsObject)
                             {
-                                // 对象形态：{"value": <基元>}，value 必填。
+                                // 对象形态：{"<属性名>": <基元>}，该属性必填。
+                                var propertyName = entry.PropertyName ?? "{{StronglyTypedIdInfo.DefaultJsonShapePropertyName}}";
+
                                 schema.Type = {{objectTypeLiteral}};
                                 schema.Format = null;
                                 schema.Properties = new global::System.Collections.Generic.Dictionary<string, {{propertyValueType}}>
                                 {
-                                    ["value"] = new {{schemaTypeName}} { Type = entry.Type, Format = entry.Format },
+                                    [propertyName] = new {{schemaTypeName}} { Type = entry.Type, Format = entry.Format },
                                 };
-                                schema.Required = new global::System.Collections.Generic.HashSet<string> { "value" };
+                                schema.Required = new global::System.Collections.Generic.HashSet<string> { propertyName };
                             }
                             else
                             {

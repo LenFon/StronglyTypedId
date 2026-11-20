@@ -20,7 +20,7 @@ title: 功能特性
   **Convert to strongly typed id**，替你补上特性、`partial` 与 `using`；反向的
   **Inline strongly typed id** 则撤销这一切。正向动作只在结果确实是一个合法 Id 时出现，见
   [把已有 record 转成 Id](declaration.md#converting-an-existing-record)。
-- **编译期安全。** 内建分析器把不合法的声明作为错误报出，30 条规则里有 22 条附带代码修复。见
+- **编译期安全。** 内建分析器把不合法的声明作为错误报出，34 条规则里有 23 条附带代码修复。见
   [诊断](diagnostics.md#diagnostics)。
 - **23 种内置基元。** 全部数值类型（含 `Int128`、`UInt128`、`Half`），以及 `Guid`、`string`、`char`、
   `decimal`、`DateTime`、`DateTimeOffset`、`TimeSpan`、`DateOnly`、`TimeOnly` 与 `BigInteger`。见
@@ -44,10 +44,10 @@ title: 功能特性
 ## 生成产物
 
 - **接口。** `IStronglyTypedId<TSelf, TPrimitiveId>`、`IParsable<TSelf>`、`ISpanParsable<TSelf>`、
-  `IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
+  `IEquatable<TSelf>`、`IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
   `IComparisonOperators<TSelf, TSelf, bool>`。见[运行时](runtime.md#using-the-interface)。
-- **解析。** `Parse` / `TryParse` 的 `string` 与 `ReadOnlySpan<char>` 两套重载。`provider` 传 `null`
-  表示不变文化，因此 `Parse(id.ToString())` 可以往返。见[生成产物](generated-code.md)。
+- **解析。** `Parse` / `TryParse` 的 `string` 与 `ReadOnlySpan<char>` 两套重载，`string` 版本另有单参
+  便利版。`provider` 传 `null` 表示不变文化，因此 `Parse(id.ToString())` 可以往返。见[生成产物](generated-code.md)。
 - **格式化。** 基元类型自身实现 `IFormattable` / `ISpanFormattable` 时一并生成。`string` 两者都没有，
   枚举 Id 则都跳过。
 - **UTF-8 接口。** 对支持相应接口的基元（如 .NET 10 的 `Guid`）生成 `IUtf8SpanFormattable` 与
@@ -106,7 +106,8 @@ title: 功能特性
 ## 集成
 
 - **序列化。** 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，含字典键支持；
-  两者另提供显式注册入口，并可按 Id 选择 JSON 形态。见[序列化](serialization.md#serialization)。
+  两者另提供显式注册入口，并可按 Id 选择 JSON 形态；数值 Id 遵守 `JsonNumberHandling`。见
+  [序列化](serialization.md#serialization)。
 - **另外九个集成。** Entity Framework Core、Dapper、Swashbuckle、ASP.NET Core MVC（其注册同时支撑
   Minimal API 的路由约束）、ASP.NET Core OpenAPI、MessagePack、MongoDB、HotChocolate（GraphQL）与
   protobuf-net。每个集成只在对应包被引用时才生成。除 protobuf-net 外各自提供一个注册入口：除 MongoDB

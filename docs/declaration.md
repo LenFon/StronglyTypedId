@@ -117,9 +117,31 @@ reports pass/fail) and those with no validator at all (where it always succeeds)
 `IStronglyTypedId<TSelf, TPrimitiveId>`, so generic code constrained to the interface can read the reason
 too.
 
+Parsing has a matching overload. `IParsable<TSelf>`'s `TryParse` only reports a boolean, so a caller that
+receives text — a model binder, a message handler — cannot tell *why* the value was rejected. The
+four-argument overload closes that gap and is declared on `IStronglyTypedId<TSelf>`, so it does not need
+the primitive type:
+
+```csharp
+OrderId.TryParse("not-a-guid", null, out _, out var validation);
+// validation.IsValid == false
+// validation.Message == "The value 'not-a-guid' is not a valid OrderId."
+
+OrderId.TryParse(Guid.Empty.ToString(), null, out _, out validation);
+// validation.Message == "An id cannot be empty.", Code == "E_EMPTY"   (the validator's own reason)
+```
+
+Text that does not parse and a value the validator rejects are reported differently: the first gives a
+generic message naming the id and the text, the second carries whatever the validator returned. The
+ASP.NET Core model binder uses this overload, so a rejected value lands in `ModelState` with the
+validator's message instead of a fixed string. Minimal API binding goes through the framework's
+`IParsable` path and does not use it, so it still sees only the boolean.
+
 `RedactValidationMessage = true` still wins: the validator's message may contain user input, so it is
 ignored in the exception and the generic text is used instead. `TryCreate` keeps returning the validator's
-message, because a return value does not reach logs or APM the way an exception message does.
+message, because a return value does not reach logs or APM the way an exception message does. The
+four-argument `TryParse` follows the same rule as `Create` rather than `TryCreate`: it feeds `ModelState`,
+which is shown back to the caller, so it redacts.
 
 One thing a source generator cannot do is intercept your primary constructor: `new OrderId(...)` bypasses
 the validator. Route values through `Create` (or the parsing members) when they come from outside your

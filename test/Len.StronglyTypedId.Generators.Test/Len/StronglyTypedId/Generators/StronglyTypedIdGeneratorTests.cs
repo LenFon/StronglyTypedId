@@ -72,6 +72,11 @@ public class StronglyTypedIdGeneratorTests
         core.Should().Contain("public static bool TryCreate(global::System.Guid value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out OrderId result)");
         core.Should().Contain("public override string ToString() => Value.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;");
 
+        // 单参便利重载：与两参版本并存，语义等价于 provider 传 null。
+        core.Should().Contain("public static OrderId Parse(string value) => Parse(value, null);");
+        core.Should().Contain("=> TryParse(value, null, out result);");
+        core.Should().Contain("return TryParse(value, null, out result, out validation);");
+
         if (utf8Parsable)
         {
             core.Should().Contain("global::System.IUtf8SpanParsable<OrderId>");
@@ -3079,6 +3084,28 @@ public class StronglyTypedIdGeneratorTests
         converter.Should()
             .NotContain("WriteStartObject")
             .And.NotContain("ValueTextEquals");
+    }
+
+    /// <summary>
+    /// <c>JsonShapePropertyName</c> 配了之后，读写与错误消息都改用该名字。
+    /// </summary>
+    [Fact]
+    public void JsonShapePropertyName_Should_RenameObjectProperty_ForSystemTextJson()
+    {
+        var converter = GetGeneratedCodeByHint("""
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+            public partial record struct OrderId(Guid Value);
+            """)["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"];
+
+        converter.Should()
+            .Contain("if (reader.ValueTextEquals(\"id\")")
+            .And.Contain("writer.WritePropertyName(\"id\");")
+            .And.Contain("an object with a 'id' property was expected")
+            .And.NotContain("writer.WritePropertyName(\"value\");");
     }
 
     /// <summary>

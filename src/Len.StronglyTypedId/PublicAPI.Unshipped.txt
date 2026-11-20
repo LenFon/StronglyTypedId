@@ -6,6 +6,7 @@ static Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormat<T>(T value, Syste
 static Len.StronglyTypedId.StronglyTypedIdFormatting.TryFormatUtf8<T>(T value, System.Span<byte> utf8Destination, out int bytesWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? formatProvider) -> bool
 Len.StronglyTypedId.IFormattableStronglyTypedId<TSelf>
 Len.StronglyTypedId.IStronglyTypedId<TSelf>
+Len.StronglyTypedId.IStronglyTypedId<TSelf>.TryParse(string? value, System.IFormatProvider? provider, out TSelf result, out Len.StronglyTypedId.StronglyTypedIdValidationResult validation) -> bool
 Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>.TryCreate(TPrimitiveId value, out TSelf result) -> bool
 Len.StronglyTypedId.IStronglyTypedId<TSelf, TPrimitiveId>.TryCreate(TPrimitiveId value, out TSelf result, out Len.StronglyTypedId.StronglyTypedIdValidationResult validation) -> bool
 Len.StronglyTypedId.StronglyTypedIdValidationResult
@@ -27,6 +28,8 @@ Len.StronglyTypedId.StronglyTypedIdAttribute.Integrations.get -> Len.StronglyTyp
 Len.StronglyTypedId.StronglyTypedIdAttribute.Integrations.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShape.get -> Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShape.set -> void
+Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShapePropertyName.get -> string?
+Len.StronglyTypedId.StronglyTypedIdAttribute.JsonShapePropertyName.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.Normalizer.get -> string?
 Len.StronglyTypedId.StronglyTypedIdAttribute.Normalizer.set -> void
 Len.StronglyTypedId.StronglyTypedIdAttribute.Prefix.get -> string?
@@ -47,6 +50,8 @@ Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Integrations.get -> Len.Str
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Integrations.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.JsonShape.get -> Len.StronglyTypedId.JsonShape
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.JsonShape.set -> void
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.JsonShapePropertyName.get -> string?
+Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.JsonShapePropertyName.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.get -> string?
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.Normalizer.set -> void
 Len.StronglyTypedId.StronglyTypedIdDefaultsAttribute.PrefixReadMode.get -> Len.StronglyTypedId.PrefixReadMode

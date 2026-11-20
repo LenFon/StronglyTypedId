@@ -32,8 +32,9 @@ carries the same inventory without the file names, as a one-glance list.
 ## The core implementation
 
 - Implementation of `IStronglyTypedId<TSelf, TPrimitiveId>`, `IParsable<TSelf>`, `ISpanParsable<TSelf>`,
-  `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
-  `IComparisonOperators<TSelf, TSelf, bool>`.
+  `IEquatable<TSelf>`, `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
+  `IComparisonOperators<TSelf, TSelf, bool>`. The `record` declaration synthesises `IEquatable<TSelf>`
+  itself, so the interface can declare it without the generator emitting anything extra.
 - `IFormattableStronglyTypedId<TSelf>` (which extends `IFormattable`) and `ISpanFormattable` as well,
   emitted per primitive: `string` implements neither, and enum-backed ids skip both because `System.Enum`
   inherits them with `[Obsolete]` members. The marker interface exists so generic code can format an id
@@ -64,12 +65,21 @@ carries the same inventory without the file names, as a one-glance list.
   validator returns `bool`, `validation` only says pass/fail; when it returns
   `StronglyTypedIdValidationResult`, it carries the message and code. See
   [Reporting why a value was rejected](declaration.md#reporting-why-a-value-was-rejected).
+- A static `TryParse(string? value, IFormatProvider? provider, out TSelf result, out StronglyTypedIdValidationResult validation)`
+  overload that reports *why* text was rejected. It is declared on `IStronglyTypedId<TSelf>`, so it needs no
+  primitive type; text that does not parse and a value the validator rejects are reported differently. The
+  ASP.NET Core model binder uses it to fill `ModelState` with the validator's message.
 - A `public static readonly TSelf` field per `[StronglyTypedIdInstance]`, initialized through `Create`.
 - `Deconstruct(out TPrimitiveId value)`, so `id.Deconstruct(out var value);` unwraps the primitive.
   (A single-element `var (value) = id;` is not legal C#; deconstruction declarations need at least two elements.)
 - `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, delegating to the primitive type. A
   `null` `provider` means the **invariant culture**, not the current one, so `Parse(id.ToString())` always
   round-trips regardless of the ambient culture; pass an explicit provider for culture-specific input.
+  Each `string` overload also has a single-argument convenience form — `Parse(string)` and
+  `TryParse(string?, out TSelf)` — that is exactly `Parse(value, null)` and `TryParse(value, null, out result)`.
+  The four-argument `TryParse` gets the same treatment. These exist because `IParsable`'s two-argument
+  signature is an interface requirement, not a usage convenience: without them every call site has to write
+  `null`, and it is easy to pass `CurrentCulture` by mistake, which is the opposite of what `null` means here.
   For `string`-backed ids, `null` and empty strings are not accepted by `TryParse`. A prefixed id is the
   one exception: its canonical text form for an empty value is the bare prefix, so `TryParse` accepts that
   text — otherwise `Create("")` would produce an id that cannot be read back. A bare empty string is still

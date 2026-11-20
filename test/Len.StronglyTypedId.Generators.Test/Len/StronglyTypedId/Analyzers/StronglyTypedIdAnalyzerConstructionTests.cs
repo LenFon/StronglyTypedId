@@ -876,4 +876,65 @@ public class StronglyTypedIdAnalyzerConstructionTests
     }
 
     #endregion
+
+    #region 对象形态属性名（STIA0031）
+
+    /// <summary>
+    /// 配了属性名但形态不是对象：配置无处生效，必须提示。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenJsonShapePropertyNameWithoutObjectShape()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(JsonShapePropertyName = "id")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.JsonShapePropertyNameInvalid)
+            .WithArguments("'id'", "it only applies when JsonShape is JsonShape.Object")
+            .WithSpan(5, 18, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 属性名为纯空白：生成器会回退到默认名，配置没生效，必须提示。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenJsonShapePropertyNameIsBlank()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "  ")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.JsonShapePropertyNameInvalid)
+            .WithArguments("'  '", "the name must not be empty, whitespace-only, or contain control characters")
+            .WithSpan(5, 48, 5, 76);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 形态与属性名都配好：不报。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenJsonShapePropertyNameIsUsable()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+            public partial record struct OrderId(Guid Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    #endregion
 }

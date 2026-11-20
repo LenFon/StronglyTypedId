@@ -55,6 +55,15 @@ public class StronglyTypedIdAttribute : Attribute
     public JsonShape JsonShape { get; set; }
 
     /// <summary>
+    /// 获取或设置 <see cref="JsonShape.Object"/> 形态下承载基元值的属性名。默认为 <c>"value"</c>。
+    /// </summary>
+    /// <remarks>
+    /// 只在 <see cref="JsonShape"/> 为 <see cref="Len.StronglyTypedId.JsonShape.Object"/> 时有意义；
+    /// 配了但形态不是对象时报 <c>STIA0031</c>。属性名是数据契约的一部分：改名会让按旧名写出的载荷读不回来。
+    /// </remarks>
+    public string? JsonShapePropertyName { get; set; }
+
+    /// <summary>
     /// 获取或设置强类型 Id 规范文本形携带的字面前缀。
     /// </summary>
     public string? Prefix { get; set; }

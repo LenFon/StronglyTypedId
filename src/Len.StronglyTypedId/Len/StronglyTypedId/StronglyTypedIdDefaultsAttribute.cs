@@ -51,6 +51,16 @@ public class StronglyTypedIdDefaultsAttribute : Attribute
     public JsonShape JsonShape { get; set; }
 
     /// <summary>
+    /// 获取或设置本程序集内强类型 Id 在 <see cref="JsonShape.Object"/> 形态下默认承载基元值的属性名。
+    /// 默认为 <c>"value"</c>。
+    /// </summary>
+    /// <remarks>
+    /// 逐类型的 <see cref="StronglyTypedIdAttribute.JsonShapePropertyName"/> 显式写了就覆盖本设置。
+    /// 属性名是数据契约的一部分：改名会让按旧名写出的载荷读不回来。
+    /// </remarks>
+    public string? JsonShapePropertyName { get; set; }
+
+    /// <summary>
     /// 获取或设置本程序集内强类型 Id 默认是否生成 <see cref="System.ComponentModel.TypeConverter"/>。
     /// 默认为 <see langword="false"/>。
     /// </summary>

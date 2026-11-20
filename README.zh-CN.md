@@ -30,7 +30,7 @@ Entity Framework Core / Swagger 集成。`Guid` 与 `OrderId` 从此不会互相
 - **一行声明。** 用 `[StronglyTypedId]` 标注一个 `partial record`（或 `partial record struct`），
   类型就具备解析、格式化、比较、`Create` / `TryCreate`、解构、JSON 转换器与调试器视图。
 - **`Guid` 冒充不了 `OrderId`。** 编译器会拒绝这种替换；内建分析器把不合法的声明作为错误报出，
-  30 条规则里有 22 条附带代码修复。
+  34 条规则里有 23 条附带代码修复。
 - **23 种基元，或你自己的类型。** 全部数值类型、`Guid`、`string`、日期与 `BigInteger` 都是内置的，
   另外还支持任意 `enum`，以及任何实现了 `IParsable<TSelf>` 与 `IComparable` 的类型。ULID 零改动即可用。
 - **在取值进入的地方校验。** 把 `Validator` 与 `Normalizer` 指向静态方法，所有生成的入口都会执行它们：

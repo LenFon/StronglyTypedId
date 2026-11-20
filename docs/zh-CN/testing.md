@@ -27,6 +27,11 @@ IReadOnlyList<OrderId> batch = Any.Ids<OrderId>(10);
   版本内：取值源是内置的 SplitMix64，不是算法属实现细节的 `Random`。要让一整串值重复，
   请复用同一个 `AnyIdGenerator` 实例，或用 `Any.Ids<T>(count, seed)`。长期复用的生成器用
   `new AnyIdOptions { Seed = 42 }` 传同一个种子；不传则按时钟播种。
+- **互不相同。** `Any.Ids<T>(count)` 返回 `count` 个**不同**的 Id，按 Id 自身的 `Equals` 去重，
+  因此 `OnlyHaveUniqueItems()` 无需额外处理即可成立。取值域可能小于请求数 —— `byte` 只有 256 个值，
+  枚举只有成员数那么多 —— 因此生成最多尝试 `max(count * 10, 1000)` 次，凑不够就抛
+  `InvalidOperationException`，消息里带上类型与请求数，而不是静默返回重复值。请减少请求数，或注册工厂。
+  由于去重会跳过重复值，同一 seed 下的序列与旧版本不同；同一版本内仍可复现。
 - **尊重验证器。** 生成最多重试 `AnyIdOptions.MaxAttempts` 次（默认 100），仍不满足则抛出异常，
   并在消息中指向 `Any.Register<T>(factory)`。拒绝只按异常类型识别，因此验证器因其他原因抛
   `ArgumentException` 时同样会被当作拒绝而重试。
@@ -109,6 +114,49 @@ IReadOnlyList<(Type IdType, string Message)> broken =
 扫描范围就是 `Assembly.GetTypes()` 的返回值。声明在泛型容器里的 Id 在那里只以开放泛型定义出现，因此它的
 命名实例不会被检查；需要覆盖时请对你实际使用的闭合类型单独断言（`typeof(Box<int>.BoxedId)`）。这与
 [泛型容器里的 Id 拿不到外部引用类集成](limitations.md#generic-containers)是同一类边界。
+
+### 检查往返契约
+
+库对每个 Id 承诺四件事：`Parse(id.ToString())` 读回同一个 Id、`TryCreate(id.Value)` 读回同一个 Id、
+`Normalizer` 幂等、生成的 JSON 转换器能往返。这四条由本仓库自己的测试守着，但没有任何东西检查**你的** Id
+—— 而自定义基元与手写归一化器正是它们最容易破的地方。
+
+`CheckRoundTrip` 对程序集里的每个 Id 跑完这四项：
+
+```csharp
+// 抛出异常并列出全部违约；可作为每个程序集一行的测试。
+StronglyTypedIdConformance.AssertRoundTrip(typeof(OrderId).Assembly);
+
+// 或者自己检查列表。
+IReadOnlyList<(Type IdType, string Message)> failures =
+    StronglyTypedIdConformance.CheckRoundTrip(typeof(OrderId).Assembly);
+```
+
+每条违约单独上报，因为修法不同：文本往返失败指向 `ToString` / `Parse`，`TryCreate` 失败指向 `Create` 的
+归一化，幂等失败指向归一化器本身，JSON 失败指向转换器或 `JsonShape` 配置。同一个 Id 可能产生多条 ——
+有损的 `ToString()` 会同时破坏文本与 JSON 往返，两条都报，免得你修好一条就以为完事了。
+
+JSON 检查只在该 Id 确实带生成的 `[JsonConverter]`、且 `System.Text.Json` 可加载时才跑。没有转换器时
+`System.Text.Json` 会退回反射序列化，那条路径与生成器无关。
+
+**造不出值的 Id 记为跳过，不是失败。** `Any` 从基元的常见文本形态推断取值，覆盖不了 `ACCT-` 加八位数字
+这类严格格式，而验证器恒拒绝的 Id 本来就刻意不可构造。它们单独上报：
+
+```csharp
+IReadOnlyList<(Type IdType, string Message)> skipped =
+    StronglyTypedIdConformance.FindSkippedRoundTrips(typeof(OrderId).Assembly);
+```
+
+两个列表互不重叠，而「一条失败都没有」不等于「全都查过了」—— 想要那个保证就一并断言 `skipped` 为空，
+或注册工厂让该 Id 真正被检查。注册请用自己的生成器而不是 `Any.Register`：共享实例的注册是进程级状态，
+并行测试里任何一处 `Any.Reset()` 都会把它清掉。
+
+```csharp
+var any = new AnyIdGenerator();
+any.Register(typeof(StrictCodeId), () => StrictCodeId.Create(new StrictCode("ACCT-00000001")));
+
+StronglyTypedIdConformance.CheckRoundTrip(typeof(OrderId).Assembly, any);
+```
 
 配合 AutoFixture 使用时，加上 `Len.StronglyTypedId.Testing.AutoFixture` 并启用定制：
 

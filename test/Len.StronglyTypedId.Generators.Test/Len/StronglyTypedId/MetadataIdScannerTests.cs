@@ -78,6 +78,9 @@ public class MetadataIdScannerTests
                 public static MyId Parse(string value, global::System.IFormatProvider? provider)
                     => new(global::System.Guid.Parse(value, provider));
 
+                public static MyId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                    => new(global::System.Guid.Parse(value, provider));
+
                 public static bool TryParse(string? value, global::System.IFormatProvider? provider, out MyId result)
                 {
                     if (global::System.Guid.TryParse(value, provider, out var primitive))
@@ -87,6 +90,30 @@ public class MetadataIdScannerTests
                     }
 
                     result = default;
+                    return false;
+                }
+
+                public static bool TryParse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider, out MyId result)
+                {
+                    if (global::System.Guid.TryParse(value, provider, out var primitive))
+                    {
+                        result = new(primitive);
+                        return true;
+                    }
+
+                    result = default;
+                    return false;
+                }
+
+                public static bool TryParse(string? value, global::System.IFormatProvider? provider, out MyId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    if (TryParse(value, provider, out result))
+                    {
+                        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                        return true;
+                    }
+
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
                     return false;
                 }
             }
@@ -193,6 +220,9 @@ public class MetadataIdScannerTests
                     public static InnerId Parse(string value, global::System.IFormatProvider? provider)
                         => new(global::System.Guid.Parse(value, provider));
 
+                    public static InnerId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                        => new(global::System.Guid.Parse(value, provider));
+
                     public static bool TryParse(string? value, global::System.IFormatProvider? provider, out InnerId result)
                     {
                         if (global::System.Guid.TryParse(value, provider, out var primitive))
@@ -202,6 +232,30 @@ public class MetadataIdScannerTests
                         }
 
                         result = default;
+                        return false;
+                    }
+
+                    public static bool TryParse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider, out InnerId result)
+                    {
+                        if (global::System.Guid.TryParse(value, provider, out var primitive))
+                        {
+                            result = new(primitive);
+                            return true;
+                        }
+
+                        result = default;
+                        return false;
+                    }
+
+                    public static bool TryParse(string? value, global::System.IFormatProvider? provider, out InnerId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                    {
+                        if (TryParse(value, provider, out result))
+                        {
+                            validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                            return true;
+                        }
+
+                        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
                         return false;
                     }
                 }
@@ -255,6 +309,9 @@ public class MetadataIdScannerTests
                     public static InnerId Parse(string value, global::System.IFormatProvider? provider)
                         => new(global::System.Guid.Parse(value, provider));
 
+                    public static InnerId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                        => new(global::System.Guid.Parse(value, provider));
+
                     public static bool TryParse(string? value, global::System.IFormatProvider? provider, out InnerId result)
                     {
                         if (global::System.Guid.TryParse(value, provider, out var primitive))
@@ -264,6 +321,30 @@ public class MetadataIdScannerTests
                         }
 
                         result = default;
+                        return false;
+                    }
+
+                    public static bool TryParse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider, out InnerId result)
+                    {
+                        if (global::System.Guid.TryParse(value, provider, out var primitive))
+                        {
+                            result = new(primitive);
+                            return true;
+                        }
+
+                        result = default;
+                        return false;
+                    }
+
+                    public static bool TryParse(string? value, global::System.IFormatProvider? provider, out InnerId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                    {
+                        if (TryParse(value, provider, out result))
+                        {
+                            validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                            return true;
+                        }
+
+                        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
                         return false;
                     }
                 }
@@ -367,6 +448,9 @@ public class MetadataIdScannerTests
                 public static OtherId Parse(string value, global::System.IFormatProvider? provider)
                     => new(int.Parse(value, provider));
 
+                public static OtherId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                    => new(int.Parse(value, provider));
+
                 public static bool TryParse(string? value, global::System.IFormatProvider? provider, out OtherId result)
                 {
                     if (int.TryParse(value, provider, out var primitive))
@@ -376,6 +460,30 @@ public class MetadataIdScannerTests
                     }
 
                     result = default;
+                    return false;
+                }
+
+                public static bool TryParse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider, out OtherId result)
+                {
+                    if (int.TryParse(value, provider, out var primitive))
+                    {
+                        result = new(primitive);
+                        return true;
+                    }
+
+                    result = default;
+                    return false;
+                }
+
+                public static bool TryParse(string? value, global::System.IFormatProvider? provider, out OtherId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    if (TryParse(value, provider, out result))
+                    {
+                        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                        return true;
+                    }
+
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
                     return false;
                 }
             }
@@ -467,6 +575,9 @@ public class MetadataIdScannerTests
             public static OrderId Parse(string value, global::System.IFormatProvider? provider)
                 => new(global::System.Guid.Parse(value, provider));
 
+            public static OrderId Parse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider)
+                => new(global::System.Guid.Parse(value, provider));
+
             public static bool TryParse(string? value, global::System.IFormatProvider? provider, out OrderId result)
             {
                 if (global::System.Guid.TryParse(value, provider, out var primitive))
@@ -476,6 +587,30 @@ public class MetadataIdScannerTests
                 }
 
                 result = default;
+                return false;
+            }
+
+            public static bool TryParse(global::System.ReadOnlySpan<char> value, global::System.IFormatProvider? provider, out OrderId result)
+            {
+                if (global::System.Guid.TryParse(value, provider, out var primitive))
+                {
+                    result = new(primitive);
+                    return true;
+                }
+
+                result = default;
+                return false;
+            }
+
+            public static bool TryParse(string? value, global::System.IFormatProvider? provider, out OrderId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+            {
+                if (TryParse(value, provider, out result))
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    return true;
+                }
+
+                validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
                 return false;
             }
         }

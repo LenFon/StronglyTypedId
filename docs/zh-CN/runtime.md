@@ -30,8 +30,10 @@ public bool TryCreateId<TId>(Guid value, out TId id)
 
 每个 Id 同时实现了单参数的 `IStronglyTypedId<TSelf>`，因此约束可以只表达「某个强类型 Id」而不必指明
 基元类型，日志、缓存、校验辅助方法这类把 Id 当作不透明值处理的场景很合用。该接口本身已继承
-`IParsable<TSelf>`、`IComparable<TSelf>` 与 `IComparisonOperators<TSelf, TSelf, bool>`，所以这样的
-约束依然能调用 `TId.Parse(...)`、使用 `==` / `!=`，并用 `CompareTo` 或 `<` / `>` 排序，无需知道基元类型：
+`IParsable<TSelf>`、`ISpanParsable<TSelf>`、`IEquatable<TSelf>`、`IComparable<TSelf>` 与
+`IComparisonOperators<TSelf, TSelf, bool>`，所以这样的约束依然能从 `string` 或 `ReadOnlySpan<char>`
+调用 `TId.Parse(...)`、用类型安全的 `Equals` 比较、使用 `==` / `!=`，并用 `CompareTo` 或 `<` / `>`
+排序，无需知道基元类型：
 
 ```csharp
 public static TId Max<TId>(IEnumerable<TId> ids)
@@ -41,7 +43,24 @@ public static TId Max<TId>(IEnumerable<TId> ids)
 public static bool IsBefore<TId>(TId left, TId right)
     where TId : IStronglyTypedId<TId>
     => left < right;                     // IComparisonOperators<TSelf, TSelf, bool>
+
+public static bool Same<TId>(TId left, TId right)
+    where TId : IStronglyTypedId<TId>
+    => left.Equals(right);               // IEquatable<TSelf>：不经 object.Equals 装箱
+
+public static TId FromSpan<TId>(ReadOnlySpan<char> text)
+    where TId : IStronglyTypedId<TId>
+    => TId.Parse(text, null);            // ISpanParsable<TSelf>：不产生中间 string
 ```
+
+把 `IEquatable<TSelf>` 与 `ISpanParsable<TSelf>` 声明在接口上，泛型代码才能直接调到这两个成员。
+否则编译器会把 `left.Equals(right)` 绑定到 `object.Equals(object)`，值类型 Id 每次比较都要装箱；
+span 也只能先 `ToString()` 再解析。
+
+两者都带**默认接口实现** —— span 成员转发到 `IParsable<TSelf>`，`Equals` 转发到 `object.Equals` ——
+因此手写实现该接口只需提供 `IParsable` 的两个成员，原样就能编译。生成的 Id 用真正的 span 解析与结构
+相等覆盖它们。报告拒绝原因的四参 `TryParse` 是同样安排的 `static virtual` 成员：默认实现转发到两参
+`TryParse` 并返回一条通用消息，生成的 Id 用验证器的真实结果覆盖它。
 
 `IFormattableStronglyTypedId<TSelf>` 在此基础上进一步收窄到「基元可格式化」的 Id。
 

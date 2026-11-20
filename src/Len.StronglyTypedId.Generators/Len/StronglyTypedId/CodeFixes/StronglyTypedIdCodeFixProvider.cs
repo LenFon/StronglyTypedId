@@ -49,7 +49,8 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.UnknownIntegrationId,
             Descriptors.InvalidInstanceNameId,
             Descriptors.InvalidInstanceValueId,
-            Descriptors.InstanceNameNotPascalCaseId];
+            Descriptors.InstanceNameNotPascalCaseId,
+            Descriptors.OrphanInstanceId];
 
     public override FixAllProvider? GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
 
@@ -93,6 +94,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                                 Descriptors.InvalidInstanceNameId => RemoveInstanceAttributeAsync(context, diagnostic, token),
                                 Descriptors.InvalidInstanceValueId => RemoveInstanceAttributeAsync(context, diagnostic, token),
                                 Descriptors.InstanceNameNotPascalCaseId => RenameInstanceAsync(context, diagnostic, token),
+                                Descriptors.OrphanInstanceId => RemoveInstanceAttributeAsync(context, diagnostic, token),
                                 _ => Task.FromResult(context.Document),
                              },
                              title);
@@ -116,6 +118,7 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
             Descriptors.UnknownIntegrationId => _integrationsArgumentFixTitle.ToString(),
             Descriptors.InvalidInstanceNameId => _instanceAttributeFixTitle.ToString(),
             Descriptors.InvalidInstanceValueId => _instanceAttributeFixTitle.ToString(),
+            Descriptors.OrphanInstanceId => _instanceAttributeFixTitle.ToString(),
             Descriptors.InstanceNameNotPascalCaseId => GetInstanceRenameTitle(diagnostic, root),
             _ => descriptor.Title.ToString(),
         };
@@ -218,6 +221,10 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 FindNode<AttributeSyntax>(root, diagnostic) is not null,
 
             Descriptors.InvalidInstanceValueId =>
+                FindNode<AttributeSyntax>(root, diagnostic) is not null,
+
+            // 孤儿实例同样钉在 [StronglyTypedIdInstance] 特性上，修复就是删掉它；找不到特性时不给修复。
+            Descriptors.OrphanInstanceId =>
                 FindNode<AttributeSyntax>(root, diagnostic) is not null,
 
             // 只有名字实参是字符串字面量时才给修复：标识符、拼接等写法拿不到语义常量值，无从推断建议名。
@@ -743,6 +750,13 @@ internal class StronglyTypedIdCodeFixProvider : CodeFixProvider
                 typeDeclaration.AttributeLists.Replace(
                     attributeList,
                     attributeList.WithAttributes(attributeList.Attributes.Remove(attribute))));
+
+        // 摘掉的是第一条特性列表时，它的前导 trivia（通常是类型声明前的空行与缩进）会随之消失，
+        // 产物变成「namespace X;」紧跟类型声明。把这段 trivia 交给类型声明本身，格式才与手写一致。
+        if (typeDeclaration.AttributeLists.IndexOf(attributeList) == 0)
+        {
+            updatedType = updatedType.WithLeadingTrivia(attributeList.GetLeadingTrivia());
+        }
 
         return context.Document.WithSyntaxRoot(root.ReplaceNode(typeDeclaration, updatedType));
     }

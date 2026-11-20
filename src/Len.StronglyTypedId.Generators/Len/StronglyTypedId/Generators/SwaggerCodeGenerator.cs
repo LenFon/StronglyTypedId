@@ -175,15 +175,17 @@ internal class SwaggerCodeGenerator : IIntegrationCodeGenerator
             return primitiveSchema;
         }
 
-        // JsonShape.Object 的线上报文是 {"value": <基元>}，schema 必须照着写，否则生成的客户端按裸基元收发。
+        // JsonShape.Object 的线上报文是 {"<属性名>": <基元>}，schema 必须照着写，否则生成的客户端按裸基元收发。
         // 2.x 的 Properties 值是 IOpenApiSchema（接口），不能用 Dictionary<string, OpenApiSchema> 顶替，泛型不变。
         var propertyValueType = OpenApiSchemaNames.SchemaInterfaceType(useOpenApiV2);
 
         var objectTypeExpression = OpenApiSchemaNames.ObjectTypeLiteral(useOpenApiV2);
 
+        var propertyName = GeneratedCode.StringLiteral(idInfo.JsonShapePropertyName);
+
         return $"new {schemaTypeName} {{ Type = {objectTypeExpression}, "
-            + $"Properties = new global::System.Collections.Generic.Dictionary<string, {propertyValueType}> {{ [\"value\"] = {primitiveSchema} }}, "
-            + "Required = new global::System.Collections.Generic.HashSet<string> { \"value\" } }";
+            + $"Properties = new global::System.Collections.Generic.Dictionary<string, {propertyValueType}> {{ [{propertyName}] = {primitiveSchema} }}, "
+            + $"Required = new global::System.Collections.Generic.HashSet<string> {{ {propertyName} }} }}";
     }
 
     /// <summary>

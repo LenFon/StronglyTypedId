@@ -463,6 +463,29 @@ public class SwaggerCodeGeneratorTests
     }
 
     /// <summary>
+    /// <c>JsonShapePropertyName</c> 配了之后，schema 的 Properties 与 Required 都改用该名字。
+    /// </summary>
+    [Fact]
+    public void Swagger_V1_Should_RenameObjectProperty_WhenJsonShapePropertyNameIsSet()
+    {
+        var code = """
+            using System;
+
+            namespace Len.StronglyTypedId;
+
+            [StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+            public partial record OrderId(Guid Value);
+            """;
+
+        var generated = GetSwaggerGeneratedCode(code, Swagger6Reference);
+
+        generated.Should()
+            .Contain("""["id"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = "string", Format = "uuid" }""")
+            .And.Contain("""Required = new global::System.Collections.Generic.HashSet<string> { "id" }""")
+            .And.NotContain("""["value"]""");
+    }
+
+    /// <summary>
     /// 对象形态下 <c>value</c> 属性的 schema 仍按基元映射（含前缀时的纯 string 规则）。
     /// </summary>
     [Fact]

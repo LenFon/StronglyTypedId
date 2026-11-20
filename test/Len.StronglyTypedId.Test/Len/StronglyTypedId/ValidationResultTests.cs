@@ -287,6 +287,90 @@ public class ValidationResultTests
     }
 
     /// <summary>
+    /// 四参 <c>TryParse</c>：验证器拒绝时带回验证器的消息与错误码，而不是「解析失败」的通用文案。
+    /// </summary>
+    /// <remarks>
+    /// 这是 MVC 绑定器拿到拒绝原因的唯一通道：<see cref="IParsable{TSelf}"/> 的两参版本只有布尔。
+    /// </remarks>
+    [Fact]
+    public void TryParseWithValidation_Should_ReturnValidatorMessage_WhenValidatorRejects()
+    {
+        var succeeded = ResultValidatedGuidId.TryParse(Guid.Empty.ToString(), null, out _, out var validation);
+
+        succeeded.Should().BeFalse();
+        validation.IsValid.Should().BeFalse();
+        validation.Message.Should().Be("An id cannot be empty.");
+        validation.Code.Should().Be("E_EMPTY");
+    }
+
+    /// <summary>
+    /// 四参 <c>TryParse</c>：文本根本解析不了时，消息是「不是合法 Id」而不是验证器原因。
+    /// </summary>
+    [Fact]
+    public void TryParseWithValidation_Should_ReportParseFailure_WhenTextIsNotAnId()
+    {
+        var succeeded = ResultValidatedGuidId.TryParse("not-a-guid", null, out _, out var validation);
+
+        succeeded.Should().BeFalse();
+        validation.IsValid.Should().BeFalse();
+        validation.Message.Should().Be("The value 'not-a-guid' is not a valid ResultValidatedGuidId.");
+        validation.Code.Should().BeNull();
+    }
+
+    /// <summary>
+    /// 四参 <c>TryParse</c>：成功时 <c>validation</c> 是 <see cref="StronglyTypedIdValidationResult.Success"/>。
+    /// </summary>
+    [Fact]
+    public void TryParseWithValidation_Should_ReturnSuccess_WhenTextIsValid()
+    {
+        var value = Guid.NewGuid();
+
+        var succeeded = ResultValidatedGuidId.TryParse(value.ToString(), null, out var result, out var validation);
+
+        succeeded.Should().BeTrue();
+        result.Should().Be(ResultValidatedGuidId.Create(value));
+        validation.IsValid.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// 四参 <c>TryParse</c> 遵守脱敏：验证器消息被换成不含原始值的通用文案。
+    /// </summary>
+    /// <remarks>
+    /// ModelState 是面向外部的通道，脱敏是安全策略，不应在这里开口子。
+    /// </remarks>
+    [Fact]
+    public void TryParseWithValidation_Should_RedactValidatorMessage_WhenRedactionIsOn()
+    {
+        const string TooLong = "this-value-is-way-too-long";
+
+        var succeeded = ResultValidatedRedactedId.TryParse(TooLong, null, out _, out var validation);
+
+        succeeded.Should().BeFalse();
+        validation.Message.Should().Be("The value is not a valid ResultValidatedRedactedId.");
+        validation.Message.Should().NotContain(TooLong);
+    }
+
+    /// <summary>
+    /// 泛型代码约束到 <see cref="IStronglyTypedId{TSelf}"/> 也能调四参 <c>TryParse</c>，拿到原因。
+    /// </summary>
+    [Fact]
+    public void TryParseWithValidation_Should_BeCallableThroughInterface()
+    {
+        var (succeeded, code) = TryParseThroughInterface<ResultValidatedGuidId>(Guid.Empty.ToString());
+
+        succeeded.Should().BeFalse();
+        code.Should().Be("E_EMPTY");
+    }
+
+    private static (bool Succeeded, string? Code) TryParseThroughInterface<TSelf>(string text)
+        where TSelf : IStronglyTypedId<TSelf>
+    {
+        var succeeded = TSelf.TryParse(text, null, out _, out var validation);
+
+        return (succeeded, validation.Code);
+    }
+
+    /// <summary>
     /// 三参 <c>TryCreate</c> 同样先归一化再验证。
     /// </summary>
     [Fact]

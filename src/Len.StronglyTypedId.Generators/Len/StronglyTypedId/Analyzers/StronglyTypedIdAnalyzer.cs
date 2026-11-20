@@ -61,6 +61,7 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
                 SyntaxKind.ImplicitObjectCreationExpression);
             startContext.RegisterSyntaxNodeAction(AnalyzeWithExpression, SyntaxKind.WithExpression);
             startContext.RegisterOperationAction(AnalyzeDefaultValue, OperationKind.DefaultValue);
+            startContext.RegisterSyntaxNodeAction(AnalyzeJsonNumberHandling, SyntaxKind.Attribute);
         });
     }
 
@@ -69,8 +70,18 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         ConcurrentBag<IntegrationRequest> integrationRequests,
         ConcurrentDictionary<INamespaceSymbol, (INamedTypeSymbol Member, string? Primitive)[]> namespacePrimitiveGroups)
     {
-        if (context.Symbol is not INamedTypeSymbol type || !HasStronglyTypedIdAttribute(type))
+        if (context.Symbol is not INamedTypeSymbol type)
         {
+            return;
+        }
+
+        // 孤儿实例必须在「有没有 [StronglyTypedId]」这条早退之前判：有 [StronglyTypedIdInstance] 却没有
+        // [StronglyTypedId] 时，下面的主线一条都不会跑，特性静默失效，用户要到运行期 CS0117 才发现。
+        // 反过来，有 [StronglyTypedId] 但形状不合法时这里不报 —— 那种由形状规则负责，否则会同时冒出两条。
+        if (!HasStronglyTypedIdAttribute(type))
+        {
+            ReportOrphanInstances(context, type);
+
             return;
         }
 
@@ -122,6 +133,9 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         // 前缀校验与形状 / 验证器无关，独立于上面的早退分支；但要判定「前缀是否与基元文本重叠」，
         // 必须知道基元类型，故把已算出的 constructorParameterType 一并传入。
         ValidatePrefix(context, type, constructorParameterType, records);
+
+        // 对象形态的属性名同样独立：配了但形态不是对象、或名字不能用作 JSON 属性名，都在声明处提示。
+        ValidateJsonShapePropertyName(context, type, records);
 
         // 集成开关同样独立：只登记逐类型显式写出的那一份，程序集默认值由 ReportIntegrationProblems 负责。
         ValidateIntegrations(context, type, records, integrationRequests);
@@ -706,6 +720,54 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>
+    /// 校验 <c>[StronglyTypedId(JsonShapePropertyName = …)]</c>：形态不是对象、或名字不能用作 JSON 属性名时报 STIA0031。
+    /// </summary>
+    /// <remarks>
+    /// 生成器侧对非法值静默回退到 <c>"value"</c>，保证产物始终可编译；但「配了却没生效」必须让用户看见。
+    /// 只校验逐类型显式写出的值：程序集默认值由 <see cref="StronglyTypedIdDefaults"/> 读取，配错时同样会
+    /// 影响全部 Id，但落点只能是程序集特性，逐类型重复报没有意义。
+    /// </remarks>
+    private static void ValidateJsonShapePropertyName(
+        SymbolAnalysisContext context,
+        INamedTypeSymbol type,
+        RecordDeclarationSyntax[] records)
+    {
+        var propertyName = AttributeReader.GetString(
+            AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+            StronglyTypedIdInfo.JsonShapePropertyNameArgumentName);
+
+        if (propertyName is null)
+        {
+            return;
+        }
+
+        var location = FindNamedArgumentLocation(type, StronglyTypedIdInfo.JsonShapePropertyNameArgumentName)
+            ?? records[0].GetLocation();
+
+        if (!StronglyTypedIdInfo.IsValidJsonShapePropertyName(propertyName))
+        {
+            Report(context, Descriptors.JsonShapePropertyNameInvalid, location, Quote(propertyName), "the name must not be empty, whitespace-only, or contain control characters");
+            return;
+        }
+
+        // 形态不是对象时属性名无处可用。显式写了 JsonShape 就按它判；没写则看程序集默认值。
+        var jsonShape = AttributeReader.GetEnumValue(
+                AttributeReader.Find(type, AttributeReader.StronglyTypedIdAttributeName),
+                StronglyTypedIdInfo.JsonShapeArgumentName)
+            ?? StronglyTypedIdDefaults.Read(context.Compilation.Assembly).JsonShape;
+
+        if (jsonShape != 1)
+        {
+            Report(context, Descriptors.JsonShapePropertyNameInvalid, location, Quote(propertyName), "it only applies when JsonShape is JsonShape.Object");
+        }
+    }
+
+    /// <summary>
+    /// 把用户配置的字符串包进引号，供诊断消息使用；空串渲染成 <c>''</c> 而不是空白。
+    /// </summary>
+    private static string Quote(string value) => "'" + value + "'";
+
+    /// <summary>
     /// 判断是否存在某个基元取值，其文本形式以该前缀开头，即前缀与基元文本不可区分。
     /// </summary>
     /// <remarks>
@@ -814,6 +876,35 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// </summary>
     private static bool IsHexDigit(char value)
         => IsAsciiDigit(value) || value is >= 'a' and <= 'f' or >= 'A' and <= 'F';
+
+    /// <summary>
+    /// 报告没有 <c>[StronglyTypedId]</c> 的 <c>[StronglyTypedIdInstance]</c>（STIA0032）。
+    /// </summary>
+    /// <remarks>
+    /// 逐条上报，位置落在对应的那条特性上 —— 一个类型上可能挂了好几条实例，只说「这里有问题」等于让人自己找。
+    /// 只在类型完全没有 <c>[StronglyTypedId]</c> 时调用；有该特性但形状不合法的情况由形状规则报，
+    /// 两条同时出现只会让用户以为要修两处。
+    /// </remarks>
+    private static void ReportOrphanInstances(SymbolAnalysisContext context, INamedTypeSymbol type)
+    {
+        var attributes = AttributeReader.FindAll(type, AttributeReader.StronglyTypedIdInstanceAttributeName);
+
+        if (attributes.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        foreach (var attribute in attributes)
+        {
+            var location = attribute.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation()
+                ?? type.Locations.FirstOrDefault();
+
+            if (location is not null)
+            {
+                Report(context, Descriptors.OrphanInstance, location, type.Name);
+            }
+        }
+    }
 
     /// <summary>
     /// 校验 <c>[StronglyTypedIdInstance]</c> 的名字与取值（STIA0020 / STIA0021），并对非 PascalCase 的名字给出
@@ -961,13 +1052,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             .ThenBy(request => request.Owner, StringComparer.Ordinal)
             .ToArray();
 
-        foreach (var requirement in _integrationRequirements)
+        foreach (var requirement in IntegrationRequirements.All)
         {
-            if (IsIntegrationReferenced(context.Compilation, requirement))
-            {
-                continue;
-            }
-
             var requesters = ordered
                 .Where(request => (request.Mask & requirement.Flag) != 0)
                 .ToArray();
@@ -977,12 +1063,32 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            context.ReportDiagnostic(Diagnostic.Create(
-                Descriptors.IntegrationUnavailable,
-                requesters[0].Location,
-                SummarizeOwners(requesters.Select(request => request.Owner)),
-                requirement.DisplayName,
-                requirement.AssemblyName));
+            var version = IntegrationRequirements.GetReferencedVersion(context.Compilation, requirement);
+
+            // 三分支互斥：没引用 → 加包（STIA0019）；引用了但太旧 → 升级（STIA0030）；够用 → 不报。
+            if (version is null)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Descriptors.IntegrationUnavailable,
+                    requesters[0].Location,
+                    SummarizeOwners(requesters.Select(request => request.Owner)),
+                    requirement.DisplayName,
+                    requirement.AssemblyName));
+
+                continue;
+            }
+
+            if (version.Major < requirement.MinMajor)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Descriptors.IntegrationVersionTooLow,
+                    requesters[0].Location,
+                    SummarizeOwners(requesters.Select(request => request.Owner)),
+                    requirement.DisplayName,
+                    requirement.AssemblyName,
+                    requirement.MinMajor,
+                    version.ToString()));
+            }
         }
     }
 
@@ -1001,42 +1107,11 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
             : string.Join(", ", distinct.Take(MaxReportedOwners)) + " … (" + distinct.Length + ")";
     }
 
-    /// <summary>
-    /// 判断编译是否引用了某个集成所需的程序集；MVC 的门面随 .NET 版本分散在三个程序集里，任一存在即可。
-    /// </summary>
-    private static bool IsIntegrationReferenced(Compilation compilation, (int Flag, string AssemblyName, string DisplayName) requirement)
-        => requirement.Flag == IntegrationFlags.AspNetCoreMvc
-            ? ReferencesAssembly(compilation, requirement.AssemblyName)
-                || ReferencesAssembly(compilation, "Microsoft.AspNetCore.Mvc.Core")
-                || ReferencesAssembly(compilation, "Microsoft.AspNetCore.Mvc.Abstractions")
-            : ReferencesAssembly(compilation, requirement.AssemblyName);
-
     private static bool ReferencesAssembly(Compilation compilation, string simpleName)
         => compilation.ReferencedAssemblyNames.Any(identity => string.Equals(identity.Name, simpleName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// 集成标志与其所需程序集的对照表。只按程序集名判定：版本不足属于另一类问题，不在这里报。
-    /// </summary>
-    private static readonly (int Flag, string AssemblyName, string DisplayName)[] _integrationRequirements =
-    [
-        (IntegrationFlags.EntityFrameworkCore, "Microsoft.EntityFrameworkCore", "EntityFrameworkCore"),
-        (IntegrationFlags.Dapper, "Dapper", "Dapper"),
-        (IntegrationFlags.SystemTextJson, "System.Text.Json", "SystemTextJson"),
-        (IntegrationFlags.NewtonsoftJson, "Newtonsoft.Json", "NewtonsoftJson"),
-        (IntegrationFlags.Swagger, "Swashbuckle.AspNetCore.SwaggerGen", "Swagger"),
-        (IntegrationFlags.AspNetCoreOpenApi, "Microsoft.AspNetCore.OpenApi", "AspNetCoreOpenApi"),
-        (IntegrationFlags.AspNetCoreMvc, "Microsoft.AspNetCore.Mvc", "AspNetCoreMvc"),
-        (IntegrationFlags.MessagePack, "MessagePack", "MessagePack"),
-        (IntegrationFlags.MongoDb, "MongoDB.Bson", "MongoDb"),
-        // 门控与生成器一致：HotChocolate 的 scalar 基类在 HotChocolate.Types，装配入口在
-        // HotChocolate.Execution；引用前者必然带上后者，故只查前者。
-        (IntegrationFlags.HotChocolate, "HotChocolate.Types", "HotChocolate"),
-        // 同上：特性在 protobuf-net.Core、Serializer 在 protobuf-net，引用后者必然带上前者。
-        (IntegrationFlags.Protobuf, "protobuf-net", "Protobuf"),
-    ];
-
-    /// <summary>
-    /// STIA0019 的消息里最多列出几个请求方，其余折成总数。
+    /// STIA0019 / STIA0030 的消息里最多列出几个请求方，其余折成总数。
     /// </summary>
     private const int MaxReportedOwners = 3;
 
@@ -1304,6 +1379,103 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
 
         context.ReportDiagnostic(Diagnostic.Create(Descriptors.BypassCreate, defaultValue.Syntax.GetLocation(), type.Name));
     }
+
+    /// <summary>
+    /// 检测 <c>[JsonNumberHandling]</c> 标在强类型 Id 类型的成员或类型自身上（STIA0033）。
+    /// </summary>
+    /// <remarks>
+    /// STJ 在构建 <c>JsonTypeInfo</c> 时按 CLR 类型判定该特性的合法性，不看有没有转换器，
+    /// 于是 <c>[JsonNumberHandling] public IntId Id</c> 与标在 Id 类型上的写法都会在序列化时抛
+    /// <c>InvalidOperationException</c>。转换器无从干预这个判定时机，只能在编译期拦下。
+    /// <para>
+    /// 只认「目标类型本身就是 Id」与「目标是容器、元素类型是 Id」两种形态：裸 <c>int</c> 属性合法，
+    /// 报它等于把正常用法判成错误。<c>Nullable&lt;T&gt;</c> 与 <c>List&lt;T&gt;</c> 这类泛型容器都要拆开看，
+    /// 因为 STJ 对它们的判定与裸类型一致。
+    /// </para>
+    /// </remarks>
+    private static void AnalyzeJsonNumberHandling(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not AttributeSyntax attribute
+            || context.SemanticModel.GetSymbolInfo(attribute, context.CancellationToken).Symbol is not IMethodSymbol constructor
+            || constructor.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != AttributeReader.JsonNumberHandlingAttributeName)
+        {
+            return;
+        }
+
+        // 特性目标：类型声明（Class / Struct）或成员（Property / Field / Indexer）。
+        // 参数不在 JsonNumberHandlingAttribute 的 AttributeUsage 里，编译器会先报 CS0592，无需处理。
+        var target = GetJsonNumberHandlingTarget(attribute, context.SemanticModel, context.CancellationToken);
+
+        if (target is null || !ContainsStronglyTypedId(target))
+        {
+            return;
+        }
+
+        Report(context, Descriptors.JsonNumberHandlingOnId, attribute.GetLocation(), target.ToDisplayString());
+    }
+
+    /// <summary>
+    /// 取 <c>[JsonNumberHandling]</c> 所标注的声明类型；无法判定时返回 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 特性列表的父节点就是被标注的声明，故取「特性的祖父节点」。字段是例外：特性挂在
+    /// <c>FieldDeclarationSyntax</c> 上，而类型写在它的 <c>Declaration</c> 里，同一句声明的多个
+    /// 声明符共享同一个类型，取声明符或取声明本身结论相同。
+    /// </remarks>
+    private static ITypeSymbol? GetJsonNumberHandlingTarget(
+        AttributeSyntax attribute,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var owner = attribute.Parent?.Parent;
+
+        return owner switch
+        {
+            // 类型级：特性列表直接挂在类型声明上。
+            BaseTypeDeclarationSyntax declaration => semanticModel.GetDeclaredSymbol(declaration, cancellationToken),
+            PropertyDeclarationSyntax property => semanticModel.GetDeclaredSymbol(property, cancellationToken)?.Type,
+            IndexerDeclarationSyntax indexer => semanticModel.GetDeclaredSymbol(indexer, cancellationToken)?.Type,
+            BaseFieldDeclarationSyntax field => field.Declaration.Variables.FirstOrDefault() is { } declarator
+                && semanticModel.GetDeclaredSymbol(declarator, cancellationToken) is IFieldSymbol fieldSymbol
+                    ? fieldSymbol.Type
+                    : null,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 判断类型本身或其泛型实参里是否有强类型 Id。
+    /// </summary>
+    /// <remarks>
+    /// 递归展开泛型实参：<c>IntId?</c> 是 <c>Nullable&lt;IntId&gt;</c>，<c>List&lt;IntId&gt;</c> 的元素类型
+    /// 同样受 STJ 的同一套判定约束。数组与嵌套容器（<c>List&lt;IntId?&gt;</c>）一并覆盖。
+    /// </remarks>
+    private static bool ContainsStronglyTypedId(ITypeSymbol type)
+    {
+        switch (type)
+        {
+            case IArrayTypeSymbol array:
+                return ContainsStronglyTypedId(array.ElementType);
+            case INamedTypeSymbol named:
+                if (IsStronglyTypedIdType(named))
+                {
+                    return true;
+                }
+
+                return named.TypeArguments.Any(ContainsStronglyTypedId);
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// 判断类型是否为强类型 Id：本编译声明的（带 <c>[StronglyTypedId]</c>），或已实现
+    /// <c>IStronglyTypedId&lt;,&gt;</c> 的（来自其它程序集）。
+    /// </summary>
+    private static bool IsStronglyTypedIdType(INamedTypeSymbol type)
+        => HasStronglyTypedIdAttribute(type)
+            || type.Interfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface)
+            || type.AllInterfaces.Any(StronglyTypedIdInfo.IsStronglyTypedIdInterface);
 
     /// <summary>
     /// 判断 <c>default</c> 是否处在「与空值比较」的语境里（<c>x == default</c>、<c>x.Equals(default)</c>、

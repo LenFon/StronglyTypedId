@@ -82,6 +82,30 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 ——那个取值任何 `switch` 都落不中。校验放在生成的辅助方法里而不是转换器的 lambda 里，因为那个 lambda 会被
 编译成表达式树，而表达式树不允许 `throw`。
 
+### 不生成 `ValueComparer`，也不需要
+
+EF Core 用 `ValueComparer` 判定被跟踪的属性是否变化、以及如何快照。生成器不产出它，因为实测表明默认
+行为已经与 Id 的相等语义一致：
+
+- `record struct` 的 Id 是值类型，EF Core 用它自己的 `Equals` 比较，而编译器合成的 `Equals` 是结构相等。
+  赋新值会把实体标成 `Modified`，赋相等的值则保持 `Unchanged`。
+- `record` class 的 Id 是引用类型，EF Core 对引用类型的默认 comparer 是引用相等 —— 但 `record` 的
+  `Equals` 是结构相等，且默认快照就是值本身（Id 不可变）。因此「值相等、引用不同的新实例」仍被判为
+  `Unchanged`，赋不同值则判为 `Modified`。两者都在 EF Core 8 + SQLite 下实测过。
+- `string` 基元的 Id 按字符串比较，与 provider 本身的做法一致。
+
+生成的 comparer 只会委托给同一套 `Equals` / `GetHashCode`，`Snapshot` 原样返回，等于空操作。加进去还会
+改变那些已经用 `Property(...).HasConversion(...).HasValueComparer(...)` 配了自己 comparer 的用户的行为。
+
+有两件事 `ValueComparer` 修不了，因为它们发生在它被调用之前：
+
+- **经 Id 访问成员不翻译。** `Where(e => e.Value.Value > 10)` 与
+  `Where(e => e.Value.Value.Contains("alp"))` 会抛 `could not be translated`，因为转换器映射的是整个 Id，
+  不是它的 `Value` 成员。请比较整个 Id —— `Where(e => e.Value == target)` 可以翻译，`ProjectTo` 也可以。
+- **`List<record class Id>` 被当成导航属性，不是基元集合。** EF Core 8 的基元集合只接受受支持的基元，
+  引用类型 Id 的列表会被读成关系并抛 `Unable to determine the relationship`。集合列请用值类型
+  （`record struct`）的 Id，或把列表映射成 owned type。
+
 > `AddStronglyTypedIds(ModelBuilder)` 按 CLR 反射枚举属性，所以要放在实体与 `IEntityTypeConfiguration`
 > 都注册完之后调用；之后再添加的实体不会被扫描。
 

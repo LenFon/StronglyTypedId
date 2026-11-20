@@ -32,9 +32,10 @@ public bool TryCreateId<TId>(Guid value, out TId id)
 Every id also implements the single-parameter `IStronglyTypedId<TSelf>`, so a constraint can say "some
 strongly typed id" without naming the primitive, which is useful for logging, caching and validation
 helpers that treat the id as an opaque value. That interface extends `IParsable<TSelf>`,
-`IComparable<TSelf>` and `IComparisonOperators<TSelf, TSelf, bool>`, so such a constraint can still call
-`TId.Parse(...)`, use `==` / `!=`, and order ids with `CompareTo` or `<` / `>` without knowing the
-primitive:
+`ISpanParsable<TSelf>`, `IEquatable<TSelf>`, `IComparable<TSelf>` and
+`IComparisonOperators<TSelf, TSelf, bool>`, so such a constraint can still call `TId.Parse(...)` (from a
+`string` or a `ReadOnlySpan<char>`), compare with the type-safe `Equals`, use `==` / `!=`, and order ids
+with `CompareTo` or `<` / `>` without knowing the primitive:
 
 ```csharp
 public static TId Max<TId>(IEnumerable<TId> ids)
@@ -44,7 +45,26 @@ public static TId Max<TId>(IEnumerable<TId> ids)
 public static bool IsBefore<TId>(TId left, TId right)
     where TId : IStronglyTypedId<TId>
     => left < right;                     // IComparisonOperators<TSelf, TSelf, bool>
+
+public static bool Same<TId>(TId left, TId right)
+    where TId : IStronglyTypedId<TId>
+    => left.Equals(right);               // IEquatable<TSelf>: no boxing through object.Equals
+
+public static TId FromSpan<TId>(ReadOnlySpan<char> text)
+    where TId : IStronglyTypedId<TId>
+    => TId.Parse(text, null);            // ISpanParsable<TSelf>: no intermediate string
 ```
+
+Declaring `IEquatable<TSelf>` and `ISpanParsable<TSelf>` on the interface is what lets generic code reach
+those members. Without them the compiler binds `left.Equals(right)` to `object.Equals(object)`, which boxes
+every value-type id on every comparison, and a span can only be parsed after calling `ToString()`.
+
+Both come with **default interface implementations** — the span members forward to `IParsable<TSelf>` and
+`Equals` forwards to `object.Equals` — so a hand-written implementation of the interface only needs the two
+`IParsable` members and keeps compiling. Generated ids override them with real span parsing and structural
+equality. The four-argument `TryParse`, which reports why text was rejected, is a `static virtual` member
+with the same arrangement: a default implementation forwards to the two-argument `TryParse` and returns a
+generic message, and generated ids override it with the validator's actual result.
 
 `IFormattableStronglyTypedId<TSelf>` narrows that to ids whose primitive can be formatted.
 

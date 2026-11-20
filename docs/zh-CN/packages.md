@@ -55,7 +55,7 @@ dotnet add package Len.StronglyTypedId
 
 这条属性走 MSBuild → 分析器这条通道：SDK 把它写进编译用的 analyzer config 的全局段
 （`build_property.StronglyTypedIdEnableAnalyzers`），分析器读到「否」就**一个诊断动作都不注册**，
-30 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
+34 条规则一条都不报，代码修复也随之消失（没有诊断就没有可修复的东西）。
 
 三态语义：
 

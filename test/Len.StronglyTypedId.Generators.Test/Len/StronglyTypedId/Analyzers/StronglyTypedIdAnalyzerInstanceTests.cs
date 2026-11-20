@@ -227,6 +227,201 @@ public class StronglyTypedIdAnalyzerInstanceTests
         await Verify.VerifyAnalyzerAsync(code);
     }
 
+    #endregion
+
+    #region 孤儿实例（STIA0032）
+
+    /// <summary>
+    /// 只有 <c>[StronglyTypedIdInstance]</c> 而没有 <c>[StronglyTypedId]</c> 时报告 STIA0032。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷回归：分析器在 <c>HasStronglyTypedIdAttribute</c> 处早退，这类类型既不生成成员也不报任何诊断，
+    /// 用户要到运行期 <c>CS0117</c> 才发现那条实例字段根本不存在。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenInstanceHasNoStronglyTypedId()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            public partial record struct TenantId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.OrphanInstance)
+            .WithArguments("TenantId")
+            .WithSpan(5, 2, 5, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 一个类型上挂多条孤儿实例时逐条上报，位置分别落在各自那条特性上。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReportEveryOrphanInstance()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            [StronglyTypedIdInstance("Anonymous", "0")]
+            public partial record struct TenantId(int Value);
+            """";
+        var expected = new[]
+        {
+            Verify.Diagnostic(Descriptors.OrphanInstance).WithArguments("TenantId").WithSpan(5, 2, 5, 46),
+            Verify.Diagnostic(Descriptors.OrphanInstance).WithArguments("TenantId").WithSpan(6, 2, 6, 43),
+        };
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 两者都有时不报：实例由 <c>[StronglyTypedId]</c> 正常生成。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenInstanceAndStronglyTypedIdCoexist()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 只有 <c>[StronglyTypedId]</c> 时不报。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NoDiagnostic_WhenOnlyStronglyTypedIdIsPresent()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            public partial record struct OrderId(int Value);
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 有 <c>[StronglyTypedId]</c> 但形状不合法时只报形状规则，不额外报 STIA0032。
+    /// </summary>
+    /// <remarks>
+    /// 否则用户会看到两条诊断，误以为要修两处；真正的原因只有「形状不对」这一条。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReportOrphanInstance_WhenStronglyTypedIdShapeIsInvalid()
+    {
+        var code = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedId]
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            public partial class OrderId
+            {
+                public OrderId(int value) => Value = value;
+
+                public int Value { get; }
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.TypeMustBeRecord)
+            .WithSpan(5, 1, 12, 2)
+            .WithArguments("OrderId");
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 程序集级 <c>[StronglyTypedIdDefaults]</c> 不提供实例，因此不改变判据。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_StillReportOrphanInstance_WhenAssemblyDefaultsArePresent()
+    {
+        var code = """"
+            using System;
+
+            [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(Integrations = Len.StronglyTypedId.StronglyTypedIdIntegrations.None)]
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            public partial record struct TenantId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.OrphanInstance)
+            .WithArguments("TenantId")
+            .WithSpan(7, 2, 7, 46);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 修复是删掉那条特性，删完可编译。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_RemoveOrphanInstanceAttribute()
+    {
+        var source = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            public partial record struct TenantId(int Value);
+            """";
+        var fixedSource = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            public partial record struct TenantId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.OrphanInstance)
+            .WithArguments("TenantId")
+            .WithSpan(5, 2, 5, 46);
+        await Verify.VerifyCodeFixAsync(source, expected, fixedSource);
+    }
+
+    /// <summary>
+    /// 同一列表里还有别的特性时只删命中那一条，其余保留。
+    /// </summary>
+    [Fact]
+    public async Task CodeFix_Should_RemoveOnlyTheOrphanInstanceAttribute()
+    {
+        var source = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [Obsolete]
+            [StronglyTypedIdInstance("Unspecified", "-1")]
+            public partial record struct TenantId(int Value);
+            """";
+        var fixedSource = """"
+            using System;
+
+            namespace Len.StronglyTypedId.Tests;
+
+            [Obsolete]
+            public partial record struct TenantId(int Value);
+            """";
+        var expected = Verify.Diagnostic(Descriptors.OrphanInstance)
+            .WithArguments("TenantId")
+            .WithSpan(6, 2, 6, 46);
+        await Verify.VerifyCodeFixAsync(source, expected, fixedSource);
+    }
+
+    #endregion
+
     /// <summary>
     /// <c>TryFormat</c> 只在基元可 span 格式化时生成；<c>string</c> 基元不生成，同名实例合法。
     /// </summary>
@@ -624,8 +819,6 @@ public class StronglyTypedIdAnalyzerInstanceTests
             """";
         await Verify.VerifyAnalyzerAsync(code);
     }
-
-    #endregion
 
     /// <summary>
     /// STIA0007 / STIA0008 的规则 ID 与对应的实参样例。

@@ -36,6 +36,8 @@ internal static class DiagnosticDocumentation
         // 缺包不是代码问题：无法替用户添加包引用。但「删掉 Integrations 实参」是机器能安全做的（类型退化为不带该集成的普通 Id），
         // 把「补包 or 去掉标志」的取舍交给人，故给修复。
         new DiagnosticDocEntry(Descriptors.IntegrationUnavailableId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
+        // 无修复：升级包版本不是机械操作（要改 csproj 里的版本号，还可能牵动传递依赖）。
+        new DiagnosticDocEntry(Descriptors.IntegrationVersionTooLowId, DocText.Empty),
         // 越界位同理：删掉 Integrations 实参即可去掉未定义的位，机器能安全做，故给修复。
         new DiagnosticDocEntry(Descriptors.UnknownIntegrationId, new DocText("Remove the 'Integrations' argument", "删除 'Integrations' 实参")),
         // 命名实例：名字非法（不是合法标识符 / 重名 / 撞名）或取值无法解析的两条，给「删掉整条 [StronglyTypedIdInstance]」修复。
@@ -44,6 +46,8 @@ internal static class DiagnosticDocumentation
         new DiagnosticDocEntry(Descriptors.InvalidInstanceNameId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InvalidInstanceValueId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.InstanceNameNotPascalCaseId, new DocText("Rename the instance to the suggested name", "改名为建议的名字")),
+        // 孤儿实例：特性本身不产生任何成员，删掉它即可让诊断消失；补 [StronglyTypedId] 会连带改变类型的语义，留给人决定。
+        new DiagnosticDocEntry(Descriptors.OrphanInstanceId, new DocText("Remove the '[StronglyTypedIdInstance]' attribute", "删除 '[StronglyTypedIdInstance]' 特性")),
         new DiagnosticDocEntry(Descriptors.TypeCannotBeFileLocalId, new DocText("Remove the `file` modifier", "去掉 `file` 修饰符")),
         // 无修复：改名会牵动所有引用点，且替代名字只能由人挑。
         new DiagnosticDocEntry(Descriptors.TypeNameCannotBeVarId, DocText.Empty),
@@ -52,7 +56,11 @@ internal static class DiagnosticDocumentation
         // 无修复：把 Id 移出泛型容器不是机械操作（要改所有引用点的封闭类型）。
         new DiagnosticDocEntry(Descriptors.GenericContainerSkipsIntegrationsId, DocText.Empty),
         // 无修复：撞名的成员该改名还是该删，取决于它承载的业务语义，机器只能指出撞了哪一个。
-        new DiagnosticDocEntry(Descriptors.MemberCollidesWithGeneratedMemberId, DocText.Empty)];
+        new DiagnosticDocEntry(Descriptors.MemberCollidesWithGeneratedMemberId, DocText.Empty),
+        // 无修复：用户可能只是忘了写 JsonShape，删掉属性名会掩盖真正的问题；改形态还是改名字只能由人决定。
+        new DiagnosticDocEntry(Descriptors.JsonShapePropertyNameInvalidId, DocText.Empty),
+        // 无修复：删掉特性会让行为退化成「静默忽略」，用户真正需要的是改用全局 NumberHandling，这个取舍只能由人做。
+        new DiagnosticDocEntry(Descriptors.JsonNumberHandlingOnIdId, DocText.Empty)];
 
     /// <summary>
     /// 单条诊断的文档条目。

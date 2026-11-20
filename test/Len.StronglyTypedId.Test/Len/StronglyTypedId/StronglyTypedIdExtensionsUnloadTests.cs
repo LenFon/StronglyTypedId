@@ -61,6 +61,8 @@ public class StronglyTypedIdExtensionsUnloadTests
 
             public static PluginId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
 
+            public static PluginId Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => new(Guid.Parse(s));
+
             public static bool TryParse(string? s, IFormatProvider? provider, out PluginId result)
             {
                 if (Guid.TryParse(s, out var value))
@@ -73,9 +75,35 @@ public class StronglyTypedIdExtensionsUnloadTests
                 return false;
             }
 
+            public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out PluginId result)
+            {
+                if (Guid.TryParse(s, out var value))
+                {
+                    result = new(value);
+                    return true;
+                }
+
+                result = default;
+                return false;
+            }
+
+            public static bool TryParse(string? s, IFormatProvider? provider, out PluginId result, out StronglyTypedIdValidationResult validation)
+            {
+                if (TryParse(s, provider, out result))
+                {
+                    validation = StronglyTypedIdValidationResult.Success;
+                    return true;
+                }
+
+                validation = StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
+                return false;
+            }
+
             public static bool operator ==(PluginId left, PluginId right) => left.Value == right.Value;
 
             public static bool operator !=(PluginId left, PluginId right) => left.Value != right.Value;
+
+            public bool Equals(PluginId other) => Value == other.Value;
 
             public override bool Equals(object? obj) => obj is PluginId other && Value == other.Value;
 

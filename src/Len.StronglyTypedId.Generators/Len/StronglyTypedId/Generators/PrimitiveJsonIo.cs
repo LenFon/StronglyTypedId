@@ -87,6 +87,90 @@ internal static class PrimitiveJsonIo
         };
 
     /// <summary>
+    /// 取「<c>AllowReadingFromString</c> 分支」的读计划：把字符串令牌解析成基元值。
+    /// </summary>
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <returns>
+    /// 解析表达式与可选的后置校验；返回 <see langword="null"/> 表示该基元不受
+    /// <c>JsonNumberHandling</c> 影响，调用方不应生成分支。
+    /// </returns>
+    /// <remarks>
+    /// 只覆盖走直读路径的数值基元。<c>Half</c> / <c>Int128</c> / <c>UInt128</c> 走委托路径，
+    /// <c>JsonSerializer</c> 已原生遵守该选项；<c>BigInteger</c> 本来就是文本形。
+    /// <para>
+    /// 枚举被排除：STJ 的内置枚举转换器完全不看 <c>NumberHandling</c>（实测 <c>WriteAsString</c> 仍写
+    /// <c>1</c>、<c>AllowReadingFromString</c> 仍拒绝 <c>"1"</c>）。让 Id 遵守它反而与裸枚举不一致。
+    /// </para>
+    /// <para>
+    /// <c>NumberStyles</c> 按 STJ 的实测接受面挑选，而非 <c>Integer</c> / <c>Number</c> 这类含空白的组合：
+    /// STJ 拒绝首尾空白，无符号类型拒绝前导 <c>+</c>，<c>decimal</c> 接受指数形却拒绝千位分隔符。
+    /// </para>
+    /// </remarks>
+    public static StringReadPlan? TryGetStringReadPlan(StronglyTypedIdInfo idInfo)
+    {
+        if (idInfo.IsCustomPrimitive || idInfo.IsEnum || idInfo.IsBigIntegerPrimitive)
+        {
+            return null;
+        }
+
+        var shortName = StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName);
+
+        var styles = shortName switch
+        {
+            // 有符号整数：STJ 接受前导 + / -，拒绝空白与小数点。
+            "sbyte" or "short" or "int" or "long" => "AllowLeadingSign",
+            // 无符号整数：STJ 连前导 + 都拒绝，只认纯数字。
+            "byte" or "ushort" or "uint" or "ulong" => "None",
+            // 浮点与 decimal：接受符号、小数点、指数；拒绝空白与千位分隔符。
+            "decimal" or "float" or "double" => "AllowLeadingSign | global::System.Globalization.NumberStyles.AllowDecimalPoint | global::System.Globalization.NumberStyles.AllowExponent",
+            _ => null,
+        };
+
+        if (styles is null)
+        {
+            return null;
+        }
+
+        var parse = $"{idInfo.PrimitiveIdTypeName}.Parse(text, global::System.Globalization.NumberStyles.{styles}, global::System.Globalization.CultureInfo.InvariantCulture)";
+
+        // Parse 比 STJ 宽松两处：小写 nan / infinity 也认，且溢出到无穷时返回 Infinity 而不报错。
+        // STJ 只接受三个精确拼写，其余一律拒绝，故补一道后置校验，否则「Id 与裸基元一致」就不成立。
+        var guard = shortName is "float" or "double"
+            ? $"({idInfo.PrimitiveIdTypeName}.IsNaN(value) || {idInfo.PrimitiveIdTypeName}.IsInfinity(value)) && text is not (\"NaN\" or \"Infinity\" or \"-Infinity\")"
+            : null;
+
+        return new StringReadPlan(parse, guard);
+    }
+
+    /// <summary>
+    /// 取「<c>WriteAsString</c> 分支」的写表达式：把基元值写成不变文化的文本。
+    /// </summary>
+    /// <param name="idInfo">当前 Id 的描述信息。</param>
+    /// <returns>
+    /// 直写表达式（含结尾分号）；返回 <see langword="null"/> 表示该基元不受
+    /// <c>NumberHandling</c> 影响，调用方不应生成分支。
+    /// </returns>
+    /// <remarks>
+    /// 覆盖范围与 <see cref="TryGetStringReadPlan"/> 一致。<c>ToString(IFormatProvider)</c> 的默认
+    /// 「G」格式与 STJ 的 <c>WriteAsString</c> 逐字符相同（含 <c>NaN</c> / <c>Infinity</c> / <c>-0</c> / 指数形）。
+    /// <para>
+    /// 必须用 <c>WriteRawValue</c> 而不是 <c>WriteStringValue</c>：后者会转义 <c>+</c>（写成 <c>\u002B</c>），
+    /// 而 STJ 的数值路径写的是裸 <c>"1E+300"</c>。两者 JSON 语义等价，但「逐字节一致」不成立，
+    /// 且会让按文本比较的契约测试与签名校验失配。
+    /// </para>
+    /// </remarks>
+    public static string? TryGetStringWriteExpression(StronglyTypedIdInfo idInfo)
+        => idInfo.IsCustomPrimitive || idInfo.IsEnum || idInfo.IsBigIntegerPrimitive
+            ? null
+            : StronglyTypedIdInfo.GetPrimitiveIdTypeShortName(idInfo.PrimitiveIdTypeName) switch
+            {
+                "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong"
+                    or "decimal" or "float" or "double"
+                    => "writer.WriteRawValue(\"\\\"\" + primitiveId.ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \"\\\"\");",
+                _ => null,
+            };
+
+    /// <summary>
     /// 取枚举基元的写侧表达式：STJ 默认把枚举写成底层数值，这里按底层类型分派。
     /// </summary>
     private static string? GetEnumWriteExpression(StronglyTypedIdInfo idInfo)
@@ -119,4 +203,14 @@ internal static class PrimitiveJsonIo
 
         return read is null ? null : $"({idInfo.PrimitiveIdTypeName}){read}";
     }
+
+    /// <summary>
+    /// 「<c>AllowReadingFromString</c> 分支」的读计划。
+    /// </summary>
+    /// <param name="ParseExpression">把局部变量 <c>text</c> 解析成基元值的表达式。</param>
+    /// <param name="InvalidCondition">
+    /// 解析结果超出 STJ 接受面的条件表达式；为 <see langword="null"/> 时无需后置校验。
+    /// 条件为真时调用方应抛 <see cref="FormatException"/>，由外层统一转成 <c>JsonException</c>。
+    /// </param>
+    internal readonly record struct StringReadPlan(string ParseExpression, string? InvalidCondition);
 }

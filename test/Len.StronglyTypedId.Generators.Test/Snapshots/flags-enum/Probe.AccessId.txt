@@ -32,6 +32,16 @@ partial record struct AccessId :
         return id;
     }
 
+    /// <summary>
+    /// 把文本解析成强类型 Id，格式提供程序取不变文化。
+    /// </summary>
+    /// <param name="value">要解析的文本。</param>
+    /// <returns>解析出的强类型 Id。</returns>
+    /// <remarks>与 <c>Parse(value, null)</c> 等价；失败时抛 <c>FormatException</c>。</remarks>
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
+    public static AccessId Parse(string value) => Parse(value, null);
+
     /// <inheritdoc/>
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
@@ -49,6 +59,20 @@ partial record struct AccessId :
         result = default;
         return false;
     }
+
+    /// <summary>
+    /// 尝试把文本解析成强类型 Id，格式提供程序取不变文化。
+    /// </summary>
+    /// <param name="value">要解析的文本。</param>
+    /// <param name="result">方法返回 <see langword="true"/> 时解析出的 Id；否则为 <see langword="default"/>。</param>
+    /// <returns>当 <paramref name="value"/> 能解析成合法 Id 时返回 <see langword="true"/>。</returns>
+    /// <remarks>与 <c>TryParse(value, null, out result)</c> 等价。</remarks>
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
+    public static bool TryParse(
+        [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value,
+        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out AccessId result)
+        => TryParse(value, null, out result);
 
     /// <inheritdoc/>
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
@@ -139,6 +163,47 @@ partial record struct AccessId :
 
         result = new AccessId(value);
         return true;
+    }
+
+    /// <summary>
+    /// 尝试把文本解析成强类型 Id，并带回失败原因。
+    /// </summary>
+    /// <param name="value">要解析的文本。</param>
+    /// <param name="provider">格式提供程序；<see langword="null"/> 表示不变文化。</param>
+    /// <param name="result">方法返回 <see langword="true"/> 时解析出的 Id。</param>
+    /// <param name="validation">失败原因；文本无法解析时为一条通用消息，验证器拒绝时为验证器的结果。</param>
+    /// <returns>当 <paramref name="value"/> 能解析成合法 Id 时返回 <see langword="true"/>。</returns>
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
+    public static bool TryParse(string? value, global::System.IFormatProvider? provider, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out AccessId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+    {
+        validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure($"The value '{value}' is not a valid AccessId.");
+
+            if (global::System.Enum.TryParse<global::Probe.Access>(value, out var val) && (unchecked((ulong)val) & 0x00000000FFFFFFFCUL) == 0UL)
+            {
+            validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+
+            result = new AccessId(val);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    /// <summary>
+    /// 尝试把文本解析成强类型 Id，带回失败原因，格式提供程序取不变文化。
+    /// </summary>
+    /// <param name="value">要解析的文本。</param>
+    /// <param name="result">方法返回 <see langword="true"/> 时解析出的 Id。</param>
+    /// <param name="validation">失败原因；文本无法解析时为一条通用消息，验证器拒绝时为验证器的结果。</param>
+    /// <returns>当 <paramref name="value"/> 能解析成合法 Id 时返回 <see langword="true"/>。</returns>
+    /// <remarks>与 <c>TryParse(value, null, out result, out validation)</c> 等价。</remarks>
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("StronglyTypedIdCodeGenerator", "<version>")]
+    public static bool TryParse(string? value, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out AccessId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+    {
+        return TryParse(value, null, out result, out validation);
     }
 
     /// <summary>

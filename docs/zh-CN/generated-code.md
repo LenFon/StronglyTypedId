@@ -32,8 +32,9 @@ title: 生成产物
 ## 核心实现
 
 - `IStronglyTypedId<TSelf, TPrimitiveId>`、`IParsable<TSelf>`、`ISpanParsable<TSelf>`、
-  `IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
-  `IComparisonOperators<TSelf, TSelf, bool>` 的实现。
+  `IEquatable<TSelf>`、`IComparable<TSelf>`、`IEqualityOperators<TSelf, TSelf, bool>` 与
+  `IComparisonOperators<TSelf, TSelf, bool>` 的实现。`IEquatable<TSelf>` 由 `record` 声明自身合成，
+  因此接口声明它不需要生成器多产出任何成员。
 - `IFormattableStronglyTypedId<TSelf>`（继承 `IFormattable`）与 `ISpanFormattable`，按基元类型条件生成：
   `string` 两者都没实现，枚举基元则两者都跳过，因为 `System.Enum` 继承来的这两个接口成员带 `[Obsolete]`。
   该标记接口让泛型代码在不知道基元类型的前提下统一格式化：
@@ -58,12 +59,19 @@ title: 生成产物
   重载，额外带回**拒绝原因**；两参重载委托给它。验证器返回 `bool` 时 `validation` 只表达通过与否，
   返回 `StronglyTypedIdValidationResult` 时则带有消息与错误码。见
   [报告拒绝原因](declaration.md#报告拒绝原因)。
+- 静态的 `TryParse(string? value, IFormatProvider? provider, out TSelf result, out StronglyTypedIdValidationResult validation)`
+  重载，报告文本被拒的**原因**。它声明在 `IStronglyTypedId<TSelf>` 上，不需要基元类型；「文本解析不了」与
+  「验证器拒绝」分开报告。ASP.NET Core 模型绑定器用它把验证器的消息填进 `ModelState`。
 - 每个 `[StronglyTypedIdInstance]` 对应一个 `public static readonly TSelf` 字段，经 `Create` 初始化。
 - `Deconstruct(out TPrimitiveId value)`，因此 `id.Deconstruct(out var value);` 可解构出基元值。
   （单元素的 `var (value) = id;` 不是合法 C#，解构声明至少要两个元素。）
 - `string` 与 `ReadOnlySpan<char>` 两套 `Parse` / `TryParse`，委托给基元类型。`provider` 传 `null` 时按
   **不变文化**解析（而非当前文化），因此 `Parse(id.ToString())` 在任何区域设置下都能往返；需要按特定文化
-  解析时显式传 provider。对于以 `string` 为基元的 Id，`TryParse` 不接受 `null` 与空字符串。`Parse` 对
+  解析时显式传 provider。`string` 的每个重载另有单参便利版 —— `Parse(string)` 与
+  `TryParse(string?, out TSelf)` —— 分别等价于 `Parse(value, null)` 与 `TryParse(value, null, out result)`；
+  四参 `TryParse` 同样有单参版。补它们是因为 `IParsable` 的两参签名是接口要求而非使用体验：没有便利版时
+  每个调用点都要写 `null`，又容易误传 `CurrentCulture`，而 `null` 在这里恰恰表示不变文化。
+  对于以 `string` 为基元的 Id，`TryParse` 不接受 `null` 与空字符串。`Parse` 对
   格式错误的文本抛 `FormatException`（`Could not parse supplied value.`），遵循 `IParsable<TSelf>`
   的惯例而非 `ArgumentException`。
 - `CompareTo`，以及基于被包装值的 `<`、`>`、`<=`、`>=` 运算符。`record` 引用类型 Id 的形参与两个操作数

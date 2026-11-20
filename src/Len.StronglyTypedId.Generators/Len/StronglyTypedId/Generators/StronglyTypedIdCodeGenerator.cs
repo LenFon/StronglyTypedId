@@ -39,6 +39,21 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         "<returns>当 <paramref name=\"value\"/> 可接受时返回 <see langword=\"true\"/>，否则返回 <see langword=\"false\"/>。</returns>",
     ];
 
+    /// <summary>
+    /// 带回验证结果的 <c>TryParse</c> 重载的 XML 文档注释。
+    /// </summary>
+    private static readonly string[] _tryParseWithValidationDocLines =
+    [
+        "<summary>",
+        "尝试把文本解析成强类型 Id，并带回失败原因。",
+        "</summary>",
+        "<param name=\"value\">要解析的文本。</param>",
+        "<param name=\"provider\">格式提供程序；<see langword=\"null\"/> 表示不变文化。</param>",
+        "<param name=\"result\">方法返回 <see langword=\"true\"/> 时解析出的 Id。</param>",
+        "<param name=\"validation\">失败原因；文本无法解析时为一条通用消息，验证器拒绝时为验证器的结果。</param>",
+        "<returns>当 <paramref name=\"value\"/> 能解析成合法 Id 时返回 <see langword=\"true\"/>。</returns>",
+    ];
+
     internal static readonly ICoreCodeGenerator Instance = new StronglyTypedIdCodeGenerator();
 
     /// <summary>
@@ -110,6 +125,16 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                         return id;
                     }
 
+                    /// <summary>
+                    /// 把文本解析成强类型 Id，格式提供程序取不变文化。
+                    /// </summary>
+                    /// <param name="value">要解析的文本。</param>
+                    /// <returns>解析出的强类型 Id。</returns>
+                    /// <remarks>与 <c>Parse(value, null)</c> 等价；失败时抛 <c>FormatException</c>。</remarks>
+                    {{GeneratedCode.CompilerGeneratedAttribute}}
+                    {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
+                    public static {{idInfo.EscapedName}} Parse(string value) => Parse(value, null);
+
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
                     {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
@@ -124,6 +149,20 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
                         result = default;
                         return false;
                     }
+
+                    /// <summary>
+                    /// 尝试把文本解析成强类型 Id，格式提供程序取不变文化。
+                    /// </summary>
+                    /// <param name="value">要解析的文本。</param>
+                    /// <param name="result">方法返回 <see langword="true"/> 时解析出的 Id；否则为 <see langword="default"/>。</param>
+                    /// <returns>当 <paramref name="value"/> 能解析成合法 Id 时返回 <see langword="true"/>。</returns>
+                    /// <remarks>与 <c>TryParse(value, null, out result)</c> 等价。</remarks>
+                    {{GeneratedCode.CompilerGeneratedAttribute}}
+                    {{GeneratedCode.GeneratedCodeAttribute(nameof(StronglyTypedIdCodeGenerator), version)}}
+                    public static bool TryParse(
+                        [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value,
+                        [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {{idInfo.EscapedName}} result)
+                        => TryParse(value, null, out result);
 
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -933,6 +972,133 @@ internal class StronglyTypedIdCodeGenerator : ICoreCodeGenerator
         }]);
 
         AppendTryCreateWithValidationMember(builder, idInfo, version);
+
+        AppendTryParseWithValidationMember(builder, idInfo, version);
+    }
+
+    /// <summary>
+    /// 追加带回验证结果的 <c>TryParse</c> 重载：解析失败给通用消息，解析成功则按验证器结果填写 <c>validation</c>。
+    /// </summary>
+    /// <remarks>
+    /// 解析条件用 <see cref="GetTryParseConditionCore"/> 而非 <see cref="GetTryParseCondition"/>：后者会把
+    /// <see langword="bool"/> 验证器并进条件，那样验证器拒绝会被误报成「文本无法解析」，调用方就拿不到
+    /// 验证器的消息了。校验因此一律在成功块里做，与 <see cref="GetTryParseSuccessBlock"/> 的分工一致。
+    /// <para>
+    /// 不委托 <c>TryCreate</c>：三参 <c>TryCreate</c> 的 <c>validation</c> 在验证器返回 <see langword="bool"/>
+    /// 时是通用文案，且不区分「解析失败」与「验证器拒绝」；这里需要两者可区分，且要能按
+    /// <c>RedactValidationMessage</c> 脱敏。
+    /// </para>
+    /// </remarks>
+    private static void AppendTryParseWithValidationMember(StringBuilder builder, StronglyTypedIdInfo idInfo, string version)
+    {
+        var signature = $"public static bool TryParse(string? value, global::System.IFormatProvider? provider, {MaybeNullOutAttribute}{idInfo.EscapedName} result, out {StronglyTypedIdInfo.ValidationResultTypeName} validation)";
+
+        var head = GetTryParseHead(idInfo, GetTryParseConditionCore(idInfo, isSpan: false), PrefixTextKind.String);
+
+        // 解析失败的消息：未脱敏时带上 Id 名与原始文本，让 ModelState 之类的调用方知道是哪个字段、哪个值。
+        // 脱敏时只报 Id 名，与 Create 的脱敏口径一致（原始值可能是用户输入）。
+        var parseFailureMessage = idInfo.RedactsValidationMessage
+            ? $"\"The value is not a valid {idInfo.Name}.\""
+            : $"$\"The value '{{value}}' is not a valid {idInfo.Name}.\"";
+
+        var lines = new List<string>
+        {
+            "{",
+            // 前缀守卫（严格模式）会在解析前直接 return false，那条路径也必须给 validation 赋值，
+            // 否则 CS0177。先给一条通用失败，成功路径再覆盖它。
+            $"    validation = {StronglyTypedIdInfo.ValidationResultTypeName}.Failure({parseFailureMessage});",
+            string.Empty,
+            head,
+            GetTryParseWithValidationSuccessBlock(idInfo),
+            string.Empty,
+            "    result = default;",
+            "    return false;",
+            "}",
+        };
+
+        AppendMember(builder, version, _tryParseWithValidationDocLines, [signature, .. lines]);
+
+        // 单参便利版：与 Parse(string) / TryParse(string?, out T) 同一口径，省掉调用点的 null。
+        var convenienceSignature = $"public static bool TryParse(string? value, {MaybeNullOutAttribute}{idInfo.EscapedName} result, out {StronglyTypedIdInfo.ValidationResultTypeName} validation)";
+
+        AppendMember(
+            builder,
+            version,
+            [
+                "<summary>",
+                "尝试把文本解析成强类型 Id，带回失败原因，格式提供程序取不变文化。",
+                "</summary>",
+                "<param name=\"value\">要解析的文本。</param>",
+                "<param name=\"result\">方法返回 <see langword=\"true\"/> 时解析出的 Id。</param>",
+                "<param name=\"validation\">失败原因；文本无法解析时为一条通用消息，验证器拒绝时为验证器的结果。</param>",
+                "<returns>当 <paramref name=\"value\"/> 能解析成合法 Id 时返回 <see langword=\"true\"/>。</returns>",
+                "<remarks>与 <c>TryParse(value, null, out result, out validation)</c> 等价。</remarks>",
+            ],
+            [convenienceSignature, .. new[]
+            {
+                "{",
+                "    return TryParse(value, null, out result, out validation);",
+                "}",
+            }]);
+    }
+
+    /// <summary>
+    /// 取四参 <c>TryParse</c> 体内「解析成功」分支的完整文本（含两侧大括号），负责填写 <c>validation</c>。
+    /// </summary>
+    private static string GetTryParseWithValidationSuccessBlock(StronglyTypedIdInfo idInfo)
+    {
+        var value = idInfo.NormalizerName is null
+            ? GetTryParseValue(idInfo, isSpan: false)
+            : NormalizedLocal;
+
+        var lines = new List<string> { "{" };
+
+        if (idInfo.NormalizerName is not null)
+        {
+            lines.Add($"    var {NormalizedLocal} = {idInfo.NormalizerName}({GetTryParseValue(idInfo, isSpan: false)});");
+            lines.Add(string.Empty);
+        }
+
+        if (idInfo.ValidatorName is null)
+        {
+            lines.Add($"    validation = {StronglyTypedIdInfo.ValidationResultTypeName}.Success;");
+        }
+        else if (idInfo.ValidatorReturnsResult)
+        {
+            lines.Add($"    validation = {idInfo.ValidatorName}({value});");
+            lines.Add(string.Empty);
+            lines.Add("    if (!validation.IsValid)");
+            lines.Add("    {");
+
+            // 脱敏是安全策略：验证器文案可能含用户输入，而 ModelState 是面向外部的通道。
+            // 保留错误码（机器可读），只把消息换成不含原文的通用文案。
+            if (idInfo.RedactsValidationMessage)
+            {
+                lines.Add($"        validation = {StronglyTypedIdInfo.ValidationResultTypeName}.Failure(\"The value is not a valid {idInfo.Name}.\", validation.Code);");
+            }
+
+            lines.Add("        result = default;");
+            lines.Add("        return false;");
+            lines.Add("    }");
+        }
+        else
+        {
+            lines.Add($"    if (!{idInfo.ValidatorName}({value}))");
+            lines.Add("    {");
+            lines.Add($"        validation = {StronglyTypedIdInfo.ValidationResultTypeName}.Failure(\"The value is not a valid {idInfo.Name}.\");");
+            lines.Add("        result = default;");
+            lines.Add("        return false;");
+            lines.Add("    }");
+            lines.Add(string.Empty);
+            lines.Add($"    validation = {StronglyTypedIdInfo.ValidationResultTypeName}.Success;");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add($"    result = new {idInfo.EscapedName}({value});");
+        lines.Add("    return true;");
+        lines.Add("}");
+
+        return string.Join(GeneratedCode.NewLine, lines.Select(line => line.Length == 0 ? string.Empty : _tryParseBodyIndent + line));
     }
 
     /// <summary>

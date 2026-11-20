@@ -32,7 +32,7 @@ then no longer be passed where an `OrderId` is expected, or the reverse.
   `[StronglyTypedId]` and the type gains parsing, formatting, comparison, `Create` / `TryCreate`,
   deconstruction, JSON converters and a debugger view.
 - **A `Guid` can never stand in for an `OrderId`.** The compiler rejects the swap, and a built-in
-  analyzer rejects invalid declarations as errors; 22 of its 30 rules ship a code fix.
+  analyzer rejects invalid declarations as errors; 23 of its 34 rules ship a code fix.
 - **Twenty-three primitives, or your own.** Every numeric type, `Guid`, `string`, dates and
   `BigInteger` are built in, along with any `enum` and any type that implements `IParsable<TSelf>` and
   `IComparable`. ULID works unchanged.

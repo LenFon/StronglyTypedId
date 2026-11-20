@@ -9,7 +9,8 @@ title: Diagnostics
 
 The analyzer enforces the following rules; `STIA0012` is the one exception, reported by the generator
 when code emission itself fails. Most are reported as a **compile error**, so an invalid declaration
-will not compile; `STIA0011`, `STIA0013`, `STIA0019` and `STIA0024` are warnings, and the advisory ones
+will not compile; `STIA0011`, `STIA0013`, `STIA0019`, `STIA0024`, `STIA0028`, `STIA0030`, `STIA0031`,
+`STIA0032` and `STIA0033` are warnings, and the advisory ones
 (`STIA0014`, `STIA0015`, `STIA0016`, `STIA0022`) are informational. Every level can be tuned per project
 in `.editorconfig`. Diagnostics are localized for English and Chinese according to the compiler culture.
 
@@ -21,6 +22,10 @@ A few rules fire in narrower circumstances than their titles suggest:
   reported, and neither is a `with` expression that does not assign `Value`.
 - `STIA0014` is **off by default**. Enable it with `dotnet_diagnostic.STIA0014.severity = suggestion`.
 - `STIA0016` reports once per group of ids sharing a primitive, on the ordinally first member.
+- `STIA0033` fires on the id type itself and on a property, field or indexer whose type is an id, unwrapping
+  `Nullable<T>` and looking inside containers such as `List<Int32Id>`. A plain `int` member is valid and is
+  not reported. There is no code fix: the attribute has to be replaced with
+  `JsonSerializerOptions.NumberHandling`, not merely deleted.
 
 <!-- BEGIN GENERATED:diagnostics -->
 | Rule ID  | Description                                                           | Code fix                                                  |
@@ -55,6 +60,10 @@ A few rules fire in narrower circumstances than their titles suggest:
 | STIA0027 | Strongly typed id name collides with a generated member               | —                                                         |
 | STIA0028 | Strongly typed id inside a generic container gets no integration code | —                                                         |
 | STIA0029 | Strongly typed id member collides with a generated member             | —                                                         |
+| STIA0030 | Requested integration package is too old                              | —                                                         |
+| STIA0031 | JsonShape property name is not usable                                 | —                                                         |
+| STIA0032 | '[StronglyTypedIdInstance]' has no effect without '[StronglyTypedId]' | Remove the '[StronglyTypedIdInstance]' attribute          |
+| STIA0033 | '[JsonNumberHandling]' cannot be applied to a strongly typed id       | —                                                         |
 <!-- END GENERATED:diagnostics -->
 
 Most rules ship a code fix, so the light bulb usually repairs the declaration for you. A few offer it only

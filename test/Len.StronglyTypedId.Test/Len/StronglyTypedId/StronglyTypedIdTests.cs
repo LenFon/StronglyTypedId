@@ -223,6 +223,13 @@ public readonly struct MultiContractId(Guid value)
     static bool IParsable<ForeignId>.TryParse(string? s, IFormatProvider? provider, out ForeignId result)
         => ForeignId.TryParse(s, provider, out result);
 
+    static bool IStronglyTypedId<ForeignId>.TryParse(
+        string? s,
+        IFormatProvider? provider,
+        out ForeignId result,
+        out StronglyTypedIdValidationResult validation)
+        => ForeignId.TryParse(s, provider, out result, out validation);
+
     static bool IEqualityOperators<ForeignId, ForeignId, bool>.operator ==(ForeignId left, ForeignId right) => left == right;
 
     static bool IEqualityOperators<ForeignId, ForeignId, bool>.operator !=(ForeignId left, ForeignId right) => left != right;
@@ -239,7 +246,17 @@ public readonly struct MultiContractId(Guid value)
 
     static bool IComparisonOperators<ForeignId, ForeignId, bool>.operator >=(ForeignId left, ForeignId right) => left >= right;
 
+    bool IEquatable<ForeignId>.Equals(ForeignId other) => true;
+
+    static ForeignId ISpanParsable<ForeignId>.Parse(ReadOnlySpan<char> s, IFormatProvider? provider)
+        => ForeignId.Parse(s, provider);
+
+    static bool ISpanParsable<ForeignId>.TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out ForeignId result)
+        => ForeignId.TryParse(s, provider, out result);
+
     public static MultiContractId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
+
+    public static MultiContractId Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => new(Guid.Parse(s));
 
     public static bool TryParse(string? s, IFormatProvider? provider, out MultiContractId result)
     {
@@ -249,6 +266,36 @@ public readonly struct MultiContractId(Guid value)
             return true;
         }
 
+        result = default;
+        return false;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out MultiContractId result)
+    {
+        if (Guid.TryParse(s, out var parsed))
+        {
+            result = new(parsed);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public static bool TryParse(
+        string? s,
+        IFormatProvider? provider,
+        out MultiContractId result,
+        out StronglyTypedIdValidationResult validation)
+    {
+        if (Guid.TryParse(s, out var parsed))
+        {
+            validation = StronglyTypedIdValidationResult.Success;
+            result = new(parsed);
+            return true;
+        }
+
+        validation = StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
         result = default;
         return false;
     }
@@ -266,6 +313,8 @@ public readonly struct MultiContractId(Guid value)
     public static bool operator >(MultiContractId left, MultiContractId right) => left.Value > right.Value;
 
     public static bool operator >=(MultiContractId left, MultiContractId right) => left.Value >= right.Value;
+
+    public bool Equals(MultiContractId other) => Value == other.Value;
 
     public override bool Equals(object? obj) => obj is MultiContractId other && Value == other.Value;
 
@@ -297,6 +346,8 @@ public readonly struct ForeignId(int value) : IStronglyTypedId<ForeignId, int>
 
     public static ForeignId Parse(string s, IFormatProvider? provider) => new(int.Parse(s, provider));
 
+    public static ForeignId Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => new(int.Parse(s, provider));
+
     public static bool TryParse(string? s, IFormatProvider? provider, out ForeignId result)
     {
         if (int.TryParse(s, out var parsed))
@@ -305,6 +356,36 @@ public readonly struct ForeignId(int value) : IStronglyTypedId<ForeignId, int>
             return true;
         }
 
+        result = default;
+        return false;
+    }
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out ForeignId result)
+    {
+        if (int.TryParse(s, out var parsed))
+        {
+            result = new(parsed);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public static bool TryParse(
+        string? s,
+        IFormatProvider? provider,
+        out ForeignId result,
+        out StronglyTypedIdValidationResult validation)
+    {
+        if (int.TryParse(s, out var parsed))
+        {
+            validation = StronglyTypedIdValidationResult.Success;
+            result = new(parsed);
+            return true;
+        }
+
+        validation = StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
         result = default;
         return false;
     }
@@ -322,6 +403,8 @@ public readonly struct ForeignId(int value) : IStronglyTypedId<ForeignId, int>
     public static bool operator >(ForeignId left, ForeignId right) => left.Value > right.Value;
 
     public static bool operator >=(ForeignId left, ForeignId right) => left.Value >= right.Value;
+
+    public bool Equals(ForeignId other) => Value == other.Value;
 
     public override bool Equals(object? obj) => obj is ForeignId other && Value == other.Value;
 

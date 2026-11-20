@@ -97,6 +97,38 @@ bits but not undefined ones. A stored `999` is rejected rather than materialised
 `switch` would ever match. The check lives in a generated helper method rather than in the converter's
 lambda, because that lambda is compiled into an expression tree and expression trees cannot contain `throw`.
 
+### No `ValueComparer` is generated, and none is needed
+
+EF Core uses a `ValueComparer` to decide whether a tracked property changed and to snapshot it. The
+generator does not emit one, because measurement showed the defaults already match an id's equality
+semantics:
+
+- A `record struct` id is a value type, so EF Core compares it with its own `Equals`, which the compiler
+  synthesises structurally. Assigning a new value marks the entity `Modified`; assigning an equal value
+  leaves it `Unchanged`.
+- A `record` class id is a reference type, and EF Core's default comparer for reference types is reference
+  equality — but a `record`'s `Equals` is structural, and EF Core's default snapshot is the value itself
+  (ids are immutable). Assigning a *new instance* holding the *same* value is therefore still detected as
+  `Unchanged`, and assigning a different value as `Modified`. Both were verified against EF Core 8 with
+  SQLite.
+- `string`-backed ids compare as strings, which is what the provider does anyway.
+
+A generated comparer would delegate to the same `Equals` / `GetHashCode` and return the value unchanged from
+`Snapshot`, so it would be a no-op. Adding one would also be a behaviour change for anyone who has already
+configured their own comparer through `Property(...).HasConversion(...).HasValueComparer(...)`.
+
+Two things a `ValueComparer` cannot fix, because they happen before it is consulted:
+
+- **Member access through the id does not translate.** `Where(e => e.Value.Value > 10)` and
+  `Where(e => e.Value.Value.Contains("alp"))` throw `could not be translated`, because the converter maps
+  the whole id, not its `Value` member. Compare whole ids instead — `Where(e => e.Value == target)` does
+  translate, and so does `ProjectTo`.
+- **A `List<record class Id>` is treated as a navigation, not a primitive collection.** EF Core 8's
+  primitive collections only accept supported primitives, so a list of reference-type ids is read as a
+  relationship and throws `Unable to determine the relationship`. Use a value-type (`record struct`) id for
+  collection columns, or map the list as an owned type.
+
+
 > `AddStronglyTypedIds(ModelBuilder)` walks the model as it stands at the moment of the call, so invoke it after your
 > entities and `IEntityTypeConfiguration`s have been registered; entities added later are not scanned.
 

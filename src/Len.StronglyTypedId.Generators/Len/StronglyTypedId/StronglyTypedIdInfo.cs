@@ -63,6 +63,16 @@ internal readonly record struct StronglyTypedIdInfo
     internal const string JsonShapeArgumentName = "JsonShape";
 
     /// <summary>
+    /// attribute 中对象形态属性名的命名实参名。
+    /// </summary>
+    internal const string JsonShapePropertyNameArgumentName = "JsonShapePropertyName";
+
+    /// <summary>
+    /// <c>JsonShapePropertyName</c> 未配置时使用的属性名。
+    /// </summary>
+    internal const string DefaultJsonShapePropertyName = "value";
+
+    /// <summary>
     /// attribute 中规范文本形前缀的命名实参名。
     /// </summary>
     internal const string PrefixArgumentName = "Prefix";
@@ -307,6 +317,11 @@ internal readonly record struct StronglyTypedIdInfo
         // 也能覆盖程序集默认（bool 型做不到这一点，见上一条）。
         IsObjectJsonShape = (AttributeReader.GetEnumValue(attribute, JsonShapeArgumentName) ?? defaults.JsonShape)
             == ObjectJsonShapeValue;
+        // 对象形态的属性名：逐类型优先，其次程序集默认，最后 "value"。空串与纯空白按「未配置」处理，
+        // 与 Prefix 的口径一致；非法值由分析器报 STIA0031，生成器侧回退到默认名以免产出非法代码。
+        JsonShapePropertyName = NormalizeJsonShapePropertyName(
+            AttributeReader.GetString(attribute, JsonShapePropertyNameArgumentName)
+                ?? defaults.JsonShapePropertyName);
         Prefix = NormalizePrefix(AttributeReader.GetString(attribute, PrefixArgumentName));
         IsStrictPrefixRead = (AttributeReader.GetEnumValue(attribute, PrefixReadModeArgumentName) ?? defaults.PrefixReadMode)
             == StrictPrefixReadModeValue;
@@ -792,6 +807,15 @@ internal readonly record struct StronglyTypedIdInfo
     /// <c>[StronglyTypedId]</c> 是否要求 JSON 采用对象形态（<c>{ "value": … }</c>）。
     /// </summary>
     public bool IsObjectJsonShape { get; }
+
+    /// <summary>
+    /// 对象形态下承载基元值的属性名；未配置时为 <see cref="DefaultJsonShapePropertyName"/>。
+    /// </summary>
+    /// <remarks>
+    /// 只在 <see cref="IsObjectJsonShape"/> 为 <see langword="true"/> 时参与生成。非法值（空、纯空白、
+    /// 含控制字符）在构造期回退到默认名：分析器会报 <c>STIA0031</c>，生成器不能因此产出非法代码。
+    /// </remarks>
+    public string JsonShapePropertyName { get; }
 
     /// <summary>
     /// <c>[StronglyTypedId]</c> 上 <c>Prefix</c> 指定的前缀；未指定或为空 / 纯空白时为 <see langword="null"/>。
@@ -1573,4 +1597,35 @@ internal readonly record struct StronglyTypedIdInfo
     /// </summary>
     private static string? NormalizePrefix(string? prefix)
         => string.IsNullOrWhiteSpace(prefix) ? null : prefix;
+
+    /// <summary>
+    /// 把对象形态属性名规范成可安全写进 JSON 的名字：未配置、空、纯空白或含控制字符时回退到默认名。
+    /// </summary>
+    /// <remarks>
+    /// 含控制字符的名字写进 JSON 后无法读回，且会让生成的 C# 字面量难以阅读；分析器报 <c>STIA0031</c>，
+    /// 生成器侧静默回退，保证产物始终可编译、可往返。
+    /// </remarks>
+    internal static string NormalizeJsonShapePropertyName(string? propertyName)
+        => IsValidJsonShapePropertyName(propertyName) ? propertyName! : DefaultJsonShapePropertyName;
+
+    /// <summary>
+    /// 判断属性名能否作为 JSON 对象属性名使用：非空、非纯空白、不含控制字符。
+    /// </summary>
+    internal static bool IsValidJsonShapePropertyName(string? propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            return false;
+        }
+
+        foreach (var character in propertyName!)
+        {
+            if (char.IsControl(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

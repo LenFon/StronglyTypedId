@@ -276,6 +276,18 @@ public class ModuleInfoTests
                 result = default;
                 return false;
             }
+
+            public static bool TryParse(string? value, global::System.IFormatProvider? provider, out OrderId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+            {
+                if (TryParse(value, provider, out result))
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    return true;
+                }
+
+                validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
+                return false;
+            }
         }
 
         public readonly record struct ProductId(int Value)
@@ -295,6 +307,18 @@ public class ModuleInfoTests
                 }
 
                 result = default;
+                return false;
+            }
+
+            public static bool TryParse(string? value, global::System.IFormatProvider? provider, out ProductId result, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+            {
+                if (TryParse(value, provider, out result))
+                {
+                    validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
+                    return true;
+                }
+
+                validation = global::Len.StronglyTypedId.StronglyTypedIdValidationResult.Failure("Could not parse supplied value.");
                 return false;
             }
         }

@@ -333,6 +333,80 @@ public class StronglyTypedIdCapabilityTests
         StringId.TryParse([], CultureInfo.InvariantCulture, out _).Should().BeFalse();
     }
 
+    /// <summary>
+    /// 单参便利重载与「provider 传 <see langword="null"/>」的两参版本逐项等价。
+    /// </summary>
+    /// <remarks>
+    /// 单参版本只是省掉调用点的 <c>null</c>，语义必须完全一致 —— 包括失败路径：<c>Parse</c> 抛
+    /// <see cref="FormatException"/>，<c>TryParse</c> 返回 <see langword="false"/> 并把结果置为 <c>default</c>。
+    /// </remarks>
+    [Fact]
+    public void SingleArgumentParse_Should_BeEquivalentToNullProvider()
+    {
+        var text = _lowGuid.ToString("D", CultureInfo.InvariantCulture);
+
+        GuidId.Parse(text).Should().Be(GuidId.Parse(text, null));
+        GuidId.Parse(text).Should().Be(GuidId.Create(_lowGuid));
+
+        GuidId.TryParse(text, out var parsed).Should().BeTrue();
+        parsed.Should().Be(GuidId.Create(_lowGuid));
+
+        Int32Id.Parse("42").Should().Be(Int32Id.Parse("42", null));
+        Int32Id.TryParse("42", out var number).Should().BeTrue();
+        number.Value.Should().Be(42);
+
+        // 失败路径：Parse 抛 FormatException，TryParse 返回 false 且结果为 default。
+        var parse = () => GuidId.Parse("not-a-guid");
+        parse.Should().Throw<FormatException>();
+
+        GuidId.TryParse("not-a-guid", out var failed).Should().BeFalse();
+        failed.Should().Be(default);
+    }
+
+    /// <summary>
+    /// 带前缀的 Id：单参重载同样走前缀剥离，与两参版本一致。
+    /// </summary>
+    [Fact]
+    public void SingleArgumentParse_Should_StripPrefix()
+    {
+        var id = PrefixedGuidId.Create(_lowGuid);
+        var text = id.ToString();
+
+        text.Should().StartWith("ord_", "前置条件：规范文本形带前缀");
+
+        PrefixedGuidId.Parse(text).Should().Be(id);
+        PrefixedGuidId.TryParse(text, out var parsed).Should().BeTrue();
+        parsed.Should().Be(id);
+
+        // 默认 Lenient：前缀缺失时按原样解析，与两参版本一致。
+        PrefixedGuidId.TryParse(_lowGuid.ToString("D", CultureInfo.InvariantCulture), out var bare).Should().BeTrue();
+        bare.Should().Be(id);
+
+        // Strict 模式：前缀缺失时拒绝，单参重载沿用同一判据。
+        StrictPrefixedGuidId.TryParse(_lowGuid.ToString("D", CultureInfo.InvariantCulture), out _).Should().BeFalse();
+        StrictPrefixedGuidId.TryParse(StrictPrefixedGuidId.Create(_lowGuid).ToString(), out var strict).Should().BeTrue();
+        strict.Should().Be(StrictPrefixedGuidId.Create(_lowGuid));
+    }
+
+    /// <summary>
+    /// 四参 <c>TryParse</c> 的单参便利版同样与「provider 传 <see langword="null"/>」等价，
+    /// 且验证器拒绝时带回验证器的消息。
+    /// </summary>
+    [Fact]
+    public void SingleArgumentTryParseWithValidation_Should_BeEquivalentToNullProvider()
+    {
+        var text = _lowGuid.ToString("D", CultureInfo.InvariantCulture);
+
+        GuidId.TryParse(text, out var parsed, out var validation).Should().BeTrue();
+        parsed.Should().Be(GuidId.Create(_lowGuid));
+        validation.IsValid.Should().BeTrue();
+
+        // 验证器拒绝：消息来自验证器，而不是「文本无法解析」那条通用文案。
+        NonEmptyGuidId.TryParse(Guid.Empty.ToString("D", CultureInfo.InvariantCulture), out _, out var rejected).Should().BeFalse();
+        rejected.IsValid.Should().BeFalse();
+        rejected.Message.Should().NotBeNullOrEmpty();
+    }
+
     #endregion
 
     #region System.Text.Json：强类型 Id 作字典键
@@ -1070,5 +1144,177 @@ public class StronglyTypedIdCapabilityTests
         where TId : IStronglyTypedId<TId>
         => left == right;
 
+    /// <summary>
+    /// 单参接口声明了 <see cref="IEquatable{TSelf}"/>，因此约束在它上面的泛型代码可以调用类型安全的
+    /// <c>Equals</c>，而不必落到 <see cref="object.Equals(object)"/> 的装箱路径。
+    /// </summary>
+    /// <remarks>
+    /// 判据是「编译通过且结果正确」：接口没有声明 <c>IEquatable</c> 时，<c>left.Equals(right)</c> 会绑定到
+    /// <c>object.Equals(object)</c>，对值类型 Id 每次比较都要装箱；这里用分配量断言把那条路径钉死。
+    /// </remarks>
+    [Fact]
+    public void SingleParameterInterface_Should_DeclareIEquatable_SoGenericCodeComparesWithoutBoxing()
+    {
+        var lower = GuidId.Create(_lowGuid);
+        var same = GuidId.Create(_lowGuid);
+        var higher = GuidId.Create(_highGuid);
+
+        EqualsThroughConstraint(lower, same).Should().BeTrue();
+        EqualsThroughConstraint(lower, higher).Should().BeFalse();
+
+        // 值类型 Id 走 object.Equals 会装箱；接口声明 IEquatable 后这条路径不分配。
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var index = 0; index < 1000; index++)
+        {
+            EqualsThroughConstraint(lower, same);
+        }
+
+        (GC.GetAllocatedBytesForCurrentThread() - before).Should().Be(0, "泛型 Equals 不应装箱");
+    }
+
+    /// <summary>
+    /// 单参接口声明了 <see cref="ISpanParsable{TSelf}"/>，泛型代码可以直接从 span 解析，不必先转成
+    /// <see cref="string"/>。
+    /// </summary>
+    [Fact]
+    public void SingleParameterInterface_Should_DeclareISpanParsable_SoGenericCodeParsesSpans()
+    {
+        var text = _lowGuid.ToString("D", CultureInfo.InvariantCulture);
+
+        ParseSpanThroughConstraint<GuidId>(text.AsSpan()).Should().Be(GuidId.Create(_lowGuid));
+
+        TryParseSpanThroughConstraint<GuidId>(text.AsSpan(), out var parsed).Should().BeTrue();
+        parsed.Should().Be(GuidId.Create(_lowGuid));
+
+        TryParseSpanThroughConstraint<GuidId>("not-a-guid".AsSpan(), out _).Should().BeFalse();
+    }
+
+    private static bool EqualsThroughConstraint<TId>(TId left, TId right)
+        where TId : IStronglyTypedId<TId>
+        => left.Equals(right);
+
+    private static TId ParseSpanThroughConstraint<TId>(ReadOnlySpan<char> text)
+        where TId : IStronglyTypedId<TId>
+        => TId.Parse(text, CultureInfo.InvariantCulture);
+
+    private static bool TryParseSpanThroughConstraint<TId>(ReadOnlySpan<char> text, [MaybeNullWhen(false)] out TId result)
+        where TId : IStronglyTypedId<TId>
+        => TId.TryParse(text, CultureInfo.InvariantCulture, out result);
+
     #endregion
+
+    #region 默认接口实现：手写实现不必补新成员
+
+    /// <summary>
+    /// 手写实现只提供 <see cref="IParsable{TSelf}"/> 的两个成员就能编译 ——
+    /// <see cref="ISpanParsable{TSelf}"/>、<see cref="IEquatable{TSelf}"/> 与四参 <c>TryParse</c>
+    /// 都由默认接口实现补齐。
+    /// </summary>
+    /// <remarks>
+    /// 这条用例的判据是「编译通过」：<see cref="MinimalHandWrittenId"/> 的声明里刻意没有 span 重载、
+    /// 没有 <c>Equals</c>、没有四参 <c>TryParse</c>。若哪天有人把默认实现改回抽象成员，这个类型
+    /// 会直接编译失败，而不是等到用户升级后才发现。
+    /// </remarks>
+    [Fact]
+    public void HandWrittenImplementation_Should_CompileWithOnlyParsableMembers()
+    {
+        var id = MinimalHandWrittenId.Parse("42", CultureInfo.InvariantCulture);
+
+        id.Value.Should().Be(42);
+    }
+
+    /// <summary>
+    /// 默认实现补齐的 span 解析转发到 <see cref="IParsable{TSelf}"/>，结果与 string 版本一致。
+    /// </summary>
+    [Fact]
+    public void DefaultSpanParse_Should_ForwardToParsable()
+    {
+        ParseSpanThroughConstraint<MinimalHandWrittenId>("42".AsSpan()).Should().Be(MinimalHandWrittenId.Parse("42", null));
+
+        TryParseSpanThroughConstraint<MinimalHandWrittenId>("42".AsSpan(), out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be(42);
+
+        TryParseSpanThroughConstraint<MinimalHandWrittenId>("not-a-number".AsSpan(), out _).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 默认实现补齐的 <c>Equals</c> 退回 <see cref="object.Equals(object, object)"/>，对值类型是值相等。
+    /// </summary>
+    [Fact]
+    public void DefaultEquals_Should_CompareByValue()
+    {
+        EqualsThroughConstraint(MinimalHandWrittenId.Parse("42", null), MinimalHandWrittenId.Parse("42", null))
+            .Should().BeTrue();
+
+        EqualsThroughConstraint(MinimalHandWrittenId.Parse("42", null), MinimalHandWrittenId.Parse("43", null))
+            .Should().BeFalse();
+    }
+
+    /// <summary>
+    /// 默认实现补齐的四参 <c>TryParse</c> 转发到两参版本，并给出一条通用失败消息。
+    /// </summary>
+    [Fact]
+    public void DefaultRichTryParse_Should_ForwardToTwoArgumentTryParse()
+    {
+        TryParseRichThroughConstraint<MinimalHandWrittenId>("42", out var parsed, out var validation).Should().BeTrue();
+        parsed.Value.Should().Be(42);
+        validation.IsValid.Should().BeTrue();
+
+        TryParseRichThroughConstraint<MinimalHandWrittenId>("not-a-number", out _, out var failure).Should().BeFalse();
+        failure.IsValid.Should().BeFalse();
+        failure.Message.Should().Contain("MinimalHandWrittenId");
+    }
+
+    private static bool TryParseRichThroughConstraint<TId>(
+        string? text,
+        [MaybeNullWhen(false)] out TId result,
+        out StronglyTypedIdValidationResult validation)
+        where TId : IStronglyTypedId<TId>
+        => TId.TryParse(text, CultureInfo.InvariantCulture, out result, out validation);
+
+    #endregion
+}
+
+/// <summary>
+/// 手写的最小实现：只提供 <see cref="IParsable{TSelf}"/> 的两个成员。
+/// </summary>
+/// <remarks>
+/// 刻意不写 span 重载、<c>Equals</c> 与四参 <c>TryParse</c> —— 它们由接口的默认实现补齐。
+/// 这个类型能编译，就是「N5/N10 不是破坏性变更」的证据。
+/// </remarks>
+public readonly record struct MinimalHandWrittenId(int Value)
+    : IStronglyTypedId<MinimalHandWrittenId, int>
+{
+    public static MinimalHandWrittenId Create(int value) => new(value);
+
+    public static bool TryCreate(int value, out MinimalHandWrittenId result)
+    {
+        result = new(value);
+        return true;
+    }
+
+    public static MinimalHandWrittenId Parse(string s, IFormatProvider? provider)
+        => new(int.Parse(s, provider ?? CultureInfo.InvariantCulture));
+
+    public static bool TryParse(string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out MinimalHandWrittenId result)
+    {
+        if (int.TryParse(s, NumberStyles.Integer, provider ?? CultureInfo.InvariantCulture, out var value))
+        {
+            result = new(value);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    public int CompareTo(MinimalHandWrittenId other) => Value.CompareTo(other.Value);
+
+    public static bool operator <(MinimalHandWrittenId left, MinimalHandWrittenId right) => left.Value < right.Value;
+
+    public static bool operator <=(MinimalHandWrittenId left, MinimalHandWrittenId right) => left.Value <= right.Value;
+
+    public static bool operator >(MinimalHandWrittenId left, MinimalHandWrittenId right) => left.Value > right.Value;
+
+    public static bool operator >=(MinimalHandWrittenId left, MinimalHandWrittenId right) => left.Value >= right.Value;
 }

@@ -222,7 +222,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText("`<Namespace>.<TypeName>.g.cs`", "`<命名空间>.<类型名>.g.cs`")),
         new CodeGeneratorRegistration(
             "System.Text.Json.dll",
-            static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.SystemTextJson),
             SystemTextJsonCodeGenerator.Instance,
             new DocText("`System.Text.Json` is referenced", "引用了 `System.Text.Json`"),
             new DocText(
@@ -233,7 +233,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`…SystemTextJson.g.cs`, `StronglyTypedIds.SystemTextJson.g.cs`")),
         new CodeGeneratorRegistration(
             "Newtonsoft.Json.dll",
-            static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.NewtonsoftJson),
             NewtonsoftJsonCodeGenerator.Instance,
             new DocText("`Newtonsoft.Json` ≥ 13.0.0 is referenced", "引用了 `Newtonsoft.Json` ≥ 13.0.0"),
             new DocText(
@@ -242,10 +242,11 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText(
                 "`…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`",
                 "`…NewtonsoftJson.g.cs`, `StronglyTypedIds.NewtonsoftJson.g.cs`")),
-        // 集成生成器走 HasModule（OrdinalIgnoreCase，模块名取自元数据读取器，大小写未必规范）。
+        // 集成生成器的闸门统一走 IntegrationRequirements：分析器按同一张表报 STIA0019 / STIA0030，
+        // 两处各写一份版本下限，改了一处漏改另一处，门控就退化成猜测。
         new CodeGeneratorRegistration(
             "Microsoft.EntityFrameworkCore.dll",
-            static modules => modules.HasModule("Microsoft.EntityFrameworkCore.dll", 7),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.EntityFrameworkCore),
             EfCoreCodeGenerator.Instance,
             new DocText(
                 "`Microsoft.EntityFrameworkCore` ≥ 7.0.0 is referenced",
@@ -258,7 +259,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`…EntityFrameworkCore.g.cs`, `StronglyTypedIds.EntityFrameworkCore.g.cs`")),
         new CodeGeneratorRegistration(
             "Swashbuckle.AspNetCore.SwaggerGen.dll",
-            static modules => modules.HasModule("Swashbuckle.AspNetCore.SwaggerGen.dll", 6),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.Swagger),
             SwaggerCodeGenerator.Instance,
             new DocText("`Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0 is referenced", "引用了 `Swashbuckle.AspNetCore.SwaggerGen` ≥ 6.0.0"),
             new DocText(
@@ -267,7 +268,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText("`StronglyTypedIds.Swagger.g.cs`", "`StronglyTypedIds.Swagger.g.cs`")),
         new CodeGeneratorRegistration(
             "Dapper.dll",
-            static modules => modules.HasModule("Dapper.dll", 2),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.Dapper),
             DapperCodeGenerator.Instance,
             new DocText("`Dapper` ≥ 2.0.0 is referenced", "引用了 `Dapper` ≥ 2.0.0"),
             new DocText(
@@ -278,7 +279,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`…Dapper.g.cs`, `StronglyTypedIds.Dapper.g.cs`")),
         new CodeGeneratorRegistration(
             "MessagePack.dll",
-            static modules => modules.HasModule("MessagePack.dll", 2),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.MessagePack),
             MessagePackCodeGenerator.Instance,
             new DocText("`MessagePack` ≥ 2.0.0 is referenced", "引用了 `MessagePack` ≥ 2.0.0"),
             new DocText(
@@ -289,7 +290,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`…MessagePack.g.cs`, `StronglyTypedIds.MessagePack.g.cs`")),
         new CodeGeneratorRegistration(
             "MongoDB.Bson.dll",
-            static modules => modules.HasModule("MongoDB.Bson.dll", 3),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.MongoDb),
             MongoDbCodeGenerator.Instance,
             new DocText("`MongoDB.Bson` ≥ 3.0.0 is referenced", "引用了 `MongoDB.Bson` ≥ 3.0.0"),
             new DocText(
@@ -300,7 +301,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
                 "`…MongoDb.g.cs`, `StronglyTypedIds.MongoDb.g.cs`")),
         new CodeGeneratorRegistration(
             "HotChocolate.Types.dll",
-            static modules => modules.HasModule("HotChocolate.Types.dll", 13),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.HotChocolate),
             HotChocolateCodeGenerator.Instance,
             new DocText("`HotChocolate` ≥ 13.0.0 is referenced", "引用了 `HotChocolate` ≥ 13.0.0"),
             new DocText(
@@ -313,7 +314,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         // 引用后者必然带上前者，故只查 protobuf-net。核心生成器：surrogate 只能靠特性声明。
         new CodeGeneratorRegistration(
             "protobuf-net.dll",
-            static modules => modules.HasModule("protobuf-net.dll", 3),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.Protobuf),
             ProtobufCodeGenerator.Instance,
             new DocText("`protobuf-net` ≥ 3.0.0 is referenced", "引用了 `protobuf-net` ≥ 3.0.0"),
             new DocText(
@@ -322,7 +323,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
             new DocText("`…Protobuf.g.cs`", "`…Protobuf.g.cs`")),
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.OpenApi.dll",
-            static modules => modules.HasModule("Microsoft.AspNetCore.OpenApi.dll", 9),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.AspNetCoreOpenApi),
             AspNetCoreOpenApiCodeGenerator.Instance,
             new DocText("`Microsoft.AspNetCore.OpenApi` ≥ 9.0.0 is referenced", "引用了 `Microsoft.AspNetCore.OpenApi` ≥ 9.0.0"),
             new DocText(
@@ -335,9 +336,7 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         // 三者任一出现即视为 MVC 可用，保证真实消费者与测试画像判定一致。
         new CodeGeneratorRegistration(
             "Microsoft.AspNetCore.Mvc.dll",
-            static modules => modules.HasModule("Microsoft.AspNetCore.Mvc.dll", 2)
-                || modules.HasModule("Microsoft.AspNetCore.Mvc.Core.dll", 2)
-                || modules.HasModule("Microsoft.AspNetCore.Mvc.Abstractions.dll", 2),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.AspNetCoreMvc),
             AspNetCoreMvcCodeGenerator.Instance,
             new DocText(
                 "`Microsoft.AspNetCore.Mvc` ≥ 2.0.0 is referenced (or its `Microsoft.AspNetCore.Mvc.Core` / `.Abstractions` facade)",
@@ -352,13 +351,13 @@ internal class StronglyTypedIdGenerator : IIncrementalGenerator
         // 这两条不单独成行（DocText.Empty）：产物已写进对应核心生成器的 Documentation。
         new CodeGeneratorRegistration(
             "System.Text.Json.dll",
-            static modules => modules.Any(static module => module.Name == "System.Text.Json.dll"),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.SystemTextJson),
             SystemTextJsonRegistrationCodeGenerator.Instance,
             DocText.Empty,
             DocText.Empty),
         new CodeGeneratorRegistration(
             "Newtonsoft.Json.dll",
-            static modules => modules.Any(static module => module.Name == "Newtonsoft.Json.dll" && module.Version.Major >= 13),
+            static modules => IntegrationRequirements.IsSatisfied(modules, IntegrationRequirements.NewtonsoftJson),
             NewtonsoftJsonRegistrationCodeGenerator.Instance,
             DocText.Empty,
             DocText.Empty)];

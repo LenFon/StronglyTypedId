@@ -106,12 +106,12 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                 }
 
                 /// <summary>
-                /// 通用模型绑定器：用 <see cref="global::System.IParsable{TSelf}.TryParse(string?, IFormatProvider?, out TSelf)"/>
-                /// 把字符串还原为强类型 Id。
+                /// 通用模型绑定器：用 <see cref="global::Len.StronglyTypedId.IStronglyTypedId{TSelf}.TryParse(string?, IFormatProvider?, out TSelf, out global::Len.StronglyTypedId.StronglyTypedIdValidationResult)"/>
+                /// 把字符串还原为强类型 Id，并把失败原因写进 <c>ModelState</c>。
                 /// </summary>
                 {{GeneratedCode.CompilerGeneratedAttribute}}
                 {{GeneratedCode.GeneratedCodeAttribute(nameof(AspNetCoreMvcCodeGenerator), version)}}
-                private sealed class StronglyTypedIdModelBinder<TId> : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinder where TId : global::System.IParsable<TId>
+                private sealed class StronglyTypedIdModelBinder<TId> : global::Microsoft.AspNetCore.Mvc.ModelBinding.IModelBinder where TId : global::Len.StronglyTypedId.IStronglyTypedId<TId>
                 {
                     /// <inheritdoc/>
                     {{GeneratedCode.CompilerGeneratedAttribute}}
@@ -133,7 +133,10 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                             return global::System.Threading.Tasks.Task.CompletedTask;
                         }
 
-                        if (TId.TryParse(value, global::System.Globalization.CultureInfo.InvariantCulture, out var id))
+                        // 四参 TryParse 带回验证器给出的原因；IParsable 的两参版本只有布尔通道，
+                        // 用它会让「为什么拒绝」在绑定层丢掉。脱敏由生成的 TryParse 负责，
+                        // 这里只把消息原样交给 ModelState，不再自己拼接原始值。
+                        if (TId.TryParse(value, global::System.Globalization.CultureInfo.InvariantCulture, out var id, out var validation))
                         {
                             bindingContext.Result = global::Microsoft.AspNetCore.Mvc.ModelBinding.ModelBindingResult.Success(id);
                         }
@@ -141,7 +144,7 @@ internal class AspNetCoreMvcCodeGenerator : IIntegrationCodeGenerator
                         {
                             bindingContext.ModelState.TryAddModelError(
                                 bindingContext.ModelName,
-                                global::System.String.Concat("The value '", value, "' is not a valid strongly typed id."));
+                                validation.Message ?? global::System.String.Concat("The value '", value, "' is not a valid ", typeof(TId).Name, "."));
                         }
 
                         return global::System.Threading.Tasks.Task.CompletedTask;

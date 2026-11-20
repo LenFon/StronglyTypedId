@@ -256,6 +256,10 @@ public partial record struct ObjectShapeGuidId(Guid Value);
 [StronglyTypedId(JsonShape = JsonShape.Object)]
 public partial record struct ObjectShapeStringId(string Value);
 
+// 对象形态 + 数值基元：value 属性内部同样要遵守 JsonNumberHandling，与基元形态是两段生成代码。
+[StronglyTypedId(JsonShape = JsonShape.Object)]
+public partial record struct ObjectShapeInt32Id(int Value);
+
 // 对象形态 + 验证器：对象形态的读入分支与基元形态是两段生成代码，验证失败的异常契约必须两边一致。
 [StronglyTypedId(JsonShape = JsonShape.Object, Validator = nameof(Validate))]
 public partial record struct ObjectShapeValidatedGuidId(Guid Value)

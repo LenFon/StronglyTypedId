@@ -29,6 +29,13 @@ non-empty strings, dates inside 1970–2100) to avoid failures unrelated to the 
   algorithm is an implementation detail. Use one `AnyIdGenerator` instance (or `Any.Ids<T>(count, seed)`)
   when a whole sequence must repeat. A long-lived generator takes the same seed through
   `new AnyIdOptions { Seed = 42 }`; without a seed it is seeded from the clock.
+- **Distinct.** `Any.Ids<T>(count)` returns `count` **different** ids, deduplicated by the id's own
+  `Equals`, so `OnlyHaveUniqueItems()` holds without extra work. The value domain can be smaller than the
+  request — `byte` has 256 values, an enum has as many as its members — so generation stops after
+  `max(count * 10, 1000)` attempts and throws `InvalidOperationException` naming the type and the count
+  rather than silently returning duplicates. Request fewer ids, or register a factory. Because
+  deduplication skips repeats, the sequence for a given seed differs from earlier versions of the package;
+  it is still reproducible within a version.
 - **Validator-aware.** Generation retries up to `AnyIdOptions.MaxAttempts` (100 by default) and then
   throws with a message pointing at `Any.Register<T>(factory)`. A rejection is recognised by exception
   type alone, so a validator that throws `ArgumentException` for an unrelated reason is retried too.
@@ -122,6 +129,55 @@ only as an open generic type definition, so its named instances are not checked;
 you actually use (`typeof(Box<int>.BoxedId)`) if you need that coverage. This is the same boundary as
 [an id inside a generic container](limitations.md#generic-containers) getting no external-reference
 integrations.
+
+### Checking the round-trip contract
+
+The library promises four things about every id: `Parse(id.ToString())` gives back the same id,
+`TryCreate(id.Value)` gives back the same id, a `Normalizer` is idempotent, and the generated JSON converter
+round-trips. Those promises are covered by this repository's own tests, but nothing checks *your* ids —
+and a custom primitive or a hand-written normalizer is exactly where they break.
+
+`CheckRoundTrip` runs all four against every id in an assembly:
+
+```csharp
+// Throws with every violation listed; use it as a one-line test per assembly.
+StronglyTypedIdConformance.AssertRoundTrip(typeof(OrderId).Assembly);
+
+// Or inspect the list yourself.
+IReadOnlyList<(Type IdType, string Message)> failures =
+    StronglyTypedIdConformance.CheckRoundTrip(typeof(OrderId).Assembly);
+```
+
+Each violation is reported separately, because the fixes differ: a text round-trip failure points at
+`ToString` / `Parse`, a `TryCreate` failure at `Create`'s normalization, an idempotence failure at the
+normalizer itself, and a JSON failure at the converter or the `JsonShape` configuration. One id can produce
+several entries — a lossy `ToString()` breaks both the text and the JSON round-trip, and both are reported so
+you do not fix one and assume you are done.
+
+The JSON check only runs when the id actually carries a generated `[JsonConverter]`, and only when
+`System.Text.Json` is loadable. Without a converter, `System.Text.Json` falls back to reflection, and that
+path has nothing to do with the generator.
+
+**Ids that cannot be valued are skipped, not failed.** `Any` infers a value from the primitive's common text
+shapes, which cannot cover a strict format like `ACCT-` plus eight digits, and an id whose validator always
+rejects is deliberately unconstructible. Those are reported separately:
+
+```csharp
+IReadOnlyList<(Type IdType, string Message)> skipped =
+    StronglyTypedIdConformance.FindSkippedRoundTrips(typeof(OrderId).Assembly);
+```
+
+The two lists are disjoint, and "no failures" does not mean "everything was checked" — assert on `skipped`
+being empty too if you want that guarantee, or register a factory so the id gets checked for real. Pass your
+own generator rather than using `Any.Register`: the shared instance's registrations are process-wide, so any
+`Any.Reset()` in a parallel test wipes them.
+
+```csharp
+var any = new AnyIdGenerator();
+any.Register(typeof(StrictCodeId), () => StrictCodeId.Create(new StrictCode("ACCT-00000001")));
+
+StronglyTypedIdConformance.CheckRoundTrip(typeof(OrderId).Assembly, any);
+```
 
 For AutoFixture, add `Len.StronglyTypedId.Testing.AutoFixture` and enable the customization:
 

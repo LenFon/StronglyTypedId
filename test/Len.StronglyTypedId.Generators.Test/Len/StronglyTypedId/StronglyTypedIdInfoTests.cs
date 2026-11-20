@@ -68,11 +68,34 @@ public class StronglyTypedIdInfoTests
                 public static LegacyId Parse(string value, System.IFormatProvider? provider)
                     => new(int.Parse(value, provider), string.Empty);
 
+                public static LegacyId Parse(System.ReadOnlySpan<char> value, System.IFormatProvider? provider)
+                    => new(int.Parse(value, provider), string.Empty);
+
                 public static bool TryParse(
                     string? value,
                     System.IFormatProvider? provider,
                     out LegacyId result)
                 {
+                    result = new(0, string.Empty);
+                    return true;
+                }
+
+                public static bool TryParse(
+                    System.ReadOnlySpan<char> value,
+                    System.IFormatProvider? provider,
+                    out LegacyId result)
+                {
+                    result = new(0, string.Empty);
+                    return true;
+                }
+
+                public static bool TryParse(
+                    string? value,
+                    System.IFormatProvider? provider,
+                    out LegacyId result,
+                    out Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    validation = Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
                     result = new(0, string.Empty);
                     return true;
                 }
@@ -83,6 +106,8 @@ public class StronglyTypedIdInfoTests
                 public static bool operator !=(LegacyId left, LegacyId right) => !(left == right);
 
                 public override bool Equals(object? obj) => obj is LegacyId other && this == other;
+
+                public bool Equals(LegacyId other) => this == other;
 
                 public override int GetHashCode() => System.HashCode.Combine(Number, Tag);
             }
@@ -139,11 +164,34 @@ public class StronglyTypedIdInfoTests
                 public static TaggedId Parse(string value, System.IFormatProvider? provider)
                     => new(int.Parse(value, provider), string.Empty);
 
+                public static TaggedId Parse(System.ReadOnlySpan<char> value, System.IFormatProvider? provider)
+                    => new(int.Parse(value, provider), string.Empty);
+
                 public static bool TryParse(
                     string? value,
                     System.IFormatProvider? provider,
                     out TaggedId result)
                 {
+                    result = new(0, string.Empty);
+                    return true;
+                }
+
+                public static bool TryParse(
+                    System.ReadOnlySpan<char> value,
+                    System.IFormatProvider? provider,
+                    out TaggedId result)
+                {
+                    result = new(0, string.Empty);
+                    return true;
+                }
+
+                public static bool TryParse(
+                    string? value,
+                    System.IFormatProvider? provider,
+                    out TaggedId result,
+                    out Len.StronglyTypedId.StronglyTypedIdValidationResult validation)
+                {
+                    validation = Len.StronglyTypedId.StronglyTypedIdValidationResult.Success;
                     result = new(0, string.Empty);
                     return true;
                 }

@@ -310,11 +310,15 @@ internal static class GeneratedMemberNames
             "ToString" => HasParameters(member)
                 || (idInfo.IsFormattable && HasParameters(member, ByValue("string"), ByValue(provider))),
             // 三个 Parse 重载：string 与 char-span 无条件，byte-span 仅基元实现 IUtf8SpanParsable 时。
-            "Parse" => HasParameters(member, ByValue("string"), ByValue(provider))
+            // 单参便利版与两参版同属无条件产出。
+            "Parse" => HasParameters(member, ByValue("string"))
+                || HasParameters(member, ByValue("string"), ByValue(provider))
                 || HasParameters(member, ByValue(spanChars), ByValue(provider))
                 || (idInfo.IsUtf8SpanParsable && HasParameters(member, ByValue(spanBytes), ByValue(provider))),
-            "TryParse" => HasParameters(member, ByValue("string"), ByValue(provider), Out(self))
+            "TryParse" => HasParameters(member, ByValue("string"), Out(self))
+                || HasParameters(member, ByValue("string"), ByValue(provider), Out(self))
                 || HasParameters(member, ByValue(spanChars), ByValue(provider), Out(self))
+                || HasParameters(member, ByValue("string"), Out(self), Out(validationResult))
                 || (idInfo.IsUtf8SpanParsable && HasParameters(member, ByValue(spanBytes), ByValue(provider), Out(self))),
             "TryCreate" => HasParameters(member, ByValue(primitive), Out(self))
                 || HasParameters(member, ByValue(primitive), Out(self), Out(validationResult)),

@@ -42,6 +42,10 @@ internal static class Descriptors
     public const string TypeNameCollidesWithGeneratedMemberId = "STIA0027";
     public const string GenericContainerSkipsIntegrationsId = "STIA0028";
     public const string MemberCollidesWithGeneratedMemberId = "STIA0029";
+    public const string IntegrationVersionTooLowId = "STIA0030";
+    public const string JsonShapePropertyNameInvalidId = "STIA0031";
+    public const string OrphanInstanceId = "STIA0032";
+    public const string JsonNumberHandlingOnIdId = "STIA0033";
 
     /// <summary>
     /// 强类型 Id 的包含类型不是 partial，或包含类型是 file 本地类型。
@@ -246,6 +250,24 @@ internal static class Descriptors
             WellKnownDiagnosticTags.CompilationEnd);
 
     /// <summary>
+    /// 显式启用了某个集成，程序集也引用了，但版本低于生成器门控要求的主版本，该集成不会生成任何代码。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="IntegrationUnavailable"/> 互斥：那条管「没引用」，这条管「引用了但太旧」。
+    /// 同样按集成聚合、在编译结束上报，故也必须带 <see cref="WellKnownDiagnosticTags.CompilationEnd"/>。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor IntegrationVersionTooLow
+        = new(IntegrationVersionTooLowId,
+            new LocalizedString("IntegrationVersionTooLowTitle"),
+            new LocalizedString("IntegrationVersionTooLowMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true,
+            description: null,
+            helpLinkUri: null,
+            WellKnownDiagnosticTags.CompilationEnd);
+
+    /// <summary>
     /// <c>[StronglyTypedIdInstance]</c> 的名字不是合法标识符、与另一条实例重名，或与类型自身 / 既有成员 /
     /// 即将生成的成员撞名。
     /// </summary>
@@ -278,6 +300,41 @@ internal static class Descriptors
             new LocalizedString("InstanceNameNotPascalCaseMessage"),
             Category,
             DiagnosticSeverity.Info,
+            true);
+
+    /// <summary>
+    /// <c>[StronglyTypedIdInstance]</c> 所在的类型没有 <c>[StronglyTypedId]</c>，该特性不产生任何成员。
+    /// </summary>
+    /// <remarks>
+    /// 级别是 Warning：代码仍可编译，只是那条实例字段不存在，用户要到运行期 <c>CS0117</c> 才会发现。
+    /// 位置落在特性本身，修复是删掉它 —— 与 <c>STIA0020</c> / <c>STIA0021</c> 同源。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor OrphanInstance
+        = new(OrphanInstanceId,
+            new LocalizedString("OrphanInstanceTitle"),
+            new LocalizedString("OrphanInstanceMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
+    /// <c>[JsonNumberHandling]</c> 标在强类型 Id 类型的成员或类型自身上。
+    /// </summary>
+    /// <remarks>
+    /// 级别是 Warning：代码仍可编译，但 STJ 在构建 <c>JsonTypeInfo</c> 时按 CLR 类型判定该特性的合法性，
+    /// 不看有没有转换器，于是 Id 成员与 Id 类型都会在序列化时抛 <c>InvalidOperationException</c>。
+    /// 转换器无从干预这个判定时机，只能靠诊断在编译期拦下。
+    /// <para>
+    /// 无代码修复：删掉特性会让行为退化成「静默忽略」，用户真正需要的是改用全局
+    /// <c>JsonSerializerOptions.NumberHandling</c>，这个取舍只能由人做。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor JsonNumberHandlingOnId
+        = new(JsonNumberHandlingOnIdId,
+            new LocalizedString("JsonNumberHandlingOnIdTitle"),
+            new LocalizedString("JsonNumberHandlingOnIdMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
             true);
 
     /// <summary>
@@ -387,6 +444,21 @@ internal static class Descriptors
             true);
 
     /// <summary>
+    /// <c>JsonShapePropertyName</c> 配置无效：形态不是对象，或属性名不能用作 JSON 属性名。
+    /// </summary>
+    /// <remarks>
+    /// 两种原因共用一条规则，因为它们指向同一个实参、同一类修复（改形态或改名字）。级别是 Warning：
+    /// 代码仍可编译，生成器回退到默认属性名 <c>"value"</c>，只是配置没有按预期生效。
+    /// </remarks>
+    public static readonly DiagnosticDescriptor JsonShapePropertyNameInvalid
+        = new(JsonShapePropertyNameInvalidId,
+            new LocalizedString("JsonShapePropertyNameInvalidTitle"),
+            new LocalizedString("JsonShapePropertyNameInvalidMessage"),
+            Category,
+            DiagnosticSeverity.Warning,
+            true);
+
+    /// <summary>
     /// 全部分析器诊断描述符，顺序与规则 ID 的语义分组一致。
     /// </summary>
     public static readonly DiagnosticDescriptor[] All =
@@ -412,14 +484,18 @@ internal static class Descriptors
         TypeNameShouldEndWithId,
         DuplicatePrimitiveType,
         IntegrationUnavailable,
+        IntegrationVersionTooLow,
         InvalidInstanceName,
         InvalidInstanceValue,
         InstanceNameNotPascalCase,
+        OrphanInstance,
+        JsonNumberHandlingOnId,
         TypeCannotBeFileLocal,
         TypeNameCannotBeVar,
         TypeNameCollidesWithGeneratedMember,
         GenericContainerSkipsIntegrations,
         MemberCollidesWithGeneratedMember,
+        JsonShapePropertyNameInvalid,
     ];
 
     /// <summary>

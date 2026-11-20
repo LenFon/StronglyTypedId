@@ -11,9 +11,9 @@ internal static partial class StronglyTypedIds
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("AspNetCoreOpenApiCodeGenerator", "<version>")]
     class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer
     {
-        private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, (string Type, string? Format, bool IsObject)> _schemas = new()
+        private static readonly global::System.Collections.Generic.Dictionary<global::System.Type, (string Type, string? Format, bool IsObject, string? PropertyName)> _schemas = new()
         {
-            [typeof(global::Probe.OrderId)] = ("string", "uuid", false),
+            [typeof(global::Probe.OrderId)] = ("string", "uuid", false, null),
         };
 
         /// <inheritdoc/>
@@ -36,14 +36,16 @@ internal static partial class StronglyTypedIds
             {
                 if (entry.IsObject)
                 {
-                    // 对象形态：{"value": <基元>}，value 必填。
+                    // 对象形态：{"<属性名>": <基元>}，该属性必填。
+                    var propertyName = entry.PropertyName ?? "value";
+
                     schema.Type = "object";
                     schema.Format = null;
                     schema.Properties = new global::System.Collections.Generic.Dictionary<string, global::Microsoft.OpenApi.Models.OpenApiSchema>
                     {
-                        ["value"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = entry.Type, Format = entry.Format },
+                        [propertyName] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = entry.Type, Format = entry.Format },
                     };
-                    schema.Required = new global::System.Collections.Generic.HashSet<string> { "value" };
+                    schema.Required = new global::System.Collections.Generic.HashSet<string> { propertyName };
                 }
                 else
                 {

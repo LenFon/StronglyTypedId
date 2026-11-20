@@ -740,7 +740,7 @@ public class CodeGeneratorModuleGateTests
         generated["StronglyTypedIds.AspNetCoreOpenApi.g.cs"]
             .Should().Contain("class StronglyTypedIdOpenApiSchemaTransformer : global::Microsoft.AspNetCore.OpenApi.IOpenApiSchemaTransformer")
             .And.Contain("public static global::Microsoft.AspNetCore.OpenApi.OpenApiOptions AddStronglyTypedIds(this global::Microsoft.AspNetCore.OpenApi.OpenApiOptions options)")
-            .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
+            .And.Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false, null),");
     }
 
     #endregion

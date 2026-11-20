@@ -21,6 +21,11 @@ internal static class AttributeReader
     internal const string StronglyTypedIdInstanceAttributeName = "global::Len.StronglyTypedId.StronglyTypedIdInstanceAttribute";
 
     /// <summary>
+    /// <c>[JsonNumberHandling]</c> 的全限定显示名（含 <c>global::</c> 前缀）。
+    /// </summary>
+    internal const string JsonNumberHandlingAttributeName = "global::System.Text.Json.Serialization.JsonNumberHandlingAttribute";
+
+    /// <summary>
     /// 取符号上第一个匹配的属性数据；未找到时为 <see langword="null"/>。
     /// </summary>
     internal static AttributeData? Find(ISymbol symbol, string fullyQualifiedAttributeName)

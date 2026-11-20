@@ -175,8 +175,8 @@ public class AspNetCoreOpenApiCodeGeneratorTests
         generated.Should().NotBeEmpty();
 
         var entry = format is null
-            ? $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", null, false),"""
-            : $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", "{{format}}", false),""";
+            ? $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", null, false, null),"""
+            : $$"""[typeof(global::Len.StronglyTypedId.OrderId)] = ("{{openApiType}}", "{{format}}", false, null),""";
 
         generated.Should().Contain(entry);
     }
@@ -199,7 +199,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
             """;
 
         GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference)
-            .Should().Contain("""[typeof(global::Len.StronglyTypedId.StatusId)] = ("integer", null, false),""");
+            .Should().Contain("""[typeof(global::Len.StronglyTypedId.StatusId)] = ("integer", null, false, null),""");
     }
 
     [Fact]
@@ -219,8 +219,8 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (\"integer\", \"int32\", false),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false, null),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (\"integer\", \"int32\", false, null),");
     }
 
     /// <summary>
@@ -268,7 +268,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", null, false),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", null, false, null),");
     }
 
     #endregion
@@ -293,11 +293,13 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", true),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", true, \"value\"),");
         generated.Should().Contain("if (entry.IsObject)");
         generated.Should().Contain("schema.Type = \"object\";");
-        generated.Should().Contain("[\"value\"] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = entry.Type, Format = entry.Format },");
-        generated.Should().Contain("schema.Required = new global::System.Collections.Generic.HashSet<string> { \"value\" };");
+        // 属性名随 Id 而异，故从表里取；默认仍是 "value"。
+        generated.Should().Contain("var propertyName = entry.PropertyName ?? \"value\";");
+        generated.Should().Contain("[propertyName] = new global::Microsoft.OpenApi.Models.OpenApiSchema { Type = entry.Type, Format = entry.Format },");
+        generated.Should().Contain("schema.Required = new global::System.Collections.Generic.HashSet<string> { propertyName };");
     }
 
     /// <summary>
@@ -317,7 +319,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (\"string\", \"uuid\", false, null),");
         generated.Should().Contain("schema.Type = entry.Type;");
         generated.Should().Contain("schema.Format = entry.Format;");
     }
@@ -339,7 +341,7 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference, OpenApi2Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\", true),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\", true, \"value\"),");
         generated.Should().Contain("schema.Type = global::Microsoft.OpenApi.JsonSchemaType.Object;");
         generated.Should().Contain("Dictionary<string, global::Microsoft.OpenApi.IOpenApiSchema>");
         generated.Should().NotContain("Microsoft.OpenApi.Models");
@@ -376,9 +378,9 @@ public class AspNetCoreOpenApiCodeGeneratorTests
 
         var generated = GetAspNetCoreOpenApiGeneratedCode(code, OpenApi9Reference, OpenApi2Reference);
 
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\", false),");
-        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (global::Microsoft.OpenApi.JsonSchemaType.Integer, \"int32\", false),");
-        generated.Should().Contain("(global::Microsoft.OpenApi.JsonSchemaType Type, string? Format, bool IsObject)");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.OrderId)] = (global::Microsoft.OpenApi.JsonSchemaType.String, \"uuid\", false, null),");
+        generated.Should().Contain("[typeof(global::Len.StronglyTypedId.ProductId)] = (global::Microsoft.OpenApi.JsonSchemaType.Integer, \"int32\", false, null),");
+        generated.Should().Contain("(global::Microsoft.OpenApi.JsonSchemaType Type, string? Format, bool IsObject, string? PropertyName)");
         generated.Should().Contain("global::Microsoft.OpenApi.OpenApiSchema schema,");
         generated.Should().NotContain("Microsoft.OpenApi.Models");
     }

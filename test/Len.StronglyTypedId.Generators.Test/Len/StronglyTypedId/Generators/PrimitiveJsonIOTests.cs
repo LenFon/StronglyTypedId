@@ -88,6 +88,128 @@ public class PrimitiveJsonIOTests
 
     #endregion
 
+    #region NumberHandling：字符串分支
+
+    /// <summary>
+    /// 有符号整数只接受前导符号：STJ 拒绝首尾空白与小数点，<c>NumberStyles.Integer</c> 会放行空白。
+    /// </summary>
+    [Theory]
+    [InlineData("sbyte")]
+    [InlineData("short")]
+    [InlineData("int")]
+    [InlineData("long")]
+    public void StringReadPlan_Should_UseAllowLeadingSign_ForSignedIntegers(string primitive)
+    {
+        var plan = PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo(primitive));
+
+        plan.Should().NotBeNull();
+        plan!.Value.ParseExpression.Should()
+            .Be($"{primitive}.Parse(text, global::System.Globalization.NumberStyles.AllowLeadingSign, global::System.Globalization.CultureInfo.InvariantCulture)");
+        plan.Value.InvalidCondition.Should().BeNull("整数没有 NaN / Infinity 这类越界形态");
+    }
+
+    /// <summary>
+    /// 无符号整数连前导 <c>+</c> 都拒绝，故用 <c>NumberStyles.None</c>。
+    /// </summary>
+    [Theory]
+    [InlineData("byte")]
+    [InlineData("ushort")]
+    [InlineData("uint")]
+    [InlineData("ulong")]
+    public void StringReadPlan_Should_UseNone_ForUnsignedIntegers(string primitive)
+    {
+        var plan = PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo(primitive));
+
+        plan.Should().NotBeNull();
+        plan!.Value.ParseExpression.Should()
+            .Be($"{primitive}.Parse(text, global::System.Globalization.NumberStyles.None, global::System.Globalization.CultureInfo.InvariantCulture)");
+    }
+
+    /// <summary>
+    /// 浮点与 <c>decimal</c> 接受符号、小数点与指数；STJ 拒绝千位分隔符，故不含 <c>AllowThousands</c>。
+    /// </summary>
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("float")]
+    [InlineData("double")]
+    public void StringReadPlan_Should_UseFloatStyles_ForFractionalTypes(string primitive)
+    {
+        var plan = PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo(primitive));
+
+        plan.Should().NotBeNull();
+        plan!.Value.ParseExpression.Should().Contain("NumberStyles.AllowLeadingSign")
+            .And.Contain("NumberStyles.AllowDecimalPoint")
+            .And.Contain("NumberStyles.AllowExponent")
+            .And.NotContain("AllowThousands");
+    }
+
+    /// <summary>
+    /// <c>Parse</c> 认小写 <c>nan</c>、也把溢出折成无穷；STJ 两者都拒绝，故浮点必须带后置校验。
+    /// </summary>
+    [Theory]
+    [InlineData("float")]
+    [InlineData("double")]
+    public void StringReadPlan_Should_GuardSpecialFloats(string primitive)
+    {
+        var plan = PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo(primitive));
+
+        plan!.Value.InvalidCondition.Should().NotBeNull()
+            .And.Contain("IsNaN")
+            .And.Contain("IsInfinity")
+            .And.Contain("\"NaN\" or \"Infinity\" or \"-Infinity\"");
+    }
+
+    /// <summary>
+    /// 枚举、自定义基元与 <c>BigInteger</c> 不生成字符串分支：前两者不受 <c>NumberHandling</c> 影响
+    /// （STJ 的枚举转换器完全不看它），后者本来就是文本形。
+    /// </summary>
+    [Fact]
+    public void StringReadPlan_Should_BeNull_ForExcludedPrimitives()
+    {
+        PrimitiveJsonIo.TryGetStringReadPlan(CreateEnumInfo("int")).Should().BeNull();
+        PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo("Email", customPrimitiveSource: true)).Should().BeNull();
+        PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo("System.Numerics.BigInteger")).Should().BeNull();
+    }
+
+    /// <summary>
+    /// <c>Guid</c> / <c>string</c> / 日期类不受 <c>NumberHandling</c> 影响，产物必须保持原样。
+    /// </summary>
+    [Theory]
+    [InlineData("Guid")]
+    [InlineData("string")]
+    [InlineData("DateTime")]
+    [InlineData("DateTimeOffset")]
+    [InlineData("char")]
+    public void StringReadPlan_Should_BeNull_ForNonNumericPrimitives(string primitive)
+    {
+        PrimitiveJsonIo.TryGetStringReadPlan(CreateInfo(primitive)).Should().BeNull();
+        PrimitiveJsonIo.TryGetStringWriteExpression(CreateInfo(primitive)).Should().BeNull();
+    }
+
+    /// <summary>
+    /// 写侧必须用 <c>WriteRawValue</c>：<c>WriteStringValue</c> 会把 <c>+</c> 转义成 <c>\u002B</c>，
+    /// 与 STJ 数值路径写出的裸 <c>"1E+300"</c> 不逐字节相同。
+    /// </summary>
+    [Theory]
+    [InlineData("byte")]
+    [InlineData("sbyte")]
+    [InlineData("short")]
+    [InlineData("ushort")]
+    [InlineData("int")]
+    [InlineData("uint")]
+    [InlineData("long")]
+    [InlineData("ulong")]
+    [InlineData("decimal")]
+    [InlineData("float")]
+    [InlineData("double")]
+    public void StringWriteExpression_Should_UseWriteRawValue_ForNumericPrimitives(string primitive)
+    {
+        PrimitiveJsonIo.TryGetStringWriteExpression(CreateInfo(primitive)).Should()
+            .Be("writer.WriteRawValue(\"\\\"\" + primitiveId.ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \"\\\"\");");
+    }
+
+    #endregion
+
     #region 枚举：按底层类型分派
 
     /// <summary>

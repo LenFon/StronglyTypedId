@@ -33,3 +33,6 @@ static Len.StronglyTypedId.Testing.Any.Reset() -> void
 Len.StronglyTypedId.Testing.StronglyTypedIdConformance
 static Len.StronglyTypedId.Testing.StronglyTypedIdConformance.AssertAllInstancesValid(System.Reflection.Assembly! assembly) -> void
 static Len.StronglyTypedId.Testing.StronglyTypedIdConformance.FindBrokenInstances(System.Reflection.Assembly! assembly) -> System.Collections.Generic.IReadOnlyList<(System.Type! IdType, string! Message)>!
+static Len.StronglyTypedId.Testing.StronglyTypedIdConformance.AssertRoundTrip(System.Reflection.Assembly! assembly, Len.StronglyTypedId.Testing.AnyIdGenerator? generator = null) -> void
+static Len.StronglyTypedId.Testing.StronglyTypedIdConformance.CheckRoundTrip(System.Reflection.Assembly! assembly, Len.StronglyTypedId.Testing.AnyIdGenerator? generator = null) -> System.Collections.Generic.IReadOnlyList<(System.Type! IdType, string! Message)>!
+static Len.StronglyTypedId.Testing.StronglyTypedIdConformance.FindSkippedRoundTrips(System.Reflection.Assembly! assembly, Len.StronglyTypedId.Testing.AnyIdGenerator? generator = null) -> System.Collections.Generic.IReadOnlyList<(System.Type! IdType, string! Message)>!

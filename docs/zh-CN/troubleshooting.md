@@ -48,6 +48,10 @@ title: 故障排查
 还有两种会让某个 Id 被跳过：Id 声明在**泛型**容器里（外部引用类集成无法重开它，见[嵌套类型](declaration.md#nested-types)），
 或者程序集级默认把它关了。
 
+如果包引用了、但**版本低于上表的下限**，生成器会静默地不为该集成产出任何代码：编译器没有理由报错，
+问题只在运行时暴露（例如 EF Core 拒绝映射 `OrderId`）。显式请求该集成能让它可见：`STIA0030` 会报出
+下限与实际引用的版本。请升级该包，或去掉该标志。
+
 ## 找不到 `AddStronglyTypedIds`
 
 入口方法位于 `Len.StronglyTypedId` 命名空间的 `internal static partial class StronglyTypedIds`，与拥有它的

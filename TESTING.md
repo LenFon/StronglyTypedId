@@ -117,6 +117,41 @@ var any = new AnyIdGenerator(new AnyIdOptions { IncludeBoundaryValues = true });
 Roughly one value in sixteen is then the primitive's `MinValue` or `MaxValue` (integral and `decimal`
 types only). Leave it off when a test asserts uniqueness, because two ids can then collide on the same extreme.
 
+## Checking the round-trip contract
+
+`StronglyTypedIdConformance` checks the promises the library makes about every id — `Parse(ToString())`
+returns the same id, `TryCreate(Value)` returns the same id, a `Normalizer` is idempotent, and the generated
+JSON converter round-trips:
+
+```csharp
+// One line per assembly: throws with every violation listed.
+StronglyTypedIdConformance.AssertRoundTrip(typeof(OrderId).Assembly);
+
+// Or inspect the list yourself.
+IReadOnlyList<(Type IdType, string Message)> failures =
+    StronglyTypedIdConformance.CheckRoundTrip(typeof(OrderId).Assembly);
+```
+
+Ids that cannot be valued are **skipped, not failed** — a strict custom-primitive format is beyond what
+`Any` can infer, and a validator that always rejects makes an id deliberately unconstructible. Those come
+back from a separate call, so "no failures" is not mistaken for "everything was checked":
+
+```csharp
+IReadOnlyList<(Type IdType, string Message)> skipped =
+    StronglyTypedIdConformance.FindSkippedRoundTrips(typeof(OrderId).Assembly);
+```
+
+Register a factory to turn a skipped id into a checked one. Pass your own generator rather than using
+`Any.Register`: the shared instance's registrations are process-wide, so any `Any.Reset()` in a parallel test
+wipes them.
+
+```csharp
+var any = new AnyIdGenerator();
+any.Register(typeof(StrictCodeId), () => StrictCodeId.Create(new StrictCode("ACCT-00000001")));
+
+StronglyTypedIdConformance.CheckRoundTrip(typeof(OrderId).Assembly, any);
+```
+
 ## AutoFixture
 
 ```csharp

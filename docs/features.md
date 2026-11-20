@@ -22,8 +22,8 @@ there points at a runnable sample.
   offers **Convert to strongly typed id**, which adds the attribute, `partial` and the `using` for you; the
   reverse **Inline strongly typed id** undoes it. The forward action appears only when the result would be a
   valid id; see [Converting an existing record](declaration.md#converting-an-existing-record).
-- **Compile-time safety.** A built-in analyzer rejects invalid declarations as errors, and 22 of
-  its 30 rules ship a code fix that repairs the declaration for you. See
+- **Compile-time safety.** A built-in analyzer rejects invalid declarations as errors, and 23 of
+  its 34 rules ship a code fix that repairs the declaration for you. See
   [Diagnostics](diagnostics.md#diagnostics).
 - **Twenty-three built-in primitives.** Every numeric type including `Int128`, `UInt128` and `Half`, plus
   `Guid`, `string`, `char`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `DateOnly`, `TimeOnly`
@@ -49,11 +49,11 @@ there points at a runnable sample.
 ## What gets generated
 
 - **Interfaces.** `IStronglyTypedId<TSelf, TPrimitiveId>`, `IParsable<TSelf>`, `ISpanParsable<TSelf>`,
-  `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
+  `IEquatable<TSelf>`, `IComparable<TSelf>`, `IEqualityOperators<TSelf, TSelf, bool>` and
   `IComparisonOperators<TSelf, TSelf, bool>`. See [Runtime](runtime.md#using-the-interface).
-- **Parsing.** `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`. A `null` provider means
-  the invariant culture, so `Parse(id.ToString())` round-trips. See
-  [Generated code](generated-code.md).
+- **Parsing.** `Parse` / `TryParse` for both `string` and `ReadOnlySpan<char>`, plus a single-argument
+  convenience form for the `string` overloads. A `null` provider means the invariant culture, so
+  `Parse(id.ToString())` round-trips. See [Generated code](generated-code.md).
 - **Formatting.** `IFormattable` and `ISpanFormattable` whenever the primitive itself implements them.
   `string` implements neither, and enum-backed ids skip both.
 - **UTF-8 interfaces.** `IUtf8SpanFormattable` and `IUtf8SpanParsable<TSelf>` for primitives that expose
@@ -121,7 +121,8 @@ there points at a runnable sample.
 
 - **Serialization.** `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
   automatically, including dictionary-key support; both expose an explicit registration entry point, and
-  the JSON shape is configurable per id. See [Serialization](serialization.md#serialization).
+  the JSON shape is configurable per id, and numeric ids honour `JsonNumberHandling`. See
+  [Serialization](serialization.md#serialization).
 - **Nine more integrations.** Entity Framework Core, Dapper, Swashbuckle, ASP.NET Core MVC (which also
   powers Minimal API route constraints), ASP.NET Core OpenAPI, MessagePack, MongoDB, HotChocolate
   (GraphQL) and protobuf-net. Each is emitted only when its package is referenced. All but protobuf-net

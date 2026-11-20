@@ -16,7 +16,9 @@ The generated members are the code you would have written by hand, so there is n
 - `ToString()` is one call into the primitive.
 - `Parse` is one call into the primitive's `Parse`.
 - The JSON converters are generated types, not reflection-based ones, so serializing an id costs the same
-  as serializing the primitive it wraps.
+  as serializing the primitive it wraps. Numeric ids add one `HasFlag` check on write and one token-type
+  check on read so they can honour `JsonNumberHandling`; both are a couple of instructions, and the
+  `WriteAsString` branch allocates the same string the primitive would.
 
 There is no reflection and no boxing, because a `record struct` id is a value type. Primitives that
 implement `IFormattable` explicitly — `char`, and wrapper types that keep only a parameterless

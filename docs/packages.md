@@ -58,7 +58,7 @@ project file:
 
 The property travels from MSBuild to the analyzer through the analyzer config the SDK writes for the
 compilation (`build_property.StronglyTypedIdEnableAnalyzers`); when it reads "no" the analyzer registers
-**no diagnostic action at all**, so none of the 30 rules report, and the code fixes disappear with them
+**no diagnostic action at all**, so none of the 34 rules report, and the code fixes disappear with them
 (there is nothing left to fix).
 
 The three states:
