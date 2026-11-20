@@ -355,11 +355,12 @@ public partial record struct OrderId(Guid Value)
 `ExceptionType` 同样遵循这一规则：`[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
 对所有未自行指定异常类型的 Id 生效。
 
-另有三个选项可以在程序集级设置，用于「整个程序集共用一种选择」的场景：
+另有四个选项可以在程序集级设置，用于「整个程序集共用一种选择」的场景：
 
 ```csharp
 [assembly: StronglyTypedIdDefaults(
     JsonShape = JsonShape.Object,
+    JsonShapePropertyName = "id",
     TypeConverter = true,
     PrefixReadMode = PrefixReadMode.Strict)]
 ```
@@ -367,6 +368,7 @@ public partial record struct OrderId(Guid Value)
 | 选项 | 优先级 | 说明 |
 | --- | --- | --- |
 | `JsonShape` | 逐类型优先，包括显式写 `JsonShape.Primitive` | 枚举型，故「没写」与「写了默认值」可区分，逐类型可以**双向**覆盖。 |
+| `JsonShapePropertyName` | 逐类型优先；逐类型写了空白名时回退到 `value`，不回退到程序集默认值 | 只在 `JsonShape.Object` 下有意义。名字为空、纯空白或含控制字符时报 `STIA0031`，落点是写下它的那个特性 —— 程序集特性或 Id，哪个写错报哪个。 |
 | `PrefixReadMode` | 逐类型优先，包括显式写 `PrefixReadMode.Lenient` | 同为枚举，理由同上。它只决定带前缀的 Id 怎么读回，不提供默认前缀。 |
 | `TypeConverter` | **单向**：程序集默认能打开，逐类型写 `false` 关不回去 | 特性属性是 `bool`，元数据里「没写」与「写了 `false`」无法区分。与 `RedactValidationMessage` 同一规则。 |
 

@@ -93,8 +93,8 @@ title: 功能特性
 ## 配置
 
 - **程序集级默认。** `[assembly: StronglyTypedIdDefaults(...)]` 可为整个程序集统一设置 `Validator`、
-  `Normalizer`、`ExceptionType`、`RedactValidationMessage`、`Integrations`、`JsonShape`、`TypeConverter`
-  与 `PrefixReadMode`。见[程序集级默认设置](declaration.md#assembly-defaults)。
+  `Normalizer`、`ExceptionType`、`RedactValidationMessage`、`Integrations`、`JsonShape`、
+  `JsonShapePropertyName`、`TypeConverter` 与 `PrefixReadMode`。见[程序集级默认设置](declaration.md#assembly-defaults)。
 - **逐 Id 集成过滤。** `[StronglyTypedId(Integrations = ...)]` 可收窄某个 Id 生成哪些集成代码
   （`None`、白名单或 `All`），并支持程序集级默认。见[关闭集成](declaration.md#integrations-filter)。
 - **一键静音。** 在工程文件里设
@@ -106,7 +106,7 @@ title: 功能特性
 ## 集成
 
 - **序列化。** 自动生成 `System.Text.Json` 与 `Newtonsoft.Json`（≥ 13.0.0）转换器，含字典键支持；
-  两者另提供显式注册入口，并可按 Id 选择 JSON 形态；数值 Id 遵守 `JsonNumberHandling`。见
+  两者另提供显式注册入口，JSON 形态与其属性名均可按 Id 配置；数值 Id 遵守 `JsonNumberHandling`。见
   [序列化](serialization.md#serialization)。
 - **另外九个集成。** Entity Framework Core、Dapper、Swashbuckle、ASP.NET Core MVC（其注册同时支撑
   Minimal API 的路由约束）、ASP.NET Core OpenAPI、MessagePack、MongoDB、HotChocolate（GraphQL）与
@@ -124,7 +124,7 @@ title: 功能特性
 
 - **测试辅助。** `Any.Id<T>()` 与 `Any.Ids<T>(count)` 为 arrange 阶段造出可信的 Id，支持可复现的种子
   与尊重验证器的重试。`Len.StronglyTypedId.Testing.AutoFixture` 与 `.Bogus` 把同一套生成器接进这两个库。
-  见[测试](testing.md#testing)。
+  `StronglyTypedIdConformance.CheckRoundTrip` 可在你自己的程序集上检查往返契约。见[测试](testing.md#testing)。
 - **原生 AOT 与裁剪。** 运行时库标记为 AOT 兼容，且不按名字加载任何类型，因此强类型 Id 在 Native AOT
   与经过裁剪的应用中同样可用。AOT 下 `System.Text.Json` 仍需源生成的 `JsonSerializerContext`，那是它
   自己的要求，不是本库的特例。见[原生 AOT 与裁剪](aot.md)。

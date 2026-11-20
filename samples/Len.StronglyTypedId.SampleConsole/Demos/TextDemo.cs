@@ -43,6 +43,15 @@ internal static class TextDemo
         var ticket = TicketId.Create(Guid.Parse("11111111-2222-3333-4444-555555555555"));
         Demo.Line($"JsonShape.Object                  -> {JsonSerializer.Serialize(ticket)}");
 
+        Demo.Section("JSON 形状：JsonShapePropertyName 改名");
+
+        // 属性名默认是 value；既有契约用别的名字时改这里，不必手写转换器。
+        // 名字同时贯通 System.Text.Json、Newtonsoft.Json、Swagger 与 OpenAPI schema。
+        var renamed = RenamedTicketId.Create(Guid.Parse("11111111-2222-3333-4444-555555555555"));
+        Demo.Line($"JsonShapePropertyName = \"id\"      -> {JsonSerializer.Serialize(renamed)}");
+        Demo.Line($"Newtonsoft 同一形态                -> {Newtonsoft.Json.JsonConvert.SerializeObject(renamed)}");
+        Demo.Line($"读回                              -> {JsonSerializer.Deserialize<RenamedTicketId>("{\"id\":\"11111111-2222-3333-4444-555555555555\"}")}");
+
         Demo.Section("TypeConverter：TypeDescriptor 往返");
 
         var warehouse = WarehouseId.Create(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));

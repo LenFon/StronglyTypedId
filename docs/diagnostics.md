@@ -22,6 +22,8 @@ A few rules fire in narrower circumstances than their titles suggest:
   reported, and neither is a `with` expression that does not assign `Value`.
 - `STIA0014` is **off by default**. Enable it with `dotnet_diagnostic.STIA0014.severity = suggestion`.
 - `STIA0016` reports once per group of ids sharing a primitive, on the ordinally first member.
+- `STIA0031` fires on the attribute that wrote the bad value: the id's `[StronglyTypedId]`, or the
+  assembly's `[StronglyTypedIdDefaults]`. An assembly-level mistake is reported once, not once per id.
 - `STIA0033` fires on the id type itself and on a property, field or indexer whose type is an id, unwrapping
   `Nullable<T>` and looking inside containers such as `List<Int32Id>`. A plain `int` member is valid and is
   not reported. There is no code fix: the attribute has to be replaced with

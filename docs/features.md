@@ -104,8 +104,8 @@ there points at a runnable sample.
 ## Configuration
 
 - **Assembly-level defaults.** `[assembly: StronglyTypedIdDefaults(...)]` sets a default `Validator`,
-  `Normalizer`, `ExceptionType`, `RedactValidationMessage`, `Integrations`, `JsonShape`, `TypeConverter`
-  and `PrefixReadMode` for the whole assembly. See
+  `Normalizer`, `ExceptionType`, `RedactValidationMessage`, `Integrations`, `JsonShape`,
+  `JsonShapePropertyName`, `TypeConverter` and `PrefixReadMode` for the whole assembly. See
   [Assembly-level defaults](declaration.md#assembly-defaults).
 - **Per-id integration filter.** `[StronglyTypedId(Integrations = ...)]` narrows which integration code an
   id gets (`None`, a whitelist, or `All`), with an assembly-level default. See
@@ -120,9 +120,9 @@ there points at a runnable sample.
 ## Integrations
 
 - **Serialization.** `System.Text.Json` and `Newtonsoft.Json` (≥ 13.0.0) converters are generated
-  automatically, including dictionary-key support; both expose an explicit registration entry point, and
-  the JSON shape is configurable per id, and numeric ids honour `JsonNumberHandling`. See
-  [Serialization](serialization.md#serialization).
+  automatically, including dictionary-key support; both expose an explicit registration entry point, the
+  JSON shape and its property name are configurable per id, and numeric ids honour `JsonNumberHandling`.
+  See [Serialization](serialization.md#serialization).
 - **Nine more integrations.** Entity Framework Core, Dapper, Swashbuckle, ASP.NET Core MVC (which also
   powers Minimal API route constraints), ASP.NET Core OpenAPI, MessagePack, MongoDB, HotChocolate
   (GraphQL) and protobuf-net. Each is emitted only when its package is referenced. All but protobuf-net
@@ -141,7 +141,8 @@ there points at a runnable sample.
 
 - **Test helpers.** `Any.Id<T>()` and `Any.Ids<T>(count)` build plausible ids for arrange blocks, with
   reproducible seeds and validator-aware retries. `Len.StronglyTypedId.Testing.AutoFixture` and
-  `.Bogus` wire the same generator into those libraries. See [Testing](testing.md#testing).
+  `.Bogus` wire the same generator into those libraries. `StronglyTypedIdConformance.CheckRoundTrip`
+  checks the round-trip contract on your own assemblies. See [Testing](testing.md#testing).
 - **Native AOT and trimming.** The runtime library is marked AOT-compatible and loads no types by name,
   so ids work in Native AOT and trimmed applications. `System.Text.Json` still needs a source-generated
   `JsonSerializerContext` under AOT, which is its own requirement rather than this library's. See

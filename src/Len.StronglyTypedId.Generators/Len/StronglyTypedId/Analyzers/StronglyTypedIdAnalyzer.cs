@@ -53,7 +53,12 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
                 SymbolKind.NamedType);
 
             // 符号操作不支持 SymbolKind.Assembly（RS1003），程序集级默认值只能在整编译回调里读。
-            startContext.RegisterCompilationEndAction(context => ReportIntegrationProblems(context, requests));
+            // 两件事都挂在同一个回调上：集成请求聚合上报，以及程序集级 JsonShapePropertyName 的校验。
+            startContext.RegisterCompilationEndAction(context =>
+            {
+                ReportIntegrationProblems(context, requests);
+                ValidateAssemblyJsonShapePropertyName(context);
+            });
 
             startContext.RegisterSyntaxNodeAction(
                 AnalyzeObjectCreation,
@@ -724,8 +729,8 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// </summary>
     /// <remarks>
     /// 生成器侧对非法值静默回退到 <c>"value"</c>，保证产物始终可编译；但「配了却没生效」必须让用户看见。
-    /// 只校验逐类型显式写出的值：程序集默认值由 <see cref="StronglyTypedIdDefaults"/> 读取，配错时同样会
-    /// 影响全部 Id，但落点只能是程序集特性，逐类型重复报没有意义。
+    /// 这里只校验逐类型显式写出的值；程序集默认值由
+    /// <see cref="ValidateAssemblyJsonShapePropertyName"/> 在编译结束时报一次，避免每个 Id 重复报同一条。
     /// </remarks>
     private static void ValidateJsonShapePropertyName(
         SymbolAnalysisContext context,
@@ -759,6 +764,56 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
         if (jsonShape != 1)
         {
             Report(context, Descriptors.JsonShapePropertyNameInvalid, location, Quote(propertyName), "it only applies when JsonShape is JsonShape.Object");
+        }
+    }
+
+    /// <summary>
+    /// 校验程序集级 <c>[assembly: StronglyTypedIdDefaults(JsonShapePropertyName = …)]</c>，报一次 STIA0031。
+    /// </summary>
+    /// <remarks>
+    /// 程序集默认值同样会被生成器静默回退到 <c>"value"</c>，配错时影响的是整个程序集的每个 Id，
+    /// 比逐类型配错更值得说。落点只能是程序集特性本身，因此这里报一条，而不是在每个 Id 上重复。
+    /// <para>
+    /// 只在编译结束回调里做：符号操作不支持 <see cref="SymbolKind.Assembly"/>（RS1003）。
+    /// </para>
+    /// </remarks>
+    private static void ValidateAssemblyJsonShapePropertyName(CompilationAnalysisContext context)
+    {
+        var assembly = context.Compilation.Assembly;
+        var attribute = AttributeReader.Find(assembly, AttributeReader.StronglyTypedIdDefaultsAttributeName);
+        var propertyName = AttributeReader.GetString(attribute, StronglyTypedIdInfo.JsonShapePropertyNameArgumentName);
+
+        if (propertyName is null)
+        {
+            return;
+        }
+
+        var location = FindNamedArgumentLocation(
+                assembly,
+                AttributeReader.StronglyTypedIdDefaultsAttributeName,
+                StronglyTypedIdInfo.JsonShapePropertyNameArgumentName)
+            ?? attribute?.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation()
+            ?? Location.None;
+
+        if (!StronglyTypedIdInfo.IsValidJsonShapePropertyName(propertyName))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Descriptors.JsonShapePropertyNameInvalid,
+                location,
+                Quote(propertyName),
+                "the name must not be empty, whitespace-only, or contain control characters"));
+
+            return;
+        }
+
+        // 形态不是对象时属性名无处可用。程序集级没有「更上一级」可回退，直接看自己写的 JsonShape。
+        if (AttributeReader.GetEnumValue(attribute, StronglyTypedIdInfo.JsonShapeArgumentName) != 1)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Descriptors.JsonShapePropertyNameInvalid,
+                location,
+                Quote(propertyName),
+                "it only applies when JsonShape is JsonShape.Object"));
         }
     }
 
@@ -1256,10 +1311,19 @@ internal class StronglyTypedIdAnalyzer : DiagnosticAnalyzer
     /// 特性归属由符号层的 <see cref="AttributeData.AttributeClass"/> 判定，语法层只负责找实参；按名字后缀匹配会把第三方同名特性也算进来。
     /// </remarks>
     private static Location? FindNamedArgumentLocation(INamedTypeSymbol type, string argumentName)
+        => FindNamedArgumentLocation(type, AttributeReader.StronglyTypedIdAttributeName, argumentName);
+
+    /// <summary>
+    /// 在符号上指定特性的命名实参处定位语法位置；特性不存在或没写该实参时为 <see langword="null"/>。
+    /// </summary>
+    /// <remarks>
+    /// 逐类型特性与程序集特性共用这一份查找：两者的语法形态相同，只有归属符号与特性名不同。
+    /// </remarks>
+    private static Location? FindNamedArgumentLocation(ISymbol symbol, string attributeName, string argumentName)
     {
-        foreach (var attribute in type.GetAttributes())
+        foreach (var attribute in symbol.GetAttributes())
         {
-            if (attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != AttributeReader.StronglyTypedIdAttributeName
+            if (attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) != attributeName
                 || attribute.ApplicationSyntaxReference?.GetSyntax() is not AttributeSyntax syntax)
             {
                 continue;

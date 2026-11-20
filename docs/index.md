@@ -34,7 +34,7 @@ public partial record struct OrderId(Guid Value);
 | [Diagnostics](diagnostics.md) | Every rule, the severity bands, whether it ships a code fix, and how to configure the naming suffix. |
 | [Performance](performance.md) | What the generator costs at build time, and what the generated code costs at run time. |
 | [Troubleshooting](troubleshooting.md) | Symptom-first: nothing generated, a missing integration, stale analyzers, parsing surprises. |
-| [Limitations](limitations.md) | What a source generator cannot do (`Value` visibility, the closed primitive list, the unguarded constructor) and the workaround for each. |
+| [Limitations](limitations.md) | What a source generator cannot do (`Value` visibility, reassigning a mutable id's `Value`, the closed primitive list, the unguarded constructor) and the workaround for each. |
 | [FAQ](faq.md) | The questions that come up most often. |
 | [Migrating from 1.3.0](migration.md) | The four changes that need action in 1.4.0, the four that change behaviour without breaking the build, and what to adopt afterwards. |
 | [Future plans](roadmap.md) | None at the moment; every planned direction has shipped. |

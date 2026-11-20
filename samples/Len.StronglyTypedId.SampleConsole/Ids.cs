@@ -40,6 +40,11 @@ public partial record struct SkuId(string Value);
 [StronglyTypedId(JsonShape = JsonShape.Object)]
 public partial record struct TicketId(Guid Value);
 
+// 对象形状 + 自定义属性名：既有契约用 {"id": ...} 时不必手写转换器。
+// 名字贯通两个 JSON 转换器与两个 schema 生成器；只在 JsonShape.Object 下有意义。
+[StronglyTypedId(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+public partial record struct RenamedTicketId(Guid Value);
+
 // TypeConverter：供 TypeDescriptor、配置绑定与 Newtonsoft 字典键使用。
 [StronglyTypedId(TypeConverter = true)]
 public partial record struct WarehouseId(Guid Value);

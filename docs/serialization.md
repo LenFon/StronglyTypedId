@@ -274,8 +274,10 @@ The name flows through every place that knows the shape: both converters, the Sw
 built-in OpenAPI schema, so the document and the payload cannot drift apart. `JsonShapePropertyName` only
 applies when `JsonShape` is `JsonShape.Object`; setting it without the object shape, or giving it a blank
 name or one containing control characters, reports `STIA0031` and the generator falls back to `value`.
-Renaming the property is a **data-contract change**: payloads written under the old name no longer read
-back.
+The setting is also available assembly-wide through
+[`[assembly: StronglyTypedIdDefaults]`](declaration.md#assembly-defaults), where a mistake is reported on
+the assembly attribute rather than once per id. Renaming the property is a **data-contract change**:
+payloads written under the old name no longer read back.
 
 The setting applies to both `System.Text.Json` and `Newtonsoft.Json`, and to the id's own value only;
 dictionary keys are always the primitive text, because a JSON object cannot be a key. `JsonShape.Object`

@@ -246,7 +246,7 @@ public partial record struct OrderId(Ulid Value);
 | [诊断](docs/zh-CN/diagnostics.md) | 每一条规则、级别，以及是否带代码修复。 |
 | [性能](docs/zh-CN/performance.md) | 生成器在构建期的开销，以及生成代码在运行期的开销。 |
 | [故障排查](docs/zh-CN/troubleshooting.md) | 按症状索引：什么都没生成、集成缺失、分析器不刷新、解析出乎意料。 |
-| [已知限制](docs/zh-CN/limitations.md) | 源码生成器做不到的事（`Value` 的可见性、封闭的基元清单、不受保护的主构造函数）以及各自的绕法。 |
+| [已知限制](docs/zh-CN/limitations.md) | 源码生成器做不到的事（`Value` 的可见性、可变 Id 的 `Value` 可被重新赋值、封闭的基元清单、不受保护的主构造函数）以及各自的绕法。 |
 | [常见问题](docs/zh-CN/faq.md) | 最常被问到的问题。 |
 | [从 1.3.0 升级](docs/zh-CN/migration.md) | 1.4.0 中四处需要动手的变更、四处能编译通过但会改变行为的变化，以及升级后可按需采用的能力。 |
 | [未来规划](docs/zh-CN/roadmap.md) | 暂无；计划中的方向已全部交付。 |
@@ -265,7 +265,10 @@ public partial record struct OrderId(Ulid Value);
 **主构造函数不受约束。** `new OrderId(...)` 会同时绕过 `Normalizer` 与 `Validator`，只有 `Create`、
 `TryCreate`、`Parse` 与 `TryParse` 会执行它们。
 
-三条的绕法，以及泛型容器那条附加限制，见[已知限制](docs/zh-CN/limitations.md)。
+**可变 `record struct` 的 `Value` 可以被重新赋值。** `id.Value = …` 能编译且生效，同样绕过上面两道
+关卡。把 Id 声明为 `readonly partial record struct` 可让该属性变成 init-only。
+
+四条的绕法，以及泛型容器那条附加限制，见[已知限制](docs/zh-CN/limitations.md)。
 
 <a id="migrating-from-another-library"></a>
 

@@ -15,7 +15,7 @@
 
 - **`JsonShapePropertyName`：** 对象形态的属性名可按 Id 与按程序集配置，既有契约用 `{"id": …}` 时不必再手写转换器。
   该名字贯通两个 JSON 转换器与两个 schema 生成器。形态不是 `JsonShape.Object`、或名字为空 / 纯空白 / 含控制字符时
-  报 `STIA0031` 并回退到 `value`。
+  报 `STIA0031` 并回退到 `value`；诊断落在写下坏值的那个特性上，Id 的或程序集的。
 - **带回验证结果的 `TryParse`：** `IStronglyTypedId<TSelf>` 上新增四参重载，报告文本被拒的原因，并区分
   「不是 Id」与「验证器拒绝」。ASP.NET Core 模型绑定器改用它，`ModelState` 因此带上验证器的消息而不是固定文案。
 - **`STIA0030`：** 请求的集成包引用了、但版本低于生成器下限（例如 EF Core 6 对 7.0.0 的下限）时改为告警，
@@ -69,6 +69,10 @@
   委托给同一套 `Equals` / `GetHashCode`、`Snapshot` 原样返回，等于空操作 —— 而且会覆盖用户自己配的 comparer。
   文档同时记录了两件 comparer 修不了的限制：经 Id 访问成员（`e.Value.Value > 10`）不翻译，
   `List<record class Id>` 被读成导航属性而不是基元集合。
+- **文档：** 已知限制页新增一条 —— 可变 `record struct` 的 Id 其 `Value` 可以被重新赋值
+  （`id.Value = …` 能编译并绕过 `Normalizer` / `Validator`，`STIA0011` 不覆盖它），把 Id 声明为
+  `readonly partial record struct` 可让该属性变成 init-only。示例程序也演示了 `JsonShapePropertyName`、
+  `JsonNumberHandling` 与 `CheckRoundTrip`，功能索引表各补了一行。
 
 ## [1.4.2] - 2026-11-12
 

@@ -936,5 +936,98 @@ public class StronglyTypedIdAnalyzerConstructionTests
         await Verify.VerifyAnalyzerAsync(code);
     }
 
+    /// <summary>
+    /// 程序集级配了纯空白的属性名：生成器回退到 <c>"value"</c>，配置没生效，必须提示。
+    /// </summary>
+    /// <remarks>
+    /// 程序集默认值影响的是整个程序集的每个 Id，比逐类型配错更值得说；落点只能是程序集特性本身，
+    /// 因此这里断言恰好一条，而不是每个 Id 各一条。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyJsonShapePropertyNameIsBlank()
+    {
+        var code = """"
+            using Len.StronglyTypedId;
+
+            [assembly: StronglyTypedIdDefaults(JsonShape = JsonShape.Object, JsonShapePropertyName = "  ")]
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.JsonShapePropertyNameInvalid)
+            .WithArguments("'  '", "the name must not be empty, whitespace-only, or contain control characters")
+            .WithSpan(3, 65, 3, 93);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 程序集级配了属性名但形态不是对象：配置无处生效，必须提示。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_ReturnDiagnostic_WhenAssemblyJsonShapePropertyNameWithoutObjectShape()
+    {
+        var code = """"
+            using Len.StronglyTypedId;
+
+            [assembly: StronglyTypedIdDefaults(JsonShapePropertyName = "id")]
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+            """";
+        var expected = Verify.Diagnostic(Descriptors.JsonShapePropertyNameInvalid)
+            .WithArguments("'id'", "it only applies when JsonShape is JsonShape.Object")
+            .WithSpan(3, 35, 3, 63);
+        await Verify.VerifyAnalyzerAsync(code, expected);
+    }
+
+    /// <summary>
+    /// 程序集级形态与属性名都配好：不报。
+    /// </summary>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenAssemblyJsonShapePropertyNameIsUsable()
+    {
+        var code = """"
+            using Len.StronglyTypedId;
+
+            [assembly: StronglyTypedIdDefaults(JsonShape = JsonShape.Object, JsonShapePropertyName = "id")]
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId]
+                public partial record struct OrderId(System.Guid Value);
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
+    /// <summary>
+    /// 逐类型配了合法名字、程序集级没配：只走逐类型那条路径，不报。
+    /// </summary>
+    /// <remarks>
+    /// 防止程序集级校验把「程序集没写该实参」误判成非法值。
+    /// </remarks>
+    [Fact]
+    public async Task AnalyzingCode_Should_NotReturnDiagnostic_WhenOnlyTypeLevelJsonShapePropertyNameIsSet()
+    {
+        var code = """"
+            using Len.StronglyTypedId;
+
+            [assembly: StronglyTypedIdDefaults(JsonShape = JsonShape.Object)]
+
+            namespace Len.StronglyTypedId.Tests
+            {
+                [StronglyTypedId(JsonShapePropertyName = "id")]
+                public partial record struct OrderId(System.Guid Value);
+            }
+            """";
+        await Verify.VerifyAnalyzerAsync(code);
+    }
+
     #endregion
 }

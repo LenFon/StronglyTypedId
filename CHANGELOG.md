@@ -17,7 +17,8 @@ change set rather than reproducing every commit.
 - **`JsonShapePropertyName`:** the object shape's property name is configurable per id and per assembly, so
   an existing contract that uses `{"id": …}` no longer needs a hand-written converter. The name flows
   through both JSON converters and both schema generators. Setting it without `JsonShape.Object`, or giving
-  it a blank name or one with control characters, reports `STIA0031` and falls back to `value`.
+  it a blank name or one with control characters, reports `STIA0031` and falls back to `value`; the
+  diagnostic lands on whichever attribute wrote the bad value, the id's or the assembly's.
 - **`TryParse` with a validation result:** a four-argument overload on `IStronglyTypedId<TSelf>` reports why
   text was rejected, distinguishing "not an id" from "the validator refused it". The ASP.NET Core model
   binder now uses it, so `ModelState` carries the validator's message instead of a fixed string.
@@ -91,6 +92,11 @@ change set rather than reproducing every commit.
   would override any comparer a user had configured. The docs also record two limits a comparer cannot fix:
   member access through the id (`e.Value.Value > 10`) does not translate, and a `List<record class Id>` is
   read as a navigation rather than a primitive collection.
+- **Docs:** the limitations page now records that a mutable `record struct` id's `Value` can be reassigned
+  (`id.Value = …` compiles and bypasses `Normalizer` / `Validator`; `STIA0011` does not cover it), and that
+  declaring the id `readonly partial record struct` makes the property init-only. The sample console also
+  demonstrates `JsonShapePropertyName`, `JsonNumberHandling` and `CheckRoundTrip`, and the feature index
+  gained a row for each.
 
 ## [1.4.2] - 2026-11-12
 

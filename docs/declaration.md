@@ -395,11 +395,12 @@ do not set one.
 `ExceptionType` follows it too: `[assembly: StronglyTypedIdDefaults(ExceptionType = typeof(DomainException))]`
 applies to every id that does not name its own.
 
-Three more options can be set assembly-wide, for the cases where the whole assembly shares one choice:
+Four more options can be set assembly-wide, for the cases where the whole assembly shares one choice:
 
 ```csharp
 [assembly: StronglyTypedIdDefaults(
     JsonShape = JsonShape.Object,
+    JsonShapePropertyName = "id",
     TypeConverter = true,
     PrefixReadMode = PrefixReadMode.Strict)]
 ```
@@ -407,6 +408,7 @@ Three more options can be set assembly-wide, for the cases where the whole assem
 | Option | Precedence | Notes |
 | --- | --- | --- |
 | `JsonShape` | per-type wins, including an explicit `JsonShape.Primitive` | An enum, so "not written" is distinguishable from "written as the default value", and a per-type value can override in **both** directions. |
+| `JsonShapePropertyName` | per-type wins; a per-type blank name falls back to `value`, not to the assembly default | Only meaningful together with `JsonShape.Object`. A blank name, or one containing control characters, reports `STIA0031` on the attribute that wrote it — the assembly attribute or the id, whichever is at fault. |
 | `PrefixReadMode` | per-type wins, including an explicit `PrefixReadMode.Lenient` | Same enum reasoning. Only decides how a prefixed id is read back; it does not supply a default prefix. |
 | `TypeConverter` | **one-way**: the assembly default can turn it on, a per-type `false` cannot turn it off | The attribute property is `bool`, so "not written" and "written `false`" are indistinguishable in metadata. Same rule as `RedactValidationMessage`. |
 

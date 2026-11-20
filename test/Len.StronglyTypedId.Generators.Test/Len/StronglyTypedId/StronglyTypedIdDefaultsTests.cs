@@ -9,7 +9,7 @@ namespace Len.StronglyTypedId;
 
 /// <summary>
 /// <see cref="StronglyTypedIdDefaults"/> 的单元测试：未声明程序集默认时的「全空」形态，
-/// 以及从程序集读取九项默认值的路径。
+/// 以及从程序集读取十项默认值的路径。
 /// </summary>
 /// <remarks>
 /// <see cref="StronglyTypedIdDefaults.Empty"/> 是「没有程序集默认」时的哨兵值。它的每一项都必须是
@@ -17,7 +17,7 @@ namespace Len.StronglyTypedId;
 /// </remarks>
 public class StronglyTypedIdDefaultsTests
 {
-    #region Empty：九项全部为「未指定」
+    #region Empty：十项全部为「未指定」
 
     [Fact]
     public void Empty_Should_HaveNoDefaults()
@@ -29,6 +29,7 @@ public class StronglyTypedIdDefaultsTests
         empty.ExceptionTypeName.Should().BeNull();
         empty.Integrations.Should().BeNull();
         empty.JsonShape.Should().BeNull();
+        empty.JsonShapePropertyName.Should().BeNull();
         empty.PrefixReadMode.Should().BeNull();
         empty.RedactValidationMessage.Should().BeFalse();
         empty.TypeConverter.Should().BeFalse();
@@ -48,6 +49,7 @@ public class StronglyTypedIdDefaultsTests
         defaults.ValidatorName.Should().BeNull();
         defaults.Integrations.Should().BeNull();
         defaults.JsonShape.Should().BeNull();
+        defaults.JsonShapePropertyName.Should().BeNull();
         defaults.PrefixReadMode.Should().BeNull();
         defaults.RedactValidationMessage.Should().BeFalse();
         defaults.TypeConverter.Should().BeFalse();
@@ -55,7 +57,7 @@ public class StronglyTypedIdDefaultsTests
 
     #endregion
 
-    #region Read：九项逐项读取
+    #region Read：十项逐项读取
 
     [Fact]
     public void Read_Should_ReadEveryArgument_WhenDefaultsAttributeIsPresent()
@@ -70,6 +72,7 @@ public class StronglyTypedIdDefaultsTests
                 Integrations = StronglyTypedIdIntegrations.Dapper,
                 RedactValidationMessage = true,
                 JsonShape = JsonShape.Object,
+                JsonShapePropertyName = "id",
                 TypeConverter = true,
                 PrefixReadMode = PrefixReadMode.Strict)]
 
@@ -92,6 +95,7 @@ public class StronglyTypedIdDefaultsTests
         defaults.Integrations.Should().Be(IntegrationFlags.Dapper);
         defaults.RedactValidationMessage.Should().BeTrue();
         defaults.JsonShape.Should().NotBeNull();
+        defaults.JsonShapePropertyName.Should().Be("id");
         defaults.TypeConverter.Should().BeTrue();
         defaults.PrefixReadMode.Should().NotBeNull();
     }

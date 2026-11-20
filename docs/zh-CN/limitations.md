@@ -7,7 +7,7 @@ title: 已知限制
 
 # 已知限制
 
-有四件事生成器替你做不了。每一件都有绕法，也都不是 bug：它们都由「源码生成器被允许碰什么」决定。
+有五件事生成器替你做不了。每一件都有绕法，也都不是 bug：它们都由「源码生成器被允许碰什么」决定。
 
 <a id="value-is-public"></a>
 
@@ -21,6 +21,23 @@ title: 已知限制
 
 `STIA0014` 会在「Id 对外可见、其验证器可被 `new` 绕过」时给出提示。它默认关闭：多数代码库接受这个
 取舍，而且在随手 `new` 一个 Id 的测试里，这条提示会很吵。
+
+<a id="mutable-value"></a>
+
+## 可变 `record struct` 的 `Value` 可以被重新赋值
+
+`id.Value = Guid.Empty;` 在 `partial record struct` 的 Id 上能编译且生效，同时绕过 `Normalizer` 与
+`Validator`。`STIA0011` 看不到它：那条规则注册的是对象创建、`with` 表达式与 `default`，不含对属性的
+普通赋值。
+
+这是声明的后果，不是生成器的问题。`record struct` 的位置属性是 `get; set;`，除非类型是 `readonly`；
+setter 既然存在，生成器就删不掉它 —— 与[主构造函数不受保护](#primary-constructor)是同一个原因。把 Id
+声明为 `readonly partial record struct` 后 `Value` 变成 init-only，`id.Value = …` 会以 `CS8852` 编译
+失败；`partial record`（class）同理。代价是 `readonly record struct` 不能再有自己的可变字段，只有你
+确实要加一个时才有影响。
+
+重新赋值是「修改一个已有值」而不是「构造一条新值」，因此比 `new` 少见。但它仍值得知道：一个拒绝
+`Guid.Empty` 的验证器保护了 `Create` 与所有解析路径，却保护不了事后给属性赋值的调用方。
 
 <a id="primitive-types"></a>
 

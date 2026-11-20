@@ -7,7 +7,7 @@ title: Limitations
 
 # Limitations
 
-Four things the generator cannot do for you. Each has a workaround, and none of them is a bug: they
+Five things the generator cannot do for you. Each has a workaround, and none of them is a bug: they
 follow from what a source generator is allowed to touch.
 
 <a id="value-is-public"></a>
@@ -25,6 +25,25 @@ your application actually needs.
 `STIA0014` flags externally visible ids whose validator `new` can bypass. It is off by default: the
 trade-off is acceptable in most codebases, and the diagnostic is noisy wherever tests construct ids
 directly.
+
+<a id="mutable-value"></a>
+
+## A mutable `record struct` id's `Value` can be reassigned
+
+`id.Value = Guid.Empty;` compiles on a `partial record struct` id and takes effect, bypassing both
+`Normalizer` and `Validator`. `STIA0011` does not see it: it registers object creation, `with` expressions
+and `default`, not plain assignments to the property.
+
+This is a consequence of the declaration, not of the generator. A `record struct`'s positional property is
+`get; set;` unless the type is `readonly`, so the setter exists and the generator cannot remove it — the
+same reason the [primary constructor is unguarded](#primary-constructor). Declaring the id
+`readonly partial record struct` makes `Value` init-only, and `id.Value = …` then fails to compile with
+`CS8852`; `partial record` (a class) behaves the same way. The cost is that a `readonly record struct`
+cannot have a mutable field of its own, which matters only if you add one.
+
+Reassignment is a mutation of an existing value rather than a construction path, so it is rarer than
+`new`. It is still worth knowing about: a validator that rejects `Guid.Empty` protects `Create` and every
+parsing path, but not a caller who assigns the property afterwards.
 
 <a id="primitive-types"></a>
 

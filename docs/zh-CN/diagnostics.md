@@ -20,6 +20,8 @@ title: 诊断
   仅用于比较（`id == default`）时不报告，不改写 `Value` 的 `with` 表达式同样不报告。
 - `STIA0014` **默认关闭**，需显式设置 `dotnet_diagnostic.STIA0014.severity = suggestion` 才会启用。
 - `STIA0016` 对每组共用同一基元的 Id 只报一次，落在组内名字序最小的成员上。
+- `STIA0031` 落在写下坏值的那个特性上：Id 的 `[StronglyTypedId]`，或程序集的 `[StronglyTypedIdDefaults]`。
+  程序集级配错只报一次，不会每个 Id 各报一条。
 - `STIA0033` 覆盖 Id 类型自身，以及类型为 Id 的属性、字段、索引器：会拆开 `Nullable<T>`，也会看进
   `List<Int32Id>` 这类容器内部。裸 `int` 成员是合法用法，不报。无代码修复：该特性必须换成
   `JsonSerializerOptions.NumberHandling`，仅仅删掉它并不够。

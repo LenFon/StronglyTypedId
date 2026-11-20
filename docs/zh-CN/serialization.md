@@ -242,7 +242,9 @@ public partial record struct OrderId(Guid Value);
 
 这个名字贯通所有知道形态的地方：两个转换器、Swagger schema 与内置 OpenAPI schema，因此文档与报文不会各说各话。
 `JsonShapePropertyName` 只在 `JsonShape` 为 `JsonShape.Object` 时有意义；形态不是对象、或名字为空 / 纯空白 /
-含控制字符时报 `STIA0031`，生成器回退到 `value`。改名是**数据契约变更**：按旧名写出的载荷再也读不回来。
+含控制字符时报 `STIA0031`，生成器回退到 `value`。它也可以经
+[`[assembly: StronglyTypedIdDefaults]`](declaration.md#assembly-defaults) 在程序集级设置，此时配错报在程序集特性上，
+而不是每个 Id 各报一条。改名是**数据契约变更**：按旧名写出的载荷再也读不回来。
 
 该设置对 `System.Text.Json` 与 `Newtonsoft.Json` 同时生效，且只作用于 Id 自身的值：字典键永远是基元
 文本，因为 JSON 的对象键不可能是对象。`JsonShape.Object` 读写单个属性（默认 `value`，可改名）；载荷不是对象、

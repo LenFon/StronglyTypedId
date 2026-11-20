@@ -8,13 +8,14 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace Len.StronglyTypedId.Generators;
 
 /// <summary>
-/// <c>[assembly: StronglyTypedIdDefaults(...)]</c> 上 <c>JsonShape</c> / <c>TypeConverter</c> /
-/// <c>PrefixReadMode</c> 三项默认值的单元测试。
+/// <c>[assembly: StronglyTypedIdDefaults(...)]</c> 上 <c>JsonShape</c> / <c>JsonShapePropertyName</c> /
+/// <c>TypeConverter</c> / <c>PrefixReadMode</c> 四项默认值的单元测试。
 /// </summary>
 /// <remarks>
-/// 三项的优先级规则不同，用例分别钉住：
+/// 四项的优先级规则不同，用例分别钉住：
 /// <list type="bullet">
 /// <item><c>JsonShape</c> / <c>PrefixReadMode</c> 是枚举，未写与写了默认值可区分 → 逐类型可双向覆盖。</item>
+/// <item><c>JsonShapePropertyName</c> 是字符串，逐类型写了就覆盖；写了非法值时回退到 <c>"value"</c>。</item>
 /// <item><c>TypeConverter</c> 是 <see langword="bool"/>，未写与写了 <see langword="false"/> 不可区分 → 只能单向打开。</item>
 /// </list>
 /// </remarks>
@@ -57,6 +58,51 @@ public class AssemblyDefaultsTests
         var generated = RunGenerator(PlainSource);
 
         generated["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"].Should().NotContain("writer.WriteStartObject()");
+    }
+
+    #endregion
+
+    #region JsonShapePropertyName
+
+    /// <summary>
+    /// 程序集默认的属性名作用于未写该参数的 Id：读写都用这个名字。
+    /// </summary>
+    [Fact]
+    public void JsonShapePropertyName_Should_ComeFromAssemblyDefault_WhenTypeOmitsIt()
+    {
+        var generated = RunGenerator(AssemblyObjectJsonShapePropertyNameSource);
+
+        generated["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"].Should()
+            .Contain("writer.WritePropertyName(\"id\");")
+            .And.NotContain("writer.WritePropertyName(\"value\");");
+    }
+
+    /// <summary>
+    /// 逐类型显式写的属性名覆盖程序集默认值。
+    /// </summary>
+    [Fact]
+    public void JsonShapePropertyName_Should_PreferTypeLevel_WhenTypeWritesItsOwn()
+    {
+        var generated = RunGenerator(AssemblyObjectJsonShapePropertyNameTypeAlsoSource);
+
+        generated["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"].Should()
+            .Contain("writer.WritePropertyName(\"order_id\");")
+            .And.NotContain("writer.WritePropertyName(\"id\");");
+    }
+
+    /// <summary>
+    /// 程序集默认值非法时生成器回退到 <c>"value"</c>，产物仍然可编译。
+    /// </summary>
+    /// <remarks>
+    /// 回退是生成器侧的保证；「配了却没生效」由分析器的 STIA0031 负责说出来，两者分工不同。
+    /// </remarks>
+    [Fact]
+    public void JsonShapePropertyName_Should_FallBackToDefault_WhenAssemblyDefaultIsBlank()
+    {
+        var generated = RunGenerator(AssemblyObjectJsonShapePropertyNameBlankSource);
+
+        generated["Len.StronglyTypedId.OrderId.SystemTextJson.g.cs"].Should()
+            .Contain("writer.WritePropertyName(\"value\");");
     }
 
     #endregion
@@ -168,6 +214,45 @@ public class AssemblyDefaultsTests
         namespace Len.StronglyTypedId;
 
         [StronglyTypedId(JsonShape = JsonShape.Primitive)]
+        public partial record struct OrderId(Guid Value);
+        """;
+
+    private const string AssemblyObjectJsonShapePropertyNameSource = """
+        using System;
+
+        [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(
+            JsonShape = Len.StronglyTypedId.JsonShape.Object,
+            JsonShapePropertyName = "id")]
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
+        public partial record struct OrderId(Guid Value);
+        """;
+
+    private const string AssemblyObjectJsonShapePropertyNameTypeAlsoSource = """
+        using System;
+
+        [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(
+            JsonShape = Len.StronglyTypedId.JsonShape.Object,
+            JsonShapePropertyName = "id")]
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId(JsonShapePropertyName = "order_id")]
+        public partial record struct OrderId(Guid Value);
+        """;
+
+    private const string AssemblyObjectJsonShapePropertyNameBlankSource = """
+        using System;
+
+        [assembly: Len.StronglyTypedId.StronglyTypedIdDefaults(
+            JsonShape = Len.StronglyTypedId.JsonShape.Object,
+            JsonShapePropertyName = "  ")]
+
+        namespace Len.StronglyTypedId;
+
+        [StronglyTypedId]
         public partial record struct OrderId(Guid Value);
         """;
 

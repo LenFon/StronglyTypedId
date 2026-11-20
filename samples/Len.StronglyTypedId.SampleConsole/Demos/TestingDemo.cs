@@ -84,6 +84,28 @@ internal static class TestingDemo
             Demo.Line($"{idType.Name,-28}-> {message}");
         }
 
+        Demo.Section("往返契约体检：StronglyTypedIdConformance.CheckRoundTrip");
+
+        // 对程序集里的每个 Id 检查四项承诺：Parse(ToString()) 读回同一个 Id、TryCreate(Value) 读回同一个 Id、
+        // Normalizer 幂等、生成的 JSON 转换器能往返。违约逐条上报，因为修法不同。
+        // 造不出值的 Id（严格格式的自定义基元、恒拒绝的验证器）记为「跳过」而不是失败。
+        var roundTripFailures = StronglyTypedIdConformance.CheckRoundTrip(typeof(Program).Assembly);
+        var skippedRoundTrips = StronglyTypedIdConformance.FindSkippedRoundTrips(typeof(Program).Assembly);
+
+        Demo.Line($"CheckRoundTrip 违约数              -> {roundTripFailures.Count}");
+        Demo.Line($"FindSkippedRoundTrips 跳过数       -> {skippedRoundTrips.Count}");
+
+        foreach (var (idType, message) in roundTripFailures)
+        {
+            Demo.Line($"{idType.Name,-28}-> {message}");
+        }
+
+        // 「一条失败都没有」不等于「全都查过了」：跳过的那批单独列出来，必要时注册工厂把它们变成真检查。
+        foreach (var (idType, message) in skippedRoundTrips.Take(3))
+        {
+            Demo.Line($"{idType.Name,-28}-> 跳过：{message}");
+        }
+
         Demo.Section("AutoFixture：fixture.Create<T>() 自动填充 Id");
 
         var fixture = new Fixture().WithStronglyTypedIds();

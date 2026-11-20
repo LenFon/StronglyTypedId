@@ -196,6 +196,14 @@ internal static class Features
                 "serialization"),
 
             Core(
+                "JSON shape property name (JsonShapePropertyName)",
+                "JSON 形态属性名（JsonShapePropertyName）",
+                Kinds.Configuration,
+                "samples/Len.StronglyTypedId.SampleConsole/Demos/TextDemo.cs",
+                "docs/serialization.md",
+                "serialization"),
+
+            Core(
                 "TypeConverter",
                 "TypeConverter",
                 Kinds.Configuration,
@@ -244,6 +252,14 @@ internal static class Features
                 "serialization"),
 
             Core(
+                "JsonNumberHandling for numeric ids",
+                "数值 Id 的 JsonNumberHandling",
+                Kinds.Serialization,
+                "samples/Len.StronglyTypedId.SampleConsole/Demos/SystemTextJsonDemo.cs",
+                "docs/serialization.md",
+                "serialization"),
+
+            Core(
                 "Source-generated JsonSerializerContext",
                 "源生成 JsonSerializerContext",
                 Kinds.Serialization,
@@ -270,6 +286,14 @@ internal static class Features
             Core(
                 "AutoFixture and Bogus adapters",
                 "AutoFixture 与 Bogus 适配",
+                Kinds.Testing,
+                "samples/Len.StronglyTypedId.SampleConsole/Demos/TestingDemo.cs",
+                "docs/testing.md",
+                "testing"),
+
+            Core(
+                "Round-trip conformance (CheckRoundTrip)",
+                "往返契约体检（CheckRoundTrip）",
                 Kinds.Testing,
                 "samples/Len.StronglyTypedId.SampleConsole/Demos/TestingDemo.cs",
                 "docs/testing.md",
