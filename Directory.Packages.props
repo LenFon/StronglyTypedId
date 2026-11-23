@@ -53,7 +53,7 @@
 		     不能引入需要商业授权的组件，故锁死 7.x 并停止跟随 dependabot 的 major 升级。
 		     7.2.0 已覆盖本仓用到的全部断言 API（Should/Throw/NotThrow/ContainSingle/OnlyContain 等）。
 		-->
-		<PackageVersion Include="FluentAssertions" Version="7.2.0" />
+		<PackageVersion Include="FluentAssertions" Version="7.2.2" />
 		<!--
 		     GraphQL 集成：HotChocolate 13.x 是当前 LTS 线。scalar 契约（ScalarType<T> 的
 		     TrySerialize / TryDeserialize / ParseLiteral）在 13 与 14 之间没有变化，但 14 改了
@@ -101,7 +101,7 @@
 		  这两个包会把 dotnet test 拽回 VSTest 路径并直接报错。测试工程统一由 xunit.v3 自带的 MTP in-proc runner
 		  承载（见 test.props）。
 		-->
-		<PackageVersion Include="xunit.v3" Version="4.0.2" />
+		<PackageVersion Include="xunit.v3" Version="4.0.3" />
 	</ItemGroup>
 
 	<!-- bench：基准工程（bench.props 引用） -->
