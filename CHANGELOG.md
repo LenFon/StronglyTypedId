@@ -12,91 +12,72 @@ change set rather than reproducing every commit.
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-11-27
+
 ### Added
 
-- **`JsonShapePropertyName`:** the object shape's property name is configurable per id and per assembly, so
-  an existing contract that uses `{"id": …}` no longer needs a hand-written converter. The name flows
-  through both JSON converters and both schema generators. Setting it without `JsonShape.Object`, or giving
-  it a blank name or one with control characters, reports `STIA0031` and falls back to `value`; the
-  diagnostic lands on whichever attribute wrote the bad value, the id's or the assembly's.
-- **`TryParse` with a validation result:** a four-argument overload on `IStronglyTypedId<TSelf>` reports why
-  text was rejected, distinguishing "not an id" from "the validator refused it". The ASP.NET Core model
-  binder now uses it, so `ModelState` carries the validator's message instead of a fixed string.
-- **`STIA0030`:** requesting an integration whose package is referenced but older than the generator's floor
-  (for example EF Core 6 with a 7.0.0 minimum) now warns instead of silently producing nothing. The message
-  names the floor and the version actually referenced; `STIA0019` still covers the "not referenced at all"
-  case, and the two never fire together.
-- **Single-argument `Parse` / `TryParse`:** every id now gets `Parse(string)` and `TryParse(string?, out TSelf)`,
-  each equivalent to passing `null` for the provider, plus the same convenience form for the four-argument
-  `TryParse`. The two-argument signatures stay because `IParsable` requires them; the new ones remove the
-  `null` at every call site and the chance of passing `CurrentCulture` where the invariant culture is meant.
-- **`STIA0032`:** a `[StronglyTypedIdInstance]` on a type that has no `[StronglyTypedId]` now warns instead of
-  being silently ignored. Previously nothing was generated and no diagnostic was reported, so the missing
-  instance member only surfaced as a `CS0117` at run time. The fix removes the attribute; the type is left
-  alone, because adding `[StronglyTypedId]` would change what the type is.
-- **`Any.Ids` returns distinct ids:** the batch helpers now deduplicate by the id's own `Equals`, so
-  `OnlyHaveUniqueItems()` holds without extra work — previously `Any.Ids<ByteId>(200)` was almost certain to
-  contain repeats. When the value domain is smaller than the request (`byte` has 256 values, an enum has as
-  many as its members) generation stops after `max(count * 10, 1000)` attempts and throws
-  `InvalidOperationException` naming the type and count, instead of silently returning duplicates. The
-  sequence for a given seed differs from earlier versions because repeats are skipped; it stays reproducible
-  within a version.
-- **`JsonNumberHandling` support:** the generated `System.Text.Json` converter now honours
-  `AllowReadingFromString` and `WriteAsString` for numeric primitives (`byte` through `double`, plus
-  `decimal`), so an `Int32Id` and a bare `int` in the same contract agree on `"42"`. The accepted string
-  forms and the written text match the built-in converters byte for byte. `Half`, `Int128` and `UInt128`
-  already honoured the option through `JsonSerializer`; `Guid`, `string`, `char` and the date/time types are
-  unaffected. Enums are deliberately excluded, because `System.Text.Json`'s enum converter ignores the
-  option. With the option unset, output is unchanged.
-- **`STIA0033`:** `[JsonNumberHandling]` on a strongly typed id — on the id type itself, or on a property,
-  field or indexer whose type is one (including `Int32Id?` and `List<Int32Id>`) — now warns.
-  `System.Text.Json` validates that attribute against the CLR type rather than the converter, so serializing
-  the id throws `InvalidOperationException`; the converter cannot intervene because the check happens first.
-  The message points at `JsonSerializerOptions.NumberHandling`. There is no code fix: deleting the attribute
-  would only turn the failure into a silent no-op.
-- **`StronglyTypedIdConformance.CheckRoundTrip`:** the testing package can now check the round-trip contract
-  on your own assemblies, not just the library's. For every id it verifies that `Parse(ToString())` and
-  `TryCreate(Value)` return the same id, that a `Normalizer` is idempotent, and that the generated JSON
-  converter round-trips. Violations are reported one per line, because the fixes differ — a lossy
-  `ToString()` breaks both the text and the JSON round-trip and both are listed. `AssertRoundTrip` is the
-  one-line form that throws with every violation. Ids that cannot be valued (a strict custom-primitive
-  format, a validator that always rejects) are **skipped, not failed**, and come back from a separate
-  `FindSkippedRoundTrips` call so that "no failures" is not mistaken for "everything was checked".
-- **`IStronglyTypedId<TSelf>` gained `ISpanParsable<TSelf>` and `IEquatable<TSelf>`:** generic code
-  constrained to the interface can now parse a `ReadOnlySpan<char>` and compare with the type-safe
-  `Equals`, instead of falling back to `object.Equals` (which boxes every value-type id). Both are supplied
-  by **default interface implementations** that forward to `IParsable<TSelf>` and `object.Equals`, so a
-  hand-written implementation needs no new members and keeps compiling unchanged. Generated ids override
-  them with the real span parsing and structural equality.
-- **`IStronglyTypedId<TSelf>` gained a four-argument `TryParse`:** it reports why text was rejected,
-  distinguishing "not an id" from "the validator refused it". The ASP.NET Core model binder uses it, so
-  `ModelState` carries the validator's message instead of a fixed string. It is a `static virtual` member
-  with a default implementation that forwards to the two-argument `TryParse` and returns a generic message,
-  so hand-written implementations need no new members; generated ids override it with the validator's real
-  result.
+- **`JsonShapePropertyName`:** the object shape's property name is configurable per id and per assembly, so an
+  existing `{"id": …}` contract needs no hand-written converter. The name flows through both JSON converters
+  and both schema generators. A blank name, one with control characters, or setting it without
+  `JsonShape.Object` reports `STIA0031` and falls back to `value`; the diagnostic lands on the attribute that
+  wrote the bad value.
+- **`JsonNumberHandling` support:** the generated `System.Text.Json` converter honours `AllowReadingFromString`
+  and `WriteAsString` for numeric primitives (`byte` through `double`, plus `decimal`), so an `Int32Id` and a
+  bare `int` in the same contract agree on `"42"`; the accepted string forms and the written text match the
+  built-in converters byte for byte. `Half`, `Int128` and `UInt128` already honoured the option through
+  `JsonSerializer`; `Guid`, `string`, `char` and the date/time types are unaffected. Enums are excluded because
+  `System.Text.Json` ignores the option for them, and output is unchanged when the option is unset.
+  `[JsonNumberHandling]` on an id — or on a property, field or indexer whose type is one (`Int32Id?`,
+  `List<Int32Id>`) — warns `STIA0033`, because `System.Text.Json` validates the attribute against the CLR type
+  and serializing then throws `InvalidOperationException`; the message points at
+  `JsonSerializerOptions.NumberHandling`, and there is no code fix.
+- **Single-argument `Parse` / `TryParse`:** every id gains single-argument `Parse(string)` and
+  `TryParse(string?, out TSelf)`, equivalent to passing `null` for the provider, plus the same convenience form
+  for the four-argument `TryParse`; the two-argument signatures stay because `IParsable` requires them, and the
+  new ones remove the `null` at every call site and the chance of passing `CurrentCulture` where the invariant
+  culture is meant. The four-argument `TryParse` reports why text was rejected, distinguishing "not an id" from
+  "the validator refused it", and the ASP.NET Core model binder uses it so `ModelState` carries the validator's
+  message. It is a `static virtual` member with a default implementation forwarding to the two-argument form,
+  so hand-written ids need no new members.
+- **`IStronglyTypedId<TSelf>` gained `ISpanParsable<TSelf>` and `IEquatable<TSelf>`:** generic code constrained
+  to the interface can parse a `ReadOnlySpan<char>` and compare with the type-safe `Equals` instead of boxing
+  through `object.Equals`. Both are default interface implementations forwarding to `IParsable<TSelf>` and
+  `object.Equals`; generated ids override them with span parsing and structural equality.
+- **`STIA0030` and `STIA0032`:** an integration package referenced below the generator's floor (EF Core 6 against
+  a 7.0.0 minimum) warns instead of silently generating nothing, naming the floor and the version referenced —
+  `STIA0019` still covers "not referenced at all", and the two never fire together. A
+  `[StronglyTypedIdInstance]` on a type without `[StronglyTypedId]` warns instead of being ignored, where the
+  missing member previously surfaced only as `CS0117`; the fix removes the attribute.
+- **`Any.Ids` returns distinct ids:** the batch helpers deduplicate by the id's own `Equals`, so
+  `OnlyHaveUniqueItems()` holds without extra work. When the value domain is smaller than the request
+  (`Any.Ids<ByteId>(200)`), generation stops after `max(count * 10, 1000)` attempts and throws
+  `InvalidOperationException` naming the type and count. The sequence for a given seed differs from earlier
+  versions but stays reproducible within a version.
+- **`StronglyTypedIdConformance.CheckRoundTrip`:** the testing package checks the round-trip contract on your
+  own assemblies — `Parse(ToString())` and `TryCreate(Value)` return the same id, a `Normalizer` is idempotent,
+  and the JSON converter round-trips. Violations are reported one per line, because the fixes differ: a lossy
+  `ToString()` breaks both the text and the JSON round-trip and both are listed. `AssertRoundTrip` throws with
+  all of them. Ids that cannot be valued are skipped, not failed, and come back from `FindSkippedRoundTrips`.
 
 ### Changed
 
-- **Performance:** the generator emits CRLF at every line-joining site, so the output is homogeneous and
-  line-ending normalisation returns the original string instead of rewriting it (−18% allocations per run;
-  generated output is unchanged).
-- **MVC binding:** a rejected value now reports the id's name (and, unless redacted, the rejected text)
-  instead of `is not a valid strongly typed id`.
-- **EF Core:** no `ValueComparer` is generated, and the documentation now says why. Measurement against
-  EF Core 8 with SQLite showed the defaults already match an id's equality semantics: a `record struct` id
-  is compared structurally, and a `record` class id — despite EF Core's reference-equality default for
-  reference types — is also compared structurally, because a record's `Equals` is structural and the
-  default snapshot is the immutable value itself. Assigning a value-equal new instance stays `Unchanged`;
+- **Performance:** the generator emits CRLF at every line-joining site, so line-ending normalisation returns the
+  original string instead of rewriting it (−18% allocations per run; generated output is unchanged).
+- **MVC binding:** a rejected value reports the id's name (and, unless redacted, the rejected text) instead of
+  `is not a valid strongly typed id`.
+- **EF Core:** no `ValueComparer` is generated, and the documentation says why. Measurement against EF Core 8
+  with SQLite showed the defaults already match an id's equality semantics: a `record struct` id is compared
+  structurally, and a `record` class id also compares structurally because a record's `Equals` is structural and
+  the default snapshot is the immutable value itself. Assigning a value-equal new instance stays `Unchanged`;
   assigning a different value becomes `Modified`. A generated comparer would delegate to the same
-  `Equals` / `GetHashCode` and return the value unchanged from `Snapshot`, so it would be a no-op — and it
-  would override any comparer a user had configured. The docs also record two limits a comparer cannot fix:
-  member access through the id (`e.Value.Value > 10`) does not translate, and a `List<record class Id>` is
-  read as a navigation rather than a primitive collection.
-- **Docs:** the limitations page now records that a mutable `record struct` id's `Value` can be reassigned
-  (`id.Value = …` compiles and bypasses `Normalizer` / `Validator`; `STIA0011` does not cover it), and that
-  declaring the id `readonly partial record struct` makes the property init-only. The sample console also
-  demonstrates `JsonShapePropertyName`, `JsonNumberHandling` and `CheckRoundTrip`, and the feature index
-  gained a row for each.
+  `Equals` / `GetHashCode` and return the value unchanged from `Snapshot`, so it would be a no-op — and would
+  override any comparer a user had configured.
+- **Docs:** the limitations page records that a mutable `record struct` id's `Value` can be reassigned
+  (`id.Value = …` bypasses `Normalizer` / `Validator`; `STIA0011` does not cover it) and that
+  `readonly partial record struct` makes the property init-only, plus the two limits a `ValueComparer` cannot
+  fix: member access through the id (`e.Value.Value > 10`) does not translate, and a `List<record class Id>` is
+  read as a navigation. The sample console demonstrates `JsonShapePropertyName`, `JsonNumberHandling` and
+  `CheckRoundTrip`, and the feature index gained a row for each.
 
 ## [1.4.2] - 2026-11-12
 
@@ -508,7 +489,8 @@ _Published with this spelling; later releases use `preview`._
 
 - **Integrations:** calling `AddStronglyTypedId` twice no longer registers duplicate resolvers.
 
-[Unreleased]: https://github.com/lenfon/StronglyTypedId/compare/1.4.2...HEAD
+[Unreleased]: https://github.com/lenfon/StronglyTypedId/compare/1.4.3...HEAD
+[1.4.3]: https://github.com/lenfon/StronglyTypedId/compare/1.4.2...1.4.3
 [1.4.2]: https://github.com/lenfon/StronglyTypedId/compare/1.4.1...1.4.2
 [1.4.1]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...1.4.0

@@ -11,68 +11,58 @@
 
 ## [未发布]
 
+## [1.4.3] - 2026-11-27
+
 ### 新增
 
-- **`JsonShapePropertyName`：** 对象形态的属性名可按 Id 与按程序集配置，既有契约用 `{"id": …}` 时不必再手写转换器。
-  该名字贯通两个 JSON 转换器与两个 schema 生成器。形态不是 `JsonShape.Object`、或名字为空 / 纯空白 / 含控制字符时
-  报 `STIA0031` 并回退到 `value`；诊断落在写下坏值的那个特性上，Id 的或程序集的。
-- **带回验证结果的 `TryParse`：** `IStronglyTypedId<TSelf>` 上新增四参重载，报告文本被拒的原因，并区分
-  「不是 Id」与「验证器拒绝」。ASP.NET Core 模型绑定器改用它，`ModelState` 因此带上验证器的消息而不是固定文案。
-- **`STIA0030`：** 请求的集成包引用了、但版本低于生成器下限（例如 EF Core 6 对 7.0.0 的下限）时改为告警，
-  不再静默地什么都不生成。消息同时给出下限与实际引用的版本；「完全没引用」仍由 `STIA0019` 负责，两条不会同时报。
-- **单参 `Parse` / `TryParse`：** 每个 Id 新增 `Parse(string)` 与 `TryParse(string?, out TSelf)`，
-  等价于 provider 传 `null`；四参 `TryParse` 同样有单参便利版。两参签名保留，因为 `IParsable` 要求它们；
-  新增的版本省掉每个调用点的 `null`，也避免在本该用不变文化的地方误传 `CurrentCulture`。
-- **`STIA0032`：** 类型上有 `[StronglyTypedIdInstance]` 却没有 `[StronglyTypedId]` 时改为告警，不再静默忽略。
-  此前既不生成成员也不报诊断，缺失的实例字段要到运行期 `CS0117` 才暴露。修复是删掉该特性；类型本身不动，
-  因为补上 `[StronglyTypedId]` 会改变这个类型是什么。
-- **`Any.Ids` 返回互不相同的 Id：** 批量辅助方法改为按 Id 自身的 `Equals` 去重，因此 `OnlyHaveUniqueItems()`
-  无需额外处理即可成立 —— 此前 `Any.Ids<ByteId>(200)` 几乎必然含重复值。取值域小于请求数时（`byte` 只有
-  256 个值，枚举只有成员数那么多），生成最多尝试 `max(count * 10, 1000)` 次，凑不够就抛
-  `InvalidOperationException`，消息里带上类型与请求数，而不是静默返回重复值。由于跳过重复值，同一 seed
-  下的序列与旧版本不同；同一版本内仍可复现。
-- **支持 `JsonNumberHandling`：** 生成的 `System.Text.Json` 转换器现在对数值基元（`byte` 到 `double`，外加
+- **`JsonShapePropertyName`：** 对象形态的属性名可按 Id 与按程序集配置，既有 `{"id": …}` 契约不必再手写转换器。
+  该名字贯通两个 JSON 转换器与两个 schema 生成器。名字为空、含控制字符，或在形态不是 `JsonShape.Object` 时
+  设置，报 `STIA0031` 并回退到 `value`；诊断落在写下坏值的那个特性上。
+- **支持 `JsonNumberHandling`：** 生成的 `System.Text.Json` 转换器对数值基元（`byte` 到 `double`，外加
   `decimal`）遵守 `AllowReadingFromString` 与 `WriteAsString`，同一份契约里的 `Int32Id` 与裸 `int` 因此对
-  `"42"` 给出相同结果。接受的字符串形态与写出的文本都与内置转换器逐字节一致。`Half`、`Int128` 与
+  `"42"` 给出相同结果；接受的字符串形态与写出的文本都与内置转换器逐字节一致。`Half`、`Int128` 与
   `UInt128` 本来就经 `JsonSerializer` 遵守该选项；`Guid`、`string`、`char` 与日期时间类型不受影响。枚举被
-  有意排除，因为 `System.Text.Json` 的枚举转换器不看该选项。未配置该选项时，输出与改动前一致。
-- **`STIA0033`：** `[JsonNumberHandling]` 标在强类型 Id 上 —— 标在 Id 类型自身，或标在类型为 Id 的属性、
-  字段、索引器上（含 `Int32Id?` 与 `List<Int32Id>`）—— 现在会告警。`System.Text.Json` 判定该特性时只看
-  CLR 类型、不看转换器，因此序列化该 Id 会抛 `InvalidOperationException`；判定发生在转换器被调用之前，
-  转换器无从干预。消息会指向 `JsonSerializerOptions.NumberHandling`。无代码修复：删掉特性只会把失败变成
-  静默无效。
-- **`StronglyTypedIdConformance.CheckRoundTrip`：** 测试辅助包现在能在你自己的程序集上检查往返契约，
-  而不只是库自己的。对每个 Id 验证 `Parse(ToString())` 与 `TryCreate(Value)` 读回同一个 Id、`Normalizer`
-  幂等、以及生成的 JSON 转换器能往返。违约逐条上报，因为修法不同 —— 有损的 `ToString()` 会同时破坏文本与
-  JSON 往返，两条都会列出。`AssertRoundTrip` 是「一行调用、抛出并列出全部违约」的形式。造不出值的 Id
-  （严格格式的自定义基元、恒拒绝的验证器）记为**跳过而非失败**，由单独的 `FindSkippedRoundTrips` 返回，
-  免得「一条失败都没有」被误读成「全都查过了」。
+  排除，因为 `System.Text.Json` 对枚举不看该选项；未配置该选项时输出不变。
+  `[JsonNumberHandling]` 标在 Id 上 —— 或标在类型为 Id 的属性、字段、索引器上（含 `Int32Id?` 与
+  `List<Int32Id>`）—— 报 `STIA0033`，因为 `System.Text.Json` 只按 CLR 类型判定该特性，序列化时会抛
+  `InvalidOperationException`；消息会指向 `JsonSerializerOptions.NumberHandling`。无代码修复。
+- **单参 `Parse` / `TryParse`：** 每个 Id 新增单参 `Parse(string)` 与 `TryParse(string?, out TSelf)`，
+  等价于 provider 传 `null`；四参 `TryParse` 同样有单参便利版。两参签名保留，因为 `IParsable` 要求它们；
+  新增的版本省掉每个调用点的 `null`，也避免在本该用不变文化的地方误传 `CurrentCulture`。四参 `TryParse`
+  报告文本被拒的原因，区分「不是 Id」与「验证器拒绝」，ASP.NET Core 模型绑定器用它，`ModelState` 因此带上
+  验证器的消息。它是带默认实现的 `static virtual` 成员，默认实现转发到两参形式，手写实现不需要补成员。
 - **`IStronglyTypedId<TSelf>` 新增 `ISpanParsable<TSelf>` 与 `IEquatable<TSelf>`：** 约束在该接口上的泛型
-  代码现在能直接从 `ReadOnlySpan<char>` 解析、用类型安全的 `Equals` 比较，不必退回 `object.Equals`
-  （值类型 Id 每次比较都要装箱）。两者都由**默认接口实现**提供，分别转发到 `IParsable<TSelf>` 与
-  `object.Equals`，因此手写实现不需要补任何成员，原样就能编译。生成的 Id 用真正的 span 解析与结构相等
-  覆盖它们。
-- **`IStronglyTypedId<TSelf>` 新增四参 `TryParse`：** 它报告文本被拒的原因，区分「不是 Id」与「验证器拒绝」。
-  ASP.NET Core 模型绑定器用它，因此 `ModelState` 带上验证器的消息而不是一句固定文案。它是带默认实现的
-  `static virtual` 成员，默认实现转发到两参 `TryParse` 并返回一条通用消息，因此手写实现不需要补成员；
-  生成的 Id 用验证器的真实结果覆盖它。
+  代码能直接从 `ReadOnlySpan<char>` 解析、用类型安全的 `Equals` 比较，不必经 `object.Equals` 装箱。两者都由
+  默认接口实现提供，分别转发到 `IParsable<TSelf>` 与 `object.Equals`；生成的 Id 用真正的 span 解析与结构
+  相等覆盖它们。
+- **`STIA0030` 与 `STIA0032`：** 集成包引用了但版本低于生成器下限（例如 EF Core 6 对 7.0.0 的下限）时告警，
+  不再静默地什么都不生成，消息给出下限与实际引用的版本；「完全没引用」仍由 `STIA0019` 负责，两条不会同时报。
+  类型上有 `[StronglyTypedIdInstance]` 却没有 `[StronglyTypedId]` 时告警，不再静默忽略 —— 此前缺失的成员
+  要到运行期 `CS0117` 才暴露；修复是删掉该特性。
+- **`Any.Ids` 返回互不相同的 Id：** 批量辅助方法按 Id 自身的 `Equals` 去重，`OnlyHaveUniqueItems()` 无需
+  额外处理即可成立。取值域小于请求数时（`Any.Ids<ByteId>(200)`），生成最多尝试 `max(count * 10, 1000)` 次，
+  凑不够就抛 `InvalidOperationException`，消息里带上类型与请求数。同一 seed 下的序列与旧版本不同，同一版本内
+  仍可复现。
+- **`StronglyTypedIdConformance.CheckRoundTrip`：** 测试辅助包能在你自己的程序集上检查往返契约 ——
+  `Parse(ToString())` 与 `TryCreate(Value)` 读回同一个 Id、`Normalizer` 幂等、JSON 转换器能往返。违约逐条
+  上报，因为修法不同 —— 有损的 `ToString()` 会同时破坏文本与 JSON 往返，两条都会列出。`AssertRoundTrip`
+  一行调用并抛出全部违约。造不出值的 Id 记为跳过而非失败，由 `FindSkippedRoundTrips` 返回。
 
 ### 变更
 
-- **性能：** 生成器在每个拼接行处直接产出 CRLF，产物行尾同质，归一化改为返回原串而不再全文改写
-  （每次运行分配量 −18%；生成产物不变）。
-- **MVC 绑定：** 被拒绝的值现在报告 Id 名（未脱敏时还带被拒文本），而不是 `is not a valid strongly typed id`。
-- **EF Core：** 不生成 `ValueComparer`，文档现在写明了原因。在 EF Core 8 + SQLite 下的实测表明默认行为
-  已经与 Id 的相等语义一致：`record struct` 的 Id 按结构相等比较；`record` class 的 Id 虽然落在 EF Core
-  对引用类型的引用相等默认上，实际也按结构相等比较 —— 因为 record 的 `Equals` 是结构相等，且默认快照就是
-  不可变的值本身。赋一个值相等的新实例保持 `Unchanged`，赋不同值则变成 `Modified`。生成的 comparer 只会
-  委托给同一套 `Equals` / `GetHashCode`、`Snapshot` 原样返回，等于空操作 —— 而且会覆盖用户自己配的 comparer。
-  文档同时记录了两件 comparer 修不了的限制：经 Id 访问成员（`e.Value.Value > 10`）不翻译，
-  `List<record class Id>` 被读成导航属性而不是基元集合。
+- **性能：** 生成器在每个拼接行处直接产出 CRLF，行尾归一化改为返回原串而不再全文改写（每次运行分配量 −18%；
+  生成产物不变）。
+- **MVC 绑定：** 被拒绝的值报告 Id 名（未脱敏时还带被拒文本），而不是 `is not a valid strongly typed id`。
+- **EF Core：** 不生成 `ValueComparer`，文档写明了原因。在 EF Core 8 + SQLite 下的实测表明默认行为已经与 Id
+  的相等语义一致：`record struct` 的 Id 按结构相等比较；`record` class 的 Id 也按结构相等比较 —— 因为 record
+  的 `Equals` 是结构相等，且默认快照就是不可变的值本身。赋一个值相等的新实例保持 `Unchanged`，赋不同值则
+  变成 `Modified`。生成的 comparer 只会委托给同一套 `Equals` / `GetHashCode`、`Snapshot` 原样返回，等于空操作，
+  还会覆盖用户自己配的 comparer。
 - **文档：** 已知限制页新增一条 —— 可变 `record struct` 的 Id 其 `Value` 可以被重新赋值
-  （`id.Value = …` 能编译并绕过 `Normalizer` / `Validator`，`STIA0011` 不覆盖它），把 Id 声明为
-  `readonly partial record struct` 可让该属性变成 init-only。示例程序也演示了 `JsonShapePropertyName`、
-  `JsonNumberHandling` 与 `CheckRoundTrip`，功能索引表各补了一行。
+  （`id.Value = …` 绕过 `Normalizer` / `Validator`，`STIA0011` 不覆盖它），声明为
+  `readonly partial record struct` 可让该属性变成 init-only；同时记录 comparer 修不了的两件限制：经 Id 访问
+  成员（`e.Value.Value > 10`）不翻译，`List<record class Id>` 被读成导航属性。示例程序演示了
+  `JsonShapePropertyName`、`JsonNumberHandling` 与 `CheckRoundTrip`，功能索引表各补了一行。
 
 ## [1.4.2] - 2026-11-12
 
@@ -443,7 +433,8 @@ _以此拼写发布；后续版本改用 `preview`。_
 
 - **集成：** 两次调用 `AddStronglyTypedId` 不再注册重复的解析器。
 
-[未发布]: https://github.com/lenfon/StronglyTypedId/compare/1.4.2...HEAD
+[未发布]: https://github.com/lenfon/StronglyTypedId/compare/1.4.3...HEAD
+[1.4.3]: https://github.com/lenfon/StronglyTypedId/compare/1.4.2...1.4.3
 [1.4.2]: https://github.com/lenfon/StronglyTypedId/compare/1.4.1...1.4.2
 [1.4.1]: https://github.com/lenfon/StronglyTypedId/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/lenfon/StronglyTypedId/compare/1.3.0...1.4.0
